@@ -1,0 +1,14 @@
+{
+  "name": "av-marketplace",
+  "owner": {
+    "name": "AppVerk"
+  },
+  "plugins": [
+    {
+      "name": "code-review",
+      "source": "./plugins/code-review",
+      "description": "Perform comprehensive code review for security, performance, and architecture",
+      "version": "1.0.0"
+    }
+  ]
+}
