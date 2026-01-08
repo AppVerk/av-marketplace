@@ -9,6 +9,12 @@
       "source": "./plugins/code-review",
       "description": "Perform comprehensive code review for security, performance, and architecture",
       "version": "1.0.0"
+    },
+    {
+      "name": "commit",
+      "source": "./plugins/commit",
+      "description": "Generate meaningful commit messages based on code changes",
+      "version": "1.0.0"
     }
   ]
 }
