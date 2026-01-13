@@ -1,0 +1,5 @@
+{
+  "name": "commit",
+  "description": "Generate meaningful commit messages based on code changes",
+  "version": "1.0.0"
+}
