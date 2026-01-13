@@ -8,13 +8,15 @@
       "name": "code-review",
       "source": "./plugins/code-review",
       "description": "Perform comprehensive code review for security, performance, and architecture",
-      "version": "1.0.0"
+      "version": "1.0.0",
+      "category": "development"
     },
     {
       "name": "commit",
       "source": "./plugins/commit",
       "description": "Generate meaningful commit messages based on code changes",
-      "version": "1.0.0"
+      "version": "1.0.0",
+      "category": "development"
     }
   ]
 }
