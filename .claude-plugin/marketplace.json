@@ -17,6 +17,13 @@
       "description": "Generate meaningful commit messages based on code changes",
       "version": "1.0.0",
       "category": "development"
+    },
+    {
+      "name": "python-developer",
+      "source": "./plugins/python-developer",
+      "description": "Master the Python programming language for efficient and effective development",
+      "version": "1.0.0",
+      "category": "development"
     }
   ]
 }
