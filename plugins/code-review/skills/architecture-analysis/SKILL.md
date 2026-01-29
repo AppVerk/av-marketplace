@@ -582,9 +582,3 @@ Before completing architecture analysis, verify:
 - [ ] Code examples provided for HIGH+ issues
 - [ ] Generated summary with top issues
 - [ ] Provided actionable recommendations
-
----
-
-## Version History
-
-- v0.1.0 (2025-12-15): Initial version - SOLID, Clean Architecture, DDD, anti-pattern detection
