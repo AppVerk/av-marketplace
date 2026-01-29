@@ -432,9 +432,3 @@ go mod verify
 | Different results between tools | Different vulnerability databases - run both |
 | npm audit returns non-zero | Use `--audit-level=high` to filter |
 | Lock file out of sync | Run `uv lock` / `poetry lock` / `npm install` |
-
----
-
-## Version History
-
-- v0.1.0 (2025-12-11): Initial version - Multi-language support with uv/pip/poetry, OWASP A03:2025

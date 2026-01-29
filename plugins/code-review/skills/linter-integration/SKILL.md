@@ -454,9 +454,3 @@ Before completing linter integration, verify:
 - [ ] Identified blocking issues (errors)
 - [ ] Generated summary with top issues
 - [ ] Used fallback only when no config exists
-
----
-
-## Version History
-
-- v0.1.0 (2025-12-15): Initial version - Python (ruff, mypy) and TypeScript (eslint, tsc) support

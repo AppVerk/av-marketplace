@@ -314,9 +314,3 @@ Before completing standards discovery, verify:
 - [ ] Noted import rules (if documented)
 - [ ] Generated structured output with sources
 - [ ] Flagged missing standards as INFO (not violations)
-
----
-
-## Version History
-
-- v0.1.0 (2025-12-15): Initial version - Standards discovery for Python/TypeScript projects

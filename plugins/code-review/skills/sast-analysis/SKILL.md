@@ -399,9 +399,3 @@ fi
 - [Semgrep Registry](https://semgrep.dev/explore)
 - [Semgrep Framework-Native Analysis](https://semgrep.dev/blog/2024/redefining-security-coverage-for-python-with-framework-native-analysis/)
 - [OWASP Top 10:2025](https://owasp.org/Top10/2025/)
-
----
-
-## Version History
-
-- v0.1.0 (2025-12-11): Initial version - Multi-language support, OWASP 2025, FastAPI native support
