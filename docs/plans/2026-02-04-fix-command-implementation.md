@@ -1,3 +1,23 @@
+# /fix Command Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Implement the `/fix` command that takes a single code review issue and performs a complete fix cycle with verification.
+
+**Architecture:** Single markdown command file with structured prompt that guides Claude through: issue parsing → context analysis → fix proposal → user approval → implementation → intelligent verification → auto-iteration → final report.
+
+**Tech Stack:** Claude Code command (markdown), reuses existing skills (linter-integration, sast-analysis, secret-scanning)
+
+---
+
+## Task 1: Create Command Frontmatter and Header
+
+**Files:**
+- Modify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Write the command frontmatter**
+
+```markdown
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*)
 description: Apply fix for a single code review issue with verification and reporting.
@@ -14,7 +34,32 @@ You are an expert code fixer that takes a single issue from a code review report
 The user provides an issue block from `/review`:
 
 $ARGUMENTS
+```
 
+**Step 2: Verify file exists and is writable**
+
+Run: `ls -la plugins/code-review/commands/fix.md`
+Expected: File exists (currently empty)
+
+**Step 3: Commit checkpoint**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): add /fix command frontmatter and header"
+```
+
+---
+
+## Task 2: Implement Issue Parsing Section
+
+**Files:**
+- Modify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Add issue parsing instructions**
+
+Append to `fix.md`:
+
+```markdown
 ---
 
 ## Phase 1: Parse Issue
@@ -42,7 +87,27 @@ Ask user to provide:
 - Remediation suggestion
 
 **Store parsed data mentally for next phases.**
+```
 
+**Step 2: Commit checkpoint**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): add issue parsing phase to /fix"
+```
+
+---
+
+## Task 3: Implement Context Analysis Section
+
+**Files:**
+- Modify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Add context analysis instructions**
+
+Append to `fix.md`:
+
+```markdown
 ---
 
 ## Phase 2: Analyze Context
@@ -78,14 +143,34 @@ Look for:
 - Similar code elsewhere that handles this correctly
 - Project coding standards (if visible)
 - Existing patterns for the type of fix needed
+```
 
+**Step 2: Commit checkpoint**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): add context analysis phase to /fix"
+```
+
+---
+
+## Task 4: Implement Fix Proposal Section
+
+**Files:**
+- Modify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Add fix proposal template**
+
+Append to `fix.md`:
+
+```markdown
 ---
 
 ## Phase 3: Propose Fix
 
 Present the fix proposal in this exact format:
 
-~~~
+```
 ## Proposed Fix for [SEVERITY] [Title]
 
 **Target:** `path/to/file.py:line-range`
@@ -115,12 +200,32 @@ Proposed fix:
 - [ ] [Tool 2] - [reason if applicable]
 
 **Proceed with this fix? (yes/no)**
-~~~
+```
 
 **CRITICAL: Wait for explicit user approval before proceeding to Phase 4.**
 
 Do NOT make any changes until the user confirms with "yes" or similar affirmation.
+```
 
+**Step 2: Commit checkpoint**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): add fix proposal phase to /fix"
+```
+
+---
+
+## Task 5: Implement Fix Execution Section
+
+**Files:**
+- Modify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Add implementation instructions**
+
+Append to `fix.md`:
+
+```markdown
 ---
 
 ## Phase 4: Implement Fix
@@ -147,7 +252,27 @@ After editing, read the modified section to confirm:
 - The fix was applied correctly
 - No unintended changes were made
 - Code still looks syntactically correct
+```
 
+**Step 2: Commit checkpoint**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): add implementation phase to /fix"
+```
+
+---
+
+## Task 6: Implement Intelligent Verification Section
+
+**Files:**
+- Modify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Add verification logic**
+
+Append to `fix.md`:
+
+```markdown
 ---
 
 ## Phase 5: Verify Fix
@@ -207,7 +332,27 @@ Track each tool's result:
 - Tool name
 - Pass/Fail status
 - Error details if failed
+```
 
+**Step 2: Commit checkpoint**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): add verification phase to /fix"
+```
+
+---
+
+## Task 7: Implement Auto-Iteration Section
+
+**Files:**
+- Modify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Add auto-iteration logic**
+
+Append to `fix.md`:
+
+```markdown
 ---
 
 ## Phase 6: Auto-Iterate on Failures
@@ -252,14 +397,34 @@ Iteration 3: [tool] failed - [brief reason] - stopping
 ```
 
 After 3 iterations, proceed to Phase 7 regardless of status.
+```
 
+**Step 2: Commit checkpoint**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): add auto-iteration phase to /fix"
+```
+
+---
+
+## Task 8: Implement Final Report Section
+
+**Files:**
+- Modify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Add report template**
+
+Append to `fix.md`:
+
+```markdown
 ---
 
 ## Phase 7: Generate Report
 
 Present the final report in this exact format:
 
-~~~
+```
 ## Fix Report: [SEVERITY] [Title]
 
 **Status:** [STATUS_ICON] [STATUS_TEXT]
@@ -280,7 +445,7 @@ Present the final report in this exact format:
 
 **Next Steps:**
 - [Contextual suggestions based on status]
-~~~
+```
 
 ### Status Definitions
 
@@ -309,3 +474,57 @@ Present the final report in this exact format:
 ---
 
 **Changes remain uncommitted for your control.**
+```
+
+**Step 2: Commit checkpoint**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): add final report phase to /fix"
+```
+
+---
+
+## Task 9: Final Assembly and Testing
+
+**Files:**
+- Verify: `plugins/code-review/commands/fix.md`
+
+**Step 1: Read the complete file**
+
+Read the entire `fix.md` to verify all sections are present and properly formatted.
+
+**Step 2: Verify frontmatter is valid YAML**
+
+Check that the frontmatter:
+- Starts and ends with `---`
+- Has valid `allowed-tools`, `description`, `model`, `argument-hint` fields
+
+**Step 3: Test command loading**
+
+The command should be loadable by Claude Code. Verify structure matches other commands like `review.md`.
+
+**Step 4: Final commit**
+
+```bash
+git add plugins/code-review/commands/fix.md
+git commit -m "feat(code-review): complete /fix command implementation"
+```
+
+---
+
+## Summary
+
+| Task | Description | Files |
+|------|-------------|-------|
+| 1 | Frontmatter and header | `fix.md` |
+| 2 | Issue parsing | `fix.md` |
+| 3 | Context analysis | `fix.md` |
+| 4 | Fix proposal | `fix.md` |
+| 5 | Implementation | `fix.md` |
+| 6 | Verification | `fix.md` |
+| 7 | Auto-iteration | `fix.md` |
+| 8 | Final report | `fix.md` |
+| 9 | Assembly and testing | `fix.md` |
+
+**Total: 9 tasks, single file modification**
