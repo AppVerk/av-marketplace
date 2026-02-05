@@ -37,6 +37,7 @@ Extract the following fields from the issue block:
 **If required fields are missing:**
 
 Ask user to provide:
+
 - Location (file path and line number)
 - Problem description
 - Remediation suggestion
@@ -50,6 +51,7 @@ Ask user to provide:
 **Step 2.1: Read target file**
 
 Use Read tool to read the file at the parsed Location. Focus on:
+
 - The specific line(s) mentioned in the issue
 - The function/method/class containing the issue
 - 20-30 lines of surrounding context
@@ -57,6 +59,7 @@ Use Read tool to read the file at the parsed Location. Focus on:
 **Step 2.2: Understand the code structure**
 
 Identify:
+
 - What function/class contains the issue
 - What the code is trying to accomplish
 - Input sources and data flow
@@ -65,6 +68,7 @@ Identify:
 **Step 2.3: Check related files (if needed)**
 
 If the issue involves:
+
 - Imports → check imported modules
 - API calls → check API definitions
 - Database → check models/schemas
@@ -75,6 +79,7 @@ Use Glob and Read tools as needed.
 **Step 2.4: Note project patterns**
 
 Look for:
+
 - Similar code elsewhere that handles this correctly
 - Project coding standards (if visible)
 - Existing patterns for the type of fix needed
@@ -130,6 +135,7 @@ Do NOT make any changes until the user confirms with "yes" or similar affirmatio
 **Step 4.1: Apply the fix**
 
 Use the Edit tool to make targeted changes:
+
 - Use exact `old_string` matching for precision
 - Preserve surrounding code and formatting
 - Make minimal changes - only what's needed
@@ -137,6 +143,7 @@ Use the Edit tool to make targeted changes:
 **Step 4.2: Handle multiple locations**
 
 If the fix requires changes in multiple places:
+
 1. List all locations that need changes
 2. Apply changes one at a time
 3. Verify each change was applied correctly
@@ -144,6 +151,7 @@ If the fix requires changes in multiple places:
 **Step 4.3: Verify changes were applied**
 
 After editing, read the modified section to confirm:
+
 - The fix was applied correctly
 - No unintended changes were made
 - Code still looks syntactically correct
@@ -204,6 +212,7 @@ semgrep scan --config=auto <modified_file> --json
 ### Step 5.3: Record Results
 
 Track each tool's result:
+
 - Tool name
 - Pass/Fail status
 - Error details if failed
@@ -214,11 +223,12 @@ Track each tool's result:
 
 **Maximum 3 iterations total.**
 
-### If Verification Fails:
+### If Verification Fails
 
 **Step 6.1: Analyze the failure**
 
 Identify:
+
 - Which tool failed
 - What the error message says
 - Whether it's related to our fix or a pre-existing issue
@@ -226,11 +236,13 @@ Identify:
 **Step 6.2: Determine if auto-fixable**
 
 Auto-fix these issues:
+
 - Linter errors in the modified code
 - Type errors caused by our changes
 - Import errors from our changes
 
 Do NOT auto-fix:
+
 - Pre-existing issues unrelated to our fix
 - Test failures that require logic changes
 - SAST findings that need design decisions
@@ -238,6 +250,7 @@ Do NOT auto-fix:
 **Step 6.3: Apply iteration fix**
 
 If auto-fixable:
+
 1. Analyze the specific error
 2. Determine the minimal fix
 3. Apply using Edit tool
@@ -293,15 +306,18 @@ Present the final report in this exact format:
 ### Next Steps by Status
 
 **If Fixed:**
+
 - Run full test suite: `[test command]`
 - Commit when ready: `git add -p`
 
 **If Partially Fixed:**
+
 - Review remaining issues above
 - Run full test suite: `[test command]`
 - Consider manual fixes for remaining items
 
 **If Failed:**
+
 - Changes have been left in place for review
 - Consider reverting: `git checkout -- <file>`
 - Manual intervention recommended
@@ -309,3 +325,4 @@ Present the final report in this exact format:
 ---
 
 **Changes remain uncommitted for your control.**
+
