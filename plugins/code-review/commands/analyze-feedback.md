@@ -187,3 +187,53 @@ gh pr list --state merged --limit 5 --search "<filename>"
 ```
 
 ---
+
+## Phase 4: Analyze Comments
+
+### Step 4.1: Prepare context bundle
+
+For each comment, create a context bundle:
+
+```
+Comment:
+- Author: @{author}
+- File: {path}:{line}
+- Body: "{body}"
+
+Code Context:
+{relevant code snippet ±30 lines around commented line}
+
+Project Standards:
+{extracted coding standards if found}
+
+File History:
+{recent commits touching this file}
+```
+
+### Step 4.2: Launch feedback-analyzer agent
+
+For each comment, use Task tool:
+
+```
+Task tool parameters:
+- subagent_type: "code-review:feedback-analyzer"
+- prompt: <context bundle from Step 4.1>
+- run_in_background: false (analyze sequentially for consistency)
+```
+
+### Step 4.3: Collect results
+
+For each comment, store the agent's response:
+
+- `classification` - "Address" or "Reject"
+- `reasoning` - explanation
+- `draft_response` - if classified as "Reject"
+
+### Step 4.4: Group results
+
+Separate into two lists:
+
+- `to_address` - comments classified as "Address"
+- `to_reject` - comments classified as "Reject" (with draft responses)
+
+---
