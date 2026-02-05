@@ -347,3 +347,33 @@ Opublikowano: 2 z 3 odpowiedzi
 ```
 
 ---
+
+## Error Handling
+
+### GitHub CLI Errors
+
+| Error | Detection | Response |
+|-------|-----------|----------|
+| Not logged in | `gh auth status` fails | "Zaloguj się do GitHub: `gh auth login`" |
+| No repo context | `gh repo view` fails | "Uruchom komendę w katalogu repozytorium Git" |
+| Rate limited | 403 with rate limit message | "Przekroczono limit API. Spróbuj za {reset_time}." |
+| No permissions | 403/404 on PR | "Brak dostępu do PR #{number}. Sprawdź uprawnienia." |
+
+### Edge Cases
+
+| Situation | Handling |
+|-----------|----------|
+| PR has 0 comments | Report: "PR #{n} nie ma komentarzy do analizy." |
+| All comments from PR author | Report: "Wszystkie komentarze są od autora PR." |
+| Comment already has reply from user | Skip, note in report: "(already replied)" |
+| Very long comment (>2000 chars) | Truncate in report, full text to agent |
+
+### Recovery
+
+If publication partially fails:
+
+- Complete publishing remaining items
+- Report failures at end
+- Suggest retry command for failed items
+
+---
