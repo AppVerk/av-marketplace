@@ -125,3 +125,65 @@ Conversation comments are general discussion, not line-specific.
 > "PR #123 has no review comments. Use `--include-conversation` to analyze general comments."
 
 ---
+
+## Phase 3: Gather Context
+
+### Step 3.1: Get PR diff
+
+```bash
+gh pr diff {pr_number}
+```
+
+Store full diff for reference.
+
+### Step 3.2: Read changed files
+
+For each unique file path in review comments:
+
+1. Use Read tool to get current file content
+2. Focus on areas around commented lines (±30 lines)
+
+### Step 3.3: Read related files
+
+For each changed file, check for:
+
+- Imported modules → Read if local
+- Test files → `tests/**/test_<filename>.py` or `**/<filename>.test.ts`
+- Type definitions → `.d.ts` files, `types.py`
+
+Use Glob to find, Read to examine.
+
+### Step 3.4: Gather project documentation
+
+Search for and read (if exist):
+
+**Root level:**
+
+- `README.md`
+- `CONTRIBUTING.md`
+- `CODING_STANDARDS.md`
+- `ARCHITECTURE.md`
+
+**Docs directory:**
+
+```bash
+ls docs/*.md 2>/dev/null || echo "No docs directory"
+```
+
+Read relevant documentation files.
+
+### Step 3.5: Get commit history
+
+For each commented file:
+
+```bash
+git log --oneline -20 -- <file_path>
+```
+
+### Step 3.6: Check previous PRs (optional, for complex cases)
+
+```bash
+gh pr list --state merged --limit 5 --search "<filename>"
+```
+
+---
