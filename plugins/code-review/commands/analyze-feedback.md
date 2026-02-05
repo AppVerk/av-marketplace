@@ -293,3 +293,57 @@ Present the analysis in this exact format:
 ~~~
 
 ---
+
+## Phase 6: Publish Responses (Optional)
+
+### Step 6.1: Wait for user choice
+
+After presenting the report, wait for user input:
+
+- `wszystkie` or `all` → publish all draft responses
+- `wybrane` or `select` → interactive selection
+- `nie` or `no` → skip publishing
+
+### Step 6.2: Handle "wybrane" (selected)
+
+Present numbered list of drafts:
+
+```
+1. @reviewer w `src/utils.py:28` - "Funkcja jest tu właściwym wyborem..."
+2. @reviewer w `src/api.py:55` - "Ten przypadek jest już obsługiwany..."
+3. @reviewer w `src/models.py:12` - "Walidacja odbywa się wyżej..."
+
+Które opublikować? (np. 1,3 lub 1-3 lub "wszystkie" / "anuluj")
+```
+
+Parse user input:
+
+- `1,3` → publish items 1 and 3
+- `1-3` → publish items 1, 2, and 3
+- `wszystkie` → publish all
+- `anuluj` → cancel, don't publish any
+
+### Step 6.3: Publish to GitHub
+
+For each selected draft:
+
+```bash
+gh api --method POST \
+  /repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies \
+  -f body="{draft_response}"
+```
+
+**On success:** Note published.
+
+**On failure:** Report error, continue with remaining.
+
+### Step 6.4: Report publication results
+
+```
+Opublikowano: 2 z 3 odpowiedzi
+- ✅ @reviewer w `src/utils.py:28`
+- ✅ @reviewer w `src/api.py:55`
+- ❌ @reviewer w `src/models.py:12` - błąd: [error message]
+```
+
+---
