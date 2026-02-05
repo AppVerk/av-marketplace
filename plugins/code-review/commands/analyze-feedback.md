@@ -69,3 +69,59 @@ Extract and store:
 - `pr_state`
 
 ---
+
+## Phase 2: Fetch Comments
+
+### Step 2.1: Get repository info
+
+```bash
+gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
+```
+
+Store as `owner/repo`.
+
+### Step 2.2: Fetch review comments (always)
+
+```bash
+gh api /repos/{owner}/{repo}/pulls/{pr_number}/comments --jq '.[] | {id, author: .user.login, body, path, line: .original_line, created_at, in_reply_to_id}'
+```
+
+Review comments are attached to specific lines of code.
+
+### Step 2.3: Fetch conversation comments (if --include-conversation)
+
+```bash
+gh api /repos/{owner}/{repo}/issues/{pr_number}/comments --jq '.[] | {id, author: .user.login, body, created_at}'
+```
+
+Conversation comments are general discussion, not line-specific.
+
+### Step 2.4: Filter comments
+
+**Exclude:**
+
+- Comments by PR author (they don't review their own code)
+- Bot comments (author contains `[bot]` or known bot names)
+- Empty comments or emoji-only (body matches `^[\s\p{Emoji}]*$`)
+- Already resolved comments (if detectable)
+
+**For each remaining comment, store:**
+
+- `id` - for replying later
+- `author` - reviewer username
+- `body` - comment text
+- `path` - file path (review comments only)
+- `line` - line number (review comments only)
+- `type` - "review" or "conversation"
+
+### Step 2.5: Handle edge cases
+
+**No comments after filtering:**
+
+> "PR #123 has no review comments to analyze."
+
+**Only conversation comments (no review comments):**
+
+> "PR #123 has no review comments. Use `--include-conversation` to analyze general comments."
+
+---
