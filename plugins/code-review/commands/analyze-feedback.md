@@ -237,3 +237,59 @@ Separate into two lists:
 - `to_reject` - comments classified as "Reject" (with draft responses)
 
 ---
+
+## Phase 5: Generate Report
+
+Present the analysis in this exact format:
+
+~~~markdown
+## Analiza feedbacku: PR #{pr_number} - "{pr_title}"
+
+**Repozytorium:** {owner}/{repo}
+**Autor PR:** @{pr_author}
+**Komentarzy przeanalizowanych:** {total} ({review_count} review, {conversation_count} conversation)
+
+---
+
+### ✅ Do zaadresowania ({count})
+
+#### 1. @{author} w `{path}:{line}`
+> "{comment body - first 200 chars}..."
+
+**Uzasadnienie:** {reasoning from agent}
+
+---
+
+[repeat for each "Address" comment]
+
+---
+
+### ❌ Do odrzucenia ({count})
+
+#### 1. @{author} w `{path}:{line}`
+> "{comment body - first 200 chars}..."
+
+**Uzasadnienie:** {reasoning from agent}
+
+**Draft odpowiedzi:**
+> {draft_response from agent}
+
+---
+
+[repeat for each "Reject" comment]
+
+---
+
+### Podsumowanie
+
+| Kategoria | Liczba |
+|-----------|--------|
+| ✅ Do zaadresowania | {address_count} |
+| ❌ Do odrzucenia | {reject_count} |
+
+---
+
+**Opublikować odpowiedzi? (wszystkie / wybrane / nie)**
+~~~
+
+---
