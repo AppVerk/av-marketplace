@@ -1,7 +1,7 @@
 ---
 allowed-tools: Read, Glob, Grep, Bash(gh:*), Bash(git:*), Task
 description: Analyze PR feedback comments, classify them, and generate response drafts.
-model: claude-opus-4-5
+model: claude-opus-4-6
 argument-hint: [pr-number] [--include-conversation]
 ---
 

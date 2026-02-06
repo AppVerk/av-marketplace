@@ -2,7 +2,7 @@
 name: security-auditor
 description: Expert security auditor for comprehensive code security analysis. Use PROACTIVELY for ALL security-related code reviews, vulnerability assessment, secret scanning, SAST analysis, dependency scanning, and OWASP compliance checks.
 tools: Read, Bash, Grep, Glob
-model: claude-opus-4-5
+model: claude-opus-4-6
 skills: secret-scanning, sast-analysis, dependency-scanning
 ---
 

@@ -2,7 +2,7 @@
 name: code-quality-auditor
 description: Expert code quality auditor for architecture, design patterns, and maintainability analysis. Use PROACTIVELY for ALL code quality reviews, SOLID/DDD/Clean Architecture compliance, linting, and coding standards verification.
 tools: Read, Bash, Grep, Glob
-model: claude-opus-4-5
+model: claude-opus-4-6
 skills: standards-discovery, linter-integration, architecture-analysis
 ---
 

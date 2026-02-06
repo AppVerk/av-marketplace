@@ -272,12 +272,12 @@ Specialized subagents that run in background and perform deep analysis:
 - **`security-auditor`** - Security vulnerability assessment
   - Executes: secret-scanning, sast-analysis, dependency-scanning skills
   - Reports: OWASP Top 10:2025 violations, CWE identifiers, CVSS scores
-  - Model: claude-opus-4-5 (enterprise-grade analysis)
+  - Model: claude-opus-4-6 (enterprise-grade analysis)
 
 - **`code-quality-auditor`** - Architecture and maintainability analysis
   - Executes: standards-discovery, linter-integration, architecture-analysis skills
   - Reports: SOLID violations, DDD pattern issues, anti-patterns
-  - Model: claude-opus-4-5 (comprehensive quality assessment)
+  - Model: claude-opus-4-6 (comprehensive quality assessment)
 
 #### Skills
 

@@ -2,7 +2,7 @@
 name: feedback-analyzer
 description: Analyze single PR comment for validity and generate response if needed.
 tools: Read, Glob, Grep, Bash(git:*)
-model: claude-opus-4-5
+model: claude-opus-4-6
 ---
 
 # Feedback Analyzer Agent
