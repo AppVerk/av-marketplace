@@ -24,6 +24,13 @@
       "description": "Master the Python programming language for efficient and effective development",
       "version": "1.1.0",
       "category": "development"
+    },
+    {
+      "name": "sequentialthinking",
+      "description": "An MCP server implementation that provides a tool for dynamic and reflective problem-solving through a structured thinking process.",
+      "source": "./external_plugins/sequentialthinking",
+      "category": "planning",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking"
     }
   ]
 }
