@@ -1,7 +1,7 @@
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*)
 description: Apply fix for a single code review issue with verification and reporting.
-model: claude-opus-4-5
+model: claude-opus-4-6
 argument-hint: <paste full issue block from /review report>
 ---
 
