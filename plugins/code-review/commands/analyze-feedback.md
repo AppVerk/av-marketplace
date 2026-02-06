@@ -243,20 +243,20 @@ Separate into two lists:
 Present the analysis in this exact format:
 
 ~~~markdown
-## Analiza feedbacku: PR #{pr_number} - "{pr_title}"
+## Feedback Analysis: PR #{pr_number} - "{pr_title}"
 
-**Repozytorium:** {owner}/{repo}
-**Autor PR:** @{pr_author}
-**Komentarzy przeanalizowanych:** {total} ({review_count} review, {conversation_count} conversation)
+**Repository:** {owner}/{repo}
+**PR Author:** @{pr_author}
+**Comments analyzed:** {total} ({review_count} review, {conversation_count} conversation)
 
 ---
 
-### ✅ Do zaadresowania ({count})
+### ✅ To Address ({count})
 
-#### 1. @{author} w `{path}:{line}`
+#### 1. @{author} in `{path}:{line}`
 > "{comment body - first 200 chars}..."
 
-**Uzasadnienie:** {reasoning from agent}
+**Reasoning:** {reasoning from agent}
 
 ---
 
@@ -264,14 +264,14 @@ Present the analysis in this exact format:
 
 ---
 
-### ❌ Do odrzucenia ({count})
+### ❌ To Reject ({count})
 
-#### 1. @{author} w `{path}:{line}`
+#### 1. @{author} in `{path}:{line}`
 > "{comment body - first 200 chars}..."
 
-**Uzasadnienie:** {reasoning from agent}
+**Reasoning:** {reasoning from agent}
 
-**Draft odpowiedzi:**
+**Draft response:**
 > {draft_response from agent}
 
 ---
@@ -280,16 +280,16 @@ Present the analysis in this exact format:
 
 ---
 
-### Podsumowanie
+### Summary
 
-| Kategoria | Liczba |
-|-----------|--------|
-| ✅ Do zaadresowania | {address_count} |
-| ❌ Do odrzucenia | {reject_count} |
+| Category | Count |
+|----------|-------|
+| ✅ To Address | {address_count} |
+| ❌ To Reject | {reject_count} |
 
 ---
 
-**Opublikować odpowiedzi? (wszystkie / wybrane / nie)**
+**Publish responses? (all / selected / none)**
 ~~~
 
 ---
@@ -300,28 +300,28 @@ Present the analysis in this exact format:
 
 After presenting the report, wait for user input:
 
-- `wszystkie` or `all` → publish all draft responses
-- `wybrane` or `select` → interactive selection
-- `nie` or `no` → skip publishing
+- `all` → publish all draft responses
+- `select` → interactive selection
+- `none` → skip publishing
 
-### Step 6.2: Handle "wybrane" (selected)
+### Step 6.2: Handle "select"
 
 Present numbered list of drafts:
 
 ```
-1. @reviewer w `src/utils.py:28` - "Funkcja jest tu właściwym wyborem..."
-2. @reviewer w `src/api.py:55` - "Ten przypadek jest już obsługiwany..."
-3. @reviewer w `src/models.py:12` - "Walidacja odbywa się wyżej..."
+1. @reviewer in `src/utils.py:28` - "A function is the right choice here..."
+2. @reviewer in `src/api.py:55` - "This case is already handled..."
+3. @reviewer in `src/models.py:12` - "Validation happens upstream..."
 
-Które opublikować? (np. 1,3 lub 1-3 lub "wszystkie" / "anuluj")
+Which to publish? (e.g. 1,3 or 1-3 or "all" / "cancel")
 ```
 
 Parse user input:
 
 - `1,3` → publish items 1 and 3
 - `1-3` → publish items 1, 2, and 3
-- `wszystkie` → publish all
-- `anuluj` → cancel, don't publish any
+- `all` → publish all
+- `cancel` → cancel, don't publish any
 
 ### Step 6.3: Publish to GitHub
 
@@ -340,10 +340,10 @@ gh api --method POST \
 ### Step 6.4: Report publication results
 
 ```
-Opublikowano: 2 z 3 odpowiedzi
-- ✅ @reviewer w `src/utils.py:28`
-- ✅ @reviewer w `src/api.py:55`
-- ❌ @reviewer w `src/models.py:12` - błąd: [error message]
+Published: 2 of 3 responses
+- ✅ @reviewer in `src/utils.py:28`
+- ✅ @reviewer in `src/api.py:55`
+- ❌ @reviewer in `src/models.py:12` - error: [error message]
 ```
 
 ---
@@ -354,17 +354,17 @@ Opublikowano: 2 z 3 odpowiedzi
 
 | Error | Detection | Response |
 |-------|-----------|----------|
-| Not logged in | `gh auth status` fails | "Zaloguj się do GitHub: `gh auth login`" |
-| No repo context | `gh repo view` fails | "Uruchom komendę w katalogu repozytorium Git" |
-| Rate limited | 403 with rate limit message | "Przekroczono limit API. Spróbuj za {reset_time}." |
-| No permissions | 403/404 on PR | "Brak dostępu do PR #{number}. Sprawdź uprawnienia." |
+| Not logged in | `gh auth status` fails | "Log in to GitHub: `gh auth login`" |
+| No repo context | `gh repo view` fails | "Run this command in a Git repository directory" |
+| Rate limited | 403 with rate limit message | "API rate limit exceeded. Try again in {reset_time}." |
+| No permissions | 403/404 on PR | "No access to PR #{number}. Check your permissions." |
 
 ### Edge Cases
 
 | Situation | Handling |
 |-----------|----------|
-| PR has 0 comments | Report: "PR #{n} nie ma komentarzy do analizy." |
-| All comments from PR author | Report: "Wszystkie komentarze są od autora PR." |
+| PR has 0 comments | Report: "PR #{n} has no comments to analyze." |
+| All comments from PR author | Report: "All comments are from the PR author." |
 | Comment already has reply from user | Skip, note in report: "(already replied)" |
 | Very long comment (>2000 chars) | Truncate in report, full text to agent |
 
