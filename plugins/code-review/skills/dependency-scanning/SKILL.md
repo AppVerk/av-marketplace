@@ -422,6 +422,72 @@ go mod verify
 
 ---
 
+## CI/CD Integration Examples
+
+### GitHub Actions
+
+```yaml
+# .github/workflows/dependency-scan.yml
+name: Dependency Scanning
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 8 * * 1'  # Weekly Monday scan
+
+jobs:
+  python-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install and audit
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --format=json --output=audit-results.json
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit
+          path: audit-results.json
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+```
+
+### Azure DevOps Pipelines
+
+```yaml
+# azure-pipelines.yml
+steps:
+  - script: |
+      pip install pip-audit
+      pip install -r requirements.txt -r requirements-dev.txt
+      pip-audit --format=json --output=$(Build.ArtifactStagingDirectory)/audit.json
+    displayName: 'Dependency Audit'
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: '$(Build.ArtifactStagingDirectory)/audit.json'
+      artifactName: 'dependency-audit'
+    displayName: 'Publish Audit Results'
+```
+
+> **Azure DevOps Shell Compatibility:**
+> - **No brace expansion**: Use `pip install -r requirements.txt -r requirements-dev.txt` instead of `pip install -r requirements{,-dev}.txt`
+> - **Dependency groups**: Install each group explicitly: `pip install package1 package2 package3`
+> - **Task parameters**: `PublishBuildArtifacts@1` uses `pathToPublish` (NOT `pathtoPublish` or `path`)
+> - Use `script:` for shell commands; `cmd:` and `powershell:` have different escaping rules
+
+---
+
 ## Troubleshooting
 
 | Problem | Solution |

@@ -351,6 +351,65 @@ grep -rn "ObjectInputStream\|readObject(" --include="*.java" .
 
 ---
 
+## CI/CD Integration Examples
+
+### GitHub Actions
+
+```yaml
+# .github/workflows/sast.yml
+name: SAST Security Scan
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/owasp-top-ten
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+```
+
+### Azure DevOps Pipelines
+
+```yaml
+# azure-pipelines.yml
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+  - script: |
+      pip install semgrep
+      semgrep scan --config=auto --config=p/security-audit . --json --output=semgrep-results.json
+    displayName: 'Run Semgrep SAST'
+
+  - task: PublishCodeCoverageResults@2
+    inputs:
+      summaryFileLocation: '$(System.DefaultWorkingDirectory)/semgrep-results.json'
+      pathToSources: '$(System.DefaultWorkingDirectory)'
+    displayName: 'Publish Results'
+```
+
+> **Azure DevOps Shell Compatibility:**
+> - **No brace expansion**: Use `pip install semgrep bandit` instead of `pip install {semgrep,bandit}`
+> - **No bash arrays**: Use explicit repeated flags instead of `for config in configs; do ...`
+> - **Task parameters**: `PublishCodeCoverageResults@2` uses `summaryFileLocation` (NOT `summaryFile`)
+> - Use `script:` (not `bash:`) for cross-platform compatibility, or explicitly set `bash:` when bash features are needed
+
+---
+
 ## Integration Workflow
 
 ### Recommended Order
