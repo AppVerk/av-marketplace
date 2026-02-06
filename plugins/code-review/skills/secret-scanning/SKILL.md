@@ -55,6 +55,47 @@ trufflehog git file://. --json | jq '{ secret_type: .DetectorName, file: .Source
 trufflehog filesystem ./src --json | jq 'select(.Verified == true)'
 ```
 
+### Excluding Files from Scans
+
+TruffleHog v3 uses the `--exclude-paths` (`-x`) flag pointing to a file with **newline-separated regex patterns** (not globs):
+
+**Example: `.trufflehog-exclude.txt`**
+
+```text
+# Test fixtures and mock data
+.*test.*fixtures.*
+.*/mocks?/.*
+.*_test\.py$
+.*\.test\.(js|ts)$
+
+# Generated and vendored code
+.*/vendor/.*
+.*\.generated\.\w+$
+.*/node_modules/.*
+
+# Documentation and configs
+.*\.md$
+.*\.ya?ml$
+```
+
+**Usage:**
+
+```bash
+# Exclude paths using regex file
+trufflehog git file://. --exclude-paths=.trufflehog-exclude.txt --json
+
+# Include only specific paths
+trufflehog git file://. --include-paths=.trufflehog-include.txt --json
+```
+
+**Alternative: `--exclude-globs`** for simpler cases (filters at `git log` level, faster):
+
+```bash
+trufflehog git file://. --exclude-globs="*.md,docs/*,test/*" --json
+```
+
+> **IMPORTANT:** `--exclude-paths` takes **regex** patterns (one per line in a file). `--exclude-globs` takes **glob** patterns (comma-separated inline). Do NOT mix the two formats.
+
 ---
 
 ## Fallback Method: Pattern Matching
@@ -220,5 +261,6 @@ For each secret found, report:
 ### Performance Tips
 
 - For large repos, scan only changed files: `trufflehog git file://. --since-commit=HEAD~10`
-- Exclude test fixtures: create `.trufflehog.yaml` with exclusion patterns
+- Exclude test fixtures: use `--exclude-paths=.trufflehog-exclude.txt` with regex patterns (see "Excluding Files from Scans" section above)
+- For faster git-level filtering: use `--exclude-globs="test/*,docs/*"`
 - Run in parallel for multiple repos
