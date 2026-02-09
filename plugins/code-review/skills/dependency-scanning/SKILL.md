@@ -111,15 +111,11 @@ uv pip list --outdated 2>/dev/null
 uv lock --check 2>/dev/null && echo "Lock file OK" || echo "Lock file needs update"
 
 # Run pip-audit through uv
-uv tool run pip-audit --format=json 2>/dev/null | jq '.dependencies[] | select(.vulns | length > 0) | {
-  name: .name,
-  version: .version,
-  vulns: [.vulns[] | {id: .id, fix_versions: .fix_versions}]
-}'
+uv tool run pip-audit --format=json -o /tmp/pip-audit-uv.json 2>/dev/null
 
 # Export requirements and scan
 uv pip compile pyproject.toml -o /tmp/requirements.txt 2>/dev/null
-uv tool run pip-audit -r /tmp/requirements.txt --format=json 2>/dev/null
+uv tool run pip-audit -r /tmp/requirements.txt --format=json -o /tmp/pip-audit-compiled.json 2>/dev/null
 
 # Update all packages to latest secure versions
 uv lock --upgrade 2>/dev/null
@@ -127,6 +123,7 @@ uv lock --upgrade 2>/dev/null
 # Show dependency tree
 uv pip tree 2>/dev/null | head -50
 ```
+**After scan:** Read /tmp/pip-audit-uv.json and /tmp/pip-audit-compiled.json with the Read tool and analyze the JSON results.
 
 ---
 
@@ -141,7 +138,7 @@ poetry check --lock 2>/dev/null && echo "Lock file OK" || echo "Lock file needs 
 
 # Export and scan with pip-audit
 poetry export -f requirements.txt --output /tmp/poetry-requirements.txt 2>/dev/null
-pip-audit -r /tmp/poetry-requirements.txt --format=json 2>/dev/null | jq '.dependencies[] | select(.vulns | length > 0)'
+pip-audit -r /tmp/poetry-requirements.txt --format=json -o /tmp/pip-audit-poetry.json 2>/dev/null
 
 # Alternative: Run pip-audit in Poetry environment
 poetry run pip-audit --format=json 2>/dev/null
@@ -152,6 +149,7 @@ poetry update --dry-run 2>/dev/null
 # Show dependency tree
 poetry show --tree 2>/dev/null | head -50
 ```
+**After scan:** Read /tmp/pip-audit-poetry.json with the Read tool and analyze the JSON results.
 
 ---
 
@@ -159,11 +157,7 @@ poetry show --tree 2>/dev/null | head -50
 
 ```bash
 # Scan requirements.txt directly
-pip-audit -r requirements.txt --format=json 2>/dev/null | jq '.dependencies[] | select(.vulns | length > 0) | {
-  name: .name,
-  version: .version,
-  vulns: [.vulns[] | {id: .id, fix_versions: .fix_versions, description: .description}]
-}'
+pip-audit -r requirements.txt --format=json -o /tmp/pip-audit-pip.json 2>/dev/null
 
 # Scan with fix suggestions
 pip-audit -r requirements.txt --fix --dry-run 2>/dev/null
@@ -175,8 +169,9 @@ pip-audit -r requirements.txt --strict --format=json 2>/dev/null
 pip-audit --format=json 2>/dev/null
 
 # List outdated packages
-pip list --outdated --format=json 2>/dev/null | jq '.[] | {name: .name, current: .version, latest: .latest_version}'
+pip list --outdated --format=json 1>/tmp/pip-outdated.json 2>/dev/null
 ```
+**After scan:** Read /tmp/pip-audit-pip.json and /tmp/pip-outdated.json with the Read tool and analyze the JSON results.
 
 ---
 
@@ -186,23 +181,20 @@ Works with all Python package managers:
 
 ```bash
 # Scan requirements file
-safety check -r requirements.txt --json 2>/dev/null | jq '.vulnerabilities[] | {
-  package: .package_name,
-  version: .analyzed_version,
-  vuln_id: .vulnerability_id,
-  severity: .severity,
-  advisory: .advisory
-}'
+safety check -r requirements.txt --json --output /tmp/safety-results.json 2>/dev/null
 
 # Scan Poetry lock file
-poetry export -f requirements.txt | safety check --stdin --json 2>/dev/null
+poetry export -f requirements.txt --output /tmp/poetry-req.txt 2>/dev/null
+safety check -r /tmp/poetry-req.txt --json --output /tmp/safety-poetry.json 2>/dev/null
 
 # Scan uv project
-uv pip compile pyproject.toml | safety check --stdin --json 2>/dev/null
+uv pip compile pyproject.toml -o /tmp/uv-req.txt 2>/dev/null
+safety check -r /tmp/uv-req.txt --json --output /tmp/safety-uv.json 2>/dev/null
 
 # Full report with recommendations
 safety check -r requirements.txt --full-report 2>/dev/null
 ```
+**After scan:** Read /tmp/safety-results.json, /tmp/safety-poetry.json, and /tmp/safety-uv.json with the Read tool and analyze the JSON results.
 
 ---
 
@@ -212,15 +204,7 @@ safety check -r requirements.txt --full-report 2>/dev/null
 
 ```bash
 # Basic audit with JSON output
-npm audit --json 2>/dev/null | jq '{
-  vulnerabilities: .vulnerabilities | to_entries | map({
-    package: .key,
-    severity: .value.severity,
-    via: .value.via,
-    fixAvailable: .value.fixAvailable
-  }),
-  metadata: .metadata
-}'
+npm audit --json 1>/tmp/npm-audit.json 2>/dev/null
 
 # Production dependencies only
 npm audit --omit=dev --json 2>/dev/null
@@ -231,16 +215,18 @@ npm audit fix --dry-run 2>/dev/null
 # Force fix (may include breaking changes)
 npm audit fix --force --dry-run 2>/dev/null
 ```
+**After scan:** Read /tmp/npm-audit.json with the Read tool and analyze the JSON results.
 
 ### yarn audit
 
 ```bash
 # Yarn 1.x
-yarn audit --json 2>/dev/null | jq 'select(.type == "auditAdvisory") | .data.advisory'
+yarn audit --json 1>/tmp/yarn-audit.json 2>/dev/null
 
 # Yarn 2+/Berry
 yarn npm audit --json 2>/dev/null
 ```
+**After scan:** Read /tmp/yarn-audit.json with the Read tool and analyze the JSON results.
 
 ### pnpm audit
 
@@ -259,13 +245,9 @@ pnpm audit --json 2>/dev/null
 govulncheck ./... 2>/dev/null
 
 # JSON output
-govulncheck -json ./... 2>/dev/null | jq '.vulnerability // empty | {
-  id: .osv.id,
-  aliases: .osv.aliases,
-  summary: .osv.summary,
-  affected: [.modules[].packages[].callstacks[].symbol]
-}'
+govulncheck -json ./... 1>/tmp/govulncheck.json 2>/dev/null
 ```
+**After scan:** Read /tmp/govulncheck.json with the Read tool and analyze the JSON results.
 
 ### go list (Check for Updates)
 
@@ -274,12 +256,9 @@ govulncheck -json ./... 2>/dev/null | jq '.vulnerability // empty | {
 go list -m -u all 2>/dev/null | grep '\['
 
 # JSON format
-go list -m -u -json all 2>/dev/null | jq 'select(.Update) | {
-  path: .Path,
-  current: .Version,
-  latest: .Update.Version
-}'
+go list -m -u -json all 1>/tmp/go-outdated.json 2>/dev/null
 ```
+**After scan:** Read /tmp/go-outdated.json with the Read tool and analyze the JSON results.
 
 ---
 
@@ -306,13 +285,9 @@ mvn versions:display-dependency-updates 2>/dev/null
 
 ```bash
 # Update vulnerability database and scan
-bundle-audit update && bundle-audit check --format=json 2>/dev/null | jq '.results[] | {
-  gem: .gem.name,
-  version: .gem.version,
-  advisory: .advisory.id,
-  severity: .advisory.criticality
-}'
+bundle-audit update 2>/dev/null && bundle-audit check --format=json 1>/tmp/bundler-audit.json 2>/dev/null
 ```
+**After scan:** Read /tmp/bundler-audit.json with the Read tool and analyze the JSON results.
 
 ---
 
@@ -322,11 +297,9 @@ bundle-audit update && bundle-audit check --format=json 2>/dev/null | jq '.resul
 
 ```bash
 # Built-in audit (Composer 2.4+)
-composer audit --format=json 2>/dev/null | jq '.advisories | to_entries | map({
-  package: .key,
-  advisories: .value
-})'
+composer audit --format=json 1>/tmp/composer-audit.json 2>/dev/null
 ```
+**After scan:** Read /tmp/composer-audit.json with the Read tool and analyze the JSON results.
 
 ---
 

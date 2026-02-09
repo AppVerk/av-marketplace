@@ -36,12 +36,9 @@ for layer in domain application infrastructure presentation api services models 
     [ -d "src/$layer" ] && echo "FOUND: src/$layer/"
     [ -d "app/$layer" ] && echo "FOUND: app/$layer/"
 done
-
-# Count files by directory
-echo "--- File Distribution ---"
-find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | cut -d/ -f2 | sort | uniq -c | sort -rn | head -10
-find . \( -name "*.ts" -o -name "*.tsx" \) -not -path "./node_modules/*" | cut -d/ -f2 | sort | uniq -c | sort -rn | head -10
 ```
+
+**File Distribution:** Use the Glob tool to find all Python files (`**/*.py`) and TypeScript files (`**/*.ts`, `**/*.tsx`). Group results by top-level directory to understand file distribution across layers.
 
 ### Identify Architecture Pattern
 
@@ -67,26 +64,9 @@ find . \( -name "*.ts" -o -name "*.tsx" \) -not -path "./node_modules/*" | cut -
 - Methods per class: >15 = HIGH violation
 - Different responsibilities in one class
 
-```bash
-echo "=== SRP Analysis ==="
+**Large files detection:** Use the Glob tool to find all `**/*.py` and `**/*.ts`/`**/*.tsx` files. Then Read each file to check its line count. Flag files with >500 lines as HIGH severity SRP violations.
 
-# Python: Files with >500 lines
-echo "--- Large Files (>500 LOC) ---"
-find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" -exec wc -l {} \; 2>/dev/null | awk '$1 > 500 {print "HIGH: " $1 " lines - " $2}' | sort -rn | head -10
-
-# Python: Classes with >15 methods
-echo "--- Classes with Many Methods ---"
-find . -name "*.py" -not -path "./.venv/*" -exec grep -l "class " {} \; 2>/dev/null | while read f; do
-    methods=$(grep -c "def " "$f" 2>/dev/null || echo 0)
-    if [ "$methods" -gt 15 ]; then
-        echo "HIGH: $methods methods - $f"
-    fi
-done | sort -t: -k1 -rn | head -10
-
-# TypeScript: Large files
-echo "--- TypeScript Large Files ---"
-find . \( -name "*.ts" -o -name "*.tsx" \) -not -path "./node_modules/*" -exec wc -l {} \; 2>/dev/null | awk '$1 > 500 {print "HIGH: " $1 " lines - " $2}' | sort -rn | head -10
-```
+**Classes with many methods:** Use the Grep tool to search for `class ` in Python files, then Read each matching file and count `def ` occurrences. Flag files with >15 methods as HIGH severity.
 
 **Report Format:**
 
@@ -114,27 +94,11 @@ find . \( -name "*.ts" -o -name "*.tsx" \) -not -path "./node_modules/*" -exec w
 
 **Detection:** Long switch/if-elif chains that need modification for new types.
 
-```bash
-echo "=== OCP Analysis ==="
+**Long if-elif chains:** Use the Grep tool to search for `elif` in Python files. Read files with many matches (>5 elif per file) and flag as MEDIUM OCP violations.
 
-# Python: Long if-elif chains
-echo "--- Long if-elif Chains ---"
-find . -name "*.py" -not -path "./.venv/*" -exec grep -c "elif\|else:" {} \; 2>/dev/null | while read line; do
-    count=$(echo "$line" | cut -d: -f2)
-    file=$(echo "$line" | cut -d: -f1)
-    if [ "$count" -gt 5 ]; then
-        echo "MEDIUM: $count branches - $file"
-    fi
-done 2>/dev/null | sort -t: -k1 -rn | head -10
+**Large switch statements:** Use the Grep tool to search for `switch` and `case ` in TypeScript files. Files with >5 case statements may indicate OCP violations.
 
-# TypeScript: Switch statements with many cases
-echo "--- Large Switch Statements ---"
-grep -rn "switch\|case " --include="*.ts" --include="*.tsx" . 2>/dev/null | cut -d: -f1 | sort | uniq -c | sort -rn | awk '$1 > 5 {print "MEDIUM: " $1 " cases - " $2}' | head -10
-
-# Type checking patterns (isinstance chains)
-echo "--- Type Checking Patterns ---"
-grep -rn "isinstance.*if\|typeof.*===\|instanceof" --include="*.py" --include="*.ts" . 2>/dev/null | head -10
-```
+**Type checking patterns:** Use the Grep tool to search for `isinstance` in Python files and `typeof.*===` or `instanceof` in TypeScript files. These patterns often indicate OCP violations.
 
 **Pattern to Flag:**
 
@@ -164,17 +128,9 @@ class Circle(Shape):
 
 **Detection:** Subclasses that change parent behavior unexpectedly.
 
-```bash
-echo "=== LSP Analysis ==="
+**Potential LSP violations:** Use the Grep tool to search for `raise NotImplementedError` and `throw new Error.*not implemented` and `pass  # type: ignore` across Python and TypeScript files.
 
-# Find classes that raise NotImplementedError in overridden methods
-echo "--- Potential LSP Violations ---"
-grep -rn "raise NotImplementedError\|throw new Error.*not implemented\|pass  # type: ignore" --include="*.py" --include="*.ts" . 2>/dev/null | head -10
-
-# Find methods that override parent but have different signatures
-echo "--- Override Analysis (manual check needed) ---"
-grep -rn "def.*self.*:" --include="*.py" . 2>/dev/null | grep -i "override\|super()" | head -10
-```
+**Override analysis:** Use the Grep tool to search for `super()` in Python files to find override locations. Read those files to verify subclasses honor parent contracts.
 
 **Manual AI Review Required:**
 
@@ -188,17 +144,9 @@ grep -rn "def.*self.*:" --include="*.py" . 2>/dev/null | grep -i "override\|supe
 
 **Detection:** Large interfaces/protocols with many methods.
 
-```bash
-echo "=== ISP Analysis ==="
+**Large interfaces (Python):** Use the Grep tool to search for `class.*Protocol` and `class.*ABC` in Python files. Read each matching file and count methods in the interface. Flag interfaces with >7 methods as MEDIUM ISP violations.
 
-# Python: Large Protocol/ABC definitions
-echo "--- Large Interfaces (Python) ---"
-grep -rn "class.*Protocol\|class.*ABC" --include="*.py" -A 50 . 2>/dev/null | grep "def " | cut -d: -f1 | sort | uniq -c | sort -rn | awk '$1 > 7 {print "MEDIUM: " $1 " methods - " $2}' | head -10
-
-# TypeScript: Large interfaces
-echo "--- Large Interfaces (TypeScript) ---"
-grep -rn "^interface\|^export interface" --include="*.ts" -A 30 . 2>/dev/null | grep -E "^\s+\w+\(" | cut -d: -f1 | sort | uniq -c | sort -rn | awk '$1 > 7 {print "MEDIUM: " $1 " methods - " $2}' | head -10
-```
+**Large interfaces (TypeScript):** Use the Grep tool to search for `^interface` and `^export interface` in TypeScript files. Read each matching file and count method signatures. Flag interfaces with >7 methods as MEDIUM ISP violations.
 
 **Pattern to Flag:**
 
@@ -233,25 +181,13 @@ interface UserWriter {
 
 **Detection:** High-level modules importing low-level details.
 
-```bash
-echo "=== DIP Analysis ==="
+**Domain -> Infrastructure violations (Python):** Use the Grep tool to search for `from.*infrastructure` and `import.*infrastructure` in Python files within `domain/` or `src/domain/` directories. Also search for `from.*database`, `import.*database` in domain directories.
 
-# Python: Domain importing infrastructure
-echo "--- Domain -> Infrastructure Violations ---"
-grep -rn "from.*infrastructure\|import.*infrastructure" --include="*.py" src/domain/ domain/ 2>/dev/null
-grep -rn "from.*database\|import.*database\|from.*repository" --include="*.py" src/domain/ domain/ 2>/dev/null
+**Direct DB access in domain:** Use the Grep tool to search for `session\.`, `cursor\.`, `execute(`, `query(` in Python files within domain directories.
 
-# Direct database access in domain
-echo "--- Direct DB Access in Domain ---"
-grep -rn "session\.\|cursor\.\|execute(\|query(" --include="*.py" src/domain/ domain/ 2>/dev/null | head -10
+**Core -> Adapter violations (TypeScript):** Use the Grep tool to search for `from.*adapters`, `from.*infrastructure`, `from.*database` in TypeScript files within `src/core/` or `src/domain/` directories.
 
-# TypeScript: Core importing adapters
-echo "--- Core -> Adapter Violations ---"
-grep -rn "from.*adapters\|from.*infrastructure\|from.*database" --include="*.ts" src/core/ src/domain/ 2>/dev/null | head -10
-
-# Direct HTTP/DB in domain
-grep -rn "fetch(\|axios\.\|prisma\.\|mongoose\." --include="*.ts" src/domain/ src/core/ 2>/dev/null | head -10
-```
+**Direct HTTP/DB in domain:** Use the Grep tool to search for `fetch(`, `axios\.`, `prisma\.`, `mongoose\.` in TypeScript files within domain directories.
 
 **Correct Dependency Direction:**
 
@@ -269,32 +205,12 @@ grep -rn "fetch(\|axios\.\|prisma\.\|mongoose\." --include="*.ts" src/domain/ sr
 
 ### Layer Boundary Violations
 
-```bash
-echo "=== Clean Architecture Analysis ==="
+**Layer detection:** Use the Glob tool to find directories named `domain`, `application`, `infrastructure`, `presentation`, `api` (e.g., `**/domain/`, `**/application/`).
 
-# Define expected layer structure
-echo "--- Layer Detection ---"
-layers="domain application infrastructure presentation api"
-for layer in $layers; do
-    found_dir=$(find . -type d -name "$layer" -not -path "./.venv/*" -not -path "./node_modules/*" 2>/dev/null | head -1)
-    [ -n "$found_dir" ] && echo "Layer found: $found_dir"
-done
+**Forbidden import patterns:**
 
-# Check forbidden imports
-echo "--- Forbidden Import Patterns ---"
-
-# Domain should NEVER import from infrastructure/presentation
-for domain_dir in $(find . -type d -name "domain" -not -path "./.venv/*" -not -path "./node_modules/*" 2>/dev/null); do
-    echo "Checking $domain_dir for violations..."
-    grep -rn "from.*infrastructure\|from.*presentation\|from.*api\|import.*infrastructure" --include="*.py" --include="*.ts" "$domain_dir" 2>/dev/null
-done
-
-# Application should not import presentation
-for app_dir in $(find . -type d -name "application" -not -path "./.venv/*" -not -path "./node_modules/*" 2>/dev/null); do
-    echo "Checking $app_dir for violations..."
-    grep -rn "from.*presentation\|from.*api\|from.*controllers" --include="*.py" --include="*.ts" "$app_dir" 2>/dev/null
-done
-```
+- **Domain layer:** Use the Grep tool to search for `from.*infrastructure`, `from.*presentation`, `from.*api`, `import.*infrastructure` in all Python and TypeScript files within any `domain/` directory found above. These are CRITICAL violations.
+- **Application layer:** Use the Grep tool to search for `from.*presentation`, `from.*api`, `from.*controllers` in all Python and TypeScript files within any `application/` directory found above. These are HIGH violations.
 
 ### Layer Dependency Matrix
 
@@ -311,54 +227,23 @@ done
 
 ### Aggregate Detection
 
-```bash
-echo "=== DDD Aggregate Analysis ==="
+**Aggregate candidates:** Use the Grep tool to search for `Repository`, `AggregateRoot`, `@aggregate` across Python and TypeScript files.
 
-# Find potential aggregates (classes with repository pattern)
-echo "--- Aggregate Candidates ---"
-grep -rln "Repository\|AggregateRoot\|@aggregate" --include="*.py" --include="*.ts" . 2>/dev/null | head -10
-
-# Check for aggregate boundary violations (accessing child entities directly)
-echo "--- Potential Aggregate Violations ---"
-grep -rn "\.entities\.\|\.children\.\|get_child\|find_child" --include="*.py" --include="*.ts" . 2>/dev/null | head -10
-```
+**Aggregate boundary violations:** Use the Grep tool to search for `.entities.`, `.children.`, `get_child`, `find_child` — accessing child entities directly may violate aggregate boundaries.
 
 ### Value Object Detection
 
-```bash
-echo "=== Value Object Analysis ==="
+**Potential value objects (Python):** Use the Grep tool to search for `@dataclass` and `@frozen` in Python files. Read matching files to check for identity fields (`id:`, `_id:`) — their absence suggests value objects.
 
-# Python: Find dataclasses that might be value objects
-echo "--- Potential Value Objects (Python) ---"
-grep -rn "@dataclass\|@frozen" --include="*.py" -A 5 . 2>/dev/null | grep -v "id:\|_id:" | head -20
+**Mutable value objects (violation):** Use the Grep tool to search for `@dataclass` in Python files. Read matching files to verify `frozen=True` is set. Mutable dataclasses used as value objects are violations.
 
-# Check for mutable value objects (violation)
-echo "--- Mutable Value Objects (Violation) ---"
-grep -rn "@dataclass" --include="*.py" . 2>/dev/null | grep -v "frozen=True" | head -10
-
-# TypeScript: Readonly classes
-echo "--- Potential Value Objects (TypeScript) ---"
-grep -rn "readonly\|Readonly<" --include="*.ts" . 2>/dev/null | head -10
-```
+**Potential value objects (TypeScript):** Use the Grep tool to search for `readonly` and `Readonly<` in TypeScript files.
 
 ### Anemic Domain Model Detection
 
-```bash
-echo "=== Anemic Domain Model Detection ==="
+**Anemic entities:** Use the Grep tool to search for `@dataclass` and `class.*Entity` in Python files. Read each matching file and count `def ` occurrences. Files with <3 methods may be anemic domain models (LOW severity).
 
-# Python: Find dataclasses with no methods (potential anemic model)
-echo "--- Anemic Entities (data only, no behavior) ---"
-find . -name "*.py" -not -path "./.venv/*" -exec grep -l "@dataclass\|class.*Entity" {} \; 2>/dev/null | while read f; do
-    methods=$(grep -c "def " "$f" 2>/dev/null || echo 0)
-    if [ "$methods" -lt 3 ]; then
-        echo "LOW: $methods methods (anemic?) - $f"
-    fi
-done | head -10
-
-# Check if business logic is in services instead of entities
-echo "--- Business Logic Location ---"
-grep -rn "def.*validate\|def.*calculate\|def.*process" --include="*.py" . 2>/dev/null | grep -i "service" | head -10
-```
+**Business logic location:** Use the Grep tool to search for `def.*validate`, `def.*calculate`, `def.*process` in Python files within service directories. Business logic in services rather than entities indicates anemic domain model.
 
 ---
 
@@ -366,70 +251,28 @@ grep -rn "def.*validate\|def.*calculate\|def.*process" --include="*.py" . 2>/dev
 
 ### God Object
 
-```bash
-echo "=== God Object Detection ==="
-
-# Files with >500 LOC AND >20 methods
-find . -name "*.py" -not -path "./.venv/*" -exec sh -c '
-    lines=$(wc -l < "$1" 2>/dev/null || echo 0)
-    methods=$(grep -c "def " "$1" 2>/dev/null || echo 0)
-    if [ "$lines" -gt 500 ] && [ "$methods" -gt 20 ]; then
-        echo "CRITICAL: $1 (${lines} lines, ${methods} methods)"
-    elif [ "$lines" -gt 500 ] || [ "$methods" -gt 20 ]; then
-        echo "HIGH: $1 (${lines} lines, ${methods} methods)"
-    fi
-' _ {} \; 2>/dev/null | sort | head -10
-
-# TypeScript
-find . \( -name "*.ts" -o -name "*.tsx" \) -not -path "./node_modules/*" -exec sh -c '
-    lines=$(wc -l < "$1" 2>/dev/null || echo 0)
-    if [ "$lines" -gt 500 ]; then
-        echo "HIGH: $1 (${lines} lines)"
-    fi
-' _ {} \; 2>/dev/null | sort | head -10
-```
+**God Object detection:** Use the Glob tool to find all `**/*.py` and `**/*.ts`/`**/*.tsx` files. Read each file and check:
+- Files with >500 lines AND >20 methods = CRITICAL (God Object)
+- Files with >500 lines OR >20 methods = HIGH
+- Focus on files in `services/`, `handlers/`, `controllers/` directories first
 
 ### Circular Dependencies
 
-```bash
-echo "=== Circular Dependency Detection ==="
+**Import error indicators:** Use the Grep tool to search for `ImportError`, `circular import`, `cannot import name` in Python files.
 
-# Python: Look for import error patterns
-echo "--- Import Error Indicators ---"
-grep -rn "ImportError\|circular import\|cannot import name" --include="*.py" . 2>/dev/null | head -10
-
-# Check for mutual imports between modules
-echo "--- Mutual Import Analysis ---"
-# This requires deeper analysis - flag for AI review
-find . -name "*.py" -not -path "./.venv/*" -exec grep -l "^from \.\|^import \." {} \; 2>/dev/null | head -20
-```
+**Mutual import analysis:** Use the Grep tool to search for `^from \.` and `^import \.` in Python files to find relative imports. Read files with relative imports and trace import chains to detect circular dependencies.
 
 ### Deep Inheritance
 
-```bash
-echo "=== Deep Inheritance Detection ==="
+**Inheritance analysis:** Use the Grep tool to search for `class.*\(` in Python files (excluding `ABC`, `Protocol`, `Exception`, `Enum`). Read matching files to trace inheritance chains. Flag chains >3 levels deep as MEDIUM severity.
 
-# Python: Find inheritance chains
-echo "--- Inheritance Analysis ---"
-grep -rn "class.*(" --include="*.py" . 2>/dev/null | grep -v "ABC\|Protocol\|Exception\|Enum\|object)" | head -20
-
-# Count inheritance depth (simplified - AI should do deeper analysis)
-grep -rn "super().__init__\|super()\..*(" --include="*.py" . 2>/dev/null | cut -d: -f1 | sort | uniq -c | sort -rn | head -10
-```
+**Inheritance depth:** Use the Grep tool to search for `super().__init__` and `super().` in Python files to identify classes using super calls. Multiple super calls in a chain indicate deep inheritance.
 
 ### Tight Coupling
 
-```bash
-echo "=== Coupling Analysis ==="
+**Direct instantiation in Python constructors:** Use the Grep tool to search for `def __init__` in Python files. Read matching files and look for patterns like `self.x = SomeClass()` — direct instantiation instead of dependency injection.
 
-# Direct instantiation in constructors (DI violation)
-echo "--- Direct Instantiation in __init__ ---"
-grep -rn "def __init__" --include="*.py" -A 10 . 2>/dev/null | grep -E "self\.\w+ = \w+\(" | head -10
-
-# TypeScript: Direct instantiation
-echo "--- Direct Instantiation in constructor ---"
-grep -rn "constructor(" --include="*.ts" -A 10 . 2>/dev/null | grep "new " | head -10
-```
+**Direct instantiation in TypeScript constructors:** Use the Grep tool to search for `constructor(` in TypeScript files. Read matching files and look for `new ` keyword inside constructors — indicates tight coupling instead of DI.
 
 ---
 
@@ -442,13 +285,16 @@ echo "=== Cyclomatic Complexity ==="
 
 if command -v radon >/dev/null 2>&1; then
     echo "Running radon complexity analysis..."
-    radon cc . -a -s --json 2>/dev/null | jq -r 'to_entries[] | select(.value != null) | .key as $file | .value[] | select(.complexity > 10) | "\(.complexity) \($file):\(.lineno) \(.name)"' | sort -rn | head -20
+    radon cc . -a -s --json -O /tmp/radon-results.json 2>/dev/null
+    echo "Results saved to /tmp/radon-results.json"
 else
     echo "radon not installed - using method length as proxy"
-    # Count lines per function as proxy
-    grep -rn "def \|async def " --include="*.py" . 2>/dev/null | head -20
 fi
 ```
+
+**After radon scan:** Read `/tmp/radon-results.json` with the Read tool. Look for functions/methods with complexity >10 (HIGH severity). Key fields per entry: `.complexity`, `.lineno`, `.name`.
+
+**If radon unavailable:** Use the Grep tool to search for `def ` and `async def ` in Python files, then Read files to estimate function length as a complexity proxy.
 
 ### Dead Code (if vulture available)
 
@@ -457,11 +303,14 @@ echo "=== Dead Code Detection ==="
 
 if command -v vulture >/dev/null 2>&1; then
     echo "Running vulture dead code analysis..."
-    vulture . --min-confidence 80 2>/dev/null | head -30
+    vulture . --min-confidence 80 1>/tmp/vulture-results.txt 2>/dev/null
+    echo "Results saved to /tmp/vulture-results.txt"
 else
     echo "vulture not installed - skipping dead code detection"
 fi
 ```
+
+**After vulture scan:** Read `/tmp/vulture-results.txt` with the Read tool and analyze dead code findings.
 
 ---
 
