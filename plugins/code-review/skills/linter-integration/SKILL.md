@@ -145,19 +145,10 @@ fi
 **Parse ruff JSON output:**
 
 ```bash
-ruff check . --output-format=json 2>/dev/null | jq '.[] | {
-  severity: (if .code | startswith("E") then "ERROR"
-             elif .code | startswith("F") then "ERROR"
-             elif .code | startswith("W") then "WARNING"
-             else "INFO" end),
-  file: .filename,
-  line: .location.row,
-  column: .location.column,
-  code: .code,
-  message: .message,
-  fix_available: .fix != null
-}'
+ruff check . --output-format=json --output-file /tmp/ruff-results.json 2>/dev/null
 ```
+
+**After scan:** Read `/tmp/ruff-results.json` with the Read tool. Key fields to extract per finding: `.code`, `.filename`, `.location.row`, `.location.column`, `.message`, `.fix` (check if not null for auto-fixable issues).
 
 ### Mypy (Type Checking)
 
@@ -175,8 +166,10 @@ fi
 **Parse mypy output:**
 
 ```bash
-mypy . --show-error-codes --no-error-summary 2>/dev/null | grep -E "^[^:]+:[0-9]+:" | head -50
+mypy . --show-error-codes --no-error-summary 1>/tmp/mypy-results.txt 2>/dev/null
 ```
+
+**After scan:** Read `/tmp/mypy-results.txt` with the Read tool and analyze the type error results.
 
 ### Flake8 (Legacy but Common)
 
@@ -194,16 +187,11 @@ fi
 # Only run if explicitly configured
 if [ -f "pylintrc" ] || [ -f ".pylintrc" ] || grep -q "\[tool.pylint\]" pyproject.toml 2>/dev/null; then
     echo "Running pylint with project configuration..."
-    pylint --output-format=json . 2>/dev/null | jq '.[] | {
-      severity: .type,
-      file: .path,
-      line: .line,
-      column: .column,
-      code: .symbol,
-      message: .message
-    }'
+    pylint --output-format=json . --output=/tmp/pylint-results.json 2>/dev/null
 fi
 ```
+
+**After scan:** Read `/tmp/pylint-results.json` with the Read tool. Key fields: `.[].type` (severity), `.[].path`, `.[].line`, `.[].column`, `.[].symbol`, `.[].message`.
 
 ---
 
@@ -227,19 +215,10 @@ fi
 **Parse ESLint JSON output:**
 
 ```bash
-npx eslint . --format=json 2>/dev/null | jq '.[] | select(.errorCount > 0 or .warningCount > 0) | {
-  file: .filePath,
-  errors: .errorCount,
-  warnings: .warningCount,
-  messages: [.messages[] | {
-    severity: (if .severity == 2 then "ERROR" else "WARNING" end),
-    line: .line,
-    column: .column,
-    rule: .ruleId,
-    message: .message
-  }]
-}'
+npx eslint . --format=json -o /tmp/eslint-results.json 2>/dev/null
 ```
+
+**After scan:** Read `/tmp/eslint-results.json` with the Read tool. Key fields: `.[].filePath`, `.[].errorCount`, `.[].warningCount`, `.[].messages[].severity` (2=error, 1=warning), `.[].messages[].line`, `.[].messages[].ruleId`, `.[].messages[].message`.
 
 ### TypeScript Compiler (tsc)
 
@@ -247,15 +226,19 @@ npx eslint . --format=json 2>/dev/null | jq '.[] | select(.errorCount > 0 or .wa
 # Only run if tsconfig.json exists
 if [ -f "tsconfig.json" ]; then
     echo "Running TypeScript type check..."
-    npx tsc --noEmit 2>&1 | grep -E "error TS[0-9]+" | head -50
+    npx tsc --noEmit 1>/tmp/tsc-results.txt 2>&1
 fi
 ```
+
+**After scan:** Read `/tmp/tsc-results.txt` with the Read tool and filter for error lines.
 
 **Parse tsc errors:**
 
 ```bash
-npx tsc --noEmit 2>&1 | grep -E "^[^(]+\([0-9]+,[0-9]+\): error" | head -50
+npx tsc --noEmit 1>/tmp/tsc-errors.txt 2>&1
 ```
+
+**After scan:** Read `/tmp/tsc-errors.txt` with the Read tool and filter for lines matching the pattern `filename(line,col): error`.
 
 ### Prettier (Formatting Check)
 
@@ -263,9 +246,11 @@ npx tsc --noEmit 2>&1 | grep -E "^[^(]+\([0-9]+,[0-9]+\): error" | head -50
 # Only check if prettier is configured
 if [ -f ".prettierrc" ] || [ -f ".prettierrc.json" ] || [ -f "prettier.config.js" ]; then
     echo "Checking Prettier formatting..."
-    npx prettier --check . 2>&1 | grep -v "Checking" | head -20
+    npx prettier --check . 1>/tmp/prettier-results.txt 2>&1
 fi
 ```
+
+**After scan:** Read `/tmp/prettier-results.txt` with the Read tool to identify files with formatting issues.
 
 ---
 
@@ -319,8 +304,10 @@ mypy . --ignore-missing-imports --no-strict-optional --show-error-codes 2>/dev/n
 
 ```bash
 # Basic tsc check only
-npx tsc --noEmit 2>&1 | grep "error TS"
+npx tsc --noEmit 1>/tmp/tsc-defaults.txt 2>&1
 ```
+
+**After scan:** Read `/tmp/tsc-defaults.txt` with the Read tool and filter for lines containing `error TS`.
 
 ---
 

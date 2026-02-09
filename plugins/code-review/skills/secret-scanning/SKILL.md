@@ -46,14 +46,16 @@ When `trufflehog` is available, use this as the primary scanning method:
 
 ```bash
 # Scan for verified secrets only (recommended)
-trufflehog git file://. --json | jq 'select(.Verified == true) | { secret_type: .DetectorName, file: .SourceMetadata.Data.Git.filename, line: .SourceMetadata.Data.Git.line }'
+trufflehog git file://. --json --output-report /tmp/trufflehog-verified.json 2>/dev/null
 
 # Scan for ALL secrets (including unverified)
-trufflehog git file://. --json | jq '{ secret_type: .DetectorName, file: .SourceMetadata.Data.Git.filename, line: .SourceMetadata.Data.Git.line, verified: .Verified }'
+trufflehog git file://. --json --output-report /tmp/trufflehog-all.json 2>/dev/null
 
 # Scan specific directory
-trufflehog filesystem ./src --json | jq 'select(.Verified == true)'
+trufflehog filesystem ./src --json --output-report /tmp/trufflehog-fs.json 2>/dev/null
 ```
+
+**After scan:** Read the output file with the Read tool. Filter for verified secrets (`.Verified == true`) and extract: `.DetectorName`, `.SourceMetadata.Data.Git.filename`, `.SourceMetadata.Data.Git.line`.
 
 ### Excluding Files from Scans
 
@@ -82,16 +84,16 @@ TruffleHog v3 uses the `--exclude-paths` (`-x`) flag pointing to a file with **n
 
 ```bash
 # Exclude paths using regex file
-trufflehog git file://. --exclude-paths=.trufflehog-exclude.txt --json
+trufflehog git file://. --exclude-paths=.trufflehog-exclude.txt --json --output-report /tmp/trufflehog-filtered.json 2>/dev/null
 
 # Include only specific paths
-trufflehog git file://. --include-paths=.trufflehog-include.txt --json
+trufflehog git file://. --include-paths=.trufflehog-include.txt --json --output-report /tmp/trufflehog-included.json 2>/dev/null
 ```
 
 **Alternative: `--exclude-globs`** for simpler cases (filters at `git log` level, faster):
 
 ```bash
-trufflehog git file://. --exclude-globs="*.md,docs/*,test/*" --json
+trufflehog git file://. --exclude-globs="*.md,docs/*,test/*" --json --output-report /tmp/trufflehog-globs.json 2>/dev/null
 ```
 
 > **IMPORTANT:** `--exclude-paths` takes **regex** patterns (one per line in a file). `--exclude-globs` takes **glob** patterns (comma-separated inline). Do NOT mix the two formats.

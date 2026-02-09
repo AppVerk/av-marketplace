@@ -59,24 +59,19 @@ Semgrep automatically detects languages and applies relevant rules:
 
 ```bash
 # Auto-detect language and apply security rules (RECOMMENDED)
-semgrep scan --config=auto . --json 2>/dev/null | jq '.results[] | {
-  rule: .check_id,
-  severity: .extra.severity,
-  file: .path,
-  line: .start.line,
-  message: .extra.message,
-  cwe: .extra.metadata.cwe
-}'
+semgrep scan --config=auto . --json-output /tmp/semgrep-auto.json 2>/dev/null
 
 # OWASP Top 10 rules (all languages)
-semgrep scan --config=p/owasp-top-ten . --json 2>/dev/null
+semgrep scan --config=p/owasp-top-ten . --json-output /tmp/semgrep-owasp.json 2>/dev/null
 
 # Security audit (comprehensive)
-semgrep scan --config=p/security-audit . --json 2>/dev/null
+semgrep scan --config=p/security-audit . --json-output /tmp/semgrep-security.json 2>/dev/null
 
 # Secure defaults (guardrails)
-semgrep scan --config=p/secure-defaults . --json 2>/dev/null
+semgrep scan --config=p/secure-defaults . --json-output /tmp/semgrep-defaults.json 2>/dev/null
 ```
+
+**After each scan:** Read the output file with the Read tool and analyze the JSON results. Key fields to extract: `.results[].check_id`, `.results[].extra.severity`, `.results[].path`, `.results[].start.line`, `.results[].extra.message`, `.results[].extra.metadata.cwe`.
 
 ---
 
@@ -92,22 +87,17 @@ semgrep scan \
   --config=p/python \
   --config=p/django \
   --config=p/flask \
-  . --json 2>/dev/null
+  . --json-output /tmp/semgrep-python.json 2>/dev/null
 
 # FastAPI-specific patterns (included in p/python with framework-native analysis)
 # Semgrep automatically tracks implicit data flows in FastAPI
-semgrep scan --config=auto . --json 2>/dev/null
+semgrep scan --config=auto . --json-output /tmp/semgrep-fastapi.json 2>/dev/null
 
 # Bandit for deeper Python-specific analysis
-bandit -r . -f json 2>/dev/null | jq '.results[] | {
-  severity: .issue_severity,
-  file: .filename,
-  line: .line_number,
-  test_id: .test_id,
-  issue: .issue_text,
-  cwe: .issue_cwe.id
-}'
+bandit -r . -f json -o /tmp/bandit-results.json 2>/dev/null
 ```
+
+**After each scan:** Read the output file with the Read tool. For bandit, key fields: `.results[].issue_severity`, `.results[].filename`, `.results[].line_number`, `.results[].test_id`, `.results[].issue_text`, `.results[].issue_cwe.id`.
 
 ### JavaScript / TypeScript
 
@@ -118,39 +108,49 @@ semgrep scan \
   --config=p/typescript \
   --config=p/react \
   --config=p/nodejs \
-  . --json 2>/dev/null
+  . --json-output /tmp/semgrep-js.json 2>/dev/null
 
 # ESLint security plugin
-eslint --ext .js,.jsx,.ts,.tsx . --format json 2>/dev/null
+eslint --ext .js,.jsx,.ts,.tsx . --format json -o /tmp/eslint-security.json 2>/dev/null
 ```
+
+**After each scan:** Read the output file with the Read tool and analyze the JSON results.
 
 ### Go
 
 ```bash
 # Go security rules
-semgrep scan --config=p/golang . --json 2>/dev/null
+semgrep scan --config=p/golang . --json-output /tmp/semgrep-go.json 2>/dev/null
 ```
+
+**After scan:** Read `/tmp/semgrep-go.json` with the Read tool and analyze the JSON results.
 
 ### Java
 
 ```bash
 # Java + Spring rules
-semgrep scan --config=p/java --config=p/spring . --json 2>/dev/null
+semgrep scan --config=p/java --config=p/spring . --json-output /tmp/semgrep-java.json 2>/dev/null
 ```
+
+**After scan:** Read `/tmp/semgrep-java.json` with the Read tool and analyze the JSON results.
 
 ### Ruby
 
 ```bash
 # Ruby + Rails rules
-semgrep scan --config=p/ruby --config=p/rails . --json 2>/dev/null
+semgrep scan --config=p/ruby --config=p/rails . --json-output /tmp/semgrep-ruby.json 2>/dev/null
 ```
+
+**After scan:** Read `/tmp/semgrep-ruby.json` with the Read tool and analyze the JSON results.
 
 ### PHP
 
 ```bash
 # PHP + Laravel/Symfony rules
-semgrep scan --config=p/php . --json 2>/dev/null
+semgrep scan --config=p/php . --json-output /tmp/semgrep-php.json 2>/dev/null
 ```
+
+**After scan:** Read `/tmp/semgrep-php.json` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -182,8 +182,10 @@ semgrep scan \
   --config=p/command-injection \
   --config=p/ssrf \
   --config=p/secure-defaults \
-  . --json 2>/dev/null
+  . --json-output /tmp/semgrep-owasp-full.json 2>/dev/null
 ```
+
+**After scan:** Read `/tmp/semgrep-owasp-full.json` with the Read tool and analyze the JSON results.
 
 ### A10:2025 - Exceptional Conditions Patterns
 
@@ -428,16 +430,19 @@ echo "=== Multi-Language SAST Report ==="
 
 # Detect languages
 echo "Detecting languages..."
-find . -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.go" -o -name "*.java" \) | head -5
+find . -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.go" -o -name "*.java" \) -not -path "./.venv/*" -not -path "./node_modules/*" -not -path "./.git/*" 2>/dev/null
 
 # Universal scan with Semgrep
 if command -v semgrep &> /dev/null; then
     echo "Running Semgrep..."
-    semgrep scan --config=auto --config=p/security-audit . --json 2>/dev/null | jq '.results | length'
+    semgrep scan --config=auto --config=p/security-audit . --json-output /tmp/semgrep-report.json 2>/dev/null
+    echo "Results saved to /tmp/semgrep-report.json"
 else
     echo "Semgrep not found, using pattern matching..."
 fi
 ```
+
+**After scan:** Read `/tmp/semgrep-report.json` with the Read tool to analyze results and count findings.
 
 ---
 

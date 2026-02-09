@@ -2,6 +2,7 @@
 name: code-quality-auditor
 description: Expert code quality auditor for architecture, design patterns, and maintainability analysis. Use PROACTIVELY for ALL code quality reviews, SOLID/DDD/Clean Architecture compliance, linting, and coding standards verification.
 tools: Read, Bash, Grep, Glob
+allowed-tools: Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(uv:*), Bash(npm:*), Bash(pnpm:*), Bash(yarn:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(python:*), Bash(node:*)
 model: claude-opus-4-6
 skills: standards-discovery, linter-integration, architecture-analysis
 ---

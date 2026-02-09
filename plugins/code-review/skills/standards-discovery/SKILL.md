@@ -45,10 +45,10 @@ find . -type f \( \
 \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.venv/*" -not -path "./vendor/*" 2>/dev/null
 
 # Check docs directory
-find ./docs -type f -name "*.md" 2>/dev/null | head -20
+find ./docs -type f -name "*.md" 2>/dev/null
 
 # Check .github directory
-find ./.github -type f -name "*.md" 2>/dev/null | head -10
+find ./.github -type f -name "*.md" 2>/dev/null
 ```
 
 ### Step 2: Check Common Locations
@@ -79,7 +79,7 @@ Look for patterns like:
 
 ```bash
 # Search for naming convention mentions
-grep -rni "naming convention\|camelCase\|snake_case\|PascalCase\|kebab-case\|UPPER_CASE" --include="*.md" . 2>/dev/null | head -20
+grep -rni "naming convention\|camelCase\|snake_case\|PascalCase\|kebab-case\|UPPER_CASE" --include="*.md" . 2>/dev/null
 ```
 
 **Common patterns to identify:**
@@ -94,10 +94,10 @@ grep -rni "naming convention\|camelCase\|snake_case\|PascalCase\|kebab-case\|UPP
 
 ```bash
 # Search for architecture mentions
-grep -rni "clean architecture\|hexagonal\|DDD\|domain.driven\|layered\|SOLID\|microservice" --include="*.md" . 2>/dev/null | head -20
+grep -rni "clean architecture\|hexagonal\|DDD\|domain.driven\|layered\|SOLID\|microservice" --include="*.md" . 2>/dev/null
 
 # Check for layer structure documentation
-grep -rni "domain layer\|application layer\|infrastructure\|presentation layer\|use.case" --include="*.md" . 2>/dev/null | head -20
+grep -rni "domain layer\|application layer\|infrastructure\|presentation layer\|use.case" --include="*.md" . 2>/dev/null
 ```
 
 **Common architectures to identify:**
@@ -111,10 +111,10 @@ grep -rni "domain layer\|application layer\|infrastructure\|presentation layer\|
 
 ```bash
 # Search for testing standards
-grep -rni "test coverage\|unit test\|integration test\|pytest\|jest\|testing" --include="*.md" . 2>/dev/null | head -20
+grep -rni "test coverage\|unit test\|integration test\|pytest\|jest\|testing" --include="*.md" . 2>/dev/null
 
 # Look for coverage requirements
-grep -rni "coverage.*%\|minimum.*coverage\|100%\|80%\|90%" --include="*.md" . 2>/dev/null | head -10
+grep -rni "coverage.*%\|minimum.*coverage\|100%\|80%\|90%" --include="*.md" . 2>/dev/null
 ```
 
 **Common requirements to identify:**
@@ -128,7 +128,7 @@ grep -rni "coverage.*%\|minimum.*coverage\|100%\|80%\|90%" --include="*.md" . 2>
 
 ```bash
 # Search for import guidelines
-grep -rni "import\|absolute import\|relative import\|circular\|dependency" --include="*.md" . 2>/dev/null | head -20
+grep -rni "import\|absolute import\|relative import\|circular\|dependency" --include="*.md" . 2>/dev/null
 ```
 
 **Common rules to identify:**
@@ -225,10 +225,10 @@ If no explicit standards documentation exists:
 
    ```bash
    # Ruff/flake8 config indicates Python style
-   cat pyproject.toml 2>/dev/null | grep -A 20 "\[tool.ruff\]"
+   # Read pyproject.toml with Read tool and look for [tool.ruff] section
 
    # ESLint config indicates JS/TS style
-   cat .eslintrc.json 2>/dev/null | head -50
+   # Read .eslintrc.json with Read tool
    ```
 
 3. **Note in report:**
@@ -263,7 +263,7 @@ After discovering standards, pass them to subsequent skills:
 ```bash
 # Check for Python-specific docs
 ls -la docs/*.md 2>/dev/null
-cat docs/development.md 2>/dev/null | head -100
+# Read docs/development.md with Read tool
 ```
 
 Common files:
@@ -278,7 +278,7 @@ Common files:
 ```bash
 # Check for TS-specific docs
 ls -la docs/*.md 2>/dev/null
-cat CONTRIBUTING.md 2>/dev/null | head -100
+# Read CONTRIBUTING.md with Read tool
 ```
 
 Common files:
