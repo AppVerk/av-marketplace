@@ -29,7 +29,7 @@
       "name": "pentester",
       "source": "./plugins/pentester",
       "description": "Passive web security scanner with multi-agent architecture",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "security"
     },
     {
