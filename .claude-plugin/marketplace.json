@@ -26,6 +26,13 @@
       "category": "development"
     },
     {
+      "name": "pentester",
+      "source": "./plugins/pentester",
+      "description": "Passive web security scanner with multi-agent architecture",
+      "version": "1.0.0",
+      "category": "security"
+    },
+    {
       "name": "sequentialthinking",
       "description": "An MCP server implementation that provides a tool for dynamic and reflective problem-solving through a structured thinking process.",
       "source": "./external_plugins/sequentialthinking",
