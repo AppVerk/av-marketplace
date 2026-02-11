@@ -1,36 +1,78 @@
-# Pentester Plugin
+# Web Auditor Plugin
 
-Passive web security scanner with multi-agent architecture.
+Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance.
 
-**Version:** 1.0.0
+**Version:** 2.0.0
 
 ## Commands
 
-### `/pentest`
+### `/audit`
 
-Run a comprehensive passive security audit of a target website.
+Run a comprehensive passive web audit of a target website.
 
 ```bash
-# Basic scan
-/pentest https://example.com
+# Full audit (all scopes)
+/audit https://example.com
 
-# Deeper crawl
-/pentest https://example.com --depth 3
+# Security only
+/audit https://example.com --scope security
 
-# Custom output directory
-/pentest https://example.com --depth 3 --output-dir ./reports
+# SEO audit with deeper crawl
+/audit https://example.com --scope seo --depth 3
+
+# Performance audit with custom output
+/audit https://example.com --scope performance --output-dir ./reports
+
+# Compliance audit
+/audit https://example.com --scope compliance
 ```
 
-The scan launches a coordinator agent that crawls the target, dispatches 4 parallel scanning agents (web app, API, infrastructure, supply chain), and consolidates findings into a single Markdown report.
+**Scopes:**
 
-**Output:** `audit-{domain}-security-{YYYY-MM-DD}.md`
+| Scope | Description |
+|-------|-------------|
+| `all` | Full audit: security + SEO + performance + compliance (default) |
+| `security` | Web app, API, infrastructure, and supply chain security |
+| `seo` | Indexability, metadata, structured data, rendering, internal linking |
+| `performance` | Core Web Vitals, images, fonts, JS/CSS optimization |
+| `compliance` | GDPR, cookies, privacy policy, analytics, data exposure |
+
+The scan launches a coordinator agent that crawls the target, dispatches up to 7 parallel scanning agents based on scope, and consolidates findings into a single Markdown report.
+
+**Output:** `audit-{domain}-{scope|full}-{YYYY-MM-DD}.md`
 
 ## What It Scans
+
+### Security (4 agents)
 
 - **Web Application Security** — HTTP security headers (CSP, HSTS, X-Frame-Options), cookies (Secure/HttpOnly/SameSite), secrets in JavaScript, CSRF protection, error handling, server banners
 - **API Security** — Endpoint discovery, CORS misconfiguration, rate limiting, authentication analysis, GraphQL introspection, response security
 - **Infrastructure** — SSL/TLS configuration (via SSL Labs), DNS records (SPF, DMARC, DKIM), subdomain enumeration (crt.sh), CDN/WAF detection, port scanning, exposed paths (.git, .env)
 - **Supply Chain** — JavaScript library identification and CVE lookup, Subresource Integrity (SRI), source map exposure, exposed dependency files
+
+### SEO (1 agent)
+
+- **Indexability** — robots.txt, meta robots, canonical tags, redirect chains
+- **Metadata** — title tags, meta descriptions, heading hierarchy, duplicate content
+- **Structured Data** — JSON-LD validation, Schema.org types, Rich Results eligibility
+- **Rendering** — SSR vs CSR detection, JS-dependent content, hydration errors
+- **Internal Linking** — orphan pages, broken links, link depth, anchor text quality
+
+### Performance (1 agent)
+
+- **Core Web Vitals** — LCP, CLS, INP, FCP, TTFB
+- **Images** — format optimization (WebP/AVIF), sizing, lazy loading, missing dimensions
+- **Fonts** — font-display strategy, preload, FOUT/FOIT detection
+- **JavaScript & CSS** — bundle size, render-blocking, defer/async, unused code
+- **Caching & Compression** — Cache-Control, ETags, gzip/brotli, CDN detection
+
+### Compliance (1 agent)
+
+- **Cookie Consent** — banner detection, pre-consent cookie setting, CMP identification
+- **Cookie Inventory** — all cookies with security flags and purpose classification
+- **Privacy Policy** — presence, accessibility, GDPR required sections
+- **Data Exposure** — emails/phones in HTML, personal data in URLs, form data to third parties
+- **Analytics & Tracking** — script detection, pre-consent firing, fingerprinting
 
 ## Methodology
 
@@ -43,7 +85,7 @@ All checks are **passive, legal, and non-invasive**:
 ## Required Tools
 
 - curl (usually pre-installed)
-- Playwright MCP server (for JS rendering and crawling)
+- Playwright MCP server (for JS rendering, crawling, performance metrics, cookie detection)
 
 ## Optional Tools
 
