@@ -26,10 +26,10 @@
       "category": "development"
     },
     {
-      "name": "pentester",
-      "source": "./plugins/pentester",
-      "description": "Passive web security scanner with multi-agent architecture",
-      "version": "1.1.0",
+      "name": "web-auditor",
+      "source": "./plugins/web-auditor",
+      "description": "Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance",
+      "version": "2.0.0",
       "category": "security"
     },
     {
