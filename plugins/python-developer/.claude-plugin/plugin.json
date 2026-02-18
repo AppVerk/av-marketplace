@@ -1,5 +1,5 @@
 {
   "name": "python-developer",
-  "description": "Master the Python programming language for efficient and effective development",
-  "version": "1.1.0"
+  "description": "Enforces Python best practices, coding standards, TDD workflow, and modern tooling for AppVerk projects",
+  "version": "1.2.0"
 }
