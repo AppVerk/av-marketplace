@@ -1,8 +1,8 @@
 # Python Developer Plugin
 
-Python best practices, TDD workflows, async patterns, and modern dependency management with uv.
+Python best practices, coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic) for AppVerk projects.
 
-**Version:** 1.2.0
+**Version:** 1.3.0
 
 ## Skills
 
@@ -10,24 +10,42 @@ This plugin provides background skills that activate automatically when relevant
 
 ### Coding Standards
 
-Universal Python coding standards and patterns applied during code generation. Covers project setup, naming conventions, type hints, error handling, and idiomatic Python.
+Enforces Python coding rules: type hints, imports, naming, error handling, and project conventions for AppVerk projects.
 
-Activates automatically when writing Python code.
+Activates automatically when writing or reviewing Python code.
 
 ### TDD Workflow
 
-Enforces test-driven development with 80%+ coverage. Guides the red-green-refactor cycle with unit, functional, and integration tests.
+Enforces test-driven development: writes tests before code, uses fakes over mocks, maintains 80%+ coverage.
 
-Activates when writing new features, fixing bugs, or refactoring code.
+Activates when writing new features, fixing bugs, or refactoring Python code.
 
 ### UV Package Manager
 
-Guides usage of [uv](https://docs.astral.sh/uv/) for fast Python dependency management, virtual environments, and modern project workflows.
+Manages Python dependencies and environments with uv: adds packages, syncs lockfiles, pins versions.
 
-Activates when setting up Python projects, managing dependencies, or working with virtual environments.
+Activates when setting up projects, managing dependencies, or working with virtual environments.
 
 ### Async Python Patterns
 
-Comprehensive guidance for asyncio, concurrent programming, and async/await patterns. Covers event loops, task management, synchronization primitives, and common patterns for high-performance I/O-bound applications.
+Guides async/await implementation: asyncio patterns, concurrent I/O, task management, synchronization.
 
 Activates when building async APIs, concurrent systems, or non-blocking applications.
+
+### FastAPI Patterns
+
+Enforces FastAPI patterns: endpoint structure, dependency injection, error handling, middleware.
+
+Activates when working with FastAPI routers, endpoints, or middleware.
+
+### SQLAlchemy Patterns
+
+Enforces SQLAlchemy patterns: async sessions, repository pattern, Alembic migrations, query optimization.
+
+Activates when working with database models, queries, or migrations.
+
+### Pydantic Patterns
+
+Enforces Pydantic patterns: model design, validators, settings management, FastAPI schema integration.
+
+Activates when working with data models, validation, or configuration.
