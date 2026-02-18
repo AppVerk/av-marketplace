@@ -2,7 +2,7 @@
 allowed-tools: Bash(curl:*), Bash(dig:*), Bash(nmap:*), Bash(python:*), Bash(python3:*), Bash(openssl:*), Bash(timeout:*), Bash(base64:*), Bash(echo:*), Bash(jq:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(sort:*), Bash(wc:*), Bash(cat:*), Bash(date:*), Bash(mkdir:*), mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_tabs
 description: Perform a comprehensive passive web audit. Scans security, SEO, performance, and compliance.
 model: claude-opus-4-6
-argument-hint: <url> [--scope all|security|seo|performance|compliance] [--depth N] [--output-dir path] [--agent-team]
+argument-hint: <url> [--scope all|security|seo|performance|compliance] [--depth N] [--output-dir path] [--verify]
 ---
 
 # Passive Web Audit
@@ -18,14 +18,14 @@ Parse the arguments:
 - `--scope <scope>`: audit scope (default: `all`). Valid values: `all`, `security`, `seo`, `performance`, `compliance`
 - `--depth N`: crawl depth for internal links (default: 2, max: 5)
 - `--output-dir path`: directory for the report file (default: `.`)
-- `--agent-team`: enable Agent Teams verification phase (default: off). Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in settings.
+- `--verify`: enable verification phase with Cross-Verifier and Challenger subagents (default: off)
 
 ### Validation
 
 If no URL is provided or the URL is invalid, show usage and stop:
 
 ```
-Usage: /audit <url> [--scope all|security|seo|performance|compliance] [--depth N] [--output-dir path] [--agent-team]
+Usage: /audit <url> [--scope all|security|seo|performance|compliance] [--depth N] [--output-dir path] [--verify]
 
 Scopes:
   all          Full audit: security + SEO + performance + compliance (default)
@@ -39,23 +39,10 @@ Examples:
   /audit https://example.com --scope security
   /audit https://example.com --scope seo --depth 3
   /audit https://example.com --scope all --output-dir ./reports
-  /audit https://example.com --scope security --agent-team
+  /audit https://example.com --scope security --verify
 ```
 
 If an invalid scope is provided, show the valid scopes and stop.
-
-### Agent Teams Validation
-
-If `--agent-team` is provided, check if `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is enabled.
-If not enabled, display warning and continue without Agent Teams:
-
-```
-! Agent Teams require the experimental flag.
-  Add to settings.json:
-  { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
-
-  Continuing without Agent Teams...
-```
 
 ## Ethical Disclaimer
 
@@ -75,7 +62,7 @@ Target: {URL}
 Scope:  {scope}
 Depth:  {depth}
 Output: {output_dir}/audit-{domain}-{scope|full}-{date}.md
-Mode:   {if --agent-team: "Agent Teams (cross-verification + adversarial review)" else: "Standard (subagents)"}
+Mode:   {if --verify: "Verified (cross-domain correlation + adversarial review)" else: "Standard"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Starting scan...
 ```
@@ -88,7 +75,7 @@ Launch the web-auditor coordinator agent using the Task tool:
 Task(
   subagent_type: "web-auditor",
   description: "Web audit of {domain} ({scope})",
-  prompt: "Perform a comprehensive passive web audit of {URL}. Scope: {scope}. Crawl depth: {depth}. Output directory: {output_dir}. Agent Teams: {true|false}. Follow the complete workflow: Phase 1 (shared recon), Phase 2 (parallel scanning agents for the requested scope), {if agent_team: Phase 2.5 (Verification Team — cross-verification and adversarial review),} Phase 3 (consolidation and report generation)."
+  prompt: "Perform a comprehensive passive web audit of {URL}. Scope: {scope}. Crawl depth: {depth}. Output directory: {output_dir}. Verify: {true|false}. Follow the complete workflow: Phase 1 (shared recon), Phase 2 (parallel scanning agents for the requested scope), {if verify: Phase 2.5 (Verification — cross-domain correlation and adversarial review),} Phase 3 (consolidation and report generation)."
 )
 ```
 
@@ -104,8 +91,8 @@ AUDIT COMPLETE
 Target: {domain}
 Scope:  {scope}
 Duration: ~{minutes} minutes
-Mode:   {if agent-team: "Agent Teams (verified)" else: "Standard"}
-{if agent-team:}
+Mode:   {if verify: "Verified" else: "Standard"}
+{if verify:}
 Verification:
   Findings verified: {n}
   False positives removed: {n}

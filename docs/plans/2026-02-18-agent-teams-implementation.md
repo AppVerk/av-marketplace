@@ -1,12 +1,14 @@
-# Agent Teams Integration — Implementation Plan
+# Verification Phase — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add optional Agent Teams verification phase (`--agent-team` flag) to web-auditor and code-review plugins, enabling cross-domain correlation and adversarial review of findings.
+**Goal:** Add optional verification phase (`--verify` flag) to web-auditor and code-review plugins, enabling cross-domain correlation and adversarial review of findings.
 
-**Architecture:** Dual-mode — existing subagent flow remains default. When `--agent-team` is passed, a Verification Team (Cross-Verifier + Challenger) runs after Phase 2 to enrich and validate findings before consolidation. Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.
+**Architecture:** Dual-mode — existing subagent flow remains default. When `--verify` is passed, two verification subagents (Cross-Verifier + Challenger) run in parallel after Phase 2 to enrich and validate findings before consolidation. No external dependencies — uses standard Task/TaskOutput subagent API.
 
-**Tech Stack:** Claude Code plugins (markdown agents, commands, skills), Agent Teams API (TeamCreate, SendMessage, TaskCreate/Update/List)
+**Tech Stack:** Claude Code plugins (markdown agents, commands, skills), Task/TaskOutput subagent API
+
+**Upgrade path:** When Claude Code Agent Teams API stabilizes, Phase 2.5 internals can be swapped from subagents to TeamCreate/SendMessage without changing the user-facing `--verify` flag.
 
 **Design doc:** `docs/plans/2026-02-18-agent-teams-design.md`
 
@@ -370,37 +372,94 @@ Then run: `/commit:commit --no-coauthor`
 
 ---
 
+### Task 3b: Rename --agent-team to --verify in audit.md
+
+**Files:**
+- Modify: `plugins/web-auditor/commands/audit.md`
+
+This task fixes the already-committed audit.md to use the new `--verify` flag name.
+
+**Step 1: Replace all occurrences of --agent-team with --verify**
+
+In `plugins/web-auditor/commands/audit.md`, apply these replacements globally:
+
+- `--agent-team` → `--verify`
+- `agent-team` → `verify` (in template conditionals like `{if agent-team:}`)
+- `agent_team` → `verify` (in prompt template like `{if agent_team:}`)
+
+**Step 2: Remove the Agent Teams Validation section**
+
+Remove the entire "Agent Teams Validation" section (lines 47-58), including the check for `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`. This is no longer needed since `--verify` uses standard subagents.
+
+**Step 3: Update the Mode line in Ethical Disclaimer**
+
+Change:
+```
+Mode:   {if --agent-team: "Agent Teams (cross-verification + adversarial review)" else: "Standard (subagents)"}
+```
+
+to:
+```
+Mode:   {if --verify: "Verified (cross-domain correlation + adversarial review)" else: "Standard"}
+```
+
+**Step 4: Update the Mode line in Results Display**
+
+Change:
+```
+Mode:   {if agent-team: "Agent Teams (verified)" else: "Standard"}
+```
+
+to:
+```
+Mode:   {if verify: "Verified" else: "Standard"}
+```
+
+**Step 5: Update the Task prompt**
+
+Change:
+```
+Agent Teams: {true|false}. Follow the complete workflow: Phase 1 (shared recon), Phase 2 (parallel scanning agents for the requested scope), {if agent_team: Phase 2.5 (Verification Team — cross-verification and adversarial review),} Phase 3 (consolidation and report generation).
+```
+
+to:
+```
+Verify: {true|false}. Follow the complete workflow: Phase 1 (shared recon), Phase 2 (parallel scanning agents for the requested scope), {if verify: Phase 2.5 (Verification — cross-domain correlation and adversarial review),} Phase 3 (consolidation and report generation).
+```
+
+**Step 6: Stage and commit**
+
+```bash
+git add plugins/web-auditor/commands/audit.md
+```
+
+Then run: `/commit:commit --no-coauthor`
+
+---
+
 ### Task 4: Add Phase 2.5 to web-auditor coordinator agent
 
 **Files:**
 - Modify: `plugins/web-auditor/agents/web-auditor.md`
 
-**Step 1: Update agent frontmatter**
-
-In `plugins/web-auditor/agents/web-auditor.md`, update the tools line (line 4) to add TeamCreate, SendMessage, TeamDelete:
-
-```
-tools: Read, Write, Bash, Grep, Glob, Task, TaskOutput, WebFetch, WebSearch, TeamCreate, SendMessage, TeamDelete, TaskCreate, TaskUpdate, TaskList
-```
-
-**Step 2: Update Input section**
+**Step 1: Update Input section**
 
 In the Input section (lines 14-20), add:
 
 ```markdown
-- **Agent Teams** — whether to run Verification Team phase (`true`/`false`)
+- **Verify** — whether to run verification phase with Cross-Verifier and Challenger (`true`/`false`)
 ```
 
-**Step 3: Add Phase 2.5 between Phase 2 and Phase 3**
+**Step 2: Add Phase 2.5 between Phase 2 and Phase 3**
 
 After the Phase 2 section (after line 309, after the last agent dispatch block) and before Phase 3, insert the following new section:
 
 ```markdown
-### Phase 2.5: Verification Team (if Agent Teams enabled)
+### Phase 2.5: Verification (if --verify enabled)
 
-**Skip this phase entirely if agent_team is false.** Proceed directly to Phase 3.
+**Skip this phase entirely if verify is false.** Proceed directly to Phase 3.
 
-If agent_team is true:
+If verify is true:
 
 **1. Build findings bundle**
 
@@ -420,21 +479,14 @@ findings_bundle = {
 
 Only include domains that were in scope.
 
-**2. Create Verification Team**
-
-```
-TeamCreate("audit-verification-{domain}")
-```
-
-**3. Spawn Cross-Verifier**
+**2. Spawn Cross-Verifier (background)**
 
 ```
 Task(
   subagent_type: "web-auditor:cross-verifier",
-  team_name: "audit-verification-{domain}",
-  name: "cross-verifier",
+  run_in_background: true,
   description: "Cross-domain verification of {domain} audit",
-  prompt: "You are the Cross-Verifier in a Verification Team for {domain}.
+  prompt: "Analyze the following findings bundle from a web audit of {domain}.
 
 Here is the findings bundle from all scanning agents:
 {findings_bundle}
@@ -443,39 +495,40 @@ Here is the URL inventory: {url_inventory}
 Here are the detected technologies: {technologies}
 Here are the collected headers: {headers}
 
-Analyze these findings for cross-domain correlations, coverage gaps, and composite findings.
-Send your results to the Challenger for review.
-Work toward consensus on any disputed findings."
+Identify cross-domain correlations, coverage gaps, severity adjustments, and new composite findings.
+Follow your output format exactly."
 )
 ```
 
-**4. Spawn Challenger**
+**3. Spawn Challenger (background)**
 
 ```
 Task(
   subagent_type: "web-auditor:challenger",
-  team_name: "audit-verification-{domain}",
-  name: "challenger",
+  run_in_background: true,
   description: "Adversarial review of {domain} audit",
-  prompt: "You are the Challenger in a Verification Team for {domain}.
+  prompt: "Review the following findings bundle from a web audit of {domain}.
 
 Here is the findings bundle from all scanning agents:
 {findings_bundle}
 
 Challenge every CRITICAL and HIGH finding. Verify evidence, validate severity, check for false positives.
-Review any correlations or composite findings the Cross-Verifier sends you.
-Work toward consensus on disputed findings."
+Follow your output format exactly."
 )
 ```
 
-**5. Wait for Verification Team to complete**
+**4. Collect verification results**
 
-Wait for both teammates to finish their analysis and communication.
-Use TaskList to monitor progress.
+Use TaskOutput with `block: true` for both agents:
 
-**6. Collect enhanced findings**
+```
+cross_verifier_results = TaskOutput(cross_verifier_id, block: true)
+challenger_results = TaskOutput(challenger_id, block: true)
+```
 
-Retrieve results from both teammates. Apply the merge algorithm:
+**5. Merge enhanced findings**
+
+Apply the merge algorithm:
 
 1. Start with original findings from Phase 2
 2. Apply Challenger decisions:
@@ -486,35 +539,27 @@ Retrieve results from both teammates. Apply the merge algorithm:
 4. Add coverage gaps as a report section
 5. Add cross-domain correlations as a report section
 
-**7. Shutdown and cleanup**
-
-```
-SendMessage(type: "shutdown_request", recipient: "cross-verifier")
-SendMessage(type: "shutdown_request", recipient: "challenger")
-TeamDelete()
+**6. Proceed to Phase 3 with enhanced findings**
 ```
 
-**8. Proceed to Phase 3 with enhanced findings**
-```
-
-**Step 4: Update Phase 3 for enhanced mode**
+**Step 3: Update Phase 3 for enhanced mode**
 
 In Phase 3 (lines 311-320), after item 1 ("Collect results"), add:
 
 ```markdown
-1b. **If Agent Teams was used** — use enhanced findings from Phase 2.5 instead of raw results
+1b. **If --verify was used** — use enhanced findings from Phase 2.5 instead of raw results
 ```
 
-**Step 5: Add Verification Summary to report template**
+**Step 4: Add Verification Summary to report template**
 
 In the report template, after the "Executive Summary" section and before "Scope & Methodology", add:
 
 ```markdown
-{If agent-team mode was used:}
+{If --verify mode was used:}
 
 ## Verification Summary
 
-**Method:** Agent Teams cross-verification and adversarial review
+**Method:** Cross-domain correlation and adversarial review (Cross-Verifier + Challenger)
 
 | Metric | Count |
 |--------|-------|
@@ -534,24 +579,23 @@ In the report template, after the "Executive Summary" section and before "Scope 
 {Areas not covered — recommendations for next audit}
 ```
 
-**Step 6: Update Final Checklist**
+**Step 5: Update Final Checklist**
 
 In the Final Checklist (lines 586-598), add:
 
 ```markdown
-- [ ] If --agent-team: Verification Team spawned and completed
-- [ ] If --agent-team: Cross-Verifier correlations integrated
-- [ ] If --agent-team: Challenger results applied (false positives removed, severity adjusted)
-- [ ] If --agent-team: Verification Summary section in report
-- [ ] If --agent-team: Team cleaned up (shutdown + delete)
+- [ ] If --verify: Cross-Verifier and Challenger subagents spawned and results collected
+- [ ] If --verify: Challenger decisions applied (false positives removed, severity adjusted)
+- [ ] If --verify: Cross-Verifier correlations and composite findings integrated
+- [ ] If --verify: Verification Summary section in report
 ```
 
-**Step 7: Verify changes**
+**Step 6: Verify changes**
 
 Run: `grep -n "Phase 2.5" plugins/web-auditor/agents/web-auditor.md`
 Expected: Phase 2.5 section found
 
-**Step 8: Stage and commit**
+**Step 7: Stage and commit**
 
 ```bash
 git add plugins/web-auditor/agents/web-auditor.md
@@ -755,7 +799,7 @@ Then run: `/commit:commit --no-coauthor`
 
 ---
 
-### Task 7: Modify code-review /review command to support --agent-team
+### Task 7: Modify code-review /review command to support --verify
 
 **Files:**
 - Modify: `plugins/code-review/commands/review.md`
@@ -771,36 +815,33 @@ argument-hint: [description]
 to:
 
 ```
-argument-hint: [description] [--agent-team]
+argument-hint: [description] [--verify]
 ```
 
-Also add Team tools to allowed-tools (line 2), append to the end of the list:
+**Step 1b: Fix subagent_type naming convention (bugfix)**
 
+In `plugins/code-review/commands/review.md`, fix the pre-existing naming inconsistency. The system registers agents as `code-review:*` but the command uses `code-reviewer:*`. Change both occurrences:
+
+Line 28 (Agent 1):
 ```
-, TeamCreate, SendMessage, TeamDelete
+- subagent_type: "code-reviewer:security-auditor"
++ subagent_type: "code-review:security-auditor"
 ```
 
-**Step 2: Add --agent-team parsing**
+Line 38 (Agent 2):
+```
+- subagent_type: "code-reviewer:code-quality-auditor"
++ subagent_type: "code-review:code-quality-auditor"
+```
+
+**Step 2: Add --verify parsing**
 
 After the `Review: **$ARGUMENTS**` line (line 14), add:
 
 ```markdown
 Parse arguments:
-- All text before `--agent-team` is the review description
-- `--agent-team`: enable Agent Teams verification phase (default: off). Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in settings.
-
-### Agent Teams Validation
-
-If `--agent-team` is provided, check if `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is enabled.
-If not enabled, display warning and continue without Agent Teams:
-
-` ``
-! Agent Teams require the experimental flag.
-  Add to settings.json:
-  { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
-
-  Continuing without Agent Teams...
-` ``
+- All text before `--verify` is the review description
+- `--verify`: enable verification phase with Cross-Verifier and Challenger subagents (default: off)
 ```
 
 **Step 3: Add progress task for verification**
@@ -808,21 +849,21 @@ If not enabled, display warning and continue without Agent Teams:
 In the progress tasks table (lines 60-66), add task 6 (between task 5 and the "After creating" instruction):
 
 ```markdown
-| 6 | Run Verification Team (Agent Teams) | Running Verification Team... |
+| 6 | Run verification (Cross-Verifier + Challenger) | Running verification... |
 ```
 
-Note: task 6 is only created if `--agent-team` is active.
+Note: task 6 is only created if `--verify` is active.
 
-**Step 4: Add Phase 2.5 after Step 5**
+**Step 4: Add Step 5.5 after Step 5**
 
 After Step 5 (Retrieve Subagent Results, line 135) and before the separator `---`, add:
 
 ```markdown
-### Step 5.5: Verification Team (if --agent-team)
+### Step 5.5: Verification (if --verify)
 
-**Skip this step if --agent-team was not provided.** Proceed to report generation.
+**Skip this step if --verify was not provided.** Proceed to report generation.
 
-If --agent-team is active:
+If --verify is active:
 
 **Task Update:** Mark task 5 as `completed` and task 6 as `in_progress`.
 
@@ -837,67 +878,56 @@ findings = {
 }
 ```
 
-**2. Create Verification Team:**
-
-```
-TeamCreate("review-verification")
-```
-
-**3. Spawn Cross-Verifier:**
+**2. Spawn Cross-Verifier (background):**
 
 ```
 Task(
   subagent_type: "code-review:cross-verifier",
-  team_name: "review-verification",
-  name: "cross-verifier",
-  description: "Cross-domain verification of code review",
-  prompt: "You are the Cross-Verifier in a Verification Team for a code review.
+  run_in_background: true,
+  description: "Cross-analysis verification of code review",
+  prompt: "Analyze the following findings from a code review.
 
 Here are the findings from all auditors:
 {findings}
 
-Analyze correlations between security and quality findings.
+Identify correlations between security and quality findings.
 Focus on cases where security vulnerabilities intersect with architectural issues.
-Send your results to the Challenger for review."
+Follow your output format exactly."
 )
 ```
 
-**4. Spawn Challenger:**
+**3. Spawn Challenger (background):**
 
 ```
 Task(
   subagent_type: "code-review:challenger",
-  team_name: "review-verification",
-  name: "challenger",
+  run_in_background: true,
   description: "Adversarial review of code review findings",
-  prompt: "You are the Challenger in a Verification Team for a code review.
+  prompt: "Review the following findings from a code review.
 
 Here are the findings from all auditors:
 {findings}
 
 Challenge CRITICAL and HIGH findings from both security and quality auditors.
 Check for false positives, especially in linter results and SAST output.
-Review any correlations the Cross-Verifier sends you."
+Follow your output format exactly."
 )
 ```
 
-**5. Wait and collect results**
+**4. Collect verification results:**
 
-Wait for both teammates to complete. Collect their outputs.
+Use TaskOutput with `block: true` for both agents:
 
-**6. Merge enhanced findings:**
+```
+cross_verifier_results = TaskOutput(cross_verifier_id, block: true)
+challenger_results = TaskOutput(challenger_id, block: true)
+```
+
+**5. Merge enhanced findings:**
 
 1. Apply Challenger decisions (remove false positives, adjust severity)
 2. Add Cross-Verifier composite findings
 3. Tag confirmed findings as `[verified]`
-
-**7. Cleanup:**
-
-```
-SendMessage(type: "shutdown_request", recipient: "cross-verifier")
-SendMessage(type: "shutdown_request", recipient: "challenger")
-TeamDelete()
-```
 
 **Task Update:** Mark task 6 as `completed`.
 ```
@@ -907,14 +937,14 @@ TeamDelete()
 Before the "Final Verification Checklist" section (line 239), add:
 
 ```markdown
-## Verification Summary (if --agent-team)
+## Verification Summary (if --verify)
 
-If Agent Teams verification was used, include this section in the review output:
+If verification was used, include this section in the review output:
 
 ```markdown
 ## Verification Summary
 
-**Method:** Agent Teams cross-verification and adversarial review
+**Method:** Cross-domain correlation and adversarial review (Cross-Verifier + Challenger)
 
 | Metric | Count |
 |--------|-------|
@@ -936,13 +966,12 @@ If Agent Teams verification was used, include this section in the review output:
 Add to the checklist (after line 266):
 
 ```markdown
-### Agent Teams (if --agent-team)
+### Verification (if --verify)
 
-- [ ] Verification Team created and both agents spawned
+- [ ] Cross-Verifier and Challenger subagents spawned and results collected
 - [ ] Cross-Verifier correlations integrated
-- [ ] Challenger results applied
+- [ ] Challenger results applied (false positives removed, severity adjusted)
 - [ ] Verification Summary included in output
-- [ ] Team shut down and cleaned up
 ```
 
 **Step 7: Stage and commit**
@@ -969,7 +998,7 @@ In `plugins/web-auditor/.claude-plugin/plugin.json`, update version and descript
 ```json
 {
   "name": "web-auditor",
-  "description": "Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance. Optional Agent Teams verification for cross-domain correlation and adversarial review.",
+  "description": "Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance. Optional verification phase for cross-domain correlation and adversarial review.",
   "version": "2.1.0"
 }
 ```
@@ -981,14 +1010,20 @@ In `plugins/code-review/.claude-plugin/plugin.json`, update version and descript
 ```json
 {
   "name": "code-review",
-  "description": "Perform comprehensive code review for security, performance, and architecture. Optional Agent Teams verification for cross-analysis and adversarial review.",
+  "description": "Perform comprehensive code review for security, performance, and architecture. Optional verification phase for cross-analysis and adversarial review.",
   "version": "1.4.0"
 }
 ```
 
-**Step 3: Update marketplace.json**
+**Step 3: Update marketplace.json (fix version desync)**
 
 In `.claude-plugin/marketplace.json`, update the version and description for both plugins to match.
+
+**Note:** `marketplace.json` currently has code-review at version **1.2.4** (desync with `plugin.json` which is 1.3.0 and `README.md` which is 1.3.0). Update to **1.4.0** to match the new version.
+
+Specific changes:
+- code-review: version `1.2.4` → `1.4.0`, add Agent Teams to description
+- web-auditor: version `2.0.0` → `2.1.0`, add Agent Teams to description
 
 **Step 4: Stage and commit**
 
@@ -1009,58 +1044,49 @@ Then run: `/commit:commit --no-coauthor`
 
 **Step 1: Update web-auditor docs**
 
-In `docs/plugins/web-auditor.md`, add a section about Agent Teams:
+In `docs/plugins/web-auditor.md`, update version to 2.1.0 and add a section about verification mode:
 
 ```markdown
-## Agent Teams Mode (Experimental)
+## Verification Mode
 
-Add `--agent-team` to enable cross-domain verification and adversarial review of findings.
-
-### Prerequisites
-
-Enable the experimental flag in settings.json:
-
-```json
-{
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-  }
-}
-```
+Add `--verify` to enable cross-domain correlation and adversarial review of findings.
 
 ### Usage
 
 ```
-/audit https://example.com --agent-team
-/audit https://example.com --scope security --agent-team
+/audit https://example.com --verify
+/audit https://example.com --scope security --verify
 ```
 
 ### What It Does
 
-After the standard scanning phase, a Verification Team of two agents analyzes the findings:
+After the standard scanning phase, two verification subagents analyze the findings in parallel:
 
-- **Cross-Verifier**: identifies correlations between scanning domains (e.g., an open port found by infrastructure + missing auth found by API security)
-- **Challenger**: challenges every Critical/High finding for false positives and validates severity levels
+- **Cross-Verifier**: identifies correlations between scanning domains (e.g., an open port found by infrastructure + missing auth found by API security), coverage gaps, and composite findings
+- **Challenger**: challenges every Critical/High finding for false positives, validates severity levels, and calibrates severity across domains
 
 ### Additional Report Sections
 
-Reports generated with `--agent-team` include a Verification Summary showing:
+Reports generated with `--verify` include a Verification Summary showing:
 - Number of findings verified, removed, and adjusted
 - Cross-domain correlations discovered
 - Coverage gaps identified
 
 ### Cost Considerations
 
-Agent Teams mode spawns 2 additional agent instances and uses more tokens. Use it when accuracy matters more than speed.
+Verification mode spawns 2 additional subagent instances. Use it when accuracy matters more than speed.
 ```
 
-**Step 2: Update code-review docs**
+**Step 2: Update code-review docs (fix version desync)**
 
-Add analogous section to `docs/plugins/code-review.md`.
+In `docs/plugins/code-review.md`:
+
+1. Fix the version from **1.2.4** to **1.4.0** (pre-existing desync — `plugin.json` is already at 1.3.0)
+2. Add analogous verification mode section (with `--verify` flag for `/review`)
 
 **Step 3: Update README.md**
 
-In the plugins table, update descriptions to mention Agent Teams support.
+In the plugins table, update versions and descriptions to mention verification mode support.
 
 **Step 4: Stage and commit**
 
