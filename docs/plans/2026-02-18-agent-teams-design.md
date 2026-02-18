@@ -1,8 +1,10 @@
 # Agent Teams w pluginach av-marketplace
 
 **Data:** 2026-02-18
-**Status:** Zatwierdzony design
+**Status:** ~~Zatwierdzony design~~ **SUPERSEDED** — zastąpiony implementacją opartą na subagentach (Task/TaskOutput API)
 **Dotyczy:** web-auditor, code-review
+
+> **Uwaga:** Ten dokument opisuje oryginalny design oparty na Agent Teams API (`TeamCreate`, `SendMessage`). Ostateczna implementacja używa niezależnych subagentów (`--verify` flag) zamiast Agent Teams. Zachowany jako dokumentacja historyczna procesu decyzyjnego. Aktualną implementację opisują: `plugins/web-auditor/agents/web-auditor.md` (Phase 2.5) i `plugins/code-review/commands/review.md` (Step 5.5).
 
 ---
 
@@ -15,6 +17,13 @@ Obecna architektura pluginów web-auditor i code-review opiera się na subagenta
 - **Cross-pollination** — agent A informuje agenta B o odkryciu do głębszego zbadania
 - **Adversarial review** — agenci kwestionują nawzajem swoje wyniki, eliminując false positives
 - **Shared context building** — kolektywne budowanie wspólnego obrazu systemu
+
+### Dlaczego odrzucono Agent Teams na rzecz subagentów
+
+1. **Marginalna wartość debaty** — koordynator może rozwiązywać konflikty między wynikami Cross-Verifier i Challenger podczas merge, bez potrzeby bezpośredniej komunikacji
+2. **Nieprzewidywalne koszty** — Agent Teams wymaga N rund komunikacji o nieznanej długości; subagenty to dokładnie 2 wywołania Opus
+3. **Ryzyko eksperymentalnego API** — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` może się zmienić
+4. **Wystarczający arbiter** — deterministyczny algorytm merge w koordynatorze rozwiązuje konflikty bez inter-agent messaging
 
 ## Decyzje projektowe
 

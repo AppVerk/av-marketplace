@@ -311,7 +311,7 @@ When reviewing microservices, check:
 - [ ] Circuit Breakers - Resilience patterns implemented
 - [ ] Idempotency - Duplicate event handling
 
-**Task Update:** After generating the report, mark task 5 as `completed` using TaskUpdate.
+**Task Update:** If `--verify` was NOT used, mark task 5 as `completed` using TaskUpdate. (If `--verify` was used, task 5 was already completed in Step 5.5.)
 
 ---
 
