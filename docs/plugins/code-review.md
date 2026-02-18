@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.2.4
+**Version:** 1.4.0
 
 ## Commands
 
@@ -58,6 +58,35 @@ Requires GitHub CLI (`gh`) to be installed and authenticated.
 - **Code Quality** — Complexity, naming, error handling, test coverage gaps
 - **Standards** — Project-specific coding conventions discovered from documentation
 - **Dependencies** — Known CVEs in third-party packages
+
+## Verification Mode
+
+Add `--verify` to enable cross-domain correlation and adversarial review of findings.
+
+### Usage
+
+```bash
+/review "Check authentication security" --verify
+/review --verify
+```
+
+### What It Does
+
+After the standard analysis (security + code quality auditors), two verification subagents analyze the findings in parallel:
+
+- **Cross-Verifier**: identifies correlations between security and quality findings (e.g., a God Object with a vulnerability = higher blast radius), coverage gaps, and composite findings
+- **Challenger**: challenges every Critical/High finding for false positives, validates severity levels, and calibrates severity between security and quality domains
+
+### Additional Report Sections
+
+Reviews generated with `--verify` include a Verification Summary showing:
+- Number of findings verified, removed, and adjusted
+- Cross-analysis correlations (security <-> quality)
+- Challenged findings with reasoning
+
+### Cost Considerations
+
+Verification mode spawns 2 additional subagent instances. Use it when accuracy matters more than speed.
 
 ## Optional Tools
 

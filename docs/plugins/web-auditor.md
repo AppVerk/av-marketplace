@@ -2,7 +2,7 @@
 
 Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance.
 
-**Version:** 2.0.0
+**Version:** 2.1.0
 
 ## Commands
 
@@ -81,6 +81,35 @@ All checks are **passive, legal, and non-invasive**:
 - No data modification
 - Passive port scanning only (nmap top ports, polite timing)
 - Public resources only
+
+## Verification Mode
+
+Add `--verify` to enable cross-domain correlation and adversarial review of findings.
+
+### Usage
+
+```bash
+/audit https://example.com --verify
+/audit https://example.com --scope security --verify
+```
+
+### What It Does
+
+After the standard scanning phase, two verification subagents analyze the findings in parallel:
+
+- **Cross-Verifier**: identifies correlations between scanning domains (e.g., an open port found by infrastructure + missing auth found by API security), coverage gaps, and composite findings
+- **Challenger**: challenges every Critical/High finding for false positives, validates severity levels, and calibrates severity across domains
+
+### Additional Report Sections
+
+Reports generated with `--verify` include a Verification Summary showing:
+- Number of findings verified, removed, and adjusted
+- Cross-domain correlations discovered
+- Coverage gaps identified
+
+### Cost Considerations
+
+Verification mode spawns 2 additional subagent instances. Use it when accuracy matters more than speed.
 
 ## Required Tools
 
