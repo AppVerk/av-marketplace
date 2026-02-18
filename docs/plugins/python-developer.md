@@ -1,8 +1,20 @@
 # Python Developer Plugin
 
-Python best practices, coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic) for AppVerk projects.
+Python development workflow with `/develop` command, coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic).
 
-**Version:** 1.3.0
+**Version:** 2.0.0
+
+## Commands
+
+### `/develop <task description>`
+
+Python development workflow that automatically loads the right skills for the task. Analyzes the project to detect FastAPI, SQLAlchemy, Pydantic, and enforces TDD and coding standards throughout.
+
+```
+/develop Add a new endpoint for user registration
+/develop Fix the N+1 query in the orders list endpoint
+/develop Refactor the payment service to use the repository pattern
+```
 
 ## Skills
 
