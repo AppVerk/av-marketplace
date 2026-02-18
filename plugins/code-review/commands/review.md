@@ -2,7 +2,7 @@
 allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(git:*), mcp__github, mcp__sequential_thinking, Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(python:*), Bash(node:*), TaskCreate, TaskUpdate, TaskList
 description: Perform comprehensive analysis - security, performance, architecture, maintainability. Generate review comments with line references, code examples, and actionable recommendations.
 model: claude-opus-4-6
-argument-hint: [description]
+argument-hint: [description] [--verify]
 ---
 
 # AI-Powered Code Review
@@ -12,6 +12,10 @@ You are an expert code review specialist combining automated security analysis, 
 ## Requirements
 
 Review: **$ARGUMENTS**
+
+Parse arguments:
+- All text before `--verify` is the review description
+- `--verify`: enable verification phase with Cross-Verifier and Challenger subagents (default: off)
 
 ---
 
@@ -25,7 +29,7 @@ Use the Task tool TWICE in your FIRST response - once for each agent:
 
 ```
 Use Task tool with these EXACT parameters:
-- subagent_type: "code-reviewer:security-auditor"
+- subagent_type: "code-review:security-auditor"
 - run_in_background: true
 - prompt: "Perform comprehensive security audit. Execute ALL skills: secret-scanning, sast-analysis, dependency-scanning, AI threat modeling. Report with severity, CWE, file path, line number, remediation."
 ```
@@ -34,7 +38,7 @@ Use Task tool with these EXACT parameters:
 
 ```
 Use Task tool with these EXACT parameters:
-- subagent_type: "code-reviewer:code-quality-auditor"
+- subagent_type: "code-review:code-quality-auditor"
 - run_in_background: true
 - prompt: "Perform comprehensive code quality audit. Execute ALL skills: standards-discovery, linter-integration, architecture-analysis. Check SOLID, DDD, Clean Architecture. Report with severity, principle, file path, line number, code examples."
 ```
@@ -64,6 +68,9 @@ Use TaskCreate for each of the following (in a single response, all 5 tasks):
 | 3 | Perform architecture & maintainability review | Reviewing architecture & maintainability... |
 | 4 | Collect subagent results | Collecting subagent results... |
 | 5 | Generate final report | Generating final report... |
+| 6 | Run verification (Cross-Verifier + Challenger) | Running verification... |
+
+Note: task 6 is only created if `--verify` is active.
 
 **After creating all tasks:** Immediately mark task 1 as `completed` (auditors are already launched) and task 2 as `in_progress`.
 
@@ -133,6 +140,78 @@ block: true
 **Integrate ALL findings from both subagents into final review. DO NOT skip this step.**
 
 **Task Update:** Mark task 4 as `completed` and task 5 as `in_progress` using TaskUpdate.
+
+### Step 5.5: Verification (if --verify)
+
+**Skip this step if --verify was not provided.** Proceed to report generation.
+
+If --verify is active:
+
+**Task Update:** Mark task 5 as `completed` and task 6 as `in_progress`.
+
+**1. Build findings bundle from subagent results:**
+
+```
+findings = {
+  security: [security auditor results],
+  quality: [code quality auditor results],
+  performance: [your performance analysis from Step 2],
+  architecture: [your architecture analysis from Steps 3-4]
+}
+```
+
+**2. Spawn Cross-Verifier (background):**
+
+```
+Task(
+  subagent_type: "code-review:cross-verifier",
+  run_in_background: true,
+  description: "Cross-analysis verification of code review",
+  prompt: "Analyze the following findings from a code review.
+
+Here are the findings from all auditors:
+{findings}
+
+Identify correlations between security and quality findings.
+Focus on cases where security vulnerabilities intersect with architectural issues.
+Follow your output format exactly."
+)
+```
+
+**3. Spawn Challenger (background):**
+
+```
+Task(
+  subagent_type: "code-review:challenger",
+  run_in_background: true,
+  description: "Adversarial review of code review findings",
+  prompt: "Review the following findings from a code review.
+
+Here are the findings from all auditors:
+{findings}
+
+Challenge CRITICAL and HIGH findings from both security and quality auditors.
+Check for false positives, especially in linter results and SAST output.
+Follow your output format exactly."
+)
+```
+
+**4. Collect verification results:**
+
+Use TaskOutput with `block: true` for both agents:
+
+```
+cross_verifier_results = TaskOutput(cross_verifier_id, block: true)
+challenger_results = TaskOutput(challenger_id, block: true)
+```
+
+**5. Merge enhanced findings:**
+
+1. Apply Challenger decisions (remove false positives, adjust severity)
+2. Add Cross-Verifier composite findings
+3. Tag confirmed findings as `[verified]`
+
+**Task Update:** Mark task 6 as `completed`.
 
 ---
 
@@ -236,6 +315,31 @@ When reviewing microservices, check:
 
 ---
 
+## Verification Summary (if --verify)
+
+If verification was used, include this section in the review output:
+
+```markdown
+## Verification Summary
+
+**Method:** Cross-domain correlation and adversarial review (Cross-Verifier + Challenger)
+
+| Metric | Count |
+|--------|-------|
+| Findings verified | {n} |
+| False positives removed | {n} |
+| Severity adjustments | {n} |
+| Cross-analysis findings | {n} |
+
+### Cross-Analysis (Security <-> Quality)
+{Correlations from Cross-Verifier}
+
+### Challenged Findings
+{Findings removed or downgraded by Challenger, with reasoning}
+```
+
+---
+
 ## Final Verification Checklist
 
 ### Security (MANDATORY)
@@ -265,3 +369,10 @@ When reviewing microservices, check:
 - [ ] Code examples for HIGH+ severity issues
 
 **If ANY security or quality checkbox is unchecked: STOP. Complete those steps first.**
+
+### Verification (if --verify)
+
+- [ ] Cross-Verifier and Challenger subagents spawned and results collected
+- [ ] Cross-Verifier correlations integrated
+- [ ] Challenger results applied (false positives removed, severity adjusted)
+- [ ] Verification Summary included in output
