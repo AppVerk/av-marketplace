@@ -19,6 +19,19 @@ $ARGUMENTS
 
 ## Phase 1: Parse Issue
 
+**FIRST: Create ALL progress tasks using TaskCreate:**
+
+| # | subject | activeForm |
+|---|---------|-----------|
+| 1 | Parse issue | Parsing issue... |
+| 2 | Analyze context | Analyzing code context... |
+| 3 | Propose fix | Proposing fix... |
+| 4 | Implement fix | Implementing fix... |
+| 5 | Verify fix | Verifying fix... |
+| 6 | Generate report | Generating report... |
+
+**After creating all tasks:** Mark task 1 as `in_progress` using TaskUpdate.
+
 Extract the following fields from the issue block:
 
 | Field | Pattern | Required |
@@ -43,6 +56,8 @@ Ask user to provide:
 - Remediation suggestion
 
 **Store parsed data mentally for next phases.**
+
+**Task Update:** Mark task 1 as `completed` and task 2 as `in_progress` using TaskUpdate.
 
 ---
 
@@ -83,6 +98,8 @@ Look for:
 - Similar code elsewhere that handles this correctly
 - Project coding standards (if visible)
 - Existing patterns for the type of fix needed
+
+**Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
 
 ---
 
@@ -126,6 +143,8 @@ Proposed fix:
 
 Do NOT make any changes until the user confirms with "yes" or similar affirmation.
 
+**Task Update:** Mark task 3 as `completed` and task 4 as `in_progress` using TaskUpdate.
+
 ---
 
 ## Phase 4: Implement Fix
@@ -155,6 +174,8 @@ After editing, read the modified section to confirm:
 - The fix was applied correctly
 - No unintended changes were made
 - Code still looks syntactically correct
+
+**Task Update:** Mark task 4 as `completed` and task 5 as `in_progress` using TaskUpdate.
 
 ---
 
@@ -266,6 +287,8 @@ Iteration 3: [tool] failed - [brief reason] - stopping
 
 After 3 iterations, proceed to Phase 7 regardless of status.
 
+**Task Update:** Mark task 5 as `completed` and task 6 as `in_progress` using TaskUpdate.
+
 ---
 
 ## Phase 7: Generate Report
@@ -323,6 +346,8 @@ Present the final report in this exact format:
 - Manual intervention recommended
 
 ---
+
+**Task Update:** Mark task 6 as `completed` using TaskUpdate.
 
 **Changes remain uncommitted for your control.**
 
