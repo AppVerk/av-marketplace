@@ -17,7 +17,7 @@ After installation, verify with `/help` — you should see the new commands list
 | [Code Review](docs/plugins/code-review.md) | 1.4.0 | Security, architecture, and code quality analysis with OWASP compliance. Optional `--verify` for cross-analysis and adversarial review |
 | [Commit](docs/plugins/commit.md) | 1.0.0 | Conventional Commits message generation from staged changes |
 | [Web Auditor](docs/plugins/web-auditor.md) | 2.1.0 | Comprehensive web audit: security, SEO, performance, and compliance. Optional `--verify` for cross-domain correlation and adversarial review |
-| [Python Developer](docs/plugins/python-developer.md) | 1.2.0 | Python best practices, coding standards, TDD workflow, and modern tooling for AppVerk projects |
+| [Python Developer](docs/plugins/python-developer.md) | 1.3.0 | Python best practices, coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic) for AppVerk projects |
 | [Sequential Thinking](https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking) | MCP | Structured problem-solving through dynamic thinking process |
 
 ## Documentation
