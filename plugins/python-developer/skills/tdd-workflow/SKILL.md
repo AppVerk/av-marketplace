@@ -1,9 +1,25 @@
 ---
 name: tdd-workflow
-description: Use this skill when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with 80%+ coverage including unit, functional, and integration tests.
+description: Enforces test-driven development: writes tests before code, uses fakes over mocks, maintains 80%+ coverage. Activates when writing new features, fixing bugs, or refactoring Python code.
+allowed-tools: Read, Grep, Glob, Bash(pytest:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(coverage:*)
 ---
 
 # Test-Driven Development Workflow
+
+<HARD-RULES>
+These rules are NON-NEGOTIABLE. Violating any of them is a bug.
+
+- ALWAYS write tests BEFORE implementation code — no exceptions
+- ALWAYS use Fake implementations (in-memory, simplified) for dependencies — NEVER use unittest.mock or pytest-mock for internal dependencies
+- ONLY use mocks for external I/O: 3rd party APIs (OpenAI, Stripe), real database calls in unit tests, network requests
+- NEVER put imports inside test functions or methods — ALL imports go at the top of the test file
+- NEVER write tests that depend on other tests — each test sets up its own data via fixtures
+- NEVER use `assert False` — use `raise AssertionError("explanation")` instead
+- ALWAYS run the full test suite (`make test` or `uv run pytest`) not just specific tests
+- ALWAYS verify 80%+ coverage before considering work complete
+- ALWAYS use `pytest.mark.parametrize` for similar test cases instead of duplicating tests
+- ALWAYS use factory fixtures for creating similar data objects
+</HARD-RULES>
 
 This skill ensures all code development follows TDD principles with comprehensive test coverage.
 
@@ -650,3 +666,40 @@ repos:
 ---
 
 **Remember**: Tests are not optional. They are the safety net that enables confident refactoring, rapid development, and production reliability.
+
+## Test Code Standards
+
+These standards extend the HARD-RULES above with organizational and structural guidance (absorbed from coding-standards):
+
+### General Testing Principles
+
+- Write code amenable to unit testing with no hidden I/O or tight coupling.
+- Keep typing in tests where practical, even if excluded from type checks.
+- Don't write trivial tests that test obvious functionality (e.g., testing Pydantic model instantiation).
+- Prefer running the whole test suite instead of specific tests.
+
+### Test Organization
+
+- For similar data objects, use factory fixtures.
+- Combine similar test cases using `pytest.mark.parametrize`.
+- Any environment variables setup should be done in conftest using monkeypatch fixture, unless not possible.
+- Test directory layout:
+  - `tests/unit` — fast, isolated tests of pure logic
+  - `tests/integration` — tests that cross process/service boundaries (DB, network, etc.)
+  - `tests/functional` — blackbox tests of the API or feature behavior with faked dependencies
+  - `tests/e2e` — end-to-end tests that exercise the system as a whole
+- Mirror the source tree under `src/` starting after the repository's domain package (drop the top-level package folder). For code in:
+  - `src/<domain_package>/<subpath>/module.py`
+  write tests in:
+  - `tests/<kind>/<subpath>/test_module.py`
+  where `<kind>` is one of `unit` | `integration` | `functional` | `e2e`.
+- File naming: `test_<module>.py` for module-level tests; use `test_<thing>_<behavior>.py` when clearer.
+- Keep category-specific conftest, fixtures, and data near the tests:
+  - `tests/conftest.py` for global fixtures
+  - `tests/<kind>/conftest.py` for category-scoped fixtures
+
+### Mocking Rules
+
+- Avoid mocks unless for external I/O like 3rd party API calls, database operations, etc.
+- For internal dependencies, ALWAYS create Fake implementations instead.
+- For detailed guidance on choosing between Fakes and Mocks, see the **Test Doubles: Fakes vs Mocks** section above.
