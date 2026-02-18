@@ -14,7 +14,7 @@ After installation, verify with `/help` — you should see the new commands list
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [Code Review](docs/plugins/code-review.md) | 1.2.4 | Security, architecture, and code quality analysis with OWASP compliance |
+| [Code Review](docs/plugins/code-review.md) | 1.3.0 | Security, architecture, and code quality analysis with OWASP compliance |
 | [Commit](docs/plugins/commit.md) | 1.0.0 | Conventional Commits message generation from staged changes |
 | [Web Auditor](docs/plugins/web-auditor.md) | 2.0.0 | Comprehensive web audit: security, SEO, performance, and compliance |
 | [Python Developer](docs/plugins/python-developer.md) | 1.1.0 | Python best practices, TDD workflows, async patterns, and uv package manager |
