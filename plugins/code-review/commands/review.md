@@ -51,6 +51,24 @@ Use Task tool with these EXACT parameters:
 
 ---
 
+## MANDATORY SECOND STEP: Create Progress Tasks
+
+**Immediately after launching both subagents, create ALL progress tasks:**
+
+Use TaskCreate for each of the following (in a single response, all 5 tasks):
+
+| # | subject | activeForm |
+|---|---------|-----------|
+| 1 | Launch security & quality auditors | Launching security & quality auditors... |
+| 2 | Perform performance analysis | Analyzing performance... |
+| 3 | Perform architecture & maintainability review | Reviewing architecture & maintainability... |
+| 4 | Collect subagent results | Collecting subagent results... |
+| 5 | Generate final report | Generating final report... |
+
+**After creating all tasks:** Immediately mark task 1 as `completed` (auditors are already launched) and task 2 as `in_progress`.
+
+---
+
 ## Code Review Workflow
 
 ### Step 1: Confirm Both Audits Running
@@ -59,6 +77,8 @@ Verify both subagents were launched before continuing:
 
 - security-auditor (security analysis)
 - code-quality-auditor (architecture/quality analysis)
+
+**Task Update:** Mark task 2 as `in_progress` using TaskUpdate.
 
 ### Step 2: Performance Analysis
 
@@ -69,6 +89,8 @@ Check for:
 - Synchronous blocking calls
 - Missing connection pooling
 - Unbounded data fetching (no pagination)
+
+**Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
 
 ### Step 3: Architecture Analysis
 
@@ -87,6 +109,8 @@ Evaluate:
 - Test coverage gaps
 - Error handling patterns (A10:2025 - Exceptional Conditions)
 - Documentation accuracy
+
+**Task Update:** Mark task 3 as `completed` and task 4 as `in_progress` using TaskUpdate.
 
 ### Step 5: Retrieve Subagent Results (MANDATORY)
 
@@ -107,6 +131,8 @@ block: true
 ```
 
 **Integrate ALL findings from both subagents into final review. DO NOT skip this step.**
+
+**Task Update:** Mark task 4 as `completed` and task 5 as `in_progress` using TaskUpdate.
 
 ---
 
@@ -205,6 +231,8 @@ When reviewing microservices, check:
 - [ ] Backward Compatibility - Breaking changes flagged
 - [ ] Circuit Breakers - Resilience patterns implemented
 - [ ] Idempotency - Duplicate event handling
+
+**Task Update:** After generating the report, mark task 5 as `completed` using TaskUpdate.
 
 ---
 
