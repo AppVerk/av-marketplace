@@ -1,9 +1,25 @@
 ---
 name: coding-standards
-description: Universal coding standards, best practices, and patterns for Python development. 
+description: Enforces Python coding rules: type hints, imports, naming, error handling, and project conventions for AppVerk projects. Activates when writing or reviewing Python code.
+allowed-tools: Read, Grep, Glob, Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*)
 ---
 
 # Python Coding Rules
+
+<HARD-RULES>
+These rules are NON-NEGOTIABLE. Violating any of them is a bug.
+
+- NEVER put imports inside functions or methods — ALL imports go at the top of the file
+- NEVER use `Optional[X]` or import `Optional` — ALWAYS use `X | None`
+- NEVER use relative imports (`from .module import ...`) — ALWAYS use absolute imports
+- NEVER use bare `except:` or `except Exception:` — ALWAYS catch specific exception types
+- NEVER use mutable default arguments (`def f(x=[])`) — use `None` and create inside function
+- NEVER leave unused imports or variables — remove them immediately
+- ALWAYS annotate all function parameters and return types explicitly
+- ALWAYS use `pathlib.Path` instead of string paths
+- ALWAYS run `make typecheck` and `make test` after any code change
+- ALWAYS use `uv run` to execute any Python command
+</HARD-RULES>
 
 These are the internal Python coding rules that guide code generation for this project.
 
@@ -96,37 +112,7 @@ These are the internal Python coding rules that guide code generation for this p
 
 ## Testing
 
-### General Testing Principles
-
-- Write code amenable to unit testing with no hidden I/O or tight coupling.
-- Keep typing in tests where practical, even if excluded from type checks.
-- Don't write trivial tests that test obvious functionality (e.g., testing Pydantic model instantiation).
-- Never use `assert False`. Use `raise AssertionError("explanation")` instead.
-- Prefer running the whole test suite instead of specific tests.
-
-### Test Organization
-
-- For similar data objects, use factory fixtures.
-- Combine similar test cases using `pytest.mark.parametrize`.
-- Any environment variables setup should be done in conftest using monkeypatch fixture, unless not possible.
-- Test directory layout:
-  - `tests/unit` — fast, isolated tests of pure logic
-  - `tests/integration` — tests that cross process/service boundaries (DB, network, etc.)
-  - `tests/functional` — blackbox tests of the API or feature behavior with faked dependencies
-  - `tests/e2e` — end-to-end tests that exercise the system as a whole
-- Mirror the source tree under `src/` starting after the repository's domain package (drop the top-level package folder). For code in:
-  - `src/<domain_package>/<subpath>/module.py`
-  write tests in:
-  - `tests/<kind>/<subpath>/test_module.py`
-  where `<kind>` is one of `unit` | `integration` | `functional` | `e2e`.
-- File naming: `test_<module>.py` for module-level tests; use `test_<thing>_<behavior>.py` when clearer.
-- Keep category-specific conftest, fixtures, and data near the tests:
-  - `tests/conftest.py` for global fixtures
-  - `tests/<kind>/conftest.py` for category-scoped fixtures
-
-### Mocking
-
-- Avoid mocks unless for external I/O like 3rd party API calls, database operations, etc.
+See the `tdd-workflow` skill for all testing rules, patterns, and conventions.
 
 ## Additional Guidelines
 
