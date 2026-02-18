@@ -7,8 +7,8 @@
     {
       "name": "code-review",
       "source": "./plugins/code-review",
-      "description": "Perform comprehensive code review for security, performance, and architecture",
-      "version": "1.2.4",
+      "description": "Perform comprehensive code review for security, performance, and architecture. Optional verification phase for cross-analysis and adversarial review.",
+      "version": "1.4.0",
       "category": "development"
     },
     {
@@ -28,8 +28,8 @@
     {
       "name": "web-auditor",
       "source": "./plugins/web-auditor",
-      "description": "Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance",
-      "version": "2.0.0",
+      "description": "Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance. Optional verification phase for cross-domain correlation and adversarial review.",
+      "version": "2.1.0",
       "category": "security"
     },
     {
