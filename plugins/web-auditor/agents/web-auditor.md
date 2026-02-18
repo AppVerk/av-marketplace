@@ -18,6 +18,7 @@ You receive:
 - **Scope** — which areas to audit: `all`, `security`, `seo`, `performance`, `compliance`
 - **Crawl depth** — how deep to crawl internal links (default: 2)
 - **Output directory** — where to save the report (default: `.`)
+- **Verify** — whether to run verification phase with Cross-Verifier and Challenger (`true`/`false`)
 
 ## Ethical Rules — MANDATORY
 
@@ -308,11 +309,100 @@ Task(
 )
 ```
 
+### Phase 2.5: Verification (if --verify enabled)
+
+**Skip this phase entirely if verify is false.** Proceed directly to Phase 3.
+
+If verify is true:
+
+**1. Build findings bundle**
+
+Collect all results from Phase 2 agents into a structured bundle:
+
+```
+findings_bundle = {
+  "web_security": {results from web-security-agent},
+  "api_security": {results from api-security-agent},
+  "infrastructure": {results from infrastructure-agent},
+  "supply_chain": {results from supply-chain-agent},
+  "seo": {results from seo-agent},
+  "performance": {results from performance-agent},
+  "compliance": {results from compliance-agent}
+}
+```
+
+Only include domains that were in scope.
+
+**2. Spawn Cross-Verifier (background)**
+
+```
+Task(
+  subagent_type: "web-auditor:cross-verifier",
+  run_in_background: true,
+  description: "Cross-domain verification of {domain} audit",
+  prompt: "Analyze the following findings bundle from a web audit of {domain}.
+
+Here is the findings bundle from all scanning agents:
+{findings_bundle}
+
+Here is the URL inventory: {url_inventory}
+
+Here are the detected technologies: {technologies}
+
+Here are the collected headers: {headers}
+
+Identify cross-domain correlations, coverage gaps, severity adjustments, and new composite findings.
+Follow your output format exactly."
+)
+```
+
+**3. Spawn Challenger (background)**
+
+```
+Task(
+  subagent_type: "web-auditor:challenger",
+  run_in_background: true,
+  description: "Adversarial review of {domain} audit",
+  prompt: "Review the following findings bundle from a web audit of {domain}.
+
+Here is the findings bundle from all scanning agents:
+{findings_bundle}
+
+Challenge every CRITICAL and HIGH finding. Verify evidence, validate severity, check for false positives.
+Follow your output format exactly."
+)
+```
+
+**4. Collect verification results**
+
+Use TaskOutput with `block: true` for both agents:
+
+```
+cross_verifier_results = TaskOutput(cross_verifier_id, block: true)
+challenger_results = TaskOutput(challenger_id, block: true)
+```
+
+**5. Merge enhanced findings**
+
+Apply the merge algorithm:
+
+1. Start with original findings from Phase 2
+2. Apply Challenger decisions:
+   - Remove findings marked as false-positive
+   - Adjust severity for downgraded findings
+   - Tag confirmed findings as `[verified]`
+3. Add Cross-Verifier composite findings
+4. Add coverage gaps as a report section
+5. Add cross-domain correlations as a report section
+
+**6. Proceed to Phase 3 with enhanced findings**
+
 ### Phase 3: Consolidation (sequential)
 
 After all dispatched agents complete:
 
 1. **Collect results** — Use TaskOutput with `block: true` for each agent
+1b. **If --verify was used** — use enhanced findings from Phase 2.5 instead of raw results
 2. **Deduplicate** — Same issue found by multiple agents → keep the most detailed version, tag with all relevant scopes
 3. **Sort by severity** — Critical > High > Medium > Low > Info
 4. **Count findings** — Tally per severity level and per scope
@@ -366,6 +456,22 @@ Write the report using this structure. **Include only sections relevant to the a
 - **[High] {Finding title}** — {1-sentence description}. *Recommendation: {specific fix}.*
 
 {If none: "No critical or high severity findings were identified."}
+
+---
+
+{If --verify mode was used:}
+
+## Verification Summary
+
+**Method:** Cross-domain correlation and adversarial review (Cross-Verifier + Challenger)
+
+| Metric | Count |
+|--------|-------|
+| Findings verified | {n} |
+| False positives removed | {n} |
+| Severity adjustments | {n} |
+| New cross-domain findings | {n} |
+| Coverage gaps identified | {n} |
 
 ---
 
@@ -587,8 +693,12 @@ Before completing, verify:
 - [ ] Phase 1 recon completed, URL inventory built
 - [ ] Phase 1 metadata, performance, and compliance data collected
 - [ ] All scope-appropriate scanning agents launched and results collected
+- [ ] If --verify: Cross-Verifier and Challenger subagents spawned and results collected
+- [ ] If --verify: Challenger decisions applied (false positives removed, severity adjusted)
+- [ ] If --verify: Cross-Verifier correlations and composite findings integrated
 - [ ] Findings deduplicated across scopes and severity-sorted
 - [ ] Executive Summary written with per-scope assessment
+- [ ] If --verify: Verification Summary section included in report
 - [ ] TOP 10 table populated with cross-scope findings
 - [ ] HTTP Headers Scorecard filled
 - [ ] SEO Scorecard filled (if scope includes seo)
