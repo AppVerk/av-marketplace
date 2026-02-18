@@ -2,7 +2,7 @@
 
 Python best practices, TDD workflows, async patterns, and modern dependency management with uv.
 
-**Version:** 1.1.0
+**Version:** 1.2.0
 
 ## Skills
 
