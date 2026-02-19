@@ -502,6 +502,14 @@ Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌
 - [ ] Actionable remediation provided
 - [ ] Code examples for HIGH+ severity issues
 
+### Post-Review Actions
+
+- [ ] User asked whether to save review
+- [ ] Review saved to `docs/reviews/` (if requested)
+- [ ] User asked whether to fix issues (if issues found)
+- [ ] Selected issues processed via fix-auto subagent (if requested)
+- [ ] Fix summary displayed (if fixes were run)
+
 **If ANY security or quality checkbox is unchecked: STOP. Complete those steps first.**
 
 ### Verification (if --verify)
