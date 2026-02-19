@@ -29,12 +29,25 @@ Use the Skill tool with:
 
 ## Step 2: Analyze the Project
 
-Detect the project's stack by examining:
+### 2a. Discover project commands
+
+**Read these files first (in order of priority) to find the actual project commands for testing, linting, and typechecking:**
+
+1. **CLAUDE.md** (root or `.claude/`) — primary source of truth for AI workflows
+2. **README.md** — look for "Development", "Contributing", "Getting Started" sections with commands
+3. **Makefile** — check for available targets (`make test`, `make typecheck`, `make lint`, etc.)
+4. **pyproject.toml** `[tool.taskipy.tasks]` or `[project.scripts]` — project-defined commands
+
+**Record the discovered commands.** You will use them in Steps 5 and 6 instead of fallback defaults. If no commands are found in any of these sources, fall back to:
+- Test: `uv run pytest`
+- Typecheck: `uv run mypy .`
+- Lint: `uv run ruff check .`
+
+### 2b. Detect the project stack
 
 1. **pyproject.toml** — look for dependencies: `fastapi`, `sqlalchemy`, `pydantic`, `asyncio`/`anyio`/`uvicorn`, `uv`
 2. **Existing imports** — scan `src/` or `app/` for `from fastapi import`, `from sqlalchemy import`, `from pydantic import`, `import asyncio`
-3. **Makefile** — check for available `make` targets (`make test`, `make typecheck`, `make lint`)
-4. **Task description** — parse `$ARGUMENTS` for keywords: endpoint, API, route, model, schema, database, migration, async, dependency, package
+3. **Task description** — parse `$ARGUMENTS` for keywords: endpoint, API, route, model, schema, database, migration, async, dependency, package
 
 Record which stack components are present. You will use this in Step 3.
 
@@ -115,9 +128,7 @@ Before writing any code:
 
 ### 5b. Run Tests (Expect Failure)
 
-```bash
-uv run pytest
-```
+Run the test command discovered in Step 2a (e.g. `make test`, `uv run pytest`, or whatever the project uses).
 
 Tests MUST fail at this point. If they pass, your tests are not testing the right thing.
 
@@ -132,9 +143,7 @@ Tests MUST fail at this point. If they pass, your tests are not testing the righ
 
 ### 5d. Run Tests (Expect Pass)
 
-```bash
-uv run pytest
-```
+Run the test command discovered in Step 2a.
 
 All tests must pass. If any fail, fix the implementation (not the tests, unless the test itself is wrong).
 
@@ -149,29 +158,25 @@ All tests must pass. If any fail, fix the implementation (not the tests, unless 
 
 ## Step 6: Quality Gates (MANDATORY)
 
+**Use the commands discovered in Step 2a.** The examples below are fallback defaults — always prefer the project's own commands from `CLAUDE.md`, `README.md`, or `Makefile`.
+
 Run these checks. **ALL must pass before the task is considered complete.**
 
 ### Typecheck
 
-```bash
-make typecheck
-```
+Run the typecheck command from Step 2a (e.g. `make typecheck`, `uv run mypy .`, `uv run basedpyright`).
 
 Fix any type errors. Do not use `# type: ignore` unless absolutely unavoidable and justified.
 
 ### Full Test Suite
 
-```bash
-make test
-```
+Run the test command from Step 2a (e.g. `make test`, `uv run pytest`).
 
 All tests must pass. Zero failures, zero errors.
 
-### Linting (if ruff issues found, fix them)
+### Linting
 
-```bash
-uv run ruff check .
-```
+Run the lint command from Step 2a (e.g. `make lint`, `uv run ruff check .`).
 
 Zero warnings. Zero errors.
 
@@ -202,9 +207,9 @@ Zero warnings. Zero errors.
 
 ### Quality Gates
 
-- [ ] `make typecheck` passes with zero errors
-- [ ] `make test` passes with zero failures
-- [ ] `uv run ruff check .` passes with zero warnings
+- [ ] Typecheck command (from Step 2a) passes with zero errors
+- [ ] Test command (from Step 2a) passes with zero failures
+- [ ] Lint command (from Step 2a) passes with zero warnings
 
 ### Stack-Specific (check only if relevant skill was loaded)
 
