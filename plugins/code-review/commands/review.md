@@ -342,6 +342,57 @@ If verification was used, include this section in the review output:
 
 ---
 
+## Step 6: Save Review
+
+**Task Update:** Mark task 7 as `in_progress` using TaskUpdate.
+
+After the review report has been displayed, ask whether to save it:
+
+Use AskUserQuestion with these parameters:
+- question: "Save this review to a file?"
+- options:
+  - label: "Yes", description: "Save review report to docs/reviews/"
+  - label: "No", description: "Skip saving"
+- multiSelect: false
+
+**If user selects "Yes":**
+
+1. Get current branch name:
+
+```bash
+git branch --show-current
+```
+
+2. Slugify the branch name:
+   - Replace `/` with `-`
+   - Replace spaces with `-`
+   - Convert to lowercase
+   - Example: `feature/user-login` → `feature-user-login`
+
+3. Build the file path: `docs/reviews/YYYY-MM-DD-<branch-slug>.md`
+   - Use today's date
+   - Example: `docs/reviews/2026-02-19-feature-user-login.md`
+
+4. Check if the file already exists. If it does, append a numeric suffix:
+   - `docs/reviews/2026-02-19-feature-user-login-2.md`
+   - Increment until a non-existing filename is found
+
+5. Create the `docs/reviews/` directory if it doesn't exist:
+
+```bash
+mkdir -p docs/reviews
+```
+
+6. Write the full review report (the same markdown content displayed to the user) to the file using the Write tool.
+
+7. Confirm to the user: "Review saved to `docs/reviews/2026-02-19-feature-user-login.md`"
+
+**If user selects "No":** Proceed to Step 7.
+
+**Task Update:** Mark task 7 as `completed` using TaskUpdate.
+
+---
+
 ## Final Verification Checklist
 
 ### Security (MANDATORY)
