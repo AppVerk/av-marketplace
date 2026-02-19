@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.4.0
+**Version:** 1.5.0
 
 ## Commands
 
@@ -87,6 +87,21 @@ Reviews generated with `--verify` include a Verification Summary showing:
 ### Cost Considerations
 
 Verification mode spawns 2 additional subagent instances. Use it when accuracy matters more than speed.
+
+## Save Review to File
+
+After the review report is generated, you are asked whether to save it to a file. If you choose "Yes", the report is saved to `docs/reviews/YYYY-MM-DD-<branch-slug>.md`.
+
+The branch name is slugified (e.g., `feature/user-login` becomes `feature-user-login`). If a file with that name already exists, a numeric suffix is appended (`-2`, `-3`, etc.).
+
+## Auto-Fix Issues
+
+After the review, if issues were found, you are asked whether to fix any of them. If you choose "Yes":
+
+- **4 or fewer issues**: presented as a multi-select checklist
+- **More than 4 issues**: presented as a numbered list grouped by severity — enter numbers to select
+
+Selected issues are fixed sequentially using the `fix-auto` agent, which runs the same fix cycle as `/fix` but without the confirmation step. After all fixes, a summary table shows the status of each fix (Fixed / Partially Fixed / Failed).
 
 ## Optional Tools
 
