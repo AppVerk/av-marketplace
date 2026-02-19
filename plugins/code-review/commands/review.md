@@ -69,8 +69,10 @@ Use TaskCreate for each of the following (in a single response, all 5 tasks):
 | 4 | Collect subagent results | Collecting subagent results... |
 | 5 | Generate final report | Generating final report... |
 | 6 | Run verification (Cross-Verifier + Challenger) | Running verification... |
+| 7 | Save review to file | Saving review to file... |
+| 8 | Fix selected issues | Fixing selected issues... |
 
-Note: task 6 is only created if `--verify` is active.
+Note: task 6 is only created if `--verify` is active. Tasks 7-8 are always created.
 
 **After creating all tasks:** Immediately mark task 1 as `completed` (auditors are already launched) and task 2 as `in_progress`.
 
