@@ -7,8 +7,8 @@
     {
       "name": "code-review",
       "source": "./plugins/code-review",
-      "description": "Perform comprehensive code review for security, performance, and architecture. Optional verification phase for cross-analysis and adversarial review.",
-      "version": "1.4.0",
+      "description": "Perform comprehensive code review for security, performance, and architecture. Save reviews to file, auto-fix detected issues. Optional verification phase for cross-analysis and adversarial review.",
+      "version": "1.5.0",
       "category": "development"
     },
     {
