@@ -393,6 +393,87 @@ mkdir -p docs/reviews
 
 ---
 
+## Step 7: Fix Selected Issues
+
+**Skip this step if no issues were found during the review.**
+
+**Task Update:** Mark task 8 as `in_progress` using TaskUpdate.
+
+### Step 7.1: Ask whether to fix issues
+
+Use AskUserQuestion with these parameters:
+- question: "Do you want to fix any of the detected issues?"
+- options:
+  - label: "Yes", description: "Select issues to auto-fix"
+  - label: "No", description: "Skip fixing"
+- multiSelect: false
+
+**If user selects "No":** Mark task 8 as `completed` and proceed to Final Verification Checklist.
+
+### Step 7.2: Present issues checklist
+
+**If 4 or fewer issues:**
+
+Use AskUserQuestion with these parameters:
+- question: "Which issues should be fixed?"
+- multiSelect: true
+- options: one per issue, formatted as:
+  - label: "[SEVERITY] Short title"
+  - description: "path/to/file.py:line — brief problem description"
+
+**If more than 4 issues:**
+
+Present issues as a numbered text list grouped by severity (CRITICAL first, then HIGH, MEDIUM, LOW):
+
+```
+Issues found:
+
+1. [CRITICAL] SQL Injection — src/db.py:28
+2. [HIGH] Missing auth check — src/api.py:55
+3. [HIGH] XSS vulnerability — src/templates.py:12
+4. [MEDIUM] Unused import — src/utils.py:3
+5. [LOW] Naming convention — src/models.py:88
+
+Enter the numbers of issues to fix (e.g. 1,2,3 or 1-3 or "all"):
+```
+
+Wait for user response and parse selection.
+
+### Step 7.3: Run auto-fix for each selected issue
+
+For each selected issue, **sequentially** (one at a time, wait for completion):
+
+1. Use the Task tool with these parameters:
+   - subagent_type: "code-review:fix-auto"
+   - run_in_background: false
+   - description: "Auto-fix: [SEVERITY] Issue title"
+   - prompt: The full issue block in the review comment format (including all fields: severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples)
+
+2. Collect the result (status: Fixed / Partially Fixed / Failed)
+
+3. Proceed to the next issue
+
+### Step 7.4: Display fix summary
+
+After all selected issues have been processed, display:
+
+```markdown
+## Fix Summary
+
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | [SEVERITY] Title — path:line | STATUS_ICON STATUS_TEXT |
+| 2 | [SEVERITY] Title — path:line | STATUS_ICON STATUS_TEXT |
+
+**Fixed:** N | **Partially Fixed:** N | **Failed:** N
+```
+
+Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌
+
+**Task Update:** Mark task 8 as `completed` using TaskUpdate.
+
+---
+
 ## Final Verification Checklist
 
 ### Security (MANDATORY)
