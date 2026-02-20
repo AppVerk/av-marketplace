@@ -70,7 +70,7 @@ Use TaskCreate for each of the following (in a single response, all 5 tasks):
 | 5 | Generate final report | Generating final report... |
 | 6 | Run verification (Cross-Verifier + Challenger) | Running verification... |
 | 7 | Save review to file | Saving review to file... |
-| 8 | Fix selected issues | Fixing selected issues... |
+| 8 | Display post-review guidance | Displaying post-review guidance... |
 
 Note: task 6 is only created if `--verify` is active. Tasks 7-8 are always created.
 
@@ -393,82 +393,33 @@ mkdir -p docs/reviews
 
 ---
 
-## Step 7: Fix Selected Issues
+## Step 7: Post-Review Guidance
 
 **Skip this step if no issues were found during the review.**
 
 **Task Update:** Mark task 8 as `in_progress` using TaskUpdate.
 
-### Step 7.1: Ask whether to fix issues
+After the review is complete (and optionally saved), display guidance based on context:
 
-Use AskUserQuestion with these parameters:
-- question: "Do you want to fix any of the detected issues?"
-- options:
-  - label: "Yes", description: "Select issues to auto-fix"
-  - label: "No", description: "Skip fixing"
-- multiSelect: false
+**If issues were found AND report was saved to a file:**
 
-**If user selects "No":** Mark task 8 as `completed` and proceed to Final Verification Checklist.
+> **Found {N} issues.** To fix them, run:
+>
+> `/fix-report <saved-report-path>`
+>
+> Or fix a single issue manually: `/fix <paste issue block>`
 
-### Step 7.2: Present issues checklist
+**If issues were found but report was NOT saved:**
 
-**If 4 or fewer issues:**
+> **Found {N} issues.** To fix individual issues, use:
+>
+> `/fix <paste issue block from above>`
+>
+> To use `/fix-report`, save the review first (re-run `/review` and choose to save).
 
-Use AskUserQuestion with these parameters:
-- question: "Which issues should be fixed?"
-- multiSelect: true
-- options: one per issue, formatted as:
-  - label: "[SEVERITY] Short title"
-  - description: "path/to/file.py:line — brief problem description"
+**If no issues were found:**
 
-**If more than 4 issues:**
-
-Present issues as a numbered text list grouped by severity (CRITICAL first, then HIGH, MEDIUM, LOW):
-
-```
-Issues found:
-
-1. [CRITICAL] SQL Injection — src/db.py:28
-2. [HIGH] Missing auth check — src/api.py:55
-3. [HIGH] XSS vulnerability — src/templates.py:12
-4. [MEDIUM] Unused import — src/utils.py:3
-5. [LOW] Naming convention — src/models.py:88
-
-Enter the numbers of issues to fix (e.g. 1,2,3 or 1-3 or "all"):
-```
-
-Wait for user response and parse selection.
-
-### Step 7.3: Run auto-fix for each selected issue
-
-For each selected issue, **sequentially** (one at a time, wait for completion):
-
-1. Use the Task tool with these parameters:
-   - subagent_type: "code-review:fix-auto"
-   - run_in_background: false
-   - description: "Auto-fix: [SEVERITY] Issue title"
-   - prompt: The full issue block in the review comment format (including all fields: severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples)
-
-2. Collect the result (status: Fixed / Partially Fixed / Failed)
-
-3. Proceed to the next issue
-
-### Step 7.4: Display fix summary
-
-After all selected issues have been processed, display:
-
-```markdown
-## Fix Summary
-
-| # | Issue | Status |
-|---|-------|--------|
-| 1 | [SEVERITY] Title — path:line | STATUS_ICON STATUS_TEXT |
-| 2 | [SEVERITY] Title — path:line | STATUS_ICON STATUS_TEXT |
-
-**Fixed:** N | **Partially Fixed:** N | **Failed:** N
-```
-
-Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌
+> Review complete. No issues found.
 
 **Task Update:** Mark task 8 as `completed` using TaskUpdate.
 
@@ -506,9 +457,7 @@ Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌
 
 - [ ] User asked whether to save review
 - [ ] Review saved to `docs/reviews/` (if requested)
-- [ ] User asked whether to fix issues (if issues found)
-- [ ] Selected issues processed via fix-auto subagent (if requested)
-- [ ] Fix summary displayed (if fixes were run)
+- [ ] Post-review guidance displayed (fix-report / fix commands)
 
 **If ANY security or quality checkbox is unchecked: STOP. Complete those steps first.**
 
