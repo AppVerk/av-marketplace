@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.5.0
+**Version:** 1.6.0
 
 ## Commands
 
@@ -32,6 +32,23 @@ Apply a fix for a single issue from the review report. Paste the full issue bloc
 ```
 
 The fix goes through: parse issue, analyze context, propose fix (waits for your approval), implement, verify with linters/tests, and report results.
+
+### `/fix-report`
+
+Fix issues from a saved review report. Parses the report, presents unfixed issues as a paginated checklist, fixes selected issues, and marks them resolved in the report file.
+
+```bash
+/fix-report docs/reviews/2026-02-20-feature-login.md
+```
+
+The command:
+1. Reads the report and extracts issues (by `### [SEVERITY] Title` headings)
+2. Filters out already-fixed issues (those with a `**Status:**` field)
+3. Presents unfixed issues as a multi-select checklist, 4 per page, sorted by severity
+4. Fixes selected issues sequentially via the `fix-auto` agent
+5. Marks fixed issues in the report with `**Status:** ✅ Fixed (YYYY-MM-DD)`
+
+The report becomes a living document — fixed issues won't appear on subsequent `/fix-report` runs.
 
 ### `/analyze-feedback`
 
@@ -94,14 +111,16 @@ After the review report is generated, you are asked whether to save it to a file
 
 The branch name is slugified (e.g., `feature/user-login` becomes `feature-user-login`). If a file with that name already exists, a numeric suffix is appended (`-2`, `-3`, etc.).
 
-## Auto-Fix Issues
+## Fixing Issues
 
-After the review, if issues were found, you are asked whether to fix any of them. If you choose "Yes":
+After the review, if issues were found and the report was saved, the review suggests running `/fix-report <path>` to fix issues from the saved report. For individual issues, use `/fix <issue block>`.
 
-- **4 or fewer issues**: presented as a multi-select checklist
-- **More than 4 issues**: presented as a numbered list grouped by severity — enter numbers to select
+**Recommended workflow:**
 
-Selected issues are fixed sequentially using the `fix-auto` agent, which runs the same fix cycle as `/fix` but without the confirmation step. After all fixes, a summary table shows the status of each fix (Fixed / Partially Fixed / Failed).
+1. Run `/review` and save the report
+2. Run `/fix-report docs/reviews/2026-02-20-feature-login.md`
+3. Select issues to fix from the paginated checklist
+4. Re-run `/fix-report` on the same file to fix remaining issues
 
 ## Optional Tools
 
