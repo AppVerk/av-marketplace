@@ -2,7 +2,7 @@
 
 Python development workflow with `/develop` command, coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic).
 
-**Version:** 2.0.0
+**Version:** 2.1.0
 
 ## Commands
 
@@ -15,6 +15,21 @@ Python development workflow that automatically loads the right skills for the ta
 /develop Fix the N+1 query in the orders list endpoint
 /develop Refactor the payment service to use the repository pattern
 ```
+
+## Agents
+
+### Developer (`python-developer:developer`)
+
+Autonomous Python development agent for implementing features, fixing issues, and refactoring code. Claude selects this agent automatically when working on Python projects.
+
+The agent follows the full Python Developer workflow:
+
+1. Detects mode (fix, implement, or refactor) from the task description
+2. Loads coding standards and detects the project stack
+3. Loads stack-specific skills (FastAPI, SQLAlchemy, Pydantic, async patterns)
+4. Runs a TDD cycle appropriate to the mode
+5. Passes quality gates (typecheck, tests, lint)
+6. Reports results with changes left uncommitted
 
 ## Skills
 
