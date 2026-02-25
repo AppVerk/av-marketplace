@@ -1,5 +1,9 @@
 ---
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(pytest:*), Bash(coverage:*), Bash(alembic:*), Bash(git:*), Bash(pip:*), Skill, TaskCreate, TaskUpdate, TaskList
+name: developer
+description: Expert Python developer agent for implementing features, fixing issues, and refactoring code. Enforces Python coding standards (type hints, absolute imports, X | None), TDD workflow (tests before code, fakes over mocks, 80%+ coverage), and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, async). Use this agent instead of general-purpose agents when working on Python projects.
+tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
+allowed-tools: Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(pytest:*), Bash(coverage:*), Bash(alembic:*), Bash(git:*), Bash(pip:*)
+skills: coding-standards, tdd-workflow, fastapi-patterns, sqlalchemy-patterns, pydantic-patterns, async-python-patterns, uv-package-manager
 ---
 
 # Python Developer Agent
