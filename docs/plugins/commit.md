@@ -78,5 +78,6 @@ This plugin includes a PreToolUse hook that automatically blocks direct `git com
 
 **What's allowed:**
 - `git commit --amend` — the `/commit` skill doesn't support amending
+- Commands from the `/commit` skill itself (identified by `AV_COMMIT_SKILL=1` prefix)
 
 The hook is registered automatically when the plugin is enabled. No configuration required.
