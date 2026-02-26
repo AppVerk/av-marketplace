@@ -2,7 +2,7 @@
 
 Generate meaningful, well-formatted commit messages following the Conventional Commits specification.
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 
 ## Commands
 
@@ -66,3 +66,17 @@ feat!: change API response format
 |------|--------|
 | `TASK-123` | Adds `Refs: TASK-123` footer |
 | `--no-coauthor` | Omits the Co-Authored-By line |
+
+## Auto-enforcement
+
+This plugin includes a PreToolUse hook that automatically blocks direct `git commit` commands. When any agent or subagent attempts to run `git commit`, the hook denies the command and instructs the agent to use `/commit` instead.
+
+**What's blocked:**
+- `git commit -m "message"`
+- `git commit` (interactive)
+- Chained commands containing `git commit` (e.g., `git add . && git commit -m "msg"`)
+
+**What's allowed:**
+- `git commit --amend` — the `/commit` skill doesn't support amending
+
+The hook is registered automatically when the plugin is enabled. No configuration required.
