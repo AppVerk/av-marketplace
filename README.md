@@ -15,7 +15,7 @@ After installation, verify with `/help` — you should see the new commands list
 | Plugin | Version | Description |
 |--------|---------|-------------|
 | [Code Review](docs/plugins/code-review.md) | 1.6.0 | Security, architecture, and code quality analysis with OWASP compliance. Save reviews to file, fix issues via `/fix-report` with paginated checklist. Optional `--verify` for cross-analysis and adversarial review |
-| [Commit](docs/plugins/commit.md) | 1.0.0 | Conventional Commits message generation from staged changes |
+| [Commit](docs/plugins/commit.md) | 1.1.0 | Conventional Commits message generation from staged changes. Auto-blocks direct `git commit` via hook |
 | [Web Auditor](docs/plugins/web-auditor.md) | 2.1.0 | Comprehensive web audit: security, SEO, performance, and compliance. Optional `--verify` for cross-domain correlation and adversarial review |
 | [Python Developer](docs/plugins/python-developer.md) | 2.1.0 | Python development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic) |
 | [Sequential Thinking](https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking) | MCP | Structured problem-solving through dynamic thinking process |
