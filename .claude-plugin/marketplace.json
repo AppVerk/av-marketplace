@@ -19,6 +19,13 @@
       "category": "development"
     },
     {
+      "name": "frontend-developer",
+      "source": "./plugins/frontend-developer",
+      "description": "Enforces TypeScript + React best practices, coding standards, TDD workflow, and modern tooling (Tailwind, Zustand, TanStack Query, React Hook Form, TanStack Router)",
+      "version": "1.0.0",
+      "category": "development"
+    },
+    {
       "name": "python-developer",
       "source": "./plugins/python-developer",
       "description": "Master the Python programming language for efficient and effective development",
