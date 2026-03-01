@@ -8,6 +8,7 @@
 
 - [Code Review](plugins/code-review.md) — Security, architecture, and code quality analysis
 - [Commit](plugins/commit.md) — Conventional Commits message generation
+- [Frontend Developer](plugins/frontend-developer.md) — TypeScript + React best practices, TDD, modern tooling patterns
 - [Python Developer](plugins/python-developer.md) — Python best practices, TDD, async patterns
 
 ## Contributing
