@@ -85,6 +85,49 @@ For each finding, provide:
 
 ---
 
+### Step 5: Framework Security Patterns (if available)
+
+If developer plugin skills were provided in the prompt context (from the review command's Stack Detection Phase), check for framework-specific security patterns that automated tools may miss.
+
+**Skip this step if no developer skills were mentioned in your prompt.**
+
+#### Python Framework Security (if python-developer skills available)
+
+**From `python-developer:fastapi-patterns`:**
+- **BaseHTTPMiddleware vulnerability**: Check for `BaseHTTPMiddleware` usage — it has known memory leak issues. Use pure ASGI middleware instead. (CWE-400: Uncontrolled Resource Consumption)
+- **Exception mapping**: Verify domain exceptions are mapped to HTTP status codes via global exception handlers, not leaked to clients. (CWE-209: Information Exposure Through Error Message)
+- **Dependency injection**: Verify `Annotated[T, Depends(...)]` pattern — direct session injection creates resource management risks. (CWE-404: Improper Resource Shutdown)
+- **Lifespan management**: Check that startup/shutdown uses lifespan context, not deprecated `on_event`. (A02:2025: Security Misconfiguration)
+
+**From `python-developer:sqlalchemy-patterns`:**
+- **N+1 query prevention**: Verify eager loading strategy (selectinload, joinedload) — N+1 queries can cause DoS. (CWE-400)
+- **Lazy loading in async**: Check no lazy-loaded relationships in async context — causes runtime errors under load. (CWE-755: Improper Handling of Exceptional Conditions)
+- **Raw SQL avoidance**: Verify Alembic migrations used, no raw SQL that bypasses ORM protections. (CWE-89: SQL Injection)
+
+**From `python-developer:pydantic-patterns`:**
+- **SecretStr for sensitive data**: Verify settings use `SecretStr` for passwords, API keys, tokens. (CWE-312: Cleartext Storage of Sensitive Information)
+- **Validator exception exposure**: Check that validators don't leak sensitive data in error messages. (CWE-209)
+- **from_attributes mapping**: Verify `from_attributes=True` is used to prevent ORM data leakage through implicit field exposure. (CWE-200: Exposure of Sensitive Information)
+
+#### Frontend Framework Security (if frontend-developer skills available)
+
+**From `frontend-developer:tanstack-query-patterns`:**
+- **Auth token handling**: Verify auth tokens are handled in Axios interceptors, not stored in Zustand or component state. (CWE-922: Insecure Storage of Sensitive Information)
+- **Error response exposure**: Check queryFn error handling doesn't expose API internals to users. (CWE-209)
+- **Cache invalidation**: Verify proper invalidation after mutations to prevent stale auth state. (CWE-613: Insufficient Session Expiration)
+
+**From `frontend-developer:tanstack-router-patterns`:**
+- **Auth enforcement**: Verify `beforeLoad` guards enforce authentication — NOT JSX wrapper components that can be bypassed. (CWE-862: Missing Authorization)
+- **Redirect safety**: Check redirect targets don't leak authorization state in URLs. (CWE-601: URL Redirection to Untrusted Site)
+- **Search params sanitization**: Verify search params validated with Zod schemas — unvalidated search params are injection vectors. (CWE-20: Improper Input Validation)
+
+**From `frontend-developer:zustand-patterns`:**
+- **No sensitive data in persisted stores**: If persist middleware is used, verify `partialize` excludes auth tokens and sensitive data. (CWE-922)
+
+For framework security findings, use the standard report format with CWE identifiers and the developer skill as the source.
+
+---
+
 ## OWASP Top 10:2025 Checklist
 
 | ID | Category | CWEs | Check Method |
@@ -131,6 +174,7 @@ For each vulnerability found, report in this structure:
 - Proceed without running automated tools first
 - Report findings without file paths and line numbers
 - Miss OWASP Top 10 categories in the final report
+- Ignore available developer plugin skills passed in your prompt context
 
 **When these occur:** Go back and complete the missed step.
 
@@ -147,3 +191,5 @@ Before completing the audit, verify:
 - [ ] All OWASP Top 10:2025 categories addressed
 - [ ] Each finding has: severity, CWE, file, line, remediation
 - [ ] Report is structured and actionable
+- [ ] Framework security patterns checked (if developer skills available)
+- [ ] Developer skill security findings include CWE identifiers
