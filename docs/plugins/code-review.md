@@ -122,6 +122,27 @@ After the review, if issues were found and the report was saved, the review sugg
 3. Select issues to fix from the paginated checklist
 4. Re-run `/fix-report` on the same file to fix remaining issues
 
+## Skills
+
+### Developer Plugins Integration
+
+**Skill:** `developer-plugins-integration`
+
+Automatically detects installed developer plugins (python-developer, frontend-developer) and the project's tech stack, then loads relevant skills for enhanced code review and fix workflows.
+
+**How it works:**
+1. Detects if python-developer and/or frontend-developer plugins are installed
+2. Scans project config files (pyproject.toml, package.json, tsconfig.json) to identify the tech stack
+3. Maps detected stack to relevant developer skills (coding standards, framework patterns)
+4. Passes skills to review auditors and fix commands for stack-aware analysis
+
+**Used by:**
+- `/review` — Passes developer skills to security-auditor and code-quality-auditor
+- `/fix` — Applies framework-specific patterns when implementing fixes
+- `fix-auto` agent — Same as `/fix` but autonomous
+
+**Graceful degradation:** If no developer plugins are installed, the review and fix workflows proceed with standard behavior. No additional action needed.
+
 ## Optional Tools
 
 For deeper analysis, install additional tools. See [Installation — Optional Tools](../installation.md#optional-tools).

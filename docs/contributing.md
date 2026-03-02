@@ -101,3 +101,29 @@ Each skill has a frontmatter with name and description, followed by detailed ins
 - Use the appropriate model for your use case (`claude-opus-4-6` for deep analysis, `claude-haiku-4-5` for fast tasks)
 - Test with multiple project types when applicable
 - Ensure compatibility with the latest Claude Code version
+
+## Developer Plugins Integration
+
+The code-review plugin automatically integrates with installed developer plugins:
+
+- **python-developer** — Python coding standards, TDD patterns, FastAPI/SQLAlchemy/Pydantic conventions
+- **frontend-developer** — TypeScript/React standards, TDD patterns, Tailwind/Zustand/TanStack conventions
+
+### How it works
+
+When code-review runs, it invokes the `developer-plugins-integration` skill which:
+
+1. Checks if developer plugins are installed (by checking available skills)
+2. Detects the project stack from config files
+3. Maps: installed plugin + detected stack -> skills to load
+4. Passes relevant skills to review auditors and fix commands
+
+### Adding support for a new developer plugin
+
+To integrate a new developer plugin (e.g., `go-developer`):
+
+1. Update `plugins/code-review/skills/developer-plugins-integration/SKILL.md`:
+   - Add detection logic for the new stack (e.g., `go.mod` for Go)
+   - Add framework sub-detection (e.g., Gin, Echo)
+   - Add skill mapping table for the new plugin
+2. No changes needed to review.md, fix.md, or agent files — they already delegate to the skill
