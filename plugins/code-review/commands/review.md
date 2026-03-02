@@ -19,6 +19,25 @@ Parse arguments:
 
 ---
 
+## Stack Detection Phase (Pre-Launch)
+
+Before launching subagents, invoke the `developer-plugins-integration` skill using the Skill tool:
+
+```
+Skill(skill: "developer-plugins-integration")
+```
+
+This detects:
+- Available developer plugins (e.g. python-developer, frontend-developer)
+- Project tech stack (languages, frameworks, libraries)
+- Which developer skills should be loaded for stack-specific analysis
+
+Store the output — specifically the `skills_to_load` list — for use in subagent prompts below.
+
+**Graceful degradation:** If no developer plugins are detected or the skill is unavailable, proceed normally. The review workflow is unchanged — stack detection is additive only.
+
+---
+
 ## MANDATORY FIRST STEP: Launch TWO Subagents
 
 **YOU MUST launch EXACTLY TWO subagents before doing ANYTHING else.**
@@ -34,6 +53,9 @@ Use Task tool with these EXACT parameters:
 - prompt: "Perform comprehensive security audit. Execute ALL skills: secret-scanning, sast-analysis, dependency-scanning, AI threat modeling. Report with severity, CWE, file path, line number, remediation."
 ```
 
+If developer skills were detected in the Stack Detection Phase, append to the prompt:
+> "Developer skills available for framework-specific security checks: [skills_to_load list]. After standard security scans, apply framework-specific security patterns from these skills."
+
 ### Agent 2: Code Quality Auditor
 
 ```
@@ -42,6 +64,9 @@ Use Task tool with these EXACT parameters:
 - run_in_background: true
 - prompt: "Perform comprehensive code quality audit. Execute ALL skills: standards-discovery, linter-integration, architecture-analysis. Check SOLID, DDD, Clean Architecture. Report with severity, principle, file path, line number, code examples."
 ```
+
+If developer skills were detected in the Stack Detection Phase, append to the prompt:
+> "Developer skills available for stack-specific quality checks: [skills_to_load list]. After standard quality analysis, apply coding standards and patterns from these skills."
 
 **CRITICAL REQUIREMENTS:**
 
@@ -460,6 +485,12 @@ After the review is complete (and optionally saved), display guidance based on c
 - [ ] Post-review guidance displayed (fix-report / fix commands)
 
 **If ANY security or quality checkbox is unchecked: STOP. Complete those steps first.**
+
+### Developer Plugins (if detected)
+
+- [ ] developer-plugins-integration skill invoked
+- [ ] Stack detection results passed to subagents
+- [ ] Developer skill findings integrated into review
 
 ### Verification (if --verify)
 
