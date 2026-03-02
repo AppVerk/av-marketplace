@@ -1,7 +1,7 @@
 ---
 name: developer-plugins-integration
 description: Detects installed developer plugins (python-developer, frontend-developer) and project stack, then provides a list of relevant skills to load for code review and fix workflows. Supports Python (FastAPI, SQLAlchemy, Pydantic, asyncio, uv) and Frontend (React, Tailwind, Zustand, TanStack, pnpm).
-allowed-tools: Read, Grep, Glob, Bash(grep:*), Bash(cat:*), Bash(head:*), Bash(find:*), Bash(test:*), Bash([), Bash(echo:*)
+allowed-tools: Read, Grep, Glob, Bash(grep:*), Bash(cat:*), Bash(head:*), Bash(find:*), Bash(test:*), Bash(echo:*)
 ---
 
 # Developer Plugins Integration - Detection & Skill Loading
@@ -57,37 +57,54 @@ If **ANY** of these files exist, Python stack is detected.
 
 ### Step 2: Detect Python Frameworks
 
-**Only run if Python stack is detected.** Grep dependencies in `pyproject.toml` or `requirements.txt`:
+**Only run if Python stack is detected.** Grep dependencies in every `pyproject.toml` and `requirements.txt` that triggered detection (root and first-level subdirectories):
 
 ```bash
 echo "=== Python Framework Detection ==="
 
+# Collect all Python dependency files (root + subdirectories)
+PYTHON_DEP_FILES=""
+for f in pyproject.toml requirements.txt; do
+    [ -f "$f" ] && PYTHON_DEP_FILES="$PYTHON_DEP_FILES $f"
+done
+for dir in */; do
+    for f in pyproject.toml requirements.txt; do
+        [ -f "$dir$f" ] && PYTHON_DEP_FILES="$PYTHON_DEP_FILES $dir$f"
+    done
+done
+
 # FastAPI
 FASTAPI=false
-grep -qi "fastapi" pyproject.toml 2>/dev/null && FASTAPI=true
-grep -qi "fastapi" requirements.txt 2>/dev/null && FASTAPI=true
+for f in $PYTHON_DEP_FILES; do
+    grep -qi "fastapi" "$f" 2>/dev/null && FASTAPI=true
+done
 echo "FastAPI: $FASTAPI"
 
 # SQLAlchemy
 SQLALCHEMY=false
-grep -qi "sqlalchemy" pyproject.toml 2>/dev/null && SQLALCHEMY=true
-grep -qi "sqlalchemy" requirements.txt 2>/dev/null && SQLALCHEMY=true
+for f in $PYTHON_DEP_FILES; do
+    grep -qi "sqlalchemy" "$f" 2>/dev/null && SQLALCHEMY=true
+done
 echo "SQLAlchemy: $SQLALCHEMY"
 
 # Pydantic
 PYDANTIC=false
-grep -qi "pydantic" pyproject.toml 2>/dev/null && PYDANTIC=true
-grep -qi "pydantic" requirements.txt 2>/dev/null && PYDANTIC=true
+for f in $PYTHON_DEP_FILES; do
+    grep -qi "pydantic" "$f" 2>/dev/null && PYDANTIC=true
+done
 echo "Pydantic: $PYDANTIC"
 
 # asyncio (check source files for async def or asyncio import)
 ASYNCIO=false
-grep -rq "import asyncio\|from asyncio\|async def" --include="*.py" . 2>/dev/null && ASYNCIO=true
+grep -rqE "import asyncio|from asyncio|async def" --include="*.py" . 2>/dev/null && ASYNCIO=true
 echo "asyncio: $ASYNCIO"
 
-# uv (check for uv.lock)
+# uv (check for uv.lock in root and subdirectories)
 UV=false
 [ -f "uv.lock" ] && UV=true
+for dir in */; do
+    [ -f "$dir/uv.lock" ] && UV=true
+done
 echo "uv: $UV"
 ```
 
@@ -126,39 +143,63 @@ If `package.json` contains `"react"` in dependencies, Frontend stack is detected
 
 ### Step 4: Detect Frontend Frameworks
 
-**Only run if Frontend stack is detected.** Grep `package.json` dependencies and devDependencies:
+**Only run if Frontend stack is detected.** Grep every `package.json` that triggered detection (root and first-level subdirectories) for dependencies and devDependencies:
 
 ```bash
 echo "=== Frontend Framework Detection ==="
 
+# Collect all package.json files that contain react (root + subdirectories)
+PKG_FILES=""
+if [ -f "package.json" ]; then
+    grep -q '"react"' package.json 2>/dev/null && PKG_FILES="$PKG_FILES package.json"
+fi
+for dir in */; do
+    if [ -f "$dir/package.json" ]; then
+        grep -q '"react"' "$dir/package.json" 2>/dev/null && PKG_FILES="$PKG_FILES $dir/package.json"
+    fi
+done
+
 # Tailwind
 TAILWIND=false
-grep -q '"tailwindcss"\|"@tailwindcss/core"' package.json 2>/dev/null && TAILWIND=true
+for f in $PKG_FILES; do
+    grep -qE '"tailwindcss"|"@tailwindcss/core"' "$f" 2>/dev/null && TAILWIND=true
+done
 echo "Tailwind: $TAILWIND"
 
 # Zustand
 ZUSTAND=false
-grep -q '"zustand"' package.json 2>/dev/null && ZUSTAND=true
+for f in $PKG_FILES; do
+    grep -q '"zustand"' "$f" 2>/dev/null && ZUSTAND=true
+done
 echo "Zustand: $ZUSTAND"
 
 # TanStack Query
 TANSTACK_QUERY=false
-grep -q '"@tanstack/react-query"' package.json 2>/dev/null && TANSTACK_QUERY=true
+for f in $PKG_FILES; do
+    grep -q '"@tanstack/react-query"' "$f" 2>/dev/null && TANSTACK_QUERY=true
+done
 echo "TanStack Query: $TANSTACK_QUERY"
 
 # TanStack Router
 TANSTACK_ROUTER=false
-grep -q '"@tanstack/react-router"' package.json 2>/dev/null && TANSTACK_ROUTER=true
+for f in $PKG_FILES; do
+    grep -q '"@tanstack/react-router"' "$f" 2>/dev/null && TANSTACK_ROUTER=true
+done
 echo "TanStack Router: $TANSTACK_ROUTER"
 
 # React Hook Form
 REACT_HOOK_FORM=false
-grep -q '"react-hook-form"' package.json 2>/dev/null && REACT_HOOK_FORM=true
+for f in $PKG_FILES; do
+    grep -q '"react-hook-form"' "$f" 2>/dev/null && REACT_HOOK_FORM=true
+done
 echo "React Hook Form: $REACT_HOOK_FORM"
 
-# pnpm
+# pnpm (check root and subdirectories)
 PNPM=false
 [ -f "pnpm-lock.yaml" ] && PNPM=true
+for dir in */; do
+    [ -f "$dir/pnpm-lock.yaml" ] && PNPM=true
+done
 echo "pnpm: $PNPM"
 ```
 
