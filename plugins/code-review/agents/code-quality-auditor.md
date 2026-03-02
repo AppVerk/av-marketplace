@@ -466,3 +466,4 @@ Before completing the audit, verify:
 ## Version History
 
 - v0.1.0 (2025-12-15): Initial version - SOLID, DDD, Clean Architecture, linter integration
+- v0.2.0 (2026-03-02): Developer plugins integration - stack-specific coding standards from python-developer and frontend-developer
