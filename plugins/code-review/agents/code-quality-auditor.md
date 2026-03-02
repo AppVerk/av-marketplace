@@ -140,6 +140,70 @@ For each finding, provide:
 
 ---
 
+### Step 6: Developer Standards Check (if available)
+
+If developer plugin skills were provided in the prompt context (from the review command's Stack Detection Phase), apply them as additional quality criteria.
+
+**Skip this step if no developer skills were mentioned in your prompt.**
+
+#### Python Standards (if python-developer skills available)
+
+Invoke each available python-developer skill and check for violations:
+
+**From `python-developer:coding-standards`:**
+- No relative imports (must use absolute imports)
+- `X | None` syntax instead of `Optional[X]`
+- Type hints on ALL public functions and methods
+- `raise ... from ...` for exception chaining
+- `pathlib.Path` instead of `os.path` for file operations
+- Catch specific exceptions (never bare `except:`)
+
+**From `python-developer:tdd-workflow`:**
+- Tests use fakes over mocks for internal dependencies
+- Mocks only for external I/O (3rd-party APIs, network, DB)
+- 80%+ test coverage target
+- Factory fixtures for test data
+
+**From framework-specific skills (if detected):**
+- `fastapi-patterns`: APIRouter usage, Annotated[T, Depends(...)], exception mapping to HTTP, no BaseHTTPMiddleware
+- `sqlalchemy-patterns`: Mapped[T] annotations, eager loading (selectinload/joinedload), Repository + Unit of Work pattern, no lazy loading in async
+- `pydantic-patterns`: frozen=True for value objects, from_attributes=True for ORM mapping, SecretStr for sensitive config
+
+#### Frontend Standards (if frontend-developer skills available)
+
+Invoke each available frontend-developer skill and check for violations:
+
+**From `frontend-developer:coding-standards`:**
+- No `any` type (use `unknown` + type guards)
+- No `as` keyword except `as const`
+- No `!` non-null assertions
+- No `enum` (use `as const` objects)
+- `interface` for objects, `type` for unions
+- No `React.FC` — explicit props with children: React.ReactNode
+- Feature-based architecture: shared -> features -> app dependency flow
+
+**From `frontend-developer:tdd-workflow`:**
+- `userEvent` instead of `fireEvent`
+- `getByRole` preferred over `getByText` or `getByTestId`
+- MSW v2 for API mocking (never vi.mock fetch/axios)
+- 80%+ test coverage target
+
+**From framework-specific skills (if detected):**
+- `tailwind-patterns`: No @apply, semantic tokens, mobile-first, cn() utility for conditional classes
+- `zustand-patterns`: Granular selectors (never destructure entire store), useShallow for multiple values, devtools middleware
+- `tanstack-query-patterns`: queryOptions pattern, query key factories, never cache API data in Zustand
+- `tanstack-router-patterns`: File-based routing, validateSearch with Zod, loader + ensureQueryData pattern
+- `form-patterns`: Zod schema as single source of truth, zodResolver, server error mapping via setError
+
+#### Report Format for Developer Standards
+
+For findings from developer skills, use the same JSON report format as other findings but with:
+- `category`: "Developer Standards"
+- `principle`: The skill name (e.g., "python-developer:coding-standards")
+- Include the specific rule violated in the description
+
+---
+
 ## Quality Principles Reference
 
 ### SOLID Principles
@@ -371,6 +435,7 @@ class PaymentService:
 - Override explicit project standards with generic best practices
 - Provide HIGH+ severity findings without code examples
 - Miss linter errors marked as blocking
+- Ignore available developer plugin skills passed in your prompt context
 
 **When these occur:** Go back and complete the missed step.
 
@@ -392,6 +457,8 @@ Before completing the audit, verify:
 - [ ] Code examples provided for all HIGH+ severity issues
 - [ ] Executive summary generated
 - [ ] Recommendations prioritized
+- [ ] Developer standards checked (if developer skills available)
+- [ ] Developer skill findings use correct report format
 - [ ] Report is structured and actionable
 
 ---
