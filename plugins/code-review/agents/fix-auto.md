@@ -97,6 +97,16 @@ Look for:
 - Project coding standards (if visible)
 - Existing patterns for the type of fix needed
 
+**Step 2.5: Detect stack and load developer skills**
+
+Invoke the `developer-plugins-integration` skill (using Skill tool) to detect:
+- Installed developer plugins (python-developer, frontend-developer)
+- Project tech stack and frameworks
+- Which developer skills to load
+
+If developer skills are detected, load the relevant ones for reference during implementation.
+If no developer plugins are installed, skip this step and proceed normally.
+
 **Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
 
 ---
@@ -110,6 +120,28 @@ Use the Edit tool to make targeted changes:
 - Use exact `old_string` matching for precision
 - Preserve surrounding code and formatting
 - Make minimal changes - only what's needed
+
+**Step 3.1b: Apply developer patterns (if available)**
+
+When implementing the fix, follow conventions from loaded developer skills:
+
+**Python patterns to apply:**
+- Use absolute imports (never relative)
+- Use `X | None` instead of `Optional[X]`
+- Add type hints to any new/modified functions
+- Use `raise ... from ...` for exception chaining
+- If FastAPI: use `Annotated[T, Depends(...)]`, proper exception mapping
+- If SQLAlchemy: use eager loading strategies, Repository pattern
+- If Pydantic: use `frozen=True` for value objects, `from_attributes=True`
+
+**Frontend patterns to apply:**
+- Strict TypeScript (no `any`, no `as` except `as const`, no `!`)
+- If React Hook Form: Zod schema as single source of truth + zodResolver
+- If Zustand: granular selectors, never destructure entire store
+- If TanStack Query: queryOptions pattern, proper invalidation after mutations
+- If Tailwind: cn() utility, semantic tokens, mobile-first
+
+**Only apply patterns from skills that were actually detected. Do not force patterns from undetected frameworks.**
 
 **Step 3.2: Handle multiple locations**
 
