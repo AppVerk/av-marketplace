@@ -21,7 +21,16 @@ Run a comprehensive code review covering security, performance, architecture, an
 /review "Analyze the new API endpoints"
 ```
 
-The review launches two parallel analysis agents (security + code quality) and combines their findings into a unified report. Each issue includes severity level, file location, explanation, and remediation with code examples.
+The review launches two parallel analysis agents (security + code quality) and combines their findings into a unified report. Each issue gets a unique category-based ID (e.g., `SEC-001`, `PERF-002`, `ARCH-001`, `MAINT-003`) and includes severity level, file location, explanation, and remediation with code examples.
+
+**Issue ID categories:**
+
+| Category        | Prefix |
+|-----------------|--------|
+| Security        | SEC    |
+| Performance     | PERF   |
+| Architecture    | ARCH   |
+| Maintainability | MAINT  |
 
 ### `/fix`
 
@@ -55,7 +64,7 @@ Fix issues from a saved review report. Parses the report, presents unfixed issue
 ```
 
 The command:
-1. Reads the report and extracts issues (by `### [SEVERITY] Title` headings)
+1. Reads the report and extracts issues (by `### [SEVERITY] ID: Title` headings)
 2. Filters out already-fixed issues (those with a `**Status:**` field)
 3. Presents unfixed issues as a multi-select checklist, 4 per page, sorted by severity
 4. Fixes selected issues sequentially via the `fix-auto` agent
