@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.6.0
+**Version:** 1.8.0
 
 ## Commands
 
@@ -25,13 +25,26 @@ The review launches two parallel analysis agents (security + code quality) and c
 
 ### `/fix`
 
-Apply a fix for a single issue from the review report. Paste the full issue block and the plugin handles analysis, implementation, verification, and reporting.
+Apply a fix for a single issue from a review report. Supports two modes:
+
+**ID mode** — specify the issue ID directly:
+
+```bash
+/fix SEC-001
+/fix PERF-042
+```
+
+The plugin automatically finds the most recent saved report in `docs/reviews/`, locates the issue by ID, and proceeds with the fix. After fixing, the issue is marked as fixed in the report.
+
+**Paste mode** — paste the full issue block:
 
 ```bash
 /fix <paste full issue block from /review report>
 ```
 
-The fix goes through: parse issue, analyze context, propose fix (waits for your approval), implement, verify with linters/tests, and report results.
+The fix proceeds with the pasted content directly. No report file is updated.
+
+Both modes go through the same fix cycle: parse issue, analyze context, propose fix (waits for your approval), implement, verify with linters/tests, and report results.
 
 ### `/fix-report`
 
@@ -113,14 +126,16 @@ The branch name is slugified (e.g., `feature/user-login` becomes `feature-user-l
 
 ## Fixing Issues
 
-After the review, if issues were found and the report was saved, the review suggests running `/fix-report <path>` to fix issues from the saved report. For individual issues, use `/fix <issue block>`.
+After the review, if issues were found and the report was saved, the review suggests running `/fix-report <path>` to fix issues from the saved report. For individual issues, use `/fix SEC-001` (by ID from the saved report) or `/fix <issue block>` (by pasting).
 
 **Recommended workflow:**
 
 1. Run `/review` and save the report
-2. Run `/fix-report docs/reviews/2026-02-20-feature-login.md`
-3. Select issues to fix from the paginated checklist
-4. Re-run `/fix-report` on the same file to fix remaining issues
+2. Fix using one of these methods:
+   - `/fix-report docs/reviews/2026-02-20-feature-login.md` — fix multiple issues interactively
+   - `/fix SEC-001` — fix a single issue by ID
+   - `/fix <paste issue block>` — fix by pasting the full block
+3. Re-run `/fix-report` on the same file to fix remaining issues
 
 ## Skills
 
