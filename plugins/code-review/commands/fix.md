@@ -2,7 +2,22 @@
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList
 description: Apply fix for a single code review issue with verification and reporting.
 model: claude-opus-4-6
-argument-hint: <paste full issue block from /review report>
+argument-hint: <issue-id | full issue block from /review report>
+---
+
+## Input Handling
+
+Parse the input argument to determine mode:
+
+- **ID Mode:** If `$ARGUMENTS` matches pattern `^(SEC|PERF|ARCH|MAINT)-\d{3}$`
+  - Examples: `SEC-001`, `PERF-042`, `ARCH-001`, `MAINT-999`
+  - Action: Proceed to Phase 0 (Resolve Issue by ID)
+
+- **Legacy Paste Mode:** If `$ARGUMENTS` does not match the ID pattern (e.g., contains `### [` or other issue block content)
+  - Action: Skip Phase 0, proceed directly to Phase 1 (Parse Issue) with input as-is
+
+This allows backward compatibility: both ID lookup and issue block pasting work.
+
 ---
 
 # Fix Code Review Issue
@@ -11,9 +26,72 @@ You are an expert code fixer that takes a single issue from a code review report
 
 ## Input
 
-The user provides an issue block from `/review`:
+The user provides either an issue ID or an issue block from `/review`:
 
 $ARGUMENTS
+
+---
+
+## Phase 0: Resolve Issue by ID (ID mode only)
+
+**ONLY execute this phase if `$ARGUMENTS` matches the ID pattern from Input Handling above.**
+
+**Skip this phase entirely if in Legacy Paste Mode.**
+
+### Step 0.1: Locate most recent report
+
+List all `.md` files in `docs/reviews/` directory:
+
+```bash
+ls -t docs/reviews/*.md 2>/dev/null | head -1
+```
+
+Expected: The most recently modified file, e.g., `docs/reviews/2026-03-06-feature-auth.md`
+
+If no files found, display error and stop:
+
+> Error: No saved review reports found in `docs/reviews/`. Run `/review` and save a report first, then use `/fix <ID>`.
+
+### Step 0.2: Read the report file
+
+Use the Read tool to read the most recent report file identified in Step 0.1.
+
+Store the report file path for use in Phase 8.
+
+### Step 0.3: Search for the issue by ID
+
+Scan the report for a heading containing the provided ID.
+
+Search for a line matching: `### [` followed by a severity level, followed by `] {ID}:` where `{ID}` is the ID from `$ARGUMENTS`.
+
+Example: If user provided `SEC-001`, search for headings like:
+- `### [HIGH] SEC-001: SQL Injection...`
+- `### [CRITICAL] SEC-001: ...`
+
+### Step 0.4: Extract the full issue block
+
+Once found, extract the complete issue block:
+- **Start:** the `### [SEVERITY] ID: Title` line
+- **End:** the next `###` heading, or `---` separator, or end of file
+
+This extracted block becomes the input for Phase 1.
+
+### Step 0.5: Handle not found
+
+If the ID is not found in the report, display error and stop:
+
+> Error: Issue `{ID}` not found in report: `{report-path}`
+>
+> Available issues in this report:
+> {list all issue IDs found in the report, e.g., SEC-001, SEC-002, PERF-001}
+>
+> Use `/fix <paste issue block>` to fix using the full block, or check the report path.
+
+### Step 0.6: Proceed to Phase 1
+
+Pass the extracted issue block to Phase 1 as if it were the original `$ARGUMENTS`.
+
+The remainder of the fix workflow (Phases 1-7) operates normally, unaware of whether the input came from ID lookup or direct paste.
 
 ---
 
@@ -29,6 +107,9 @@ $ARGUMENTS
 | 4 | Implement fix | Implementing fix... |
 | 5 | Verify fix | Verifying fix... |
 | 6 | Generate report | Generating report... |
+| 7 | Update report | Updating report... |
+
+Note: task 7 is only created if in ID mode (Phase 0 was executed).
 
 **After creating all tasks:** Mark task 1 as `in_progress` using TaskUpdate.
 
@@ -391,6 +472,66 @@ Present the final report in this exact format:
 ---
 
 **Task Update:** Mark task 6 as `completed` using TaskUpdate.
+If in ID mode (Phase 0 was executed): mark task 7 as `in_progress` using TaskUpdate.
+
+**Changes remain uncommitted for your control.**
+
+---
+
+## Phase 8: Update Report (ID mode only)
+
+**ONLY execute this phase if Phase 0 was executed (ID mode).**
+
+**Skip this phase in Legacy Paste Mode — there is no report file to update.**
+
+This step marks the fixed issue in the saved report, so it won't appear again in `/fix-report`.
+
+**Task Update:** Mark task 7 as `in_progress` using TaskUpdate.
+
+### Step 8.1: Determine fix status
+
+From Phase 7 (Generate Report), the status is one of:
+- **Fixed** — all verification passed
+- **Partially Fixed** — main issue fixed, minor issues remain
+- **Failed** — could not fix within 3 iterations
+
+### Step 8.2: Update the report for Fixed status
+
+If status is **Fixed**:
+
+1. Open the report file (same file from Phase 0, Step 0.2)
+2. Find the issue heading: `### [SEVERITY] {ID}: Title`
+3. Insert immediately after the heading line:
+
+```
+**Status:** ✅ Fixed (YYYY-MM-DD)
+```
+
+Use today's date.
+
+Use the Edit tool with:
+- `old_string`: the heading line followed by the next line (e.g., `**ID:** {ID}`)
+- `new_string`: the heading line, then `**Status:** ✅ Fixed (YYYY-MM-DD)`, then the original next line
+
+### Step 8.3: Update the report for Partially Fixed status
+
+If status is **Partially Fixed**, follow the same process as Step 8.2 but insert:
+
+```
+**Status:** ⚠️ Partially Fixed (YYYY-MM-DD)
+```
+
+### Step 8.4: Do not update for Failed status
+
+If status is **Failed**, do NOT modify the report. The issue remains unfixed and will appear again on the next `/fix-report` run.
+
+### Step 8.5: Confirm update
+
+After editing the report, display:
+
+> Issue `{ID}` marked as {Status} in report: `{report-path}`
+
+**Task Update:** Mark task 7 as `completed` using TaskUpdate.
 
 **Changes remain uncommitted for your control.**
 
