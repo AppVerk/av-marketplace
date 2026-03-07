@@ -275,8 +275,9 @@ challenger_results = TaskOutput(challenger_id, block: true)
 
 For each issue found, format as structured markdown:
 
-### [SEVERITY] Title of Issue
+### [SEVERITY] {ID}: Title of Issue
 
+**ID:** {ID}
 **Location:** `path/to/file.py:42`
 **Category:** Security | Performance | Architecture | Maintainability
 **OWASP:** A05:2025 (if applicable)
@@ -367,6 +368,65 @@ If verification was used, include this section in the review output:
 
 ---
 
+## Step 5.6: Assign Issue IDs
+
+Before rendering the final report, assign unique identifiers to each issue based on category.
+
+**Algorithm:**
+
+1. Collect all findings from:
+   - Security auditor results
+   - Code quality auditor results
+   - Your own performance analysis (Step 2)
+   - Your own architecture/maintainability analysis (Steps 3-4)
+
+2. Initialize counters for each category:
+   - `sec_count = 0` (Security)
+   - `perf_count = 0` (Performance)
+   - `arch_count = 0` (Architecture)
+   - `maint_count = 0` (Maintainability)
+
+3. For each issue (in the order they appear in the report):
+   - Read the issue's `Category` field
+   - Map category to prefix and counter:
+     - Security → SEC, increment `sec_count`
+     - Performance → PERF, increment `perf_count`
+     - Architecture → ARCH, increment `arch_count`
+     - Maintainability → MAINT, increment `maint_count`
+   - Format ID as `{PREFIX}-{NNN}` with zero-padded 3-digit counter (e.g., SEC-001, PERF-002)
+   - Modify the issue heading: `### [SEVERITY] {ID}: Title`
+   - Add `**ID:** {ID}` field right after the heading (before **Location:**)
+
+**Category-to-prefix mapping:**
+
+| Category        | Prefix |
+|-----------------|--------|
+| Security        | SEC    |
+| Performance     | PERF   |
+| Architecture    | ARCH   |
+| Maintainability | MAINT  |
+
+**Example transformation:**
+
+Before:
+```
+### [HIGH] SQL Injection in User Query
+
+**Location:** `src/db/queries.py:42`
+**Category:** Security
+```
+
+After:
+```
+### [HIGH] SEC-001: SQL Injection in User Query
+
+**ID:** SEC-001
+**Location:** `src/db/queries.py:42`
+**Category:** Security
+```
+
+---
+
 ## Step 6: Save Review
 
 **Task Update:** Mark task 7 as `in_progress` using TaskUpdate.
@@ -428,11 +488,13 @@ After the review is complete (and optionally saved), display guidance based on c
 
 **If issues were found AND report was saved to a file:**
 
-> **Found {N} issues.** To fix them, run:
+> **Found {N} issues.** To fix them:
 >
-> `/fix-report <saved-report-path>`
+> `/fix-report <saved-report-path>` — fix multiple issues interactively
 >
-> Or fix a single issue manually: `/fix <paste issue block>`
+> `/fix SEC-001` — fix a single issue by ID (uses latest saved report)
+>
+> `/fix <paste issue block>` — fix a single issue by pasting
 
 **If issues were found but report was NOT saved:**
 
@@ -440,7 +502,7 @@ After the review is complete (and optionally saved), display guidance based on c
 >
 > `/fix <paste issue block from above>`
 >
-> To use `/fix-report`, save the review first (re-run `/review` and choose to save).
+> To use ID-based fixes or `/fix-report`, save the review first (re-run `/review` and choose to save).
 
 **If no issues were found:**
 
