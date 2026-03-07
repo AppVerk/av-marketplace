@@ -101,6 +101,15 @@ Display the issues using AskUserQuestion with multiSelect, **4 issues per page**
   - label: "[SEVERITY] Short title"
   - description: "path/to/file.py:line — first sentence of the Problem field"
 
+**IDs in checklist:**
+
+Issues now include their unique ID in the checklist labels. For example:
+
+- label: "[HIGH] SEC-001: SQL Injection in User Query"
+- description: "src/db/queries.py:42 — Code directly concatenates user input into SQL"
+
+This makes it easy to reference issues when using `/fix SEC-001` directly.
+
 **If there are more pages after the current one**, add as the last option:
 
 - label: "Skip remaining"
