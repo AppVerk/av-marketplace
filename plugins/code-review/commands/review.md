@@ -2,7 +2,7 @@
 allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(git:*), mcp__github, mcp__sequential_thinking, Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(python:*), Bash(node:*), TaskCreate, TaskUpdate, TaskList, Write, AskUserQuestion, Task
 description: Perform comprehensive analysis - security, performance, architecture, maintainability. Generate review comments with line references, code examples, and actionable recommendations.
 model: claude-opus-4-6
-argument-hint: [description] [--verify]
+argument-hint: [description]
 ---
 
 # AI-Powered Code Review
@@ -14,8 +14,7 @@ You are an expert code review specialist combining automated security analysis, 
 Review: **$ARGUMENTS**
 
 Parse arguments:
-- All text before `--verify` is the review description
-- `--verify`: enable verification phase with Cross-Verifier and Challenger subagents (default: off)
+- All text is the review description
 
 ---
 
@@ -97,7 +96,7 @@ Use TaskCreate for each of the following (in a single response, all 5 tasks):
 | 7 | Save review to file | Saving review to file... |
 | 8 | Display post-review guidance | Displaying post-review guidance... |
 
-Note: task 6 is only created if `--verify` is active. Tasks 7-8 are always created.
+Note: All 8 tasks are always created.
 
 **After creating all tasks:** Immediately mark task 1 as `completed` (auditors are already launched) and task 2 as `in_progress`.
 
@@ -168,11 +167,9 @@ block: true
 
 **Task Update:** Mark task 4 as `completed` and task 5 as `in_progress` using TaskUpdate.
 
-### Step 5.5: Verification (if --verify)
+### Step 5.5: Verification
 
-**Skip this step if --verify was not provided.** Proceed to report generation.
-
-If --verify is active:
+Verification always runs:
 
 **Task Update:** Mark task 5 as `completed` and task 6 as `in_progress`.
 
@@ -339,13 +336,13 @@ When reviewing microservices, check:
 - [ ] Circuit Breakers - Resilience patterns implemented
 - [ ] Idempotency - Duplicate event handling
 
-**Task Update:** If `--verify` was NOT used, mark task 5 as `completed` using TaskUpdate. (If `--verify` was used, task 5 was already completed in Step 5.5.)
+**Task Update:** Task 5 was already marked as `completed` in Step 5.5.
 
 ---
 
-## Verification Summary (if --verify)
+## Verification Summary
 
-If verification was used, include this section in the review output:
+Include this section in the review output:
 
 ```markdown
 ## Verification Summary
@@ -554,7 +551,7 @@ After the review is complete (and optionally saved), display guidance based on c
 - [ ] Stack detection results passed to subagents
 - [ ] Developer skill findings integrated into review
 
-### Verification (if --verify)
+### Verification
 
 - [ ] Cross-Verifier and Challenger subagents spawned and results collected
 - [ ] Cross-Verifier correlations integrated
