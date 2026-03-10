@@ -135,7 +135,11 @@ from apps.newsletters.models import Subscriber
 from apps.newsletters.services import NewsletterService
 
 
-@shared_task(name="newsletters.send_newsletter_batch")
+@shared_task(
+    name="newsletters.send_newsletter_batch",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
 def send_newsletter_batch(newsletter_id: int) -> None:
     """Fan-out: spawn one task per subscriber."""
     subscriber_ids = list(
@@ -150,7 +154,7 @@ def send_newsletter_batch(newsletter_id: int) -> None:
     name="newsletters.send_newsletter_to_subscriber",
     acks_late=True,
     reject_on_worker_lost=True,
-    autoretry_for=(Exception,),
+    autoretry_for=(smtplib.SMTPException, ConnectionError),
     retry_backoff=True,
     retry_backoff_max=300,
     retry_jitter=True,
@@ -267,7 +271,7 @@ def test_send_order_confirmation_skips_missing_order() -> None:
     send_order_confirmation.delay(99999)
 ```
 
-Use `@override_settings` for one-off eager overrides in non-Django test suites:
+Use `@override_settings` for one-off eager overrides in Django test suites (Django-specific; not applicable to non-Django projects):
 
 ```python
 from django.test import override_settings
