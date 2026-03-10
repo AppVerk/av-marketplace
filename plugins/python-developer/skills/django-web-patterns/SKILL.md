@@ -10,17 +10,20 @@ allowed-tools: Read, Grep, Glob, Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*
 These rules are NON-NEGOTIABLE. Violating any of them is a bug.
 
 **Architecture:**
+
 - NEVER put business logic in ViewSets/APIViews — ALWAYS delegate to services or model methods
 - NEVER return raw `Response(data)` with manually constructed dicts — ALWAYS use Serializers
 - NEVER use `@api_view` for complex endpoints — use `APIView` or `ViewSet` classes
 
 **Views:**
+
 - NEVER do manual authentication checks in views — ALWAYS use `permission_classes` and `authentication_classes`
 - ALWAYS use `ModelViewSet` / `ReadOnlyModelViewSet` when providing full CRUD on a model
 - ALWAYS use `@action` decorator for custom ViewSet actions (not extra URL patterns)
 - ALWAYS declare explicit `status_code` on mutating `@action` decorators
 
 **Serializers:**
+
 - NEVER use `Meta.fields = "__all__"` — ALWAYS use an explicit field list
 - NEVER put business logic in serializers — only validation and data transformation
 - ALWAYS separate `<Entity>CreateSerializer`, `<Entity>UpdateSerializer`, `<Entity>ResponseSerializer` for non-trivial resources
@@ -28,29 +31,35 @@ These rules are NON-NEGOTIABLE. Violating any of them is a bug.
 - ALWAYS override `create()`/`update()` in serializer when custom logic needed (not in ViewSet)
 
 **URLs:**
+
 - ALWAYS use `DefaultRouter` for ViewSet registration
 - ALWAYS namespace URL patterns per app (`app_name = "orders"`)
 - NEVER hardcode URLs — ALWAYS use `reverse()` or `reverse_lazy()`
 
 **Permissions:**
+
 - ALWAYS use custom permission classes (not inline checks in views)
 - ALWAYS combine permissions with `&` / `|` operators for composite permissions
 
 **Exception Handling:**
+
 - NEVER use DRF's default exception handler for domain errors — ALWAYS use a custom `exception_handler` mapping domain exceptions to API responses
 - Domain exceptions hierarchy: `DomainError` → `EntityNotFoundError`, `DomainValidationError`, `PermissionDeniedError`, `ConflictError` (prefixed to avoid shadowing Python built-in `PermissionError` and Django/DRF `ValidationError`)
 
 **Settings & Middleware:**
+
 - ALWAYS use `django-environ` or `pydantic-settings` for env config — NEVER hardcode secrets
 - ALWAYS split settings: `base.py`, `local.py`, `production.py`, `test.py`
 - NEVER remove Django security middleware (`SecurityMiddleware`, `CsrfViewMiddleware`)
 - ALWAYS load `CORS_ALLOWED_ORIGINS` from environment (via `django-cors-headers`)
 
 **Throttling & Filtering:**
+
 - ALWAYS configure throttle rates in settings, not per-view
 - ALWAYS use `django-filter` with `FilterSet` classes — NEVER manual `request.query_params` parsing for filtering
 
 **Quality:**
+
 - ALWAYS run the project's typecheck and test commands after any change
 </HARD-RULES>
 
