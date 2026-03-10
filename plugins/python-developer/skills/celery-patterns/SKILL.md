@@ -10,6 +10,7 @@ allowed-tools: Read, Grep, Glob, Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*
 These rules are NON-NEGOTIABLE. Violating any of them is a bug.
 
 **Task Design:**
+
 - ALWAYS make tasks idempotent — calling N times produces the same result
 - NEVER pass Django model instances as task arguments — ALWAYS pass IDs (primitive types: `int`, `str`, `UUID`)
 - NEVER create long tasks without decomposition — ALWAYS split into subtasks for collection operations
@@ -18,6 +19,7 @@ These rules are NON-NEGOTIABLE. Violating any of them is a bug.
 - ALWAYS use `acks_late=True` + `reject_on_worker_lost=True` for tasks that must execute (at-least-once delivery)
 
 **Retry & Error Handling:**
+
 - NEVER use bare `except` in tasks — catch specific exceptions
 - ALWAYS use `autoretry_for` + `retry_backoff=True` + `retry_backoff_max` + `max_retries` for retryable errors
 - ALWAYS use `retry_jitter=True` to avoid thundering herd
@@ -25,17 +27,20 @@ These rules are NON-NEGOTIABLE. Violating any of them is a bug.
 - ALWAYS implement dead letter handling — `on_failure` callback or monitoring for failed tasks
 
 **Organization:**
+
 - ALWAYS use `shared_task` (not `app.task`) for reusability
 - ALWAYS put tasks in `<app>/tasks.py` — one file per Django app
 - NEVER create circular imports — task imports service/model, not the other way
 
 **Configuration:**
+
 - ALWAYS use `task_always_eager=True` in test settings (synchronous execution)
 - ALWAYS use `task_eager_propagates=True` in tests (propagate exceptions)
 - ALWAYS use `CELERY_` namespace prefix in Django settings (`config_from_object('django.conf:settings', namespace='CELERY')`)
 - For non-Django projects (e.g., FastAPI): use `celery_app.conf.update()` with explicit config dict
 
 **Quality:**
+
 - ALWAYS run the project's typecheck and test commands after any task change
 </HARD-RULES>
 

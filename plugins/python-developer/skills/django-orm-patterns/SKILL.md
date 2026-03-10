@@ -10,6 +10,7 @@ allowed-tools: Read, Grep, Glob, Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*
 These rules are NON-NEGOTIABLE. Violating any of them is a bug.
 
 **Models:**
+
 - NEVER put business logic in `save()` overrides for complex operations — use explicit model methods or services
 - NEVER use `null=True` on `CharField`/`TextField` — use `blank=True, default=""`
 - NEVER use `ForeignKey` without explicit `on_delete`
@@ -21,29 +22,34 @@ These rules are NON-NEGOTIABLE. Violating any of them is a bug.
 - ALWAYS use `UniqueConstraint` / `CheckConstraint` in `Meta.constraints` — NEVER deprecated `unique_together`
 
 **Managers & QuerySets:**
+
 - NEVER put complex queries in views/services — encapsulate in custom QuerySet methods
 - ALWAYS use `MyQuerySet.as_manager()` or `Manager.from_queryset()`
 - ALWAYS name QuerySet methods as domain concepts (`published()`, `active()`, `for_user(user)`)
 - NEVER use raw SQL unless QuerySet API is genuinely insufficient — prefer `.annotate()`, `.aggregate()`, `F()`, `Q()`
 
 **Performance:**
+
 - NEVER cause N+1 queries — ALWAYS use `select_related()` (FK/OneToOne) and `prefetch_related()` (M2M/reverse FK)
 - ALWAYS use `only()` / `defer()` for large models when only subset of fields needed
 - ALWAYS use `bulk_create()` / `bulk_update()` for batch operations — NEVER loops with `.save()`
 - ALWAYS use `iterator()` for large querysets in management commands / background tasks
 
 **Migrations:**
+
 - NEVER edit auto-generated migrations unless necessary (data migrations, RunSQL)
 - ALWAYS separate data migrations from schema migrations
 - ALWAYS use `RunPython` with `reverse_code` for reversible data migrations
 - NEVER run `migrate` in production without review — ALWAYS review generated SQL with `sqlmigrate`
 
 **Signals:**
+
 - NEVER use signals for core business logic — use explicit model methods or services
 - Signals ONLY for decoupled side effects (cache invalidation, audit logging, denormalization)
 - ALWAYS use `dispatch_uid` to prevent duplicate signal registration
 
 **Quality:**
+
 - ALWAYS run the project's typecheck and test commands after any model change
 </HARD-RULES>
 
@@ -344,6 +350,7 @@ For most views/services, direct QuerySet access is sufficient and preferred.
 # apps/orders/repositories.py
 from typing import Protocol
 
+from apps.orders.exceptions import EntityNotFoundError
 from apps.orders.models import Order
 
 
@@ -355,7 +362,6 @@ class OrderRepositoryProtocol(Protocol):
 
 class DjangoOrderRepository:
     def get_by_id(self, order_id: int) -> Order:
-        from apps.orders.exceptions import EntityNotFoundError
         try:
             return Order.objects.select_related("product").get(pk=order_id)
         except Order.DoesNotExist:
