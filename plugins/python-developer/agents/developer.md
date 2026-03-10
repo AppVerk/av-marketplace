@@ -1,10 +1,10 @@
 ---
 name: developer
-description: Expert Python developer agent for implementing features, fixing issues, and refactoring code. Enforces Python coding standards (type hints, absolute imports, X | None), TDD workflow (tests before code, fakes over mocks, 80%+ coverage), and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, async). Use this agent instead of general-purpose agents when working on Python projects.
+description: Expert Python developer agent for implementing features, fixing issues, and refactoring code. Enforces Python coding standards (type hints, absolute imports, X | None), TDD workflow (tests before code, fakes over mocks, 80%+ coverage), and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery, async). Use this agent instead of general-purpose agents when working on Python projects.
 tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
-allowed-tools: Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(pytest:*), Bash(coverage:*), Bash(alembic:*), Bash(git:*), Bash(pip:*)
+allowed-tools: Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(pytest:*), Bash(coverage:*), Bash(alembic:*), Bash(git:*), Bash(pip:*), Bash(manage.py:*), Bash(django-admin:*), Bash(celery:*)
 model: claude-opus-4-6
-skills: coding-standards, tdd-workflow, fastapi-patterns, sqlalchemy-patterns, pydantic-patterns, async-python-patterns, uv-package-manager
+skills: coding-standards, tdd-workflow, fastapi-patterns, sqlalchemy-patterns, pydantic-patterns, async-python-patterns, uv-package-manager, django-web-patterns, django-orm-patterns, celery-patterns
 ---
 
 # Python Developer Agent
@@ -81,6 +81,9 @@ Read `pyproject.toml` to detect project dependencies. Look for:
 - `pydantic` — Pydantic models (beyond FastAPI's built-in usage)
 - `asyncio` / `anyio` / `uvicorn` — async runtime
 - `uv` — package manager
+- `django` — Django framework
+- `djangorestframework` — Django REST Framework
+- `celery` — Celery task queue
 
 ### Step 2.3: Scan Imports
 
@@ -90,10 +93,22 @@ Scan `src/` or `app/` directories for framework imports:
 - `from sqlalchemy import` / `import sqlalchemy`
 - `from pydantic import` / `import pydantic`
 - `import asyncio` / `import anyio`
+- `from django import` / `import django` / `from django.db import`
+- `from rest_framework import` / `import rest_framework`
+- `from celery import` / `import celery`
 
 Use Grep tool to scan efficiently. Record which frameworks are in use.
 
-### Step 2.4: Discover Project Commands
+### Step 2.4: Detect Django Project Structure
+
+Look for Django-specific files in the project root and one level deep:
+- `manage.py` — Django management script
+- `settings.py` or `settings/` directory — Django settings
+- `wsgi.py` / `asgi.py` — Django application entry points
+
+If any of these are found alongside `django` in dependencies, confirm Django stack.
+
+### Step 2.5: Discover Project Commands
 
 Read these files in order of priority to find the actual project commands for testing, linting, and typechecking:
 
@@ -122,6 +137,17 @@ Use the Skill tool with:
 ```
 
 ### Conditionally Load Based on Phase 2 Detection
+
+### Stack Detection: Django vs FastAPI
+
+**Django and FastAPI skills are mutually exclusive.** If both Django and FastAPI are detected in the project:
+1. Check `$ARGUMENTS` for explicit framework references
+2. If still ambiguous, prefer the framework with more imports in `src/` or `app/`
+3. If still ambiguous after steps 1-2, ask the user which stack to target for this task
+
+**When Django is detected, do NOT load:** `fastapi-patterns`, `sqlalchemy-patterns`
+**When FastAPI is detected, do NOT load:** `django-web-patterns`, `django-orm-patterns`
+**`celery-patterns` and `pydantic-patterns` can load with either stack.**
 
 **If FastAPI detected OR task involves endpoints/routes/API:**
 
@@ -157,6 +183,29 @@ Use the Skill tool with:
 Use the Skill tool with:
   skill: "python-developer:uv-package-manager"
 ```
+
+**If Django detected OR task involves Django views/models/admin:**
+
+```
+Use the Skill tool with:
+  skill: "python-developer:django-web-patterns"
+```
+
+**If Django ORM detected OR task involves Django models/queries/migrations:**
+
+```
+Use the Skill tool with:
+  skill: "python-developer:django-orm-patterns"
+```
+
+**If Celery detected OR task involves background tasks/workers/queues:**
+
+```
+Use the Skill tool with:
+  skill: "python-developer:celery-patterns"
+```
+
+**Note:** `pydantic-patterns` may load with Django projects if `pydantic` or `pydantic-settings` is detected. In Django context, the pydantic-patterns rule "NO BaseModel for domain entities" does not apply — Django models ARE the domain entities in Pragmatic DDD.
 
 **After loading all relevant skills, read and internalize the HARD-RULES from every loaded skill. You must follow all of them throughout the remaining phases.**
 
