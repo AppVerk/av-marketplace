@@ -1,6 +1,6 @@
 ---
-allowed-tools: Read, Grep, Glob, Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(pytest:*), Bash(coverage:*), Bash(alembic:*), Bash(git:*), Bash(pip:*)
-description: Python development workflow enforcing coding standards, TDD, and stack-specific patterns. Loads the right skills automatically.
+allowed-tools: Read, Grep, Glob, Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(pytest:*), Bash(coverage:*), Bash(alembic:*), Bash(git:*), Bash(pip:*), Bash(manage.py:*), Bash(django-admin:*), Bash(celery:*)
+description: Python development workflow enforcing coding standards, TDD, and stack-specific patterns. Loads the right skills automatically (FastAPI, Django, Celery).
 argument-hint: <task description>
 ---
 
@@ -45,9 +45,9 @@ Use the Skill tool with:
 
 ### 2b. Detect the project stack
 
-1. **pyproject.toml** — look for dependencies: `fastapi`, `sqlalchemy`, `pydantic`, `asyncio`/`anyio`/`uvicorn`, `uv`
-2. **Existing imports** — scan `src/` or `app/` for `from fastapi import`, `from sqlalchemy import`, `from pydantic import`, `import asyncio`
-3. **Task description** — parse `$ARGUMENTS` for keywords: endpoint, API, route, model, schema, database, migration, async, dependency, package
+1. **pyproject.toml** — look for dependencies: `fastapi`, `sqlalchemy`, `pydantic`, `asyncio`/`anyio`/`uvicorn`, `uv`, `django`, `djangorestframework` — Django + DRF, `celery` — Celery task queue
+2. **Existing imports** — scan `src/` or `app/` for `from fastapi import`, `from sqlalchemy import`, `from pydantic import`, `import asyncio`, `from django.db import` / `from rest_framework import` / `from celery import`
+3. **Task description** — parse `$ARGUMENTS` for keywords: endpoint, API, route, model, schema, database, migration, async, dependency, package, Django keywords: view, viewset, serializer, admin, management command, signal, Celery keywords: task, worker, queue, background job, celery
 
 Record which stack components are present. You will use this in Step 3.
 
@@ -98,6 +98,29 @@ Use the Skill tool with:
 Use the Skill tool with:
   skill: "python-developer:uv-package-manager"
 ```
+
+### If Django detected OR task involves views/viewsets/serializers:
+
+```
+Use the Skill tool with:
+  skill: "python-developer:django-web-patterns"
+```
+
+### If Django ORM detected OR task involves Django models/queries/migrations:
+
+```
+Use the Skill tool with:
+  skill: "python-developer:django-orm-patterns"
+```
+
+### If Celery detected OR task involves background tasks/workers:
+
+```
+Use the Skill tool with:
+  skill: "python-developer:celery-patterns"
+```
+
+**Important:** Django and FastAPI skills are mutually exclusive. If both are detected, load skills for the framework most relevant to the current task; if ambiguous, ask the user. When Django is detected, do NOT load `fastapi-patterns` or `sqlalchemy-patterns`. `celery-patterns` and `pydantic-patterns` can load with either stack.
 
 **After loading skills, read and internalize the HARD-RULES from every loaded skill. You must follow all of them.**
 
@@ -218,5 +241,8 @@ Zero warnings. Zero errors.
 - [ ] Pydantic: proper model inheritance, validators use `@field_validator`/`@model_validator`
 - [ ] Async: no blocking calls in async functions, proper task/gather usage
 - [ ] Dependencies: `uv add` used, lockfile committed
+- [ ] Django: ViewSets delegate to services, explicit field lists in serializers, custom permissions
+- [ ] Django ORM: select_related/prefetch_related for related objects, no N+1, domain logic in model methods
+- [ ] Celery: tasks are idempotent, pass IDs not model instances, retry with backoff for transient errors
 
 **If all checks pass, the task is complete.**
