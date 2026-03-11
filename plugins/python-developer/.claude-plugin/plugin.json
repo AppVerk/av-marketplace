@@ -1,5 +1,5 @@
 {
   "name": "python-developer",
   "description": "Enforces Python best practices, coding standards, TDD workflow, and modern tooling for AppVerk projects. Supports FastAPI, Django, DRF, Celery, SQLAlchemy, and Pydantic stacks.",
-  "version": "3.0.0"
+  "version": "3.0.1"
 }
