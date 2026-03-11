@@ -36,7 +36,7 @@
       "name": "python-developer",
       "source": "./plugins/python-developer",
       "description": "Master the Python programming language for efficient and effective development",
-      "version": "3.0.0",
+      "version": "3.0.1",
       "category": "development"
     },
     {
