@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.9.0
+**Version:** 1.9.1
 
 ## Commands
 
@@ -145,12 +145,12 @@ After the review, if issues were found and the report was saved, the review sugg
 
 **Skill:** `developer-plugins-integration`
 
-Automatically detects installed developer plugins (python-developer, frontend-developer) and the project's tech stack, then loads relevant skills for enhanced code review and fix workflows.
+Automatically detects installed developer plugins (python-developer, frontend-developer, php-developer) and the project's tech stack, then loads relevant skills for enhanced code review and fix workflows.
 
 **How it works:**
-1. Detects if python-developer and/or frontend-developer plugins are installed
-2. Scans project config files (pyproject.toml, package.json, tsconfig.json) to identify the tech stack
-3. Maps detected stack to relevant developer skills (coding standards, framework patterns)
+1. Detects if python-developer, frontend-developer, and/or php-developer plugins are installed
+2. Scans project config files (pyproject.toml, package.json, composer.json, etc.) to identify the tech stack
+3. Maps detected stack to relevant developer skills (coding standards, framework patterns — including Django, Celery, Symfony, Doctrine, etc.)
 4. Passes skills to review auditors and fix commands for stack-aware analysis
 
 **Used by:**
