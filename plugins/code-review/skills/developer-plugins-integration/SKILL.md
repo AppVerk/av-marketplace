@@ -108,7 +108,7 @@ done
 echo "uv: $UV"
 ```
 
-### Step 2.5: Detect PHP Stack
+### Step 3: Detect PHP Stack
 
 **ALWAYS check these files in project root and first-level subdirectories:**
 
@@ -133,7 +133,7 @@ echo "PHP stack detected: $PHP_DETECTED"
 
 If **ANY** of these files exist, PHP stack is detected.
 
-### Step 2.6: Detect PHP Frameworks
+### Step 4: Detect PHP Frameworks
 
 **Only run if PHP stack is detected.** Grep dependencies in every `composer.json` that triggered detection:
 
@@ -175,7 +175,7 @@ done
 echo "DDD: $DDD"
 ```
 
-### Step 3: Detect Frontend Stack
+### Step 5: Detect Frontend Stack
 
 **ALWAYS check these files:**
 
@@ -208,7 +208,7 @@ echo "Frontend stack detected: $FRONTEND_DETECTED"
 
 If `package.json` contains `"react"` in dependencies, Frontend stack is detected.
 
-### Step 4: Detect Frontend Frameworks
+### Step 6: Detect Frontend Frameworks
 
 **Only run if Frontend stack is detected.** Grep every `package.json` that triggered detection (root and first-level subdirectories) for dependencies and devDependencies:
 
