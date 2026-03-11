@@ -69,6 +69,26 @@ These are the internal Python coding rules that guide code generation for this p
 - Maintain proper naming conventions for constants (UPPER_SNAKE_CASE), functions/variables (lower_snake_case), classes (PascalCase), and private members (_leading_underscore).
 - Avoid ambiguous names like `l`, `O`, `I`.
 
+## Vertical Whitespace
+
+Use blank lines to visually separate logical sections of code, improving scanability and readability.
+
+**Inside functions/methods:**
+- Separate logical blocks with a blank line: variable initialization, processing logic, result preparation, return.
+- Add a blank line before a closing `return` when the function body is longer than a few lines.
+- Add a blank line before and after `if`/`for`/`while`/`try` blocks when surrounded by other code.
+- Add a blank line after a method's docstring before the actual code.
+- Do not add blank lines in short, simple functions (2-3 lines) — it disrupts readability.
+
+**Inside classes:**
+- Separate groups of related attributes with a blank line (e.g., public vs private, config vs state).
+- One blank line between methods (PEP 8 standard).
+- Two blank lines before the first method if the class has class-level attributes at the top.
+
+**General principle:**
+- Treat a blank line like a paragraph break in prose — it signals a change of topic or context.
+- No more than one consecutive blank line inside a function or class.
+
 ## Design Principles
 
 - Keep functions small and single-purpose; prefer pure functions where practical.
