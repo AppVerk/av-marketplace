@@ -1,12 +1,12 @@
 ---
 name: developer-plugins-integration
-description: Detects installed developer plugins (python-developer, frontend-developer) and project stack, then provides a list of relevant skills to load for code review and fix workflows. Supports Python (FastAPI, SQLAlchemy, Pydantic, asyncio, uv) and Frontend (React, Tailwind, Zustand, TanStack, pnpm).
+description: Detects installed developer plugins (python-developer, frontend-developer, php-developer) and project stack, then provides a list of relevant skills to load for code review and fix workflows. Supports Python (FastAPI, SQLAlchemy, Pydantic, asyncio, uv), Frontend (React, Tailwind, Zustand, TanStack, pnpm), and PHP (Symfony, Doctrine, DDD).
 allowed-tools: Read, Grep, Glob, Bash(grep:*), Bash(cat:*), Bash(head:*), Bash(find:*), Bash(test:*), Bash(echo:*)
 ---
 
 # Developer Plugins Integration - Detection & Skill Loading
 
-Detects installed developer plugins and project stack, then provides a list of relevant skills to load for code review and fix workflows. Acts as the bridge between the code-review plugin and specialized developer plugins (python-developer, frontend-developer).
+Detects installed developer plugins and project stack, then provides a list of relevant skills to load for code review and fix workflows. Acts as the bridge between the code-review plugin and specialized developer plugins (python-developer, frontend-developer, php-developer).
 
 ---
 
@@ -14,7 +14,7 @@ Detects installed developer plugins and project stack, then provides a list of r
 
 This skill is the detection and integration layer between the code-review plugin and developer plugins. It performs three tasks:
 
-1. **Stack Detection** - Identifies which technology stacks are present in the project (Python, Frontend/React)
+1. **Stack Detection** - Identifies which technology stacks are present in the project (Python, Frontend/React, PHP)
 2. **Plugin Detection** - Checks which developer plugins are installed and available in the current session
 3. **Skill Resolution** - Produces a list of skills to load, based on detected stack and available plugins
 
@@ -108,7 +108,74 @@ done
 echo "uv: $UV"
 ```
 
-### Step 3: Detect Frontend Stack
+### Step 3: Detect PHP Stack
+
+**ALWAYS check these files in project root and first-level subdirectories:**
+
+```bash
+echo "=== PHP Stack Detection ==="
+PHP_DETECTED=false
+
+# Project root
+[ -f "composer.json" ] && echo "FOUND: composer.json" && PHP_DETECTED=true
+[ -f "composer.lock" ] && echo "FOUND: composer.lock" && PHP_DETECTED=true
+[ -f "symfony.lock" ] && echo "FOUND: symfony.lock (Symfony)" && PHP_DETECTED=true
+
+# First-level subdirectories
+for dir in */; do
+    [ -f "$dir/composer.json" ] && echo "FOUND: $dir/composer.json" && PHP_DETECTED=true
+    [ -f "$dir/composer.lock" ] && echo "FOUND: $dir/composer.lock" && PHP_DETECTED=true
+    [ -f "$dir/symfony.lock" ] && echo "FOUND: $dir/symfony.lock" && PHP_DETECTED=true
+done
+
+echo "PHP stack detected: $PHP_DETECTED"
+```
+
+If **ANY** of these files exist, PHP stack is detected.
+
+### Step 4: Detect PHP Frameworks
+
+**Only run if PHP stack is detected.** Grep dependencies in every `composer.json` that triggered detection:
+
+```bash
+echo "=== PHP Framework Detection ==="
+
+COMPOSER_FILES=""
+for f in composer.json; do
+    [ -f "$f" ] && COMPOSER_FILES="$COMPOSER_FILES $f"
+done
+for dir in */; do
+    [ -f "$dir/composer.json" ] && COMPOSER_FILES="$COMPOSER_FILES $dir/composer.json"
+done
+
+# Symfony
+SYMFONY=false
+for f in $COMPOSER_FILES; do
+    grep -qi "symfony/framework-bundle" "$f" 2>/dev/null && SYMFONY=true
+done
+echo "Symfony: $SYMFONY"
+
+# Doctrine ORM
+DOCTRINE=false
+for f in $COMPOSER_FILES; do
+    grep -qi "doctrine/orm" "$f" 2>/dev/null && DOCTRINE=true
+done
+echo "Doctrine: $DOCTRINE"
+
+# DDD structure (check for Domain directories)
+DDD=false
+for dir in src/*/Domain; do
+    [ -d "$dir" ] && DDD=true && echo "FOUND: $dir (DDD structure)"
+done
+for subdir in */; do
+    for dir in "$subdir"src/*/Domain; do
+        [ -d "$dir" ] && DDD=true && echo "FOUND: $dir (DDD structure)"
+    done
+done
+echo "DDD: $DDD"
+```
+
+### Step 5: Detect Frontend Stack
 
 **ALWAYS check these files:**
 
@@ -141,7 +208,7 @@ echo "Frontend stack detected: $FRONTEND_DETECTED"
 
 If `package.json` contains `"react"` in dependencies, Frontend stack is detected.
 
-### Step 4: Detect Frontend Frameworks
+### Step 6: Detect Frontend Frameworks
 
 **Only run if Frontend stack is detected.** Grep every `package.json` that triggered detection (root and first-level subdirectories) for dependencies and devDependencies:
 
@@ -213,6 +280,7 @@ Check if developer plugins are installed by verifying their skills are available
 
 - `python-developer:coding-standards` - Indicates the python-developer plugin is installed
 - `frontend-developer:coding-standards` - Indicates the frontend-developer plugin is installed
+- `php-developer:coding-standards` - Indicates the php-developer plugin is installed
 
 If a skill is present in the session's skill list, the corresponding plugin is installed and its skills can be loaded.
 
@@ -221,7 +289,8 @@ If a skill is present in the session's skill list, the corresponding plugin is i
 1. Check the available skills/commands in the current Claude Code session
 2. If `python-developer:coding-standards` is available, mark python-developer as INSTALLED
 3. If `frontend-developer:coding-standards` is available, mark frontend-developer as INSTALLED
-4. Only attempt to load skills from plugins that are confirmed INSTALLED
+4. If `php-developer:coding-standards` is available, mark php-developer as INSTALLED
+5. Only attempt to load skills from plugins that are confirmed INSTALLED
 
 ---
 
@@ -254,11 +323,21 @@ After running detection, produce the following structured report:
         "react_hook_form": false,
         "pnpm": true
       }
+    },
+    "php": {
+      "detected": false,
+      "indicators": [],
+      "frameworks": {
+        "symfony": false,
+        "doctrine": false,
+        "ddd": false
+      }
     }
   },
   "plugin_detection": {
     "python_developer": "INSTALLED",
-    "frontend_developer": "NOT INSTALLED"
+    "frontend_developer": "NOT INSTALLED",
+    "php_developer": "NOT INSTALLED"
   },
   "skills_to_load": [
     "python-developer:coding-standards",
@@ -299,6 +378,17 @@ After running detection, produce the following structured report:
 | `frontend-developer:form-patterns` | React Hook Form detected |
 | `frontend-developer:pnpm-package-manager` | pnpm detected |
 
+**PHP Skills** (load if php-developer INSTALLED AND PHP stack detected):
+
+| Skill | Condition |
+|-------|-----------|
+| `php-developer:coding-standards` | Always (base skill) |
+| `php-developer:tdd-workflow` | Always (base skill) |
+| `php-developer:symfony-patterns` | Symfony detected |
+| `php-developer:doctrine-orm-patterns` | Doctrine detected |
+| `php-developer:ddd-patterns` | DDD structure detected |
+| `php-developer:composer` | Always (base skill) |
+
 ---
 
 ## Usage in Code Review
@@ -329,6 +419,8 @@ Load developer plugin skills **AFTER** standard security scans. Check framework-
 - FastAPI: authentication middleware, CORS configuration, input validation
 - SQLAlchemy: SQL injection prevention, session management
 - React: XSS prevention, dangerouslySetInnerHTML usage, sanitization
+- Symfony: security voters, CSRF protection, input validation
+- Doctrine: DQL injection prevention, entity security
 
 ### Fix Workflows
 
@@ -355,6 +447,7 @@ This skill is designed to fail safely at every level:
 
 - If python-developer is installed but no Python stack detected: python skills are NOT loaded
 - If frontend-developer is installed but no Frontend stack detected: frontend skills are NOT loaded
+- If php-developer is installed but no PHP stack detected: php skills are NOT loaded
 - Only the matching plugin + stack combination activates skills
 
 ### Skill Invocation Fails
@@ -398,8 +491,10 @@ Before completing developer plugins integration, verify:
 
 - [ ] Checked for Python stack indicators (pyproject.toml, setup.py, requirements.txt, etc.)
 - [ ] Checked for Frontend stack indicators (package.json with react)
+- [ ] Checked for PHP stack indicators (composer.json, composer.lock, symfony.lock)
 - [ ] Detected Python frameworks (FastAPI, SQLAlchemy, Pydantic, asyncio, uv)
 - [ ] Detected Frontend frameworks (Tailwind, Zustand, TanStack Query/Router, React Hook Form, pnpm)
+- [ ] Detected PHP frameworks (Symfony, Doctrine, DDD structure)
 - [ ] Verified plugin availability via session skill list
 - [ ] Produced skills_to_load list with correct conditional logic
 - [ ] Applied graceful degradation (no errors if plugins missing)
