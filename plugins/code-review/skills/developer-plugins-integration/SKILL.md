@@ -1,6 +1,6 @@
 ---
 name: developer-plugins-integration
-description: Detects installed developer plugins (python-developer, frontend-developer, php-developer) and project stack, then provides a list of relevant skills to load for code review and fix workflows. Supports Python (FastAPI, SQLAlchemy, Pydantic, asyncio, uv), Frontend (React, Tailwind, Zustand, TanStack, pnpm), and PHP (Symfony, Doctrine, DDD).
+description: Detects installed developer plugins (python-developer, frontend-developer, php-developer) and project stack, then provides a list of relevant skills to load for code review and fix workflows. Supports Python (FastAPI, SQLAlchemy, Pydantic, Django, Celery, asyncio, uv), Frontend (React, Tailwind, Zustand, TanStack, pnpm), and PHP (Symfony, Doctrine, DDD).
 allowed-tools: Read, Grep, Glob, Bash(grep:*), Bash(cat:*), Bash(head:*), Bash(find:*), Bash(test:*), Bash(echo:*)
 ---
 
@@ -106,6 +106,20 @@ for dir in */; do
     [ -f "$dir/uv.lock" ] && UV=true
 done
 echo "uv: $UV"
+
+# Django
+DJANGO=false
+for f in $PYTHON_DEP_FILES; do
+    grep -qi "django" "$f" 2>/dev/null && DJANGO=true
+done
+echo "Django: $DJANGO"
+
+# Celery
+CELERY=false
+for f in $PYTHON_DEP_FILES; do
+    grep -qi "celery" "$f" 2>/dev/null && CELERY=true
+done
+echo "Celery: $CELERY"
 ```
 
 ### Step 3: Detect PHP Stack
@@ -309,7 +323,9 @@ After running detection, produce the following structured report:
         "sqlalchemy": true,
         "pydantic": true,
         "asyncio": true,
-        "uv": true
+        "uv": true,
+        "django": false,
+        "celery": false
       }
     },
     "frontend": {
@@ -364,6 +380,9 @@ After running detection, produce the following structured report:
 | `python-developer:pydantic-patterns` | Pydantic detected |
 | `python-developer:async-python-patterns` | asyncio detected |
 | `python-developer:uv-package-manager` | uv detected |
+| `python-developer:django-orm-patterns` | Django detected |
+| `python-developer:django-web-patterns` | Django detected |
+| `python-developer:celery-patterns` | Celery detected |
 
 **Frontend Skills** (load if frontend-developer INSTALLED AND Frontend stack detected):
 
@@ -421,6 +440,8 @@ Load developer plugin skills **AFTER** standard security scans. Check framework-
 - React: XSS prevention, dangerouslySetInnerHTML usage, sanitization
 - Symfony: security voters, CSRF protection, input validation
 - Doctrine: DQL injection prevention, entity security
+- Django: CSRF protection, authentication backends, SQL injection via raw(), settings security (DEBUG, ALLOWED_HOSTS, SECRET_KEY)
+- Celery: task serialization security, broker connection security
 
 ### Fix Workflows
 
@@ -492,7 +513,7 @@ Before completing developer plugins integration, verify:
 - [ ] Checked for Python stack indicators (pyproject.toml, setup.py, requirements.txt, etc.)
 - [ ] Checked for Frontend stack indicators (package.json with react)
 - [ ] Checked for PHP stack indicators (composer.json, composer.lock, symfony.lock)
-- [ ] Detected Python frameworks (FastAPI, SQLAlchemy, Pydantic, asyncio, uv)
+- [ ] Detected Python frameworks (FastAPI, SQLAlchemy, Pydantic, Django, Celery, asyncio, uv)
 - [ ] Detected Frontend frameworks (Tailwind, Zustand, TanStack Query/Router, React Hook Form, pnpm)
 - [ ] Detected PHP frameworks (Symfony, Doctrine, DDD structure)
 - [ ] Verified plugin availability via session skill list
