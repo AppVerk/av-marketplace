@@ -47,6 +47,13 @@
       "category": "security"
     },
     {
+      "name": "security-pipeline",
+      "source": "./plugins/security-pipeline",
+      "description": "Generate and merge security scanning steps (Semgrep SAST + TruffleHog) into CI/CD pipeline configurations across Bitbucket, GitHub Actions, GitLab CI, and Azure DevOps",
+      "version": "1.0.0",
+      "category": "security"
+    },
+    {
       "name": "sequentialthinking",
       "description": "An MCP server implementation that provides a tool for dynamic and reflective problem-solving through a structured thinking process.",
       "source": "./external_plugins/sequentialthinking",
