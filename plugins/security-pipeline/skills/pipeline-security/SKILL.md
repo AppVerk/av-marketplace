@@ -32,6 +32,7 @@ TruffleHog is language-agnostic. One step per pipeline.
 **Image:** `trufflesecurity/trufflehog:latest`
 
 **Logic:** The step must detect whether it is running in a PR context or a regular commit context:
+
 - **PR context**: scan full git history, output JSON report, then re-run with `--fail`
 - **Commit context**: scan since last commit (`HEAD~1`), output JSON report, then re-run with `--fail`
 
@@ -333,12 +334,14 @@ stages:
 When generating Semgrep steps, adapt the Python template by replacing:
 
 **For PHP:**
+
 - Configs: replace `p/python` with `p/php`, add `p/phpcs-security-audit`
 - Excludes: replace `tests, .venv` with `tests, vendor`
 - Step name suffix: `(PHP)` instead of `(Python)`
 - Anchor/job name: `semgrep_scan_php` instead of `semgrep_scan_python`
 
 **For JavaScript/TypeScript:**
+
 - Configs: replace `p/python` with `p/javascript`, `p/typescript`, `p/nodejs`
 - Excludes: replace `tests, .venv` with `node_modules, dist, build, coverage`
 - Step name suffix: `(JavaScript/TypeScript)` instead of `(Python)`

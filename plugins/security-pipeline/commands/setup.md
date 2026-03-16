@@ -34,6 +34,7 @@ Use the Glob tool to search for:
 ```
 
 **Decision logic:**
+
 - **One provider found** -> use it, announce to user: "Detected [provider] pipeline configuration."
 - **Multiple providers found** -> ask user: "Found configurations for [list]. Which one should I configure?"
 - **No provider found** -> ask user: "No CI/CD configuration found. Which provider do you want to use? (Bitbucket / GitHub Actions / GitLab CI / Azure DevOps)"
@@ -56,16 +57,19 @@ Use the Glob tool to search for:
 For each detected language, read the dependency file and check for frameworks:
 
 **Python** (read `pyproject.toml` or `requirements.txt`):
+
 - Look for `django` -> note Django detected
 - Look for `flask` -> note Flask detected
 - Look for `fastapi` -> note FastAPI detected
 
 **PHP** (read `composer.json` `require` section):
+
 - Look for `symfony/` -> note Symfony detected
 - Look for `laravel/` -> note Laravel detected
 - Look for `wordpress` or `wp-` -> note WordPress detected
 
 **JS/TS** (read `package.json` `dependencies` and `devDependencies`):
+
 - Look for `react` -> note React detected
 - Look for `next` -> note Next.js detected
 - Look for `express` -> note Express detected
@@ -102,10 +106,12 @@ Using the templates from the `pipeline-security` skill:
 **Before writing:** Show the user the complete generated/modified configuration and ask for confirmation.
 
 After user confirms:
+
 - If modifying existing file: use Edit tool
 - If creating new file: use Write tool
 
 Show the final diff:
+
 ```bash
 git diff
 ```
