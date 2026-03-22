@@ -32,7 +32,8 @@ $ARGUMENTS
 | 3 | Load stack-specific skills | Loading skills... |
 | 4 | TDD cycle | Running TDD cycle... |
 | 5 | Quality gates | Running quality gates... |
-| 6 | Generate report | Generating report... |
+| 6 | Documentation maintenance | Updating documentation... |
+| 7 | Generate report | Generating report... |
 
 **After creating all tasks:** Mark task 1 as `in_progress` using TaskUpdate.
 
@@ -99,7 +100,18 @@ Scan `src/` or `app/` directories for framework imports:
 
 Use Grep tool to scan efficiently. Record which frameworks are in use.
 
-### Step 2.4: Detect Django Project Structure
+### Step 2.4: Detect Project Documentation
+
+Check if the project has documentation:
+
+1. Check existence of `docs/`, `doc/`, `documentation/` directories in project root
+2. Search `README.md`, `CLAUDE.md`, `CONTRIBUTING.md` for keywords: "documentation", "docs"
+3. Glob `**/*.md` (max 2 levels deep), filter out README, CHANGELOG, LICENSE, CODE_OF_CONDUCT
+
+If documentation found — store the documentation map (file paths + topics) for Phase 6.
+If nothing found — store "no documentation" and Phase 6 will be skipped.
+
+### Step 2.5: Detect Django Project Structure
 
 Look for Django-specific files in the project root and one level deep:
 - `manage.py` — Django management script
@@ -108,7 +120,7 @@ Look for Django-specific files in the project root and one level deep:
 
 If any of these are found alongside `django` in dependencies, confirm Django stack.
 
-### Step 2.5: Discover Project Commands
+### Step 2.6: Discover Project Commands
 
 Read these files in order of priority to find the actual project commands for testing, linting, and typechecking:
 
@@ -205,6 +217,13 @@ Use the Skill tool with:
   skill: "python-developer:celery-patterns"
 ```
 
+**If documentation detected in Phase 2 (documentation map is non-empty):**
+
+```
+Use the Skill tool with:
+  skill: "python-developer:documentation-maintenance"
+```
+
 **Note:** `pydantic-patterns` may load with Django projects if `pydantic` or `pydantic-settings` is detected. In Django context, the pydantic-patterns rule "NO BaseModel for domain entities" does not apply — Django models ARE the domain entities in Pragmatic DDD.
 
 **After loading all relevant skills, read and internalize the HARD-RULES from every loaded skill. You must follow all of them throughout the remaining phases.**
@@ -276,7 +295,23 @@ Run the lint command (e.g. `make lint`, `uv run ruff check .`).
 
 ---
 
-## Phase 6: Report
+## Phase 6: Documentation Maintenance
+
+**Conditional:** Only execute if documentation was detected in Phase 2. If no documentation was found, mark task 6 as `completed` and proceed to Phase 7.
+
+Execute the documentation maintenance workflow from the loaded `documentation-maintenance` skill:
+
+1. Use the documentation map from Phase 2
+2. Analyze all changes made during Phases 4-5
+3. Classify impact (UPDATE / ADD / NONE)
+4. Apply documentation updates if needed
+5. Record what was changed for the report
+
+**Task Update:** Mark task 6 as `completed` and task 7 as `in_progress` using TaskUpdate.
+
+---
+
+## Phase 7: Report
 
 Generate the final report in this exact format:
 
@@ -294,6 +329,9 @@ Generate the final report in this exact format:
 
 **Tests:**
 - [New/modified tests with coverage description]
+
+**Documentation:**
+- [Updated/added docs or "No documentation changes needed" or "No documentation detected in project (skipped)"]
 
 **Quality Gates:**
 | Gate | Result | Command |
@@ -315,4 +353,4 @@ Generate the final report in this exact format:
 
 **Changes remain uncommitted for your control.**
 
-**Task Update:** Mark task 6 as `completed` using TaskUpdate.
+**Task Update:** Mark task 7 as `completed` using TaskUpdate.

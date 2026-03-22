@@ -37,11 +37,25 @@ Store the output — specifically the `skills_to_load` list — for use in subag
 
 ---
 
-## MANDATORY FIRST STEP: Launch TWO Subagents
+## Documentation Detection Phase (Pre-Launch)
 
-**YOU MUST launch EXACTLY TWO subagents before doing ANYTHING else.**
+Before launching subagents, detect if the project has documentation:
 
-Use the Task tool TWICE in your FIRST response - once for each agent:
+1. Check existence of `docs/`, `doc/`, `documentation/` directories in project root
+2. Search `README.md`, `CLAUDE.md`, `CONTRIBUTING.md` for keywords: "documentation", "docs"
+3. Glob `**/*.md` (max 2 levels deep), filter out README, CHANGELOG, LICENSE, CODE_OF_CONDUCT
+
+Store result: `has_documentation = true/false`
+
+**If no documentation detected:** Skip documentation-auditor dispatch in the next step. All other review steps proceed normally.
+
+---
+
+## MANDATORY FIRST STEP: Launch Subagents
+
+**YOU MUST launch subagents before doing ANYTHING else.**
+
+Use the Task tool in your FIRST response for each agent:
 
 ### Agent 1: Security Auditor
 
@@ -67,13 +81,25 @@ Use Task tool with these EXACT parameters:
 If developer skills were detected in the Stack Detection Phase, append to the prompt:
 > "Developer skills available for stack-specific quality checks: [skills_to_load list]. After standard quality analysis, apply coding standards and patterns from these skills."
 
+### Agent 3: Documentation Auditor (CONDITIONAL)
+
+**Only launch if `has_documentation = true` from the Documentation Detection Phase.**
+
+```
+Use Task tool with these EXACT parameters:
+- subagent_type: "code-review:documentation-auditor"
+- run_in_background: true
+- prompt: "Perform documentation audit. Check if code changes are reflected in project documentation. Report with severity, file path, line number, related code change, and remediation."
+```
+
 **CRITICAL REQUIREMENTS:**
 
-1. You MUST call Task tool TWICE in your first message
-2. You MUST use BOTH subagent types listed above
-3. You MUST set run_in_background: true for both
+1. You MUST call Task tool for all applicable agents in your first message
+2. You MUST use BOTH security-auditor and code-quality-auditor subagent types
+3. You MUST set run_in_background: true for all agents
 4. DO NOT skip the code-quality-auditor - it is MANDATORY
-5. DO NOT proceed to any other analysis until both agents are launched
+5. DO NOT proceed to any other analysis until all agents are launched
+6. documentation-auditor is CONDITIONAL — only launch when documentation was detected
 
 **If you only launch one agent, the review is INCOMPLETE.**
 
@@ -87,7 +113,7 @@ Use TaskCreate for each of the following (in a single response, all 5 tasks):
 
 | # | subject | activeForm |
 |---|---------|-----------|
-| 1 | Launch security & quality auditors | Launching security & quality auditors... |
+| 1 | Launch auditors | Launching auditors... |
 | 2 | Perform performance analysis | Analyzing performance... |
 | 3 | Perform architecture & maintainability review | Reviewing architecture & maintainability... |
 | 4 | Collect subagent results | Collecting subagent results... |
@@ -163,7 +189,16 @@ agentId: <code-quality-auditor agent ID>
 block: true
 ```
 
-**Integrate ALL findings from both subagents into final review. DO NOT skip this step.**
+**Documentation Auditor Results (if launched):**
+
+```
+agentId: <documentation-auditor agent ID>
+block: true
+```
+
+**If documentation-auditor was not launched (no docs detected), skip this retrieval.**
+
+**Integrate ALL findings from all subagents into final review. DO NOT skip this step.**
 
 **Task Update:** Mark task 4 as `completed` and task 5 as `in_progress` using TaskUpdate.
 
@@ -179,6 +214,7 @@ Verification always runs:
 findings = {
   security: [security auditor results],
   quality: [code quality auditor results],
+  documentation: [documentation auditor results, if launched],
   performance: [your performance analysis from Step 2],
   architecture: [your architecture analysis from Steps 3-4]
 }
@@ -374,6 +410,7 @@ Before rendering the final report, assign unique identifiers to each issue based
 1. Collect all findings from:
    - Security auditor results
    - Code quality auditor results
+   - Documentation auditor results (if launched)
    - Your own performance analysis (Step 2)
    - Your own architecture/maintainability analysis (Steps 3-4)
 
@@ -382,6 +419,7 @@ Before rendering the final report, assign unique identifiers to each issue based
    - `perf_count = 0` (Performance)
    - `arch_count = 0` (Architecture)
    - `maint_count = 0` (Maintainability)
+   - `doc_count = 0` (Documentation)
 
 3. For each issue (in the order they appear in the report):
    - Read the issue's `Category` field
@@ -390,6 +428,7 @@ Before rendering the final report, assign unique identifiers to each issue based
      - Performance → PERF, increment `perf_count`
      - Architecture → ARCH, increment `arch_count`
      - Maintainability → MAINT, increment `maint_count`
+     - Documentation → DOC, increment `doc_count`
    - Format ID as `{PREFIX}-{NNN}` with zero-padded 3-digit counter (e.g., SEC-001, PERF-002)
    - Modify the issue heading: `### [SEVERITY] {ID}: Title`
    - Add `**ID:** {ID}` field right after the heading (before **Location:**)
@@ -402,6 +441,7 @@ Before rendering the final report, assign unique identifiers to each issue based
 | Performance     | PERF   |
 | Architecture    | ARCH   |
 | Maintainability | MAINT  |
+| Documentation   | DOC    |
 
 **Example transformation:**
 
@@ -528,6 +568,13 @@ After the review is complete (and optionally saved), display guidance based on c
 - [ ] Standards discovery completed
 - [ ] Linter/typecheck results integrated
 - [ ] Architecture analysis completed
+
+### Documentation (CONDITIONAL)
+
+- [ ] Documentation detection phase completed
+- [ ] documentation-auditor subagent launched (if docs detected)
+- [ ] Documentation results retrieved via AgentOutputTool (if launched)
+- [ ] All documentation findings included in review
 
 ### Completeness
 
