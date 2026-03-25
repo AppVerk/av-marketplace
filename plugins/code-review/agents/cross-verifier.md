@@ -52,7 +52,17 @@ Find where documentation gaps and architectural issues intersect:
 - Documentation auditor found outdated docs but security auditor didn't check if the outdated information creates security risks
 - Code changes have documentation findings and quality findings in the same module
 
-### 5. Composite Findings
+### 5. Severity Calibration Across Domains
+
+When correlating findings across domains, apply these calibration rules:
+
+- **Security always outranks documentation** at the same severity level — a HIGH security finding takes priority over a HIGH documentation finding
+- **Documentation findings never outrank security findings** of the same level — documentation gaps are important but do not represent direct exploitable risk
+- **Documentation + Security compound risk**: A documentation gap that relates to a security finding should escalate the documentation finding (e.g., undocumented auth flow with a security bypass = escalate the doc finding from MEDIUM to HIGH)
+- **Documentation + Quality compound risk**: Outdated architecture docs combined with an architecture violation = escalate both, as developers will build on wrong assumptions
+- **Standalone documentation findings** remain at their original severity — only escalate when correlated with security or quality issues
+
+### 6. Composite Findings
 
 Create findings that emerge only from cross-analysis:
 - "Module X has both a SQL injection vulnerability AND is a God Object with no tests — risk is compounded"
