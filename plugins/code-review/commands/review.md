@@ -312,7 +312,7 @@ For each issue found, format as structured markdown:
 
 **ID:** {ID}
 **Location:** `path/to/file.py:42`
-**Category:** Security | Performance | Architecture | Maintainability
+**Category:** Security | Performance | Architecture | Maintainability | Documentation
 **OWASP:** A05:2025 (if applicable)
 **CWE:** CWE-89 (if applicable)
 **Effort:** trivial | easy | medium | hard

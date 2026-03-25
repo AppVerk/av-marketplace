@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.9.1
+**Version:** 1.10.0
 
 ## Commands
 
@@ -21,7 +21,7 @@ Run a comprehensive code review covering security, performance, architecture, an
 /review "Analyze the new API endpoints"
 ```
 
-The review launches two parallel analysis agents (security + code quality) and combines their findings into a unified report. Each issue gets a unique category-based ID (e.g., `SEC-001`, `PERF-002`, `ARCH-001`, `MAINT-003`) and includes severity level, file location, explanation, and remediation with code examples.
+The review launches parallel analysis agents (security + code quality, and optionally documentation) and combines their findings into a unified report. Each issue gets a unique category-based ID (e.g., `SEC-001`, `PERF-002`, `ARCH-001`, `MAINT-003`, `DOC-001`) and includes severity level, file location, explanation, and remediation with code examples.
 
 **Issue ID categories:**
 
@@ -31,6 +31,7 @@ The review launches two parallel analysis agents (security + code quality) and c
 | Performance     | PERF   |
 | Architecture    | ARCH   |
 | Maintainability | MAINT  |
+| Documentation   | DOC    |
 
 ### `/fix`
 
@@ -41,6 +42,7 @@ Apply a fix for a single issue from a review report. Supports two modes:
 ```bash
 /fix SEC-001
 /fix PERF-042
+/fix DOC-001
 ```
 
 The plugin automatically finds the most recent saved report in `docs/reviews/`, locates the issue by ID, and proceeds with the fix. After fixing, the issue is marked as fixed in the report.
@@ -95,6 +97,7 @@ Requires GitHub CLI (`gh`) to be installed and authenticated.
 - **Architecture** — SOLID principles, Clean Architecture boundaries, DDD patterns, anti-patterns (God Objects, circular dependencies)
 - **Performance** — N+1 queries, missing indexes, memory leaks, unbounded collections, blocking calls
 - **Code Quality** — Complexity, naming, error handling, test coverage gaps
+- **Documentation** — Outdated docs, missing doc entries, stale API references (conditional — only when project has documentation)
 - **Standards** — Project-specific coding conventions discovered from documentation
 - **Dependencies** — Known CVEs in third-party packages
 
@@ -104,21 +107,21 @@ Every review automatically includes cross-domain correlation and adversarial rev
 
 ### What It Does
 
-After the standard analysis (security + code quality auditors), two verification subagents analyze the findings in parallel:
+After the standard analysis (security + code quality + optional documentation auditors), two verification subagents analyze the findings in parallel:
 
-- **Cross-Verifier**: identifies correlations between security and quality findings (e.g., a God Object with a vulnerability = higher blast radius), coverage gaps, and composite findings
-- **Challenger**: challenges every Critical/High finding for false positives, validates severity levels, and calibrates severity between security and quality domains
+- **Cross-Verifier**: identifies correlations between security, quality, and documentation findings (e.g., a God Object with a vulnerability = higher blast radius, undocumented endpoint with a security bypass), coverage gaps, and composite findings
+- **Challenger**: challenges every Critical/High finding for false positives, validates severity levels, and calibrates severity across security, quality, and documentation domains
 
 ### Additional Report Sections
 
 Every review includes a Verification Summary showing:
 - Number of findings verified, removed, and adjusted
-- Cross-analysis correlations (security <-> quality)
+- Cross-analysis correlations (security <-> quality <-> documentation)
 - Challenged findings with reasoning
 
 ### Cost Considerations
 
-Verification spawns 2 additional subagent instances as part of every review to ensure accuracy.
+Verification spawns 2 additional subagent instances (Cross-Verifier + Challenger) as part of every review. When project documentation is detected, a third subagent (documentation-auditor) is also launched during the analysis phase.
 
 ## Save Review to File
 

@@ -37,7 +37,7 @@ Extract the following fields from the issue block:
 | Severity | `[CRITICAL\|HIGH\|MEDIUM\|LOW]` in title | Yes |
 | Title | Text after severity in first line | Yes |
 | Location | `**Location:** \`path:line\`` | Yes |
-| Category | `**Category:** Security\|Performance\|Architecture\|Maintainability` | Yes |
+| Category | `**Category:** Security\|Performance\|Architecture\|Maintainability\|Documentation` | Yes |
 | OWASP | `**OWASP:** A##:####` | No |
 | CWE | `**CWE:** CWE-###` | No |
 | Effort | `**Effort:** trivial\|easy\|medium\|hard` | No |
@@ -176,6 +176,7 @@ Based on the issue and changes made, select appropriate tools:
 | Category = Performance | Linter + relevant tests |
 | Category = Architecture | Linter + typecheck + tests |
 | Category = Maintainability | Linter only |
+| Category = Documentation | Read modified doc + verify links/references |
 | Change touches `password`, `token`, `secret`, `key` | secret-scanning |
 | Change modifies type annotations | typecheck (mypy/tsc) |
 | Test file exists for modified code | Run those tests |

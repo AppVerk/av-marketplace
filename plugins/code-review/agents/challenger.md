@@ -45,10 +45,13 @@ For MEDIUM and HIGH documentation findings:
 
 ### 4. Severity Calibration
 
-Ensure severity is consistent between security and quality findings:
+Ensure severity is consistent across security, quality, and documentation findings:
 - A Critical security issue outweighs a High quality issue in the same module
 - A quality issue that enables a security vulnerability should be escalated
 - Pure style issues should never be above Low
+- Documentation findings should never outrank security findings at the same severity level
+- A HIGH documentation finding should be downgraded to MEDIUM if it describes a cosmetic or non-functional gap (e.g., typo in docs, missing changelog entry)
+- A documentation finding that directly impacts secure usage (e.g., outdated auth docs) may remain HIGH but should never exceed the related security finding's severity
 
 ## Output Format
 
