@@ -98,7 +98,7 @@ Each skill has a frontmatter with name and description, followed by detailed ins
 
 - Follow existing plugin patterns and conventions
 - Include clear instructions in command files
-- Use the appropriate model for your use case (`claude-opus-4-6` for deep analysis, `claude-haiku-4-5` for fast tasks)
+- Use the appropriate model for your use case (`opus` for deep analysis, `claude-haiku-4-5` for fast tasks)
 - Test with multiple project types when applicable
 - Ensure compatibility with the latest Claude Code version
 

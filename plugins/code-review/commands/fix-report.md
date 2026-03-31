@@ -1,7 +1,7 @@
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
 description: Parse a saved review report, present issues as a checklist, fix selected issues, and mark them resolved in the report.
-model: claude-opus-4-6
+model: opus
 argument-hint: <path-to-review-report>
 ---
 

@@ -3,7 +3,7 @@ name: web-security-agent
 description: Web application security scanner for passive assessment. Checks HTTP security headers, cookies, TLS, secrets exposure, error handling, forms, clickjacking, and open redirects.
 tools: Read, Bash, Grep, Glob
 allowed-tools: Bash(curl:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(echo:*), Bash(cat:*), mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_tabs
-model: claude-opus-4-6
+model: opus
 skills: web-security-checklist
 ---
 

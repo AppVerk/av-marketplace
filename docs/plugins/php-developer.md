@@ -2,7 +2,7 @@
 
 PHP development workflow with `/develop` command, coding standards, TDD, and stack-specific patterns (Symfony, Doctrine ORM, DDD).
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 
 ## Commands
 

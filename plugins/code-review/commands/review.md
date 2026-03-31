@@ -1,7 +1,7 @@
 ---
 allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(git:*), mcp__github, mcp__sequential_thinking, Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(python:*), Bash(node:*), TaskCreate, TaskUpdate, TaskList, Write, AskUserQuestion, Task
 description: Perform comprehensive analysis - security, performance, architecture, maintainability. Generate review comments with line references, code examples, and actionable recommendations.
-model: claude-opus-4-6
+model: opus 
 argument-hint: [description]
 ---
 
@@ -14,6 +14,7 @@ You are an expert code review specialist combining automated security analysis, 
 Review: **$ARGUMENTS**
 
 Parse arguments:
+
 - All text is the review description
 
 ---
@@ -27,6 +28,7 @@ Skill(skill: "developer-plugins-integration")
 ```
 
 This detects:
+
 - Available developer plugins (e.g. python-developer, frontend-developer)
 - Project tech stack (languages, frameworks, libraries)
 - Which developer skills should be loaded for stack-specific analysis
@@ -406,6 +408,7 @@ Before rendering the final report, assign unique identifiers to each issue based
 **Example transformation:**
 
 Before:
+
 ```
 ### [HIGH] SQL Injection in User Query
 
@@ -414,6 +417,7 @@ Before:
 ```
 
 After:
+
 ```
 ### [HIGH] SEC-001: SQL Injection in User Query
 
@@ -431,6 +435,7 @@ After:
 After the review report has been displayed, ask whether to save it:
 
 Use AskUserQuestion with these parameters:
+
 - question: "Save this review to a file?"
 - options:
   - label: "Yes", description: "Save review report to docs/reviews/"
@@ -445,29 +450,29 @@ Use AskUserQuestion with these parameters:
 git branch --show-current
 ```
 
-2. Slugify the branch name:
+1. Slugify the branch name:
    - Replace `/` with `-`
    - Replace spaces with `-`
    - Convert to lowercase
    - Example: `feature/user-login` → `feature-user-login`
 
-3. Build the file path: `docs/reviews/YYYY-MM-DD-<branch-slug>.md`
+2. Build the file path: `docs/reviews/YYYY-MM-DD-<branch-slug>.md`
    - Use today's date
    - Example: `docs/reviews/2026-02-19-feature-user-login.md`
 
-4. Check if the file already exists. If it does, append a numeric suffix:
+3. Check if the file already exists. If it does, append a numeric suffix:
    - `docs/reviews/2026-02-19-feature-user-login-2.md`
    - Increment until a non-existing filename is found
 
-5. Create the `docs/reviews/` directory if it doesn't exist:
+4. Create the `docs/reviews/` directory if it doesn't exist:
 
 ```bash
 mkdir -p docs/reviews
 ```
 
-6. Write the full review report (the same markdown content displayed to the user) to the file using the Write tool.
+1. Write the full review report (the same markdown content displayed to the user) to the file using the Write tool.
 
-7. Confirm to the user: "Review saved to `docs/reviews/2026-02-19-feature-user-login.md`"
+2. Confirm to the user: "Review saved to `docs/reviews/2026-02-19-feature-user-login.md`"
 
 **If user selects "No":** Proceed to Step 7.
 
