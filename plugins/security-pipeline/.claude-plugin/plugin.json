@@ -1,5 +1,5 @@
 {
   "name": "security-pipeline",
   "description": "Generate and merge security scanning steps (Semgrep SAST + TruffleHog) into CI/CD pipeline configurations",
-  "version": "1.0.0"
+  "version": "1.0.1"
 }

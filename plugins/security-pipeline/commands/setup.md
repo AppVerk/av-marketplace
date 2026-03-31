@@ -1,7 +1,7 @@
 ---
 allowed-tools: Read, Write, Edit, Glob, Bash(git diff:*)
 description: Generate and merge security scanning steps (Semgrep + TruffleHog) into CI/CD pipeline configuration. Auto-detects provider, languages, and frameworks.
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # Security Pipeline Setup

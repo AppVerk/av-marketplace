@@ -3,7 +3,7 @@ name: developer
 description: Expert TypeScript + React developer agent for implementing features, fixing issues, and refactoring code. Enforces coding standards (strict TypeScript, no any/as/!, no React.FC), TDD workflow (tests before code, userEvent, 80%+ coverage), and stack-specific patterns (Tailwind, Zustand, TanStack Query, React Hook Form, TanStack Router). Use this agent instead of general-purpose agents when working on TypeScript + React projects.
 tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
 allowed-tools: Bash(tsc:*), Bash(vitest:*), Bash(playwright:*), Bash(eslint:*), Bash(biome:*), Bash(pnpm:*), Bash(git:*), Bash(node:*)
-model: claude-opus-4-6
+model: opus 
 skills: coding-standards, tdd-workflow, tailwind-patterns, zustand-patterns, tanstack-query-patterns, form-patterns, tanstack-router-patterns, pnpm-package-manager
 ---
 

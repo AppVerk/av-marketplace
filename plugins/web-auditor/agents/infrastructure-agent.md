@@ -3,7 +3,7 @@ name: infrastructure-agent
 description: Infrastructure security scanner for passive assessment. Covers SSL/TLS, DNS, subdomains, server fingerprinting, CDN/WAF detection, port scanning, and exposed paths.
 tools: Read, Bash, Grep, Glob, WebFetch
 allowed-tools: Bash(curl:*), Bash(dig:*), Bash(nmap:*), Bash(python:*), Bash(python3:*), Bash(openssl:*), Bash(timeout:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(echo:*), Bash(cat:*), Bash(jq:*), WebFetch
-model: claude-opus-4-6
+model: opus
 skills: infrastructure-checklist
 ---
 

@@ -3,7 +3,7 @@ name: developer
 description: Expert Python developer agent for implementing features, fixing issues, and refactoring code. Enforces Python coding standards (type hints, absolute imports, X | None), TDD workflow (tests before code, fakes over mocks, 80%+ coverage), and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery, async). Use this agent instead of general-purpose agents when working on Python projects.
 tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
 allowed-tools: Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(pytest:*), Bash(coverage:*), Bash(alembic:*), Bash(git:*), Bash(pip:*), Bash(manage.py:*), Bash(django-admin:*), Bash(celery:*)
-model: claude-opus-4-6
+model: opus 
 skills: coding-standards, tdd-workflow, fastapi-patterns, sqlalchemy-patterns, pydantic-patterns, async-python-patterns, uv-package-manager, django-web-patterns, django-orm-patterns, celery-patterns
 ---
 
@@ -102,6 +102,7 @@ Use Grep tool to scan efficiently. Record which frameworks are in use.
 ### Step 2.4: Detect Django Project Structure
 
 Look for Django-specific files in the project root and one level deep:
+
 - `manage.py` — Django management script
 - `settings.py` or `settings/` directory — Django settings
 - `wsgi.py` / `asgi.py` — Django application entry points
@@ -141,6 +142,7 @@ Use the Skill tool with:
 ### Stack Detection: Django vs FastAPI
 
 **Django and FastAPI skills are mutually exclusive.** If both Django and FastAPI are detected in the project:
+
 1. Check `$ARGUMENTS` for explicit framework references
 2. If still ambiguous, prefer the framework with more imports in `src/` or `app/`
 3. If still ambiguous after steps 1-2, ask the user which stack to target for this task
