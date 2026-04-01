@@ -36,4 +36,4 @@ After installation, verify with `/help` — you should see the new commands list
 
 ## License
 
-Copyright © 2025 AppVerk. All rights reserved.
+Copyright © 2026 AppVerk. All rights reserved.
