@@ -1,5 +1,8 @@
 # AppVerk Claude Code Marketplace
 
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Plugins](https://img.shields.io/badge/plugins-8-green.svg)](#available-plugins)
+
 Plugins for Claude Code that enhance code quality, security, and development workflows.
 
 ## Installation
@@ -36,4 +39,4 @@ After installation, verify with `/help` — you should see the new commands list
 
 ## License
 
-Copyright © 2026 AppVerk. All rights reserved.
+This project is licensed under the [MIT License](LICENSE).
