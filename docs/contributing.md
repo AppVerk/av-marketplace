@@ -2,6 +2,26 @@
 
 We welcome contributions to the AppVerk Claude Code Marketplace.
 
+## How to Contribute
+
+There are many ways to contribute:
+
+- **Bug fixes** — fix issues in existing plugins
+- **New plugins** — create plugins that solve new problems
+- **New skills** — add framework patterns or workflows to existing developer plugins
+- **Documentation** — improve guides, fix typos, add examples
+- **Bug reports** — submit clear, reproducible issues
+- **Feature requests** — suggest improvements with context on the problem they solve
+
+## Fork & PR Workflow
+
+1. [Fork](https://github.com/AppVerk/av-marketplace/fork) the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Make your changes following existing plugin conventions
+4. Test your changes with Claude Code on a real project
+5. Commit using [Conventional Commits](https://www.conventionalcommits.org/) format (e.g., `feat(plugin-name): add X`, `fix(plugin-name): resolve Y`)
+6. Push to your fork and [open a Pull Request](https://github.com/AppVerk/av-marketplace/compare)
+
 ## Plugin Architecture
 
 Each plugin is a directory under `plugins/` (or `external_plugins/` for third-party MCP servers) with the following structure:
@@ -132,6 +152,34 @@ Shell scripts in `scripts/` are invoked by hooks. They receive the tool input as
    - Clear description of plugin functionality
    - Usage examples
    - Any dependencies or prerequisites
+
+## Pull Request Requirements
+
+Every pull request should include:
+
+- Clear description of what changed and why
+- Evidence of testing with Claude Code on at least one real project
+- Adherence to existing plugin patterns and naming conventions
+- Updated version in `plugin.json` (if modifying an existing plugin)
+- No unrelated changes bundled in the same PR
+
+## Review Process
+
+After you submit a pull request:
+
+- A maintainer will review it within approximately one week
+- You may receive feedback requesting changes — this is normal and constructive
+- PRs may go through multiple rounds of revision before merge
+- Maintainers may suggest alternative approaches that better fit the project
+
+## Good First Contributions
+
+Not sure where to start? These are great entry points:
+
+- Fix typos or improve clarity in existing documentation
+- Add a new skill to an existing developer plugin (e.g., a new framework pattern for `python-developer` or `frontend-developer`)
+- Submit a bug report with clear steps to reproduce
+- Improve existing skill instructions based on your real-world usage experience
 
 ## Code Standards
 
