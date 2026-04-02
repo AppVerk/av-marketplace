@@ -20,7 +20,17 @@ Based on the uncommitted changes in the git repository, generate a concise and d
 
 Create the commit with prepared message, but DON'T push it to the repository!
 
-**CRITICAL:** You MUST prefix the git commit command with `AV_COMMIT_SKILL=1` so the pre-commit hook allows it through. Example: `AV_COMMIT_SKILL=1 git commit -m "feat: ..."`. Without this prefix, the commit will be blocked.
+**CRITICAL: Bypassing the pre-commit hook**
+
+The repository has a pre-commit hook that blocks direct `git commit` commands. To bypass it, you MUST include `AV_COMMIT_SKILL=1` in the command.
+
+**Preferred approach** — use two separate Bash calls:
+1. `git add <files>`
+2. `AV_COMMIT_SKILL=1 git commit -m "feat: ..."`
+
+**If chaining with `&&`**, prefix the ENTIRE chain: `AV_COMMIT_SKILL=1 git add <files> && git commit -m "feat: ..."`
+
+Without `AV_COMMIT_SKILL=1` anywhere in the command, the commit will be blocked.
 
 ## Rules
 
