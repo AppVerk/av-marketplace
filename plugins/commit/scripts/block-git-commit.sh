@@ -3,8 +3,8 @@
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
-# Allow: invoked via /commit skill (AV_COMMIT_SKILL=1 prefix)
-if echo "$COMMAND" | grep -qE 'AV_COMMIT_SKILL=1\s+git\s+commit'; then
+# Allow: invoked via /commit skill (AV_COMMIT_SKILL=1 anywhere in command)
+if echo "$COMMAND" | grep -q 'AV_COMMIT_SKILL=1' && echo "$COMMAND" | grep -qE 'git\s+commit'; then
   exit 0
 fi
 
