@@ -2,7 +2,7 @@
 
 Generate meaningful, well-formatted commit messages following the Conventional Commits specification.
 
-**Version:** 1.1.3
+**Version:** 1.2.0
 
 ## Commands
 
@@ -16,12 +16,6 @@ Analyze staged and unstaged changes and generate a commit message.
 
 # Include a task ID reference
 /commit TASK-123
-
-# Skip co-author attribution
-/commit --no-coauthor
-
-# Combine options
-/commit ISSUE-456 --no-coauthor
 ```
 
 The plugin never auto-pushes — you always review before pushing.
@@ -34,7 +28,6 @@ type(scope): description
 [optional body with details]
 
 Refs: TASK-123
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 ### Types
@@ -65,7 +58,6 @@ feat!: change API response format
 | Flag | Effect |
 |------|--------|
 | `TASK-123` | Adds `Refs: TASK-123` footer |
-| `--no-coauthor` | Omits the Co-Authored-By line |
 
 ## Auto-enforcement
 
