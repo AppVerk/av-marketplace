@@ -50,7 +50,7 @@ For each significant change:
 2. Read matching documentation sections
 3. Compare documentation description with current code state
 
-**If documentation was already updated in the same diff** (e.g., by a developer agent), verify the updates are correct and complete rather than flagging them as missing.
+**If documentation was already updated in the same diff** (e.g., by the developer), verify the updates are correct and complete rather than flagging them as missing.
 
 ### Step 4: Detect Gaps
 
