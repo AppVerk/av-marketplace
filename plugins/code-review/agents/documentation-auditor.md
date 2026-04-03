@@ -2,7 +2,7 @@
 name: documentation-auditor
 description: Documentation auditor that verifies code changes are reflected in project documentation. Checks for outdated, missing, or inconsistent documentation against recent code changes.
 tools: Read, Glob, Grep
-model: claude-opus-4-6
+model: opus
 ---
 
 # Documentation Auditor Agent
