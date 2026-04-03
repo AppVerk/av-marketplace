@@ -1,5 +1,5 @@
 {
   "name": "php-developer",
   "description": "Enforces PHP best practices, coding standards, TDD workflow, and modern tooling for Symfony, Doctrine ORM, and DDD projects",
-  "version": "1.0.1"
+  "version": "1.0.2"
 }
