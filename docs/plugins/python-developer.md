@@ -2,7 +2,7 @@
 
 Python development workflow with `/develop` command, coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery).
 
-**Version:** 3.0.2
+**Version:** 3.0.3
 
 ## Commands
 
