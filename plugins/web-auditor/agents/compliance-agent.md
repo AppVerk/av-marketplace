@@ -3,7 +3,7 @@ name: compliance-agent
 description: Compliance and privacy scanner for passive assessment. Checks cookie consent, cookie inventory, privacy policy, data exposure, analytics and tracking, and third-party resources.
 tools: Read, Bash, Grep, Glob
 allowed-tools: Bash(curl:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(echo:*), Bash(cat:*), Bash(python3:*), mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_tabs
-model: claude-opus-4-6
+model: opus
 skills: compliance-checklist
 ---
 
@@ -14,6 +14,7 @@ You are a compliance and privacy scanning agent performing a passive compliance 
 ## Input
 
 You receive:
+
 - **Target domain** — the website to audit
 - **URL inventory** — list of discovered URLs from crawling
 - **Compliance data per URL** — cookies, consent banner detection, analytics scripts, privacy links

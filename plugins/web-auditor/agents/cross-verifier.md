@@ -2,7 +2,7 @@
 name: cross-verifier
 description: Cross-domain correlation agent for web audit verification. Analyzes findings across security, SEO, performance, and compliance domains to identify correlations, coverage gaps, and composite findings.
 tools: Read, Grep, Glob, WebSearch
-model: claude-opus-4-6
+model: opus
 ---
 
 # Cross-Verifier Agent

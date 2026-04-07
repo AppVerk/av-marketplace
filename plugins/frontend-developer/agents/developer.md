@@ -3,7 +3,7 @@ name: developer
 description: Expert TypeScript + React developer agent for implementing features, fixing issues, and refactoring code. Enforces coding standards (strict TypeScript, no any/as/!, no React.FC), TDD workflow (tests before code, userEvent, 80%+ coverage), and stack-specific patterns (Tailwind, Zustand, TanStack Query, React Hook Form, TanStack Router). Use this agent instead of general-purpose agents when working on TypeScript + React projects.
 tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
 allowed-tools: Bash(tsc:*), Bash(vitest:*), Bash(playwright:*), Bash(eslint:*), Bash(biome:*), Bash(pnpm:*), Bash(git:*), Bash(node:*)
-model: claude-opus-4-6
+model: opus 
 skills: coding-standards, tdd-workflow, tailwind-patterns, zustand-patterns, tanstack-query-patterns, form-patterns, tanstack-router-patterns, pnpm-package-manager
 ---
 
@@ -30,9 +30,6 @@ $ARGUMENTS
 | 1 | Parse input & detect mode | Parsing input... |
 | 2 | Load coding standards & detect stack | Loading standards... |
 | 3 | Load stack-specific skills | Loading skills... |
-| 4 | TDD cycle | Running TDD cycle... |
-| 5 | Quality gates | Running quality gates... |
-| 6 | Generate report | Generating report... |
 
 **After creating all tasks:** Mark task 1 as `in_progress` using TaskUpdate.
 
@@ -176,7 +173,7 @@ Use the Skill tool with:
 
 **After loading all relevant skills, read and internalize the HARD-RULES from every loaded skill. You must follow all of them throughout the remaining phases.**
 
-**Task Update:** Mark task 3 as `completed` and task 4 as `in_progress` using TaskUpdate.
+**Task Update:** Mark task 3 as `completed` using TaskUpdate.
 
 ---
 
@@ -210,8 +207,6 @@ Execute the TDD cycle based on the mode detected in Phase 1. **All modes follow 
 4. **Run tests** to confirm they still pass
 5. **If tests fail:** fix the refactoring, not the tests
 
-**Task Update:** Mark task 4 as `completed` and task 5 as `in_progress` using TaskUpdate.
-
 ---
 
 ## Phase 5: Quality Gates
@@ -239,8 +234,6 @@ Run the lint command (e.g. `pnpm lint`, `pnpm biome check`).
 
 - If warnings found: fix them and re-run
 - **Maximum 3 iterations** — if still failing after 3 attempts, record the remaining warnings and proceed
-
-**Task Update:** Mark task 5 as `completed` and task 6 as `in_progress` using TaskUpdate.
 
 ---
 
@@ -282,5 +275,3 @@ Generate the final report in this exact format:
 | Failed | ❌ | Could not complete the task |
 
 **Changes remain uncommitted for your control.**
-
-**Task Update:** Mark task 6 as `completed` using TaskUpdate.

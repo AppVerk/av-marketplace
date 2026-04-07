@@ -3,7 +3,7 @@ name: api-security-agent
 description: API security scanner for passive assessment. Covers endpoint discovery, CORS analysis, rate limiting, authentication, GraphQL security, and response security.
 tools: Read, Bash, Grep, Glob
 allowed-tools: Bash(curl:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(echo:*), Bash(cat:*), Bash(base64:*), Bash(jq:*), mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, mcp__plugin_playwright_playwright__browser_close
-model: claude-opus-4-6
+model: opus
 skills: api-security-checklist
 ---
 
@@ -14,6 +14,7 @@ You are an API security scanning agent performing a passive security assessment.
 ## Input
 
 You receive:
+
 - **Target domain** — the website to audit
 - **URL inventory** — list of discovered URLs from crawling
 - **HTTP headers** — raw response headers already collected
