@@ -28,6 +28,28 @@ command -v jq >/dev/null 2>&1 && echo "OK: jq available" || echo "UNAVAILABLE: j
 
 Use the first available tool from each category. If no HTTP client is available, mark all API scenarios as SKIP.
 
+### MCP Server Detection
+
+In addition to CLI tools, check if any database or API-related MCP servers are available. MCP servers provide direct access without needing CLI clients installed locally.
+
+Common database MCP servers:
+- **PostgreSQL MCP** — `mcp__postgres`, `mcp__supabase`, `mcp__neon` or similar
+- **MySQL MCP** — `mcp__mysql` or similar
+- **MongoDB MCP** — `mcp__mongodb` or similar
+- **Redis MCP** — `mcp__redis` or similar
+- **Supabase MCP** — provides both database and API access
+
+Common API-related MCP servers:
+- **HTTP/REST MCP** — generic HTTP request capabilities
+- **GraphQL MCP** — for GraphQL API testing
+
+**How to detect:** Check the available tools list in your session. MCP tools follow the pattern `mcp__<server>__<tool>`. If you see database-related MCP tools, prefer them over CLI clients — they're typically pre-configured with connection details and don't require manual connection string setup.
+
+**Priority order for DB access:**
+1. MCP server (pre-configured, no connection string needed)
+2. CLI client (psql, sqlite3, mysql — requires connection details)
+3. SKIP (no access available)
+
 ---
 
 ## Execution Workflow
@@ -48,6 +70,7 @@ For each BE scenario from the test plan:
 ### Request Construction (curl)
 
 **GET request:**
+
 ```bash
 curl -s -w "\n%{http_code}" \
   -H "Authorization: Bearer $TOKEN" \
@@ -56,6 +79,7 @@ curl -s -w "\n%{http_code}" \
 ```
 
 **POST request:**
+
 ```bash
 curl -s -w "\n%{http_code}" \
   -X POST \
@@ -66,6 +90,7 @@ curl -s -w "\n%{http_code}" \
 ```
 
 **PUT request:**
+
 ```bash
 curl -s -w "\n%{http_code}" \
   -X PUT \
@@ -76,6 +101,7 @@ curl -s -w "\n%{http_code}" \
 ```
 
 **DELETE request:**
+
 ```bash
 curl -s -w "\n%{http_code}" \
   -X DELETE \
@@ -84,6 +110,7 @@ curl -s -w "\n%{http_code}" \
 ```
 
 **PATCH request:**
+
 ```bash
 curl -s -w "\n%{http_code}" \
   -X PATCH \
@@ -98,6 +125,7 @@ The `-w "\n%{http_code}"` flag appends the status code on a new line after the r
 ### Request Construction (httpie)
 
 **GET request:**
+
 ```bash
 http GET http://localhost:8000/api/resources \
   Authorization:"Bearer $TOKEN" \
@@ -105,6 +133,7 @@ http GET http://localhost:8000/api/resources \
 ```
 
 **POST request:**
+
 ```bash
 http POST http://localhost:8000/api/resources \
   Authorization:"Bearer $TOKEN" \
@@ -117,12 +146,14 @@ Use `--print=hb` to show headers and body (useful for debugging). Use `--print=b
 ### Response Verification
 
 **Check status code:**
+
 ```bash
 STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X GET "http://localhost:8000/api/resources")
 if [ "$STATUS" = "200" ]; then echo "PASS: status 200"; else echo "FAIL: expected 200, got $STATUS"; fi
 ```
 
 **Check response body with jq:**
+
 ```bash
 RESPONSE=$(curl -s -H "Content-Type: application/json" "http://localhost:8000/api/resources")
 
@@ -137,6 +168,7 @@ echo "$RESPONSE" | jq -e '.items | length > 0' > /dev/null 2>&1 && echo "PASS: i
 ```
 
 **Without jq (fallback with grep):**
+
 ```bash
 RESPONSE=$(curl -s "http://localhost:8000/api/resources")
 echo "$RESPONSE" | grep -q '"status":"active"' && echo "PASS" || echo "FAIL"
@@ -189,6 +221,7 @@ Flag: `-N` (skip column names).
 ### Connection String Detection
 
 If the test plan doesn't specify DB connection details, look for them in:
+
 1. `.env` or `.env.local` files
 2. `docker-compose.yml` (service ports, credentials)
 3. Framework config files (`settings.py`, `database.yml`, `config/database.php`)
@@ -199,6 +232,7 @@ If the test plan doesn't specify DB connection details, look for them in:
 ## Error Handling Test Patterns
 
 ### Missing required field
+
 ```bash
 # Send request without required field
 curl -s -w "\n%{http_code}" -X POST \
@@ -209,6 +243,7 @@ curl -s -w "\n%{http_code}" -X POST \
 ```
 
 ### Unauthenticated request
+
 ```bash
 # Send request without auth token
 curl -s -w "\n%{http_code}" -X GET \
@@ -217,6 +252,7 @@ curl -s -w "\n%{http_code}" -X GET \
 ```
 
 ### Insufficient permissions
+
 ```bash
 # Send request with regular user token to admin endpoint
 curl -s -w "\n%{http_code}" -X DELETE \
@@ -226,6 +262,7 @@ curl -s -w "\n%{http_code}" -X DELETE \
 ```
 
 ### Resource not found
+
 ```bash
 curl -s -w "\n%{http_code}" -X GET \
   -H "Authorization: Bearer $TOKEN" \
@@ -234,6 +271,7 @@ curl -s -w "\n%{http_code}" -X GET \
 ```
 
 ### Duplicate creation
+
 ```bash
 # Create resource
 curl -s -X POST -H "Content-Type: application/json" \

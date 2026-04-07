@@ -140,12 +140,15 @@ command -v curl >/dev/null 2>&1 && echo "curl: available" || echo "curl: unavail
 command -v http >/dev/null 2>&1 && echo "httpie: available" || echo "httpie: unavailable"
 ```
 
-**Database clients:**
+**Database clients (CLI):**
 ```bash
 command -v psql >/dev/null 2>&1 && echo "psql: available" || echo "psql: unavailable"
 command -v sqlite3 >/dev/null 2>&1 && echo "sqlite3: available" || echo "sqlite3: unavailable"
 command -v mysql >/dev/null 2>&1 && echo "mysql: available" || echo "mysql: unavailable"
 ```
+
+**Database MCP servers:**
+Check the available tools list for MCP servers that provide database access (e.g., `mcp__postgres`, `mcp__supabase`, `mcp__neon`, `mcp__mysql`, `mcp__mongodb`, `mcp__redis`). MCP servers are preferred over CLI clients — they're pre-configured with connection details.
 
 **Task Update:** Mark task 4 as `completed`, task 5 as `in_progress`.
 
