@@ -2,7 +2,7 @@
 name: cross-verifier
 description: Cross-domain correlation agent for code review verification. Analyzes findings across security, code quality, and documentation domains to identify correlations where security vulnerabilities intersect with architectural or documentation issues.
 tools: Read, Grep, Glob, WebSearch
-model: claude-opus-4-6
+model: opus
 ---
 
 # Cross-Verifier Agent (Code Review)

@@ -3,7 +3,7 @@ name: web-auditor
 description: Coordinator agent for comprehensive passive web auditing. Crawls target URL, dispatches up to 7 parallel scanning agents (security, SEO, performance, compliance), and consolidates findings into a Markdown report.
 tools: Read, Write, Bash, Grep, Glob, Task, TaskOutput, WebFetch, WebSearch
 allowed-tools: Bash(curl:*), Bash(dig:*), Bash(nmap:*), Bash(python:*), Bash(python3:*), Bash(openssl:*), Bash(timeout:*), Bash(base64:*), Bash(echo:*), Bash(jq:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(sort:*), Bash(wc:*), Bash(cat:*), Bash(date:*), Bash(mkdir:*), mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_tabs
-model: claude-opus-4-6
+model: opus
 skills: web-security-checklist, api-security-checklist, infrastructure-checklist, supply-chain-checklist, seo-checklist, performance-checklist, compliance-checklist
 ---
 

@@ -2,7 +2,7 @@
 
 Generate meaningful, well-formatted commit messages following the Conventional Commits specification.
 
-**Version:** 1.1.1
+**Version:** 1.2.0
 
 ## Commands
 
@@ -16,12 +16,6 @@ Analyze staged and unstaged changes and generate a commit message.
 
 # Include a task ID reference
 /commit TASK-123
-
-# Skip co-author attribution
-/commit --no-coauthor
-
-# Combine options
-/commit ISSUE-456 --no-coauthor
 ```
 
 The plugin never auto-pushes — you always review before pushing.
@@ -34,7 +28,6 @@ type(scope): description
 [optional body with details]
 
 Refs: TASK-123
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 ### Types
@@ -65,18 +58,19 @@ feat!: change API response format
 | Flag | Effect |
 |------|--------|
 | `TASK-123` | Adds `Refs: TASK-123` footer |
-| `--no-coauthor` | Omits the Co-Authored-By line |
 
 ## Auto-enforcement
 
 This plugin includes a PreToolUse hook that automatically blocks direct `git commit` commands. When any agent or subagent attempts to run `git commit`, the hook denies the command and instructs the agent to use `/commit` instead.
 
 **What's blocked:**
+
 - `git commit -m "message"`
 - `git commit` (interactive)
 - Chained commands containing `git commit` (e.g., `git add . && git commit -m "msg"`)
 
 **What's allowed:**
+
 - `git commit --amend` — the `/commit` skill doesn't support amending
 - Commands from the `/commit` skill itself (identified by `AV_COMMIT_SKILL=1` prefix)
 

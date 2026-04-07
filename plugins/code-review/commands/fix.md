@@ -1,7 +1,7 @@
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList
 description: Apply fix for a single code review issue with verification and reporting.
-model: claude-opus-4-6
+model: opus 
 argument-hint: <issue-id | full issue block from /review report>
 ---
 
@@ -65,12 +65,14 @@ Scan the report for a heading containing the provided ID.
 Search for a line matching: `### [` followed by a severity level, followed by `] {ID}:` where `{ID}` is the ID from `$ARGUMENTS`.
 
 Example: If user provided `SEC-001`, search for headings like:
+
 - `### [HIGH] SEC-001: SQL Injection...`
 - `### [CRITICAL] SEC-001: ...`
 
 ### Step 0.4: Extract the full issue block
 
 Once found, extract the complete issue block:
+
 - **Start:** the `### [SEVERITY] ID: Title` line
 - **End:** the next `###` heading, or `---` separator, or end of file
 
@@ -183,6 +185,7 @@ Look for:
 **Step 2.5: Detect stack and load developer skills**
 
 Invoke the `developer-plugins-integration` skill (using Skill tool) to detect:
+
 - Installed developer plugins (python-developer, frontend-developer)
 - Project tech stack and frameworks
 - Which developer skills to load
@@ -266,6 +269,7 @@ Use the Edit tool to make targeted changes:
 When implementing the fix, follow conventions from loaded developer skills:
 
 **Python patterns to apply:**
+
 - Use absolute imports (never relative)
 - Use `X | None` instead of `Optional[X]`
 - Add type hints to any new/modified functions
@@ -275,6 +279,7 @@ When implementing the fix, follow conventions from loaded developer skills:
 - If Pydantic: use `frozen=True` for value objects, `from_attributes=True`
 
 **Frontend patterns to apply:**
+
 - Strict TypeScript (no `any`, no `as` except `as const`, no `!`)
 - If React Hook Form: Zod schema as single source of truth + zodResolver
 - If Zustand: granular selectors, never destructure entire store
@@ -492,6 +497,7 @@ This step marks the fixed issue in the saved report, so it won't appear again in
 ### Step 8.1: Determine fix status
 
 From Phase 7 (Generate Report), the status is one of:
+
 - **Fixed** — all verification passed
 - **Partially Fixed** — main issue fixed, minor issues remain
 - **Failed** — could not fix within 3 iterations
@@ -511,6 +517,7 @@ If status is **Fixed**:
 Use today's date.
 
 Use the Edit tool with:
+
 - `old_string`: the heading line followed by the next line (e.g., `**ID:** {ID}`)
 - `new_string`: the heading line, then `**Status:** ✅ Fixed (YYYY-MM-DD)`, then the original next line
 
@@ -535,4 +542,3 @@ After editing the report, display:
 **Task Update:** Mark task 7 as `completed` using TaskUpdate.
 
 **Changes remain uncommitted for your control.**
-

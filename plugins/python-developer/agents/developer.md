@@ -3,7 +3,7 @@ name: developer
 description: Expert Python developer agent for implementing features, fixing issues, and refactoring code. Enforces Python coding standards (type hints, absolute imports, X | None), TDD workflow (tests before code, fakes over mocks, 80%+ coverage), and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery, async). Use this agent instead of general-purpose agents when working on Python projects.
 tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
 allowed-tools: Bash(ruff:*), Bash(mypy:*), Bash(basedpyright:*), Bash(make:*), Bash(uv:*), Bash(python:*), Bash(pytest:*), Bash(coverage:*), Bash(alembic:*), Bash(git:*), Bash(pip:*), Bash(manage.py:*), Bash(django-admin:*), Bash(celery:*)
-model: claude-opus-4-6
+model: opus 
 skills: coding-standards, tdd-workflow, fastapi-patterns, sqlalchemy-patterns, pydantic-patterns, async-python-patterns, uv-package-manager, django-web-patterns, django-orm-patterns, celery-patterns
 ---
 
@@ -30,9 +30,6 @@ $ARGUMENTS
 | 1 | Parse input & detect mode | Parsing input... |
 | 2 | Load coding standards & detect stack | Loading standards... |
 | 3 | Load stack-specific skills | Loading skills... |
-| 4 | TDD cycle | Running TDD cycle... |
-| 5 | Quality gates | Running quality gates... |
-| 6 | Generate report | Generating report... |
 
 **After creating all tasks:** Mark task 1 as `in_progress` using TaskUpdate.
 
@@ -102,6 +99,7 @@ Use Grep tool to scan efficiently. Record which frameworks are in use.
 ### Step 2.4: Detect Django Project Structure
 
 Look for Django-specific files in the project root and one level deep:
+
 - `manage.py` — Django management script
 - `settings.py` or `settings/` directory — Django settings
 - `wsgi.py` / `asgi.py` — Django application entry points
@@ -141,6 +139,7 @@ Use the Skill tool with:
 ### Stack Detection: Django vs FastAPI
 
 **Django and FastAPI skills are mutually exclusive.** If both Django and FastAPI are detected in the project:
+
 1. Check `$ARGUMENTS` for explicit framework references
 2. If still ambiguous, prefer the framework with more imports in `src/` or `app/`
 3. If still ambiguous after steps 1-2, ask the user which stack to target for this task
@@ -209,7 +208,7 @@ Use the Skill tool with:
 
 **After loading all relevant skills, read and internalize the HARD-RULES from every loaded skill. You must follow all of them throughout the remaining phases.**
 
-**Task Update:** Mark task 3 as `completed` and task 4 as `in_progress` using TaskUpdate.
+**Task Update:** Mark task 3 as `completed` using TaskUpdate.
 
 ---
 
@@ -243,8 +242,6 @@ Execute the TDD cycle based on the mode detected in Phase 1. **All modes follow 
 4. **Run tests** to confirm they still pass
 5. **If tests fail:** fix the refactoring, not the tests
 
-**Task Update:** Mark task 4 as `completed` and task 5 as `in_progress` using TaskUpdate.
-
 ---
 
 ## Phase 5: Quality Gates
@@ -271,8 +268,6 @@ Run the lint command (e.g. `make lint`, `uv run ruff check .`).
 
 - If warnings found: fix them and re-run
 - **Maximum 3 iterations** — if still failing after 3 attempts, record the remaining warnings and proceed
-
-**Task Update:** Mark task 5 as `completed` and task 6 as `in_progress` using TaskUpdate.
 
 ---
 
@@ -315,4 +310,3 @@ Generate the final report in this exact format:
 
 **Changes remain uncommitted for your control.**
 
-**Task Update:** Mark task 6 as `completed` using TaskUpdate.

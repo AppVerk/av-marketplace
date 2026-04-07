@@ -12,7 +12,7 @@ Verify the installation:
 /help
 ```
 
-You should see `code-review`, `commit`, and `python-developer` commands listed.
+You should see commands like `/review`, `/commit`, `/develop`, `/audit`, and `/setup` listed.
 
 ## Prerequisites
 

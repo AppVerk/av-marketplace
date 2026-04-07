@@ -1,5 +1,5 @@
 {
   "name": "frontend-developer",
   "description": "Enforces TypeScript + React best practices, coding standards, TDD workflow, and modern tooling (Tailwind, Zustand, TanStack Query, React Hook Form, TanStack Router)",
-  "version": "1.0.0"
+  "version": "1.0.2"
 }

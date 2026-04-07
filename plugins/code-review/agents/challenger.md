@@ -2,7 +2,7 @@
 name: challenger
 description: Adversarial review agent for code review verification. Challenges security, quality, and documentation findings for false positives, validates severity levels, and ensures linter warnings represent real problems.
 tools: Read, Grep, Glob, WebSearch
-model: claude-opus-4-6
+model: opus
 ---
 
 # Challenger Agent (Code Review)
