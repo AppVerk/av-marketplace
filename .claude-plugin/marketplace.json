@@ -54,6 +54,13 @@
       "category": "security"
     },
     {
+      "name": "qa",
+      "source": "./plugins/qa",
+      "description": "Automated QA testing plugin — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports compatible with code-review.",
+      "version": "1.0.0",
+      "category": "testing"
+    },
+    {
       "name": "sequentialthinking",
       "description": "An MCP server implementation that provides a tool for dynamic and reflective problem-solving through a structured thinking process.",
       "source": "./external_plugins/sequentialthinking",
