@@ -83,15 +83,15 @@ Store as `owner/repo`.
 ### Step 2.2: Fetch review comments (always)
 
 ```bash
-gh api /repos/{owner}/{repo}/pulls/{pr_number}/comments --jq '.[] | {id, author: .user.login, body, path, line: .original_line, created_at, in_reply_to_id}'
+gh api /repos/{owner}/{repo}/pulls/{pr_number}/comments --jq '.[] | {id, author: .user.login, body, path, line: .original_line, created_at, in_reply_to_id, html_url}'
 ```
 
-Review comments are attached to specific lines of code.
+Review comments are attached to specific lines of code. `html_url` is needed by Phase 5.5 so the feedback-analyzer agent can build the `**Source:**` field that links back to the PR comment.
 
 ### Step 2.3: Fetch conversation comments (if --include-conversation)
 
 ```bash
-gh api /repos/{owner}/{repo}/issues/{pr_number}/comments --jq '.[] | {id, author: .user.login, body, created_at}'
+gh api /repos/{owner}/{repo}/issues/{pr_number}/comments --jq '.[] | {id, author: .user.login, body, created_at, html_url}'
 ```
 
 Conversation comments are general discussion, not line-specific.
@@ -113,6 +113,7 @@ Conversation comments are general discussion, not line-specific.
 - `path` - file path (review comments only)
 - `line` - line number (review comments only)
 - `type` - "review" or "conversation"
+- `html_url` - GitHub permalink to the comment (used by Phase 5.5 to build the Source field)
 
 ### Step 2.5: Handle edge cases
 
@@ -199,6 +200,9 @@ Comment:
 - Author: @{author}
 - File: {path}:{line}
 - Body: "{body}"
+- Comment ID: {id}
+- Comment URL: {html_url}
+- PR: #{pr_number}
 
 Code Context:
 {relevant code snippet ±30 lines around commented line}
@@ -209,6 +213,8 @@ Project Standards:
 File History:
 {recent commits touching this file}
 ```
+
+The `Comment ID`, `Comment URL`, and `PR #` fields are required by the agent's Address output format (Phase 5.5) to construct the `**Source:**` field with a link back to the original comment.
 
 ### Step 4.2: Launch feedback-analyzer agent
 
