@@ -85,6 +85,8 @@ Return analysis in this exact structure:
 
 ## Output Format for Address
 
+This section extends the base `Output Format` above — it does not replace it. The `**Classification:**` and `**Reasoning:**` fields from the base format are still required.
+
 When classification is ✅ Address, include an issue block in addition to the reasoning.
 
 ### Issue Block Structure
@@ -156,7 +158,7 @@ Example:
 
 For a comment `@alice: "This endpoint doesn't validate the auth token before returning data"`:
 
-```markdown
+~~~markdown
 **Classification:** ✅ Address
 
 **Reasoning:** The endpoint accepts the request without verifying token authenticity, allowing unauthenticated access to protected data. This is a legitimate security gap that warrants a fix.
@@ -193,4 +195,4 @@ def get_profile(token: str):
         raise HTTPException(401, "Invalid token")
     return user_repo.find_by_token(token)
 ```
-```
+~~~
