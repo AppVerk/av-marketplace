@@ -318,10 +318,10 @@ gh pr view <pr_number> --json headRefName --jq '.headRefName'
 
 ```bash
 mkdir -p docs/reviews
-find docs/reviews -name "*-<slug>*.md" -type f -print 2>/dev/null | xargs -I {} ls -t {} 2>/dev/null | head -1
+find docs/reviews -name "*-<slug>*.md" -type f -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -1
 ```
 
-This returns the newest matching file (by mtime) or empty.
+This returns the newest matching file (by mtime) or empty. Using `-print0` / `xargs -0` keeps filenames with spaces safe and passes all files to a single `ls -t` so that mtime ordering is applied across the whole set.
 
 4. Resolve mode:
    - **File found** → **append mode**, target is that file.
@@ -342,12 +342,13 @@ Add this warning to the report:
 Scan the target file for existing issue IDs using this regex:
 
 ```bash
-grep -oE '^### \[[A-Z]+\] [A-Z]+-[0-9]+:' <file> | grep -oE '[A-Z]+-[0-9]+' | sort -u
+grep -oE '^### \[[A-Z]+\] [A-Z]+-[0-9]+:' <file> | grep -oE '[A-Z]+-[0-9]+'
 ```
 
-For each known prefix (`SEC`, `PERF`, `ARCH`, `MAINT`, `DOC`):
-- Find all matches (e.g., `SEC-001`, `SEC-003`).
-- Record the maximum numeric value.
+The output is a list of `PREFIX-NNN` entries (one per line). For each known prefix (`SEC`, `PERF`, `ARCH`, `MAINT`, `DOC`):
+
+- Collect all matches for that prefix.
+- Parse the `NNN` suffix of each as an **integer** and take the maximum numerically. Do NOT rely on `sort -u` or lexicographic order — `SEC-10` sorts before `SEC-9` as strings.
 - Next counter = `max + 1`.
 
 Categories without existing entries start at `001`.
