@@ -2,6 +2,8 @@
 
 Generate and merge security scanning steps into CI/CD pipeline configurations.
 
+**Version:** 1.0.1
+
 ## Overview
 
 The `security-pipeline` plugin automates configuration of security scanning in CI/CD pipelines. It detects your CI/CD provider, programming languages, and frameworks, then generates or merges Semgrep (SAST) and TruffleHog (secret scanning) steps into your pipeline configuration.

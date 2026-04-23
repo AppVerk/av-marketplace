@@ -150,7 +150,8 @@ Full issue blocks are in the file — no duplication. At the end of the report, 
 
 ```
 **Issues saved to:** `docs/reviews/2026-04-23-feature-x-feedback.md` (3 new issues)
-**Next:** `/fix-report docs/reviews/...` or `/fix SEC-042`
+**Next:** `/fix-report docs/reviews/...` or `/fix <first-id>`
+**Validation warnings:** {list of per-comment warnings from Step 5.5.3, if any}
 ```
 
 ### Flow summary

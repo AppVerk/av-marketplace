@@ -1,0 +1,23 @@
+name: Plugin Version Parity
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  check-version-parity:
+    name: Check plugin version parity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check plugin version parity
+        run: python3 scripts/check_plugin_versions.py

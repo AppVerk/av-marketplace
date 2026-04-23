@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.11.0
+**Version:** 1.11.18
 
 ## Commands
 
@@ -118,6 +118,8 @@ Each issue includes a `**Source:**` field linking back to the original PR commen
 **Source:** @reviewer — [PR #123 comment](https://github.com/owner/repo/pull/123#discussion_r12345)
 ```
 
+On feedback-origin issues the `**OWASP:**` and `**CWE:**` fields are optional — they are included only when the agent can confidently infer them from the reviewer's comment, and omitted otherwise.
+
 **Reject classification** — comments marked as "Reject" are handled as before: reasoning shown in the report, optional draft responses published to GitHub via Phase 6.
 
 ## What It Analyzes
@@ -162,12 +164,21 @@ The branch name is slugified (e.g., `feature/user-login` becomes `feature-user-l
 
 After the review, if issues were found and the report was saved, the review suggests running `/fix-report <path>` to fix issues from the saved report. For individual issues, use `/fix SEC-001` (by ID from the saved report) or `/fix <issue block>` (by pasting).
 
-**Recommended workflow:**
+**Recommended workflow (local review):**
 
 1. Run `/review` and save the report
 2. Fix using one of these methods:
    - `/fix-report docs/reviews/2026-02-20-feature-login.md` — fix multiple issues interactively
    - `/fix SEC-001` — fix a single issue by ID
+   - `/fix <paste issue block>` — fix by pasting the full block
+3. Re-run `/fix-report` on the same file to fix remaining issues
+
+**Recommended workflow (PR feedback):**
+
+1. Run `/analyze-feedback <PR-URL>` to classify reviewer comments and persist actionable items as a review report in `docs/reviews/*-feedback.md`
+2. Fix using one of these methods:
+   - `/fix-report docs/reviews/2026-02-20-feature-login-feedback.md` — fix multiple issues interactively
+   - `/fix SEC-001` — fix a single issue by ID (feedback-origin issues use the same category prefixes as `/review`)
    - `/fix <paste issue block>` — fix by pasting the full block
 3. Re-run `/fix-report` on the same file to fix remaining issues
 
