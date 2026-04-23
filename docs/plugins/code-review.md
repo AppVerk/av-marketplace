@@ -91,6 +91,35 @@ Analyze PR review comments, classify each as "address" or "reject", and optional
 
 Requires GitHub CLI (`gh`) to be installed and authenticated.
 
+#### Issue Persistence
+
+Comments classified as **Address** are persisted to `docs/reviews/` in the same format as `/review` issues. This makes them consumable by `/fix` and `/fix-report`.
+
+**Create mode** — if no prior `/review` was saved for this branch:
+
+```bash
+/analyze-feedback 123
+# Creates: docs/reviews/YYYY-MM-DD-<branch-slug>-feedback.md
+# Issues get IDs starting at SEC-001, PERF-001, ARCH-001, etc.
+```
+
+**Append mode** — if a `/review` file already exists for this branch:
+
+```bash
+/review            # Saves to docs/reviews/YYYY-MM-DD-<branch-slug>.md
+/analyze-feedback 123
+# Appends to the existing file with a new "## Feedback Issues — PR #123 (date)" section
+# IDs continue from max+1 per category (e.g., if review has SEC-003, feedback starts at SEC-004)
+```
+
+Each issue includes a `**Source:**` field linking back to the original PR comment, preserving traceability:
+
+```markdown
+**Source:** @reviewer — [PR #123 comment](https://github.com/owner/repo/pull/123#discussion_r12345)
+```
+
+**Reject classification** — comments marked as "Reject" are handled as before: reasoning shown in the report, optional draft responses published to GitHub via Phase 6.
+
 ## What It Analyzes
 
 - **Security** — OWASP Top 10:2025 compliance, injection attacks, XSS, authentication bypasses, insecure crypto, hardcoded secrets, dependency CVEs
