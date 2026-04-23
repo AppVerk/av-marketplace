@@ -253,10 +253,12 @@ Present the analysis in this exact format:
 
 ### ✅ To Address ({count})
 
-#### 1. @{author} in `{path}:{line}`
-> "{comment body - first 200 chars}..."
+#### {ID} [{SEVERITY}]: {Title} — `{path}:{line}`
+> @{author}: "{comment body - first 200 chars}..."
 
 **Reasoning:** {reasoning from agent}
+
+**Note:** This section is rendered AFTER Phase 5.5 completes, so `{ID}` contains the final number (e.g., SEC-042).
 
 ---
 
@@ -291,6 +293,191 @@ Present the analysis in this exact format:
 
 **Publish responses? (all / selected / none)**
 ~~~
+
+---
+
+## Phase 5.5: Persist Issues
+
+**Runs only when `to_address` is non-empty.**
+
+### Step 5.5.1: Locate target file
+
+1. Fetch the PR's head branch name:
+
+```bash
+gh pr view <pr_number> --json headRefName --jq '.headRefName'
+```
+
+2. Slugify the branch name (same rules as `/review`):
+   - Replace `/` with `-`
+   - Replace spaces with `-`
+   - Convert to lowercase
+   - Example: `feature/user-login` → `feature-user-login`
+
+3. Glob search in `docs/reviews/` for existing review file:
+
+```bash
+mkdir -p docs/reviews
+find docs/reviews -name "*-<slug>*.md" -type f -print 2>/dev/null | xargs -I {} ls -t {} 2>/dev/null | head -1
+```
+
+This returns the newest matching file (by mtime) or empty.
+
+4. Resolve mode:
+   - **File found** → **append mode**, target is that file.
+   - **No file found** → **create mode**, target is `docs/reviews/YYYY-MM-DD-<slug>-feedback.md`.
+
+**Fallback:** If `gh pr view --json headRefName` fails (auth/permissions error), fall back to the local branch:
+
+```bash
+git branch --show-current | sed 's|/|-|g; s| |-|g' | tr '[:upper:]' '[:lower:]'
+```
+
+Add this warning to the report:
+
+> ⚠️ Could not fetch branch name from PR via `gh`. Using local branch `{name}` for file lookup — this may not match the PR's branch.
+
+### Step 5.5.2: Compute starting IDs per category
+
+Scan the target file for existing issue IDs using this regex:
+
+```bash
+grep -oE '^### \[[A-Z]+\] [A-Z]+-[0-9]+:' <file> | grep -oE '[A-Z]+-[0-9]+' | sort -u
+```
+
+For each known prefix (`SEC`, `PERF`, `ARCH`, `MAINT`, `DOC`):
+- Find all matches (e.g., `SEC-001`, `SEC-003`).
+- Record the maximum numeric value.
+- Next counter = `max + 1`.
+
+Categories without existing entries start at `001`.
+
+**Example:**
+
+File contains `SEC-003`, `SEC-001`, `PERF-002`. Counters:
+
+| Prefix | Start |
+|--------|-------|
+| SEC    | 004   |
+| PERF   | 003   |
+| ARCH   | 001   |
+| MAINT  | 001   |
+| DOC    | 001   |
+
+In **create mode**, all counters start at `001`.
+
+### Step 5.5.3: Assign IDs to issue blocks
+
+For each issue block in `to_address` (in order):
+
+1. Extract the `**Category:**` value from the block.
+2. Map to prefix:
+
+| Category | Prefix |
+|----------|--------|
+| Security | SEC |
+| Performance | PERF |
+| Architecture | ARCH |
+| Maintainability | MAINT |
+| Documentation | DOC |
+
+3. Read the current counter for that prefix; format as zero-padded 3-digit (e.g., `004`).
+4. Replace the `XXX` placeholder in two places:
+   - Heading: `### [SEVERITY] PREFIX-XXX:` → `### [SEVERITY] PREFIX-004:`
+   - ID field: `**ID:** PREFIX-XXX` → `**ID:** PREFIX-004`
+5. Increment the counter for that prefix.
+
+**Validation (per block):**
+
+Check that the block has:
+- `**Location:**` field with a path and line number.
+- `**Category:**` field with value in the allowed set: `{Security, Performance, Architecture, Maintainability, Documentation}`.
+
+If validation fails:
+- Log a warning: `⚠️ Issue block from comment ID {comment_id} is malformed (missing {field} or invalid category). Reverting to reasoning-only form.`
+- Drop the `**Issue Block:**` section from this comment's agent output.
+- Keep only `**Classification:** ✅ Address` and `**Reasoning:** ...`.
+- Continue processing remaining blocks normally.
+
+### Step 5.5.4: Write to file
+
+**Append mode** — open the target file and append:
+
+~~~markdown
+
+---
+
+## Feedback Issues — PR #{pr_number} ({YYYY-MM-DD})
+
+{issue block 1}
+
+---
+
+{issue block 2}
+
+---
+
+{issue block N}
+~~~
+
+Use today's date in YYYY-MM-DD format.
+
+**Create mode** — create new file with header + grouping section:
+
+~~~markdown
+# Feedback Analysis: PR #{pr_number} — "{pr_title}"
+
+**Repository:** {owner}/{repo}
+**PR Author:** @{pr_author}
+**URL:** {pr_url}
+
+---
+
+## Feedback Issues — PR #{pr_number} ({YYYY-MM-DD})
+
+{issue block 1}
+
+---
+
+{issue block 2}
+
+---
+
+{issue block N}
+~~~
+
+**Handle create-mode filename collision:**
+
+```bash
+target="docs/reviews/$(date +%Y-%m-%d)-${slug}-feedback.md"
+counter=1
+while [ -f "$target" ]; do
+  counter=$((counter + 1))
+  target="docs/reviews/$(date +%Y-%m-%d)-${slug}-feedback-${counter}.md"
+done
+```
+
+The first file has no suffix; subsequent collisions append `-2`, `-3`, etc.
+
+### Step 5.5.5: Extend user-facing report
+
+After Phase 5.5 completes, render Phase 5's `### ✅ To Address` section with the shortened form (already described in Phase 5 template).
+
+At the end of the full report (after the Summary table), add:
+
+~~~markdown
+---
+
+**Issues saved to:** `{target_file_path}` ({N} new issues)
+
+**Next steps:**
+- `/fix-report {target_file_path}` — fix multiple issues interactively
+- `/fix SEC-042` — fix a single issue by ID
+
+**Validation warnings:** {list of per-comment warnings from Step 5.5.3, if any}
+~~~
+
+If no `to_address` items existed at all, skip Phase 5.5 entirely and omit this footer.
 
 ---
 
