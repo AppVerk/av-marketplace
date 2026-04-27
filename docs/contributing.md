@@ -160,7 +160,7 @@ Every pull request should include:
 - Clear description of what changed and why
 - Evidence of testing with Claude Code on at least one real project
 - Adherence to existing plugin patterns and naming conventions
-- Updated version in `plugin.json` (if modifying an existing plugin)
+- Updated version in `plugin.json` (if modifying an existing plugin) — must match `.claude-plugin/marketplace.json`, the row in `README.md`, and the `**Version:**` header in `docs/plugins/<name>.md`. The `Plugin Version Parity` GitHub Actions workflow enforces this; run `python3 scripts/check_plugin_versions.py` locally before pushing.
 - No unrelated changes bundled in the same PR
 
 ## Review Process
