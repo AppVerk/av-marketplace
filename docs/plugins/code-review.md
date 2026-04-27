@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.12.2
+**Version:** 1.12.3
 
 ## Commands
 
