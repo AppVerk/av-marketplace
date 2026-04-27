@@ -425,7 +425,7 @@ Before rendering the final report, assign unique identifiers to each issue based
 
 3. For each issue (in the order they appear in the report):
    - Read the issue's `Category` field
-   - Map the category to its prefix using the canonical [Category→Prefix mapping](../../../docs/plugins/code-review.md#review) (single source of truth), then increment the corresponding counter (e.g., Security → SEC → `sec_count`)
+   - Map the category to its prefix using the canonical [Category→Prefix mapping](../../../docs/plugins/code-review.md#category-prefix-mapping) (single source of truth), then increment the corresponding counter (e.g., Security → SEC → `sec_count`)
    - Format ID as `{PREFIX}-{NNN}` with zero-padded 3-digit counter (e.g., SEC-001, PERF-002)
    - Modify the issue heading: `### [SEVERITY] {ID}: Title`
    - Add `**ID:** {ID}` field right after the heading (before **Location:**)

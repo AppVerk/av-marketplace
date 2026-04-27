@@ -154,6 +154,8 @@ Full issue blocks are in the file — no duplication. At the end of the report, 
 **Validation warnings:** {list of per-comment warnings from Step 5.5.3, if any}
 ```
 
+> **Note:** The exact rendering is normative in `plugins/code-review/commands/analyze-feedback.md` Phase 5.5.5; this spec describes intent only. If the two drift, the command file wins.
+
 ### Flow summary
 
 ```

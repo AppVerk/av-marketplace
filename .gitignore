@@ -8,3 +8,8 @@ CLAUDE.local.md
 # FewWord context plugin
 .fewword/scratch/
 .fewword/index/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
