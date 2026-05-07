@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs.
 
-**Version:** 1.0.0
+**Version:** 2.0.0
 
 ## Commands
 
