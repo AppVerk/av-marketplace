@@ -241,7 +241,7 @@ of prose bash.
 |--------|---------|
 | `slugify-branch.sh` | Canonical branch-name slugifier. Strips control chars, bidi overrides (CVE-2021-42574 class), zero-width joiners, shell metachars; caps length at 60 and refuses leading-dash output. |
 | `allocate-feedback-file.sh` | Locates an existing review file by mtime-ordered glob, otherwise atomically creates `docs/reviews/YYYY-MM-DD-<slug>-feedback.md` via a single `os.open(O_CREAT\|O_EXCL\|O_NOFOLLOW)` syscall. Handles up to 1000 collisions and asserts path containment within `docs/reviews/`. |
-| `extract-issue-ids.sh` | Consolidated `PREFIX-NNN` extractor matching the canonical Category→Prefix mapping (`SEC`, `PERF`, `ARCH`, `MAINT`, `DOC`). |
+| `extract-issue-ids.sh` | Consolidated `PREFIX-NNN` extractor for issues in `docs/reviews/` files (`SEC`, `PERF`, `ARCH`, `MAINT`, `DOC`). The `QA` prefix is intentionally excluded because QA reports live under `docs/testing/reports/` and are produced by `/qa:run`, not `/analyze-feedback`. |
 
 ### ARCH-001 follow-up
 

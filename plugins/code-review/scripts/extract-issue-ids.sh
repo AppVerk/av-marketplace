@@ -4,9 +4,14 @@
 # Reads a review markdown file and emits, on stdout, one canonical issue ID
 # per line (e.g., `SEC-003`, `PERF-002`, `ARCH-001`, `MAINT-014`, `DOC-007`).
 #
-# The prefix alternation is hardcoded to match the canonical Category→Prefix
-# mapping. SSoT: docs/plugins/code-review.md#category-prefix-mapping — update both when adding
-# a new category.
+# Scope: only prefixes whose reports live in docs/reviews/ (SEC, PERF, ARCH,
+# MAINT, DOC). The QA prefix is intentionally excluded — QA reports live in
+# docs/testing/reports/ and are produced by /qa:run, not /analyze-feedback,
+# so this script never encounters QA-NNN IDs.
+#
+# SSoT for review-directory prefixes: docs/plugins/code-review.md#category-prefix-mapping
+# — when adding a new prefix that produces reports under docs/reviews/, update
+# both the canonical mapping AND this script's regex.
 #
 # Usage:
 #   bash plugins/code-review/scripts/extract-issue-ids.sh <review-file>
