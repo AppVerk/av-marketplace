@@ -82,12 +82,32 @@ Plans are saved as Markdown with the following structure:
 
 ## Report Format
 
-Reports use issue IDs compatible with the code-review plugin:
+Reports use the same issue format as the code-review plugin (`### [SEVERITY] QA-NNN: Title` heading with required fields `ID`, `Location`, `Category: Testing`, `Problem`, `Remediation`). This means `/fix QA-001` and `/fix-report` from the code-review plugin work directly on QA reports.
 
+Example issue:
+
+```markdown
+### [HIGH] QA-001: POST /api/users returns 500 instead of 201
+
+**ID:** QA-001
+**Location:** `src/api/users.py:45`
+**Category:** Testing
+
+**Problem:**
+- Expected: POST /api/users with valid body should return 201 and create the user.
+- Actual: Endpoint returns 500 with `KeyError: 'email'` raised in `users.py:48`.
+
+**Impact:**
+Blocks new account creation.
+
+**Remediation:**
+Schema requires `email` but the `create_user` handler does not validate the key's presence. Add Pydantic field validation or an early 422 return for the missing field.
+
+**Scenario:** BE-03 — Create new user with valid payload
+**Response:** `{"detail": "Internal Server Error"}`
 ```
-QA-001 [HIGH] POST /api/users returns 500 on duplicate email
-QA-002 [MEDIUM] Login button unresponsive after failed attempt
-```
+
+QA-specific extras (`Scenario`, `Response`, `Screenshot`) are kept for testing context; the code-review parser ignores unknown fields.
 
 **Severity levels:**
 
@@ -97,6 +117,25 @@ QA-002 [MEDIUM] Login button unresponsive after failed attempt
 | HIGH | Wrong status code, incorrect data returned |
 | MEDIUM | Degraded UX, missing validation feedback |
 | LOW | Cosmetic issues, minor text problems |
+
+## Synergy with code-review
+
+When the `code-review` plugin is also installed, QA-detected issues become repairable through the same workflow as `/review` findings:
+
+- **`/fix QA-001`** — the `/fix` command routes by ID prefix; `QA-NNN` reads the newest report from `docs/testing/reports/`. Other prefixes continue to read from `docs/reviews/`.
+- **`/fix-report`** (no argument) — auto-merges the newest report from `docs/reviews/` and the newest from `docs/testing/reports/` into a single checklist. Status writes go back to the originating file.
+- **`/fix-report docs/testing/reports/<file>.md`** — explicit single-file mode also works on QA reports.
+
+A typical end-to-end flow:
+
+```bash
+/qa:create-plan
+/qa:run                 # produces docs/testing/reports/...
+/review                 # produces docs/reviews/...
+/fix-report             # auto-merge — fix issues from both reports in one pass
+```
+
+For full details on `/fix` routing and `/fix-report` auto-merge, see [code-review.md](code-review.md).
 
 ## Adaptive Tool Detection
 
