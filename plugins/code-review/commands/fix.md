@@ -9,8 +9,8 @@ argument-hint: <issue-id | full issue block from /review report>
 
 Parse the input argument to determine mode:
 
-- **ID Mode:** If `$ARGUMENTS` matches pattern `^(SEC|PERF|ARCH|MAINT|DOC)-\d{3}$`
-  - Examples: `SEC-001`, `PERF-042`, `ARCH-001`, `MAINT-999`, `DOC-001`
+- **ID Mode:** If `$ARGUMENTS` matches pattern `^(SEC|PERF|ARCH|MAINT|DOC|QA)-\d{3}$`
+  - Examples: `SEC-001`, `PERF-042`, `ARCH-001`, `MAINT-999`, `DOC-001`, `QA-001`
   - Action: Proceed to Phase 0 (Resolve Issue by ID)
 
 - **Legacy Paste Mode:** If `$ARGUMENTS` does not match the ID pattern (e.g., contains `### [` or other issue block content)
@@ -40,17 +40,33 @@ $ARGUMENTS
 
 ### Step 0.1: Locate most recent report
 
-List all `.md` files in `docs/reviews/` directory:
+The target directory depends on the issue's prefix:
+
+- `QA` → `docs/testing/reports/`
+- `SEC`, `PERF`, `ARCH`, `MAINT`, `DOC` → `docs/reviews/`
+
+Extract the prefix from `$ARGUMENTS` (the substring before the first `-`) and list the newest `.md` file in the chosen directory:
 
 ```bash
-ls -t docs/reviews/*.md 2>/dev/null | head -1
+prefix=$(echo "$ARGUMENTS" | cut -d'-' -f1)
+case "$prefix" in
+  QA) target_dir="docs/testing/reports" ;;
+  *)  target_dir="docs/reviews" ;;
+esac
+ls -t "$target_dir"/*.md 2>/dev/null | head -1
 ```
 
-Expected: The most recently modified file, e.g., `docs/reviews/2026-03-06-feature-auth.md`
+Expected: The most recently modified file in the chosen directory, e.g., `docs/reviews/2026-03-06-feature-auth.md` (for SEC) or `docs/testing/reports/2026-03-06-user-flow-report.md` (for QA).
 
-If no files found, display error and stop:
+If no files found, display an error and stop. The message is prefix-specific:
 
-> Error: No saved review reports found in `docs/reviews/`. Run `/review` and save a report first, then use `/fix <ID>`.
+- `QA` prefix:
+  > Error: No saved QA reports found in `docs/testing/reports/`. Run `/qa:run` first, then use `/fix QA-001`.
+
+- Other prefixes:
+  > Error: No saved review reports found in `docs/reviews/`. Run `/review` and save a report first, then use `/fix <ID>`.
+
+**Note on out-of-band edits:** Routing is one-way per prefix. A `QA-XXX` issue manually moved into `docs/reviews/` will not be reachable via `/fix QA-001`; the symmetric case is also true. Workaround: legacy paste mode (`/fix <full block>`).
 
 ### Step 0.2: Read the report file
 
