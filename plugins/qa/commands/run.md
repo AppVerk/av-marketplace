@@ -154,8 +154,15 @@ Using the skill's format:
    - Wrong status code, incorrect data → HIGH
    - UI glitch, missing validation message → MEDIUM
    - Cosmetic, minor text issues → LOW
-4. **Build the report** following the exact template from the skill
-5. **Build detailed results** listing all scenarios with status
+4. **Derive issue fields** from raw agent output (the skill's Issue Format Details documents each field):
+   - **Location** — best-effort source file:line. For BE failures: infer from request URL → routing module (e.g., `POST /api/users` → `src/api/users.py`); use stack trace lines from the response body when present. For FE failures: infer from the failing component or route. When truly unidentifiable, use `unknown:0` (the `/fix` command will prompt the user).
+   - **Category** — always `Testing` (constant for QA).
+   - **Problem** — render the failure as Expected/Actual bullets; include the request and response summary for BE.
+   - **Remediation** — write a one- to three-sentence best-effort suggestion in natural language (no code block required).
+   - **Impact** (optional) — describe what user-visible flow is broken.
+   - **Scenario / Response / Screenshot** — copy from the agent's raw result.
+5. **Build the report** following the exact template from the skill
+6. **Build detailed results** listing all scenarios with status
 
 ### Step 7: Save Report
 
@@ -191,5 +198,10 @@ After saving, display a summary:
 
 If issues were found:
 
-> To fix issues in future iterations, use:
-> `/fix QA-001` (coming soon)
+> **Found {N} issues.** To fix them:
+>
+> `/fix-report` — auto-merge with the newest code-review report (if any) and fix interactively.
+>
+> `/fix-report docs/testing/reports/<filename>` — fix issues from this QA report only.
+>
+> `/fix QA-001` — fix a single issue by ID. Routes by prefix to `docs/testing/reports/`.
