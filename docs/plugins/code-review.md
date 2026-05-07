@@ -33,6 +33,9 @@ The review launches parallel analysis agents (security + code quality, and optio
 | Architecture    | ARCH   |
 | Maintainability | MAINT  |
 | Documentation   | DOC    |
+| Testing         | QA     |
+
+The `Testing → QA` row covers issues produced by the `qa` plugin's `/qa:run` command. Reports for QA issues live under `docs/testing/reports/`; `/fix QA-001` and `/fix-report` (auto-merge) handle them transparently.
 
 ### `/fix`
 
@@ -46,7 +49,7 @@ Apply a fix for a single issue from a review report. Supports two modes:
 /fix DOC-001
 ```
 
-The plugin automatically finds the most recent saved report in `docs/reviews/`, locates the issue by ID, and proceeds with the fix. After fixing, the issue is marked as fixed in the report.
+The plugin routes by prefix: `QA-NNN` reads from `docs/testing/reports/`, all other prefixes (`SEC`, `PERF`, `ARCH`, `MAINT`, `DOC`) read from `docs/reviews/`. It picks the newest `.md` in the chosen directory, locates the issue by ID, and proceeds with the fix. After fixing, the issue is marked as fixed in the report.
 
 **Paste mode** — paste the full issue block:
 
@@ -60,20 +63,26 @@ Both modes go through the same fix cycle: parse issue, analyze context, propose 
 
 ### `/fix-report`
 
-Fix issues from a saved review report. Parses the report, presents unfixed issues as a paginated checklist, fixes selected issues, and marks them resolved in the report file.
+Fix issues from saved reports. Parses one or more reports, presents unfixed issues as a paginated checklist, fixes selected issues, and marks them resolved in their source files.
 
 ```bash
+# Auto-merge: newest review + newest QA report (recommended after /review and /qa:run)
+/fix-report
+
+# Single file
 /fix-report docs/reviews/2026-02-20-feature-login.md
+/fix-report docs/testing/reports/2026-02-20-user-flow-report.md
 ```
 
 The command:
-1. Reads the report and extracts issues (by `### [SEVERITY] ID: Title` headings)
-2. Filters out already-fixed issues (those with a `**Status:**` field)
-3. Presents unfixed issues as a multi-select checklist, 4 per page, sorted by severity
-4. Fixes selected issues sequentially via the `fix-auto` agent
-5. Marks fixed issues in the report with `**Status:** ✅ Fixed (YYYY-MM-DD)`
+1. Resolves files — auto-merge uses newest from `docs/reviews/` and `docs/testing/reports/`; with an explicit path, uses just that file
+2. Reads each file and extracts issues (by `### [SEVERITY] ID: Title` headings), tagging each issue with its `source_file`
+3. Filters out already-fixed issues (those with a `**Status:**` field)
+4. Presents unfixed issues as a multi-select checklist, 4 per page, sorted by severity. In auto-merge mode the source basename is shown in each option so review issues and QA issues are distinguishable
+5. Fixes selected issues sequentially via the `fix-auto` agent
+6. Marks fixed issues with `**Status:** ✅ Fixed (YYYY-MM-DD)` in their respective `source_file` (auto-merge may write to multiple files in one run)
 
-The report becomes a living document — fixed issues won't appear on subsequent `/fix-report` runs.
+The reports become living documents — fixed issues won't appear on subsequent `/fix-report` runs.
 
 ### `/analyze-feedback`
 
