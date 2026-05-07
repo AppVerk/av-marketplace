@@ -29,22 +29,34 @@ Every test report MUST follow this exact structure:
 
 ## Issues Found
 
-### QA-001 [SEVERITY] <issue title>
-- **Scenario:** <FE-XX or BE-XX>
-- **Expected:** <what should have happened>
-- **Actual:** <what actually happened>
-- **Response:** `<response body or error message>` (for BE issues)
-- **Screenshot:** <path to screenshot> (for FE issues)
-- **File:** <source file:line if identifiable>
+### [SEVERITY] QA-001: <issue title>
 
-### QA-002 [SEVERITY] <issue title>
+**ID:** QA-001
+**Location:** `<source file:line>`
+**Category:** Testing
+
+**Problem:**
+- Expected: <what should have happened>
+- Actual: <what actually happened>
+
+**Impact:**
+<what breaks if unfixed — optional but recommended>
+
+**Remediation:**
+<best-effort suggestion in natural language; no code block required>
+
+**Scenario:** <FE-XX or BE-XX>
+**Response:** `<response body or error>` (BE only)
+**Screenshot:** <path to screenshot> (FE only)
+
+### [SEVERITY] QA-002: <issue title>
 ...
 
 ## Detailed Results
 
 ### Pass: FE-01: <scenario name>
 ### Pass: BE-01: <scenario name>
-### Fail: BE-03: <scenario name>
+### Fail: BE-03: <scenario name> — see QA-001
 ### Skip: FE-03: <scenario name> (reason)
 ~~~
 
@@ -52,7 +64,7 @@ Every test report MUST follow this exact structure:
 
 ## Issue ID Assignment
 
-**Prefix:** `QA` (all issues use the same prefix, unlike code-review which uses SEC/PERF/ARCH/MAINT)
+**Prefix:** `QA` (all issues use the same prefix, mapped to `Category: Testing` in the code-review Category→Prefix table)
 
 **Algorithm:**
 1. Initialize counter: `qa_count = 0`
@@ -80,13 +92,72 @@ Every test report MUST follow this exact structure:
 
 ## Issue Format Details
 
-Each issue MUST include:
+Each issue MUST include the canonical code-review fields:
 
-1. **ID and severity in heading:** `### QA-001 [HIGH] <title>`
-2. **Scenario reference:** which FE-XX or BE-XX failed
-3. **Expected vs Actual:** clear comparison
-4. **Evidence:** response body (BE) or screenshot path (FE)
-5. **File reference** (if identifiable): `src/api/users.py:45` — the source code location that likely causes the issue
+1. **Heading:** `### [SEVERITY] QA-NNN: <title>` — severity in brackets, ID with colon, then title
+2. **`**ID:** QA-NNN`** — repeated for the parser
+3. **`**Location:** ` `` `path:line` `` `** — best-effort source identification (route, endpoint, stack trace). When truly unidentifiable, use placeholder `unknown:0` and add a note in `Problem`. The `/fix` command will prompt the user for the location at fix time.
+4. **`**Category:** Testing`** — constant for QA issues; maps to the `QA` prefix in the canonical Category→Prefix table.
+5. **`**Problem:**`** — Expected vs Actual rendered as a bullet list inside this field.
+6. **`**Remediation:**`** — best-effort suggestion in natural language. No code block required (the `fix-auto` agent will generate the code).
+
+Optional fields:
+
+- **`**Impact:**`** — what breaks if unfixed.
+
+QA-specific extras (kept for testing context; ignored by the code-review parser):
+
+- **`**Scenario:**`** — `FE-XX` or `BE-XX` reference
+- **`**Response:**`** — response body or error message (BE only)
+- **`**Screenshot:**`** — screenshot path (FE only)
+
+---
+
+## Example: BE Issue
+
+~~~markdown
+### [HIGH] QA-001: POST /api/users returns 500 instead of 201
+
+**ID:** QA-001
+**Location:** `src/api/users.py:45`
+**Category:** Testing
+
+**Problem:**
+- Expected: POST /api/users with valid body should return 201 and create the user.
+- Actual: Endpoint returns 500 with `KeyError: 'email'` raised in `users.py:48`.
+
+**Impact:**
+Blocks new account creation.
+
+**Remediation:**
+Schema requires `email` but the `create_user` handler does not validate the key's presence. Add Pydantic field validation or an early 422 return for the missing field.
+
+**Scenario:** BE-03 — Create new user with valid payload
+**Response:** `{"detail": "Internal Server Error"}`
+~~~
+
+## Example: FE Issue
+
+~~~markdown
+### [MEDIUM] QA-002: Logout button does not respond to click
+
+**ID:** QA-002
+**Location:** `src/components/Header.tsx:23`
+**Category:** Testing
+
+**Problem:**
+- Expected: clicking Logout fires POST /api/auth/logout and redirects to /login.
+- Actual: click triggers no request; user remains logged in.
+
+**Impact:**
+User cannot log out — UX regression with potential security implications on shared machines.
+
+**Remediation:**
+Verify the onClick handler in `src/components/Header.tsx:23`. The most likely cause is a missing `mutate()` call or an unbound handler.
+
+**Scenario:** FE-05 — Logout flow
+**Screenshot:** `docs/testing/reports/screenshots/qa-002-logout.png`
+~~~
 
 ---
 
@@ -113,17 +184,12 @@ List ALL scenarios (pass, fail, skip) in order:
 
 ## Compatibility with code-review
 
-The QA-XXX format is designed to be compatible with the code-review plugin's issue ID system (SEC-XXX, PERF-XXX, ARCH-XXX, MAINT-XXX). This enables future integration where `/fix QA-001` can resolve a QA issue the same way `/fix SEC-001` resolves a security issue.
+The QA-XXX format is identical in structure to code-review's other prefixes (SEC, PERF, ARCH, MAINT, DOC). This means:
 
-**Issue heading format is identical:**
-```
-### [SEVERITY] QA-001: Title
-```
+- `/fix QA-001` works the same as `/fix SEC-001` — the `/fix` command routes by prefix to `docs/testing/reports/` instead of `docs/reviews/`.
+- `/fix-report` (without an argument) auto-merges the newest report from `docs/reviews/` and the newest from `docs/testing/reports/`, presenting one unified checklist.
 
-This matches code-review's:
-```
-### [SEVERITY] SEC-001: Title
-```
+The `Testing → QA` row is part of the canonical Category→Prefix mapping in `docs/plugins/code-review.md`.
 
 ---
 
@@ -132,7 +198,7 @@ This matches code-review's:
 Before saving the report, verify:
 
 - [ ] Summary counts match detailed results (total = pass + fail + skip)
-- [ ] Every failed scenario has a QA-XXX issue in the Issues Found section
-- [ ] Every QA-XXX issue has Expected vs Actual
+- [ ] Every failed scenario has a `### [SEVERITY] QA-NNN: Title` heading in the Issues Found section
+- [ ] Every QA-NNN issue has the required fields: `ID`, `Location`, `Category: Testing`, `Problem` (with Expected/Actual bullets), `Remediation`
 - [ ] Screenshots referenced in issues actually exist on disk
 - [ ] No placeholder text (TBD, TODO)
