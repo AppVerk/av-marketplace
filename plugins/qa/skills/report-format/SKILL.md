@@ -82,7 +82,7 @@ Every test report MUST follow this exact structure:
 ## Severity Levels
 
 | Severity | Criteria | Examples |
-|----------|----------|---------|
+|----------|----------|----------|
 | **CRITICAL** | Application crash, data loss, security bypass | 500 errors, unhandled exceptions, auth bypass |
 | **HIGH** | Core functionality broken, wrong data returned | Wrong status code, incorrect data in response, DB state inconsistent |
 | **MEDIUM** | Non-core functionality broken, degraded UX | UI element not responding, slow response, missing validation |
@@ -135,6 +135,8 @@ Schema requires `email` but the `create_user` handler does not validate the key'
 **Scenario:** BE-03 — Create new user with valid payload
 **Response:** `{"detail": "Internal Server Error"}`
 ~~~
+
+---
 
 ## Example: FE Issue
 
