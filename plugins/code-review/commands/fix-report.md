@@ -136,6 +136,14 @@ Display the issues using AskUserQuestion with multiSelect, **4 issues per page**
   - label: "[SEVERITY] Short title"
   - description: "path/to/file.py:line — first sentence of the Problem field"
 
+**Auto-merge mode hint:** When `files` (from Step 1.1) contains more than one path, append a separator and the basename of `issue.source_file` to each option's description so the user can tell which report each issue came from. Example:
+
+```
+description: "src/db/queries.py:42 — Code directly concatenates user input · 2026-05-07-feature-auth.md"
+```
+
+In single-file mode (one entry in `files`), omit this hint.
+
 **IDs in checklist:**
 
 Issues now include their unique ID in the checklist labels. For example:
@@ -198,9 +206,9 @@ For each selected issue, **sequentially** (one at a time, wait for completion):
 
 ## Step 4: Update Report and Summarize
 
-### Step 4.1: Mark fixed issues in the report
+### Step 4.1: Mark fixed issues in their source reports
 
-For each issue that was Fixed or Partially Fixed, edit the report file to add a `**Status:**` line immediately after the issue's `###` heading.
+For each issue that was Fixed or Partially Fixed, edit **its `source_file`** (from the mapping established in Step 1.2) to add a `**Status:**` line immediately after the issue's `###` heading. In auto-merge mode this means the Edit tool may be invoked against multiple files in a single run; in single-file mode it edits the single source file.
 
 **For Fixed issues**, insert after the `### [SEVERITY] Title` line:
 
@@ -218,7 +226,7 @@ For each issue that was Fixed or Partially Fixed, edit the report file to add a 
 
 Use today's date in YYYY-MM-DD format.
 
-Use the Edit tool to insert each status line. The `old_string` should be the `### [SEVERITY] Title` line followed by a newline, and the `new_string` should be the same title line followed by a newline, the status line, and another newline.
+Use the Edit tool to insert each status line. The `old_string` should be the `### [SEVERITY] Title` line followed by a newline, and the `new_string` should be the same title line followed by a newline, the status line, and another newline. Pass the issue's `source_file` as the `file_path` parameter.
 
 ### Step 4.2: Display fix summary
 
@@ -231,8 +239,12 @@ Use the Edit tool to insert each status line. The `old_string` should be the `##
 | 2 | [SEVERITY] Title — path:line | STATUS_ICON STATUS_TEXT |
 
 **Fixed:** N | **Partially Fixed:** N | **Failed:** N
-**Report updated:** <report-file-path>
+**Reports updated:**
+- <source-file-1>
+- <source-file-2>
 ```
+
+In single-file mode, the list contains exactly one entry. In auto-merge mode, list each distinct `source_file` that was edited (deduplicated). Files that received no Status writes (all Failed, or no selections from that file) are omitted from the list.
 
 Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌
 
