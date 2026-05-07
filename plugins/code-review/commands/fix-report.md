@@ -2,7 +2,7 @@
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
 description: Parse review and QA reports (auto-merge by default), present issues as a checklist, fix selected issues, and mark them resolved in their source reports.
 model: opus
-argument-hint: [path-to-review-report]
+argument-hint: [path-to-review-or-qa-report]
 ---
 
 # Fix Issues From Review Report

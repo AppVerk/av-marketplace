@@ -1,7 +1,7 @@
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList
 description: Apply fix for a single code review issue with verification and reporting.
-model: opus 
+model: opus
 argument-hint: <issue-id | full issue block from /review report>
 ---
 
@@ -84,6 +84,7 @@ Example: If user provided `SEC-001`, search for headings like:
 
 - `### [HIGH] SEC-001: SQL Injection...`
 - `### [CRITICAL] SEC-001: ...`
+- `### [HIGH] QA-001: POST /api/users returns 500...`
 
 ### Step 0.4: Extract the full issue block
 
@@ -542,10 +543,7 @@ If status is **Fixed**:
 
 Use today's date.
 
-Use the Edit tool with:
-
-- `old_string`: the heading line followed by the next line (e.g., `**ID:** {ID}`)
-- `new_string`: the heading line, then `**Status:** ✅ Fixed (YYYY-MM-DD)`, then the original next line
+Use the Edit tool to insert the status line. The `old_string` should be the `### [SEVERITY] {ID}: Title` line followed by a newline, and the `new_string` should be the same title line followed by a newline, the status line, and another newline. This handles QA reports that have a blank line between the heading and `**ID:**`, matching the strategy used by `/fix-report` (Step 4.1).
 
 ### Step 8.3: Update the report for Partially Fixed status
 

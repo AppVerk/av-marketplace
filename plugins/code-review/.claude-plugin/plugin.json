@@ -1,5 +1,5 @@
 {
   "name": "code-review",
-  "description": "Perform comprehensive code review for security, performance, and architecture. Optional verification phase for cross-analysis and adversarial review.",
-  "version": "1.13.0"
+  "description": "Perform comprehensive code review for security, performance, and architecture. Save reviews to file, fix issues via /fix-report with paginated checklist. Persist PR review feedback via /analyze-feedback. Optional verification phase for cross-analysis and adversarial review.",
+  "version": "1.14.4"
 }

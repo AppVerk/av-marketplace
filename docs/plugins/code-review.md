@@ -6,7 +6,6 @@ Security, architecture, and code quality analysis for your codebase.
 
 ## Commands
 
-<a id="category-prefix-mapping"></a>
 ### `/review`
 
 Run a comprehensive code review covering security, performance, architecture, and maintainability.
@@ -24,16 +23,17 @@ Run a comprehensive code review covering security, performance, architecture, an
 
 The review launches parallel analysis agents (security + code quality, and optionally documentation) and combines their findings into a unified report. Each issue gets a unique category-based ID (e.g., `SEC-001`, `PERF-002`, `ARCH-001`, `MAINT-003`, `DOC-001`) and includes severity level, file location, explanation, and remediation with code examples.
 
+<a id="category-prefix-mapping"></a>
 **Issue ID categories:**
 
-| Category        | Prefix |
-|-----------------|--------|
-| Security        | SEC    |
-| Performance     | PERF   |
-| Architecture    | ARCH   |
-| Maintainability | MAINT  |
-| Documentation   | DOC    |
-| Testing         | QA     |
+| Category        | Prefix | Reports Directory       |
+|-----------------|--------|-------------------------|
+| Security        | SEC    | `docs/reviews/`         |
+| Performance     | PERF   | `docs/reviews/`         |
+| Architecture    | ARCH   | `docs/reviews/`         |
+| Maintainability | MAINT  | `docs/reviews/`         |
+| Documentation   | DOC    | `docs/reviews/`         |
+| Testing         | QA     | `docs/testing/reports/` |
 
 The `Testing → QA` row covers issues produced by the `qa` plugin's `/qa:run` command. Reports for QA issues live under `docs/testing/reports/`; `/fix QA-001` and `/fix-report` (auto-merge) handle them transparently.
 
@@ -241,7 +241,8 @@ of prose bash.
 |--------|---------|
 | `slugify-branch.sh` | Canonical branch-name slugifier. Strips control chars, bidi overrides (CVE-2021-42574 class), zero-width joiners, shell metachars; caps length at 60 and refuses leading-dash output. |
 | `allocate-feedback-file.sh` | Locates an existing review file by mtime-ordered glob, otherwise atomically creates `docs/reviews/YYYY-MM-DD-<slug>-feedback.md` via a single `os.open(O_CREAT\|O_EXCL\|O_NOFOLLOW)` syscall. Handles up to 1000 collisions and asserts path containment within `docs/reviews/`. |
-| `extract-issue-ids.sh` | Consolidated `PREFIX-NNN` extractor for issues in `docs/reviews/` files (`SEC`, `PERF`, `ARCH`, `MAINT`, `DOC`). The `QA` prefix is intentionally excluded because QA reports live under `docs/testing/reports/` and are produced by `/qa:run`, not `/analyze-feedback`. |
+| `extract-issue-ids.sh` | Consolidated `PREFIX-NNN` extractor for issues in `docs/reviews/` files. Scope: every prefix in the [Category→Prefix mapping](#category-prefix-mapping) **except** `QA`, which is intentionally excluded because QA reports live under `docs/testing/reports/` and are produced by `/qa:run`, not `/analyze-feedback`. |
+| `check-prefix-sync.sh` | CI guard for the Category→Prefix SSoT (CROSS-001). Parses the canonical [Category→Prefix table](#category-prefix-mapping) and diffs each consumer's prefix list (`commands/fix.md` regex, `agents/fix-auto.md` Category enum, `scripts/extract-issue-ids.sh` regex) against its declared scope. Exits non-zero on divergence. Run from CI or pre-commit to block merges that add a new prefix to the canonical table without updating every consumer. |
 
 ### ARCH-001 follow-up
 

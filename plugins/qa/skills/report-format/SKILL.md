@@ -193,6 +193,10 @@ The QA-XXX format is identical in structure to code-review's other prefixes (SEC
 
 The `Testing → QA` row is part of the canonical Category→Prefix mapping in `docs/plugins/code-review.md`.
 
+### Status write-back
+
+After `/fix QA-001` or `/fix-report` resolves an issue, code-review inserts `**Status:** ✅ Fixed (YYYY-MM-DD)` (or `⚠️ Partially Fixed`) immediately after the issue's `### [SEVERITY] QA-NNN: Title` heading. Already-fixed issues (those with a `**Status:**` field) are skipped on subsequent `/fix-report` runs, so reports become living documents.
+
 ---
 
 ## Report Quality Checklist

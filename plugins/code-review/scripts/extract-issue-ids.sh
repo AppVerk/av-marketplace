@@ -22,6 +22,11 @@
 #   2 — usage error (missing argument).
 set -eu
 
+# Single source of truth for review-directory prefixes within this script.
+# When adding a new prefix that produces reports under docs/reviews/, update
+# this regex AND the canonical mapping in docs/plugins/code-review.md.
+PREFIX_RE='(SEC|PERF|ARCH|MAINT|DOC)'
+
 if [ "$#" -ne 1 ]; then
   echo "usage: extract-issue-ids.sh <review-file>" >&2
   exit 2
@@ -38,6 +43,6 @@ fi
 # then extract just the canonical PREFIX-NNN token from each.
 # `|| true` keeps the script from exiting under `set -e` when there are no
 # matches (grep exits 1 for no-match).
-grep -oE '^### \[[A-Z]+\] (SEC|PERF|ARCH|MAINT|DOC)-[0-9]+:' "$target_file" \
-  | grep -oE '(SEC|PERF|ARCH|MAINT|DOC)-[0-9]+' \
+grep -oE "^### \[[A-Z]+\] ${PREFIX_RE}-[0-9]+:" "$target_file" \
+  | grep -oE "${PREFIX_RE}-[0-9]+" \
   || true
