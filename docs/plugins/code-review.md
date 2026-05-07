@@ -47,6 +47,7 @@ Apply a fix for a single issue from a review report. Supports two modes:
 /fix SEC-001
 /fix PERF-042
 /fix DOC-001
+/fix QA-001
 ```
 
 The plugin routes by prefix: `QA-NNN` reads from `docs/testing/reports/`, all other prefixes (`SEC`, `PERF`, `ARCH`, `MAINT`, `DOC`) read from `docs/reviews/`. It picks the newest `.md` in the chosen directory, locates the issue by ID, and proceeds with the fix. After fixing, the issue is marked as fixed in the report.
@@ -76,11 +77,11 @@ Fix issues from saved reports. Parses one or more reports, presents unfixed issu
 
 The command:
 1. Resolves files — auto-merge uses newest from `docs/reviews/` and `docs/testing/reports/`; with an explicit path, uses just that file
-2. Reads each file and extracts issues (by `### [SEVERITY] ID: Title` headings), tagging each issue with its `source_file`
+2. Reads each file and extracts issues (by `### [SEVERITY] ID: Title` headings), tracking which report each issue came from
 3. Filters out already-fixed issues (those with a `**Status:**` field)
 4. Presents unfixed issues as a multi-select checklist, 4 per page, sorted by severity. In auto-merge mode the source basename is shown in each option so review issues and QA issues are distinguishable
 5. Fixes selected issues sequentially via the `fix-auto` agent
-6. Marks fixed issues with `**Status:** ✅ Fixed (YYYY-MM-DD)` in their respective `source_file` (auto-merge may write to multiple files in one run)
+6. Marks fixed issues with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file each issue came from (auto-merge may write to multiple files in one run)
 
 The reports become living documents — fixed issues won't appear on subsequent `/fix-report` runs.
 
@@ -190,12 +191,13 @@ After the review, if issues were found and the report was saved, the review sugg
 
 **Recommended workflow (local review):**
 
-1. Run `/review` and save the report
+1. Run `/review` and save the report. Optionally run `/qa:run` if you also have a QA test plan — when both reports exist, `/fix-report` (no argument) auto-merges them into a single checklist.
 2. Fix using one of these methods:
-   - `/fix-report docs/reviews/2026-02-20-feature-login.md` — fix multiple issues interactively
-   - `/fix SEC-001` — fix a single issue by ID
+   - `/fix-report` — auto-merge mode: fixes issues from the newest review report and the newest QA report in one pass
+   - `/fix-report docs/reviews/2026-02-20-feature-login.md` — single-file mode: fix only this report
+   - `/fix SEC-001` (or `/fix QA-001`) — fix a single issue by ID
    - `/fix <paste issue block>` — fix by pasting the full block
-3. Re-run `/fix-report` on the same file to fix remaining issues
+3. Re-run `/fix-report` to fix remaining issues
 
 **Recommended workflow (PR feedback):**
 
