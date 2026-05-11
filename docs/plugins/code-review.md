@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.14.4
+**Version:** 1.15.0
 
 ## Commands
 
@@ -84,6 +84,45 @@ The command:
 6. Marks fixed issues with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file each issue came from (auto-merge may write to multiple files in one run)
 
 The reports become living documents — fixed issues won't appear on subsequent `/fix-report` runs.
+
+### `/fix-all`
+
+Bulk-fix every unfixed issue from one or more saved reports after a single yes/no confirmation. Supports an optional minimum severity filter.
+
+```bash
+# Auto-merge: fix every unfixed issue in the newest review + newest QA report
+/fix-all
+
+# Severity floor: only fix HIGH+CRITICAL issues
+/fix-all HIGH
+
+# Single file: fix every unfixed issue in this report
+/fix-all docs/reviews/2026-02-20-feature-login.md
+
+# Combined: HIGH+CRITICAL issues in a specific file (order is free)
+/fix-all CRITICAL docs/reviews/2026-02-20-feature-login.md
+```
+
+The command:
+
+1. Resolves files — auto-merge uses newest from `docs/reviews/` and `docs/testing/reports/`; with an explicit path, uses just that file (same as `/fix-report`).
+2. Reads each file, extracts issues, and filters out those already marked `**Status:** ✅ Fixed` or `⚠️ Partially Fixed`.
+3. Applies the optional severity floor (`HIGH` keeps HIGH+CRITICAL, `MEDIUM` keeps MEDIUM+HIGH+CRITICAL, etc.).
+4. Renders a **pre-flight summary** — full issue table sorted by severity, with per-severity counts and a Source column for feedback-origin issues.
+5. Asks one yes/no question: `Proceed with fixing all N issues sequentially?`
+6. Sequentially invokes `fix-auto` on every issue, continuing through any individual failures.
+7. Marks each Fixed/Partially Fixed issue with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file it came from, then displays a final summary table.
+
+**When to use `/fix-all` vs `/fix-report`:**
+
+| Need | Use |
+|---|---|
+| Pick specific issues from a long report | `/fix-report` (paginated checklist) |
+| Fix one issue by ID | `/fix <ID>` |
+| Trust the report, fix everything | `/fix-all` |
+| Fix only the most-severe issues | `/fix-all CRITICAL` or `/fix-all HIGH` |
+
+**Note on feedback-origin issues** (those with `**Source:**` from `/analyze-feedback`): `/fix-all` lists them with a `Source` column showing the reviewer handle, but does **not** apply the "untrusted-provenance" framing that `/fix` and `/fix-report` use. The framing decision is documented in [the design spec](../superpowers/specs/2026-05-11-fix-all-design.md#2-scope-decided).
 
 ### `/analyze-feedback`
 
