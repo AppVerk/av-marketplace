@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.15.0
+**Version:** 1.16.2
 
 ## Commands
 
@@ -124,6 +124,10 @@ The command:
 
 **Note on feedback-origin issues** (those with `**Source:**` from `/analyze-feedback`): `/fix-all` lists them with a `Source` column showing the reviewer handle, but does **not** apply the "untrusted-provenance" framing that `/fix` and `/fix-report` use. The framing decision is documented in [the design spec](../superpowers/specs/2026-05-11-fix-all-design.md#2-scope-decided).
 
+**Restart safety.** Re-running `/fix-all` against the same report(s) is safe and idempotent. After each Fixed / Partially Fixed issue, the command writes a `**Status:**` line into the source report and then re-reads the file to verify the line landed. On the next run, Step 1.3's filter sees that Status line and skips the issue, so no edit is applied twice. If a Status write fails (heading drift, read-only file, write race), the failure surfaces in the final summary under **Status write failures** with per-issue reasons — re-run `/fix-all` to retry that subset, or add the `**Status:**` line manually under each affected heading. The code change itself already landed; only the report annotation is missing.
+
+**Performance.** `/fix-all` runs sequentially — each issue spawns its own `fix-auto` subagent (analyze → edit → verify → report) before the next one starts. Expect roughly 20–60 s per issue depending on file size and which verifiers run (linter alone is fast; SAST + typecheck + tests is slower), so a 30-issue report can take 10–30 minutes end-to-end. During the run, each iteration prints a `Fixing issue N/<total>: [<SEVERITY>] <ID>: <Title>` heartbeat so you can see progress. You can Ctrl+C between issues and partial progress is preserved: fixed source files keep their edits on disk, and `**Status:**` lines already written into the report stay — Step 1.3's filter will skip those issues on the next run. The only thing lost on interrupt is the in-memory final summary table.
+
 ### `/analyze-feedback`
 
 Analyze PR review comments, classify each as "address" or "reject", and optionally publish response drafts.
@@ -226,13 +230,15 @@ The branch name is slugified (e.g., `feature/user-login` becomes `feature-user-l
 
 ## Fixing Issues
 
-After the review, if issues were found and the report was saved, the review suggests running `/fix-report <path>` to fix issues from the saved report. For individual issues, use `/fix SEC-001` (by ID from the saved report) or `/fix <issue block>` (by pasting).
+After the review, if issues were found and the report was saved, the review suggests running `/fix-report <path>` to fix issues from the saved report. For individual issues, use `/fix SEC-001` (by ID from the saved report) or `/fix <issue block>` (by pasting). To fix every unfixed issue in one pass, use `/fix-all` (optionally with a severity floor like `/fix-all HIGH`).
 
 **Recommended workflow (local review):**
 
 1. Run `/review` and save the report. Optionally run `/qa:run` if you also have a QA test plan — when both reports exist, `/fix-report` (no argument) auto-merges them into a single checklist.
 2. Fix using one of these methods:
    - `/fix-report` — auto-merge mode: fixes issues from the newest review report and the newest QA report in one pass
+   - `/fix-all` — bulk-fix every unfixed issue across the newest review + QA reports after one yes/no confirmation
+   - `/fix-all HIGH` — same as above, with a severity floor (also `CRITICAL`, `MEDIUM`, `LOW`)
    - `/fix-report docs/reviews/2026-02-20-feature-login.md` — single-file mode: fix only this report
    - `/fix SEC-001` (or `/fix QA-001`) — fix a single issue by ID
    - `/fix <paste issue block>` — fix by pasting the full block
@@ -243,6 +249,7 @@ After the review, if issues were found and the report was saved, the review sugg
 1. Run `/analyze-feedback <PR-URL>` to classify reviewer comments and persist actionable items as a review report in `docs/reviews/*-feedback.md`
 2. Fix using one of these methods:
    - `/fix-report docs/reviews/2026-02-20-feature-login-feedback.md` — fix multiple issues interactively
+   - `/fix-all docs/reviews/2026-02-20-feature-login-feedback.md` — bulk-fix every unfixed issue in this feedback report after one yes/no confirmation (optionally add a severity floor, e.g. `/fix-all HIGH docs/reviews/...`). **Caveat:** `/fix-all` skips the per-issue [untrusted-provenance](#untrusted-provenance) prompt that `/fix-report` shows for feedback reports — use only when you trust the report source.
    - `/fix SEC-001` — fix a single issue by ID (feedback-origin issues use the same category prefixes as `/review`)
    - `/fix <paste issue block>` — fix by pasting the full block
 3. Re-run `/fix-report` on the same file to fix remaining issues

@@ -2,7 +2,7 @@
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList
 description: Apply fix for a single code review issue with verification and reporting.
 model: opus
-argument-hint: <issue-id | full issue block from /review report>
+argument-hint: <issue-id|full issue block from /review report>
 ---
 
 ## Input Handling
