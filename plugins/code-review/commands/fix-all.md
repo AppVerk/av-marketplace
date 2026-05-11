@@ -141,4 +141,114 @@ Mark all tasks as `completed` and stop.
 
 ---
 
-<!-- Steps 2-4 will be added in subsequent tasks. -->
+## Step 2: Filter and Pre-flight Summary
+
+### Step 2.1: Parse `$ARGUMENTS`
+
+Split `$ARGUMENTS` on whitespace into tokens. For each token, classify per the [Argument grammar](#argument-grammar) section above.
+
+Track two slots: `severity_floor` (initially unset) and `path` (initially unset).
+
+For each token:
+
+- If the token matches `^(CRITICAL|HIGH|MEDIUM|LOW)$` case-insensitively:
+  - If `severity_floor` is already set, display the error from Rule 1, mark remaining tasks `completed`, and stop.
+  - Otherwise set `severity_floor` to the uppercase form.
+- Otherwise (any non-severity token):
+  - If `path` is already set, display the error from Rule 2, mark remaining tasks `completed`, and stop.
+  - Otherwise set `path` to the token.
+
+Empty `$ARGUMENTS` leaves both unset (auto-merge mode, no filter).
+
+The `path` value is what Step 1.1 used to determine auto-merge vs single-file mode.
+
+### Step 2.2: Apply severity floor
+
+If `severity_floor` is set, filter the unfixed-issues list from Step 1 to keep only issues whose severity is `severity_floor` or higher. The severity ranking is:
+
+| Floor | Keeps |
+|---|---|
+| CRITICAL | CRITICAL |
+| HIGH | CRITICAL + HIGH |
+| MEDIUM | CRITICAL + HIGH + MEDIUM |
+| LOW | all four levels |
+
+If `severity_floor` is unset, the list is unchanged.
+
+**Edge case — zero issues after filter:** if the filtered list is empty and `severity_floor` was set, output:
+
+> No issues match severity floor `<FLOOR>`. Nothing to fix.
+
+Mark remaining tasks `completed` and stop. (When `severity_floor` is unset and the list is empty, Step 1.5 has already terminated the command.)
+
+### Step 2.3: Sort issues
+
+Sort by severity: CRITICAL → HIGH → MEDIUM → LOW. Within a severity, preserve the order issues appeared in their source files (stable sort).
+
+When issues come from multiple source files (auto-merge mode), the inter-file tie-break within a severity follows the order of `files` from Step 1.1 — i.e., the review file before the QA file.
+
+### Step 2.4: Build and render the pre-flight summary
+
+Compute:
+
+- `total_count` = length of the filtered + sorted list
+- `severity_counts` = map of CRITICAL/HIGH/MEDIUM/LOW → count (use `—` instead of `0` in the rendered table)
+- `report_basenames` = comma-separated basenames of the distinct `source_file` values
+- `show_report_column` = true if `files` from Step 1.1 has >1 distinct path
+- `show_source_column` = true if at least one issue in the list has `source_handle` set
+
+Render to stdout (Markdown):
+
+~~~markdown
+## Pre-flight: Fix All Issues
+
+**Reports:** <report_basenames>
+**Severity floor:** <severity_floor>            <-- omit this line if severity_floor is unset
+**Total to fix:** <total_count> issues
+
+**By severity:**
+| CRITICAL | HIGH | MEDIUM | LOW |
+|----------|------|--------|-----|
+|   <c>    | <c>  |  <c>   | <c> |        <-- each cell is the count or `—` if zero
+
+**Issues:**
+
+| # | ID | Severity | Title | Location | Source | Report |
+|---|----|----------|-------|----------|--------|--------|
+| 1 | SEC-001 | CRITICAL | <truncated title> | path:line | @handle or — | feature-auth.md |
+...
+~~~
+
+Rendering rules:
+
+- Omit the `Severity floor:` line entirely if `severity_floor` is unset.
+- Omit the `Source` column entirely if `show_source_column` is false (no issue has a `Source:` field). When present, the cell is `@handle` for feedback-origin issues and `—` for others.
+- Omit the `Report` column entirely if `show_report_column` is false (single-file mode or auto-merge resolved to one file).
+- Truncate titles longer than 60 characters to 60 chars + `…`.
+- **Always render the full list** — no "and N more" truncation.
+- `Location` is taken from the issue's `**Location:**` field; render `—` if missing.
+
+### Step 2.5: Confirmation gate
+
+Use AskUserQuestion with one question:
+
+```
+question: "Proceed with fixing all <total_count> issues sequentially?"
+options:
+  - label: "Yes — fix all <total_count>"
+    description: "Run fix-auto on every listed issue, mark sources after each."
+  - label: "No — abort"
+    description: "Stop now without modifying any files."
+```
+
+If the user picks the "No" option (or any non-yes response):
+
+> Aborted. No changes made.
+
+Mark remaining tasks `completed` and stop.
+
+**Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
+
+---
+
+<!-- Steps 3-4 will be added in subsequent tasks. -->
