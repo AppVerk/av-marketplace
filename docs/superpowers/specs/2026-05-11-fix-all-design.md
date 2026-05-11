@@ -83,6 +83,12 @@ Created up-front via `TaskCreate`:
 
 After creation, task 1 is set `in_progress`. Each subsequent step completes the previous task and starts the next, exactly as in `/fix-report`.
 
+### 4.3a Step 0 — Pre-parse `$ARGUMENTS`
+
+**Runs before Step 1 to guarantee argument-grammar errors fire before any filesystem I/O.** Static smoke trace (Section 7 scenario 4a) showed that locating Step 2.1's parser after Step 1 produced incorrect error precedence in edge cases (empty repo + malformed args → wrong message). Step 0 is the corrected ordering.
+
+Tokenize `$ARGUMENTS` per Section 4.2. Track two slots: `severity_floor` and `path` (both initially unset). Validation errors (Rule 1 "Multiple severities", Rule 2 "Multiple paths") display the error, mark all tasks `completed`, and stop — before any `ls` / `Read` calls. The resolved `severity_floor` and `path` are then consumed by Step 1.1 (mode detection) and Step 2.2 (filter application).
+
 ### 4.4 Step 1 — Parse report(s)
 
 Bit-for-bit reuse of `/fix-report` Step 1. The sub-steps are:
@@ -97,7 +103,7 @@ Within Step 1, the only divergence from `/fix-report` is Step 1.4's wording — 
 
 ### 4.5 Step 2 — Filter & pre-flight summary
 
-- **2.1 Parse `$ARGUMENTS`** per Section 4.2. Validation errors stop the command and mark remaining tasks completed.
+- **2.1 Argument values resolved (back-reference).** Parsing was performed in Step 0 (Section 4.3a). `severity_floor` and `path` are already available; no work is performed in this sub-step. Kept as a numbered sub-step purely to preserve the existing `2.2`–`2.5` numbering and the `Step 2.4` cross-reference in Section 4.4's Step 1.4.
 - **2.2 Apply severity floor** to the issue list from Step 1.
 - **2.3 Sort issues** CRITICAL → HIGH → MEDIUM → LOW. Within a severity, preserve the order they appeared in their source files (stable sort). When issues come from multiple source files (auto-merge mode), the inter-file tie-break within a severity follows the order of `files` from Step 1.1 — i.e., the review file first, then the QA file.
 - **2.4 Build & render pre-flight summary.** Format:
