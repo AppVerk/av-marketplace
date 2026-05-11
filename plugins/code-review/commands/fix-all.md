@@ -251,4 +251,27 @@ Mark remaining tasks `completed` and stop.
 
 ---
 
-<!-- Steps 3-4 will be added in subsequent tasks. -->
+## Step 3: Fix All Selected Issues
+
+### Step 3.1: Sequential fix execution
+
+For each issue in the filtered + sorted list from Step 2.3, in order, **sequentially** (one at a time, wait for completion):
+
+1. Use the Task tool with these parameters:
+   - subagent_type: `"code-review:fix-auto"`
+   - run_in_background: `false`
+   - description: `"Auto-fix: [<SEVERITY>] <Title>"`
+   - prompt: the full issue block from the report (everything extracted in Step 1.2 for this issue — heading line through the next `###` / `---` / EOF; this includes severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples, and the `**Source:**` field if present — `fix-auto`'s Phase 1 field table does not consume `**Source:**` but passing the full block keeps the input format consistent across commands).
+
+2. Collect the result and determine status:
+   - **Fixed** — subagent report says "Fixed" and all verifications passed
+   - **Partially Fixed** — subagent report says "Partially Fixed"
+   - **Failed** — subagent report says "Failed" OR subagent errored (timeout, crash, malformed response)
+
+3. Store the status keyed to the issue's `source_file` and ID. Continue to the next issue regardless of outcome — **continue on failure**, never break the loop. This matches `/fix-report` Step 3.
+
+**Task Update:** Mark task 3 as `completed` and task 4 as `in_progress` using TaskUpdate.
+
+---
+
+<!-- Step 4 will be added in the next task. -->
