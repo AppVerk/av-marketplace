@@ -17,7 +17,7 @@ After installation, verify with `/help` — you should see the new commands list
 
 | Plugin | Version | Description |
 |--------|---------|-------------|
-| [Code Review](docs/plugins/code-review.md) | 1.14.4 | Security, architecture, and code quality analysis with OWASP compliance. Unique issue IDs (SEC-001, PERF-001, DOC-001, QA-001, ...), fix by ID via `/fix SEC-001` (or `/fix QA-001`) or batch via `/fix-report` (auto-merges review and QA reports). Persist PR review feedback via `/analyze-feedback`. Built-in cross-analysis and adversarial review via Cross-Verifier + Challenger |
+| [Code Review](docs/plugins/code-review.md) | 1.15.0 | Security, architecture, and code quality analysis with OWASP compliance. Unique issue IDs (SEC-001, PERF-001, DOC-001, QA-001, ...), fix by ID via `/fix SEC-001` (or `/fix QA-001`), batch via `/fix-report` (auto-merges review and QA reports), or fix everything via `/fix-all` (optional severity floor). Persist PR review feedback via `/analyze-feedback`. Built-in cross-analysis and adversarial review via Cross-Verifier + Challenger |
 | [Commit](docs/plugins/commit.md) | 1.2.0 | Conventional Commits message generation from staged changes. Auto-blocks direct `git commit` via hook |
 | [Security Pipeline](docs/plugins/security-pipeline.md) | 1.0.1 | CI/CD security scanning setup with `/setup` command. Auto-detects provider (Bitbucket, GitHub Actions, GitLab CI, Azure DevOps), languages, and frameworks. Generates Semgrep SAST + TruffleHog secret scanning steps with OWASP Top 10 enforcement |
 | [Web Auditor](docs/plugins/web-auditor.md) | 2.1.1 | Comprehensive web audit: security, SEO, performance, and compliance. Optional `--verify` for cross-domain correlation and adversarial review |
