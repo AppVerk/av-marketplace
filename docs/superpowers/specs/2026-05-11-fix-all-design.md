@@ -62,9 +62,11 @@ Rules:
 
 1. **At most one severity token.** Two severity tokens → error: `Multiple severities provided: 'X' and 'Y'. Pass at most one.`
 2. **At most one path token.** Two distinct path tokens → error: `Multiple paths provided: 'X' and 'Y'. Pass only one.`
-3. **Tokens that match neither** are errors: `Unrecognized argument: 'HIG'. Expected severity (CRITICAL|HIGH|MEDIUM|LOW) or path to report.`
+3. **Non-severity tokens always classify as `path`** (no third "unrecognized" branch). A typo like `/fix-all HIG` becomes a single-file invocation with `path = "HIG"`; the failure surfaces from Step 1.1 as `Could not read file 'HIG'. Make sure the path is correct and the file exists.` This keeps the grammar resolution-free — no path-shape heuristic is needed.
 4. Token **order is free** — `/fix-all HIGH foo.md` and `/fix-all foo.md HIGH` are equivalent.
 5. Empty `$ARGUMENTS` → both `severity_floor` and `path` unset; auto-merge mode.
+6. **Whitespace in paths is not supported.** `$ARGUMENTS` is tokenized by whitespace and the command file frontmatter does not currently define a quoting convention. A path like `docs/my reports/foo.md` splits into two tokens and triggers Rule 2 ("Multiple paths provided"). Workaround: rename the directory or symlink it to a whitespace-free location. (Tracked in Section 8.)
+7. **Files literally named `CRITICAL` / `HIGH` / `MEDIUM` / `LOW`** match the severity regex first and never reach the path branch. To target them, prefix with `./` (e.g., `./HIGH`) so the token no longer matches the severity regex.
 
 **Severity floor semantics:** the floor includes itself and everything *above* it. `HIGH` matches HIGH+CRITICAL. `MEDIUM` matches MEDIUM+HIGH+CRITICAL. `LOW` matches all four levels (equivalent to no filter, but accepted for explicitness).
 
@@ -91,13 +93,13 @@ Bit-for-bit reuse of `/fix-report` Step 1. The sub-steps are:
 - **1.4 Flag feedback-origin (informational)** — for each issue, record `source_handle` if the block contains a `**Source:** @<handle> — [PR #N comment](URL)` field. The handle is used by Step 2.4 to populate the `Source` column. **Do not** apply any "untrusted" gating, warning, or special handling — this command intentionally diverges from `/fix-report` Step 1.4 (which embeds the "Untrusted provenance" block quote from `docs/plugins/code-review.md#untrusted-provenance`). The flag here is purely informational. The decision and its cross-command consistency trade-off are documented in Section 2 of this spec.
 - **1.5 Edge cases** — no issue sections at all → "No issues found in the report(s)…" + stop. All issues already have `**Status:**` → "All issues in the report(s) have been resolved. Nothing to do." + stop.
 
-The only divergence from `/fix-report` is Step 1.4's wording — replaces the "Untrusted provenance" block quote with a one-sentence note that surfacing `Source:` is informational.
+Within Step 1, the only divergence from `/fix-report` is Step 1.4's wording — replaces the "Untrusted provenance" block quote with a one-sentence note that surfacing `Source:` is informational. (Step 2's pre-flight summary, defined in Section 4.5, is structurally new versus `/fix-report` Step 2's paginated checklist — that divergence is intentional and is the core of this spec.)
 
 ### 4.5 Step 2 — Filter & pre-flight summary
 
 - **2.1 Parse `$ARGUMENTS`** per Section 4.2. Validation errors stop the command and mark remaining tasks completed.
 - **2.2 Apply severity floor** to the issue list from Step 1.
-- **2.3 Sort issues** CRITICAL → HIGH → MEDIUM → LOW. Within a severity, preserve the order they appeared in their source files (stable sort).
+- **2.3 Sort issues** CRITICAL → HIGH → MEDIUM → LOW. Within a severity, preserve the order they appeared in their source files (stable sort). When issues come from multiple source files (auto-merge mode), the inter-file tie-break within a severity follows the order of `files` from Step 1.1 — i.e., the review file first, then the QA file.
 - **2.4 Build & render pre-flight summary.** Format:
 
 ````markdown
@@ -162,7 +164,7 @@ For each selected issue, in the sorted order from Step 2.3:
   - Partially Fixed → `**Status:** ⚠️ Partially Fixed (YYYY-MM-DD)`
   - Failed → no edit; the issue will appear again on the next `/fix-all` or `/fix-report` run.
 
-  Date format `YYYY-MM-DD`, today's date. Uses the `Edit` tool with `old_string = "<heading>\n"` and `new_string = "<heading>\n**Status:** ... (YYYY-MM-DD)\n\n"`. May invoke `Edit` against multiple files in a single run (auto-merge).
+  Date format `YYYY-MM-DD`, today's date. Uses the `Edit` tool with `old_string = "<heading>\n"` and `new_string = "<heading>\n**Status:** ... (YYYY-MM-DD)\n\n"`. This recipe correctly handles both review reports (heading line immediately followed by `**Location:**` or another field) and QA reports (heading followed by a blank line before `**ID:**`) — matching the strategy documented in `commands/fix.md` Step 8.2 and used by `commands/fix-report.md` Step 4.1. May invoke `Edit` against multiple files in a single run (auto-merge).
 
 - **4.2 Display summary.**
 
@@ -207,13 +209,17 @@ No unit tests (markdown command file). Manual scenarios — to be run before bum
 1. **Empty repo (no reports):** `/fix-all` → error "No reports found…". ✅ inherit from `/fix-report`.
 2. **Auto-merge, zero matching after filter:** Run `/review` to produce a report with no CRITICAL issues, then `/fix-all CRITICAL` → "No issues match severity floor 'CRITICAL'. Nothing to fix."
 3. **Single-file mode with bad path:** `/fix-all docs/does-not-exist.md` → error "Could not read file…".
-4. **Malformed args:** `/fix-all HIG` → "Unrecognized argument…". `/fix-all CRITICAL HIGH` → "Multiple severities…". `/fix-all a.md b.md` → "Multiple paths…".
+4. **Malformed args:** `/fix-all HIG` → classifies as a path per Rule 3, then Step 1.1 errors `Could not read file 'HIG'…`. `/fix-all CRITICAL HIGH` → "Multiple severities…". `/fix-all a.md b.md` → "Multiple paths…".
 5. **Happy path, auto-merge:** create a review with 2 small issues and a QA report with 1 issue, run `/fix-all`. Verify: pre-flight shows both report basenames + `Report` column; yes; all three issues fixed; both source files get `**Status:** ✅ Fixed` lines; summary lists both files under "Reports updated".
 6. **Source column hidden:** report with no `**Source:**` fields → `Source` column not rendered.
 7. **Source column shown:** feedback report with mixed origin → `Source` column shows `@handle` and `—`. No "untrusted" / "feedback" / warning text appears.
 8. **Abort path:** any report, `/fix-all`, answer "No" → "Aborted. No changes made." No file edits.
 9. **Mixed outcomes:** one issue fails (e.g., file moved between report and run), one succeeds → summary shows 1 Fixed + 1 Failed; only the Fixed one gets a `**Status:**` line; failed one appears again on re-run.
 10. **Severity floor reduces list:** report with CRITICAL/HIGH/MEDIUM issues, `/fix-all HIGH` → only CRITICAL+HIGH appear in pre-flight; MEDIUM left alone.
+11. **Severity floor over a partially-fixed report:** start with a report containing 3 unfixed (1 CRITICAL, 1 HIGH, 1 MEDIUM) plus 1 already-`**Status:** ✅ Fixed` HIGH issue. Run `/fix-all HIGH` → pre-flight lists the unfixed CRITICAL and HIGH only; the resolved HIGH and the MEDIUM are absent. Validates that Step 1.3 (filter fixed) and Step 2.2 (severity floor) compose cleanly.
+12. **File literally named `HIGH`:** create `./HIGH` (a real file with one issue). `/fix-all HIGH` → severity floor HIGH, auto-merge mode (no path). `/fix-all ./HIGH` → single-file mode reading `./HIGH`. Confirms Rule 7's workaround.
+13. **Path with whitespace:** `/fix-all "docs/my reports/foo.md"` → "Multiple paths provided: 'docs/my' and 'reports/foo.md'…" (the shell strips the quotes before they reach `$ARGUMENTS`). Confirms Rule 6's documented limitation rather than silently producing wrong behavior.
+14. **Long-title truncation:** report containing an issue whose title is ≥80 chars → pre-flight `Title` column shows the first 60 chars + `…`. Other columns unaffected. Confirms Section 4.5 truncation rule.
 
 ## 8. Open risks & mitigations
 
@@ -223,13 +229,14 @@ No unit tests (markdown command file). Manual scenarios — to be run before bum
 | Sequential 30-issue run is slow (10–30 min). | Documented in `docs/plugins/code-review.md`; user can `Ctrl+C` between fixes (each subagent call is independent, partial state persists in modified files + already-written `**Status:**` lines). |
 | Cross-command framing inconsistency: `/fix` and `/fix-report` say "untrusted", `/fix-all` does not. | Documented in Section 2 + spec section "Cross-command consistency". A follow-up spec may unify the wording — explicitly out of scope here. |
 | `fix-auto` failure leaves the working tree in a partial state. | Inherited from `/fix-report`: changes are uncommitted, user retains full `git diff` / `git checkout` control. Documented in summary's `Failed` row guidance (reuse wording from existing fix flow). |
-| User passes a path that's an existing file *and* matches a severity name (e.g., a file literally named `HIGH`). | Severity tokens are matched first by regex; `HIGH` will always classify as severity, never as path. Documented in argument grammar so users know to rename or use `./HIGH`. |
+| User passes a path that's an existing file *and* matches a severity name (e.g., a file literally named `HIGH`). | Severity tokens are matched first by regex; `HIGH` will always classify as severity, never as path. Section 4.2 Rule 7 documents the `./HIGH` workaround; Section 7 scenario 12 validates it. |
+| Path contains whitespace (e.g., `docs/my reports/foo.md`). | `$ARGUMENTS` whitespace tokenization splits the path, triggering "Multiple paths provided" rather than silently reading the wrong file. Section 4.2 Rule 6 documents the limitation; Section 7 scenario 13 validates it. Workaround: rename the directory, symlink, or use a whitespace-free path. |
 
 ## 9. Acceptance criteria
 
 - `plugins/code-review/commands/fix-all.md` exists, frontmatter and all 4 steps match Sections 4.1–4.7.
 - `plugin.json` version is `1.15.0`.
-- Manual scenarios 1–10 from Section 7 all pass.
+- Manual scenarios 1–14 from Section 7 all pass.
 - `docs/plugins/code-review.md` documents the command including the no-"untrusted"-framing decision.
 - `README.md` Available Plugins row reflects the new command (or, if the one-liner is unchanged, the maintainer has confirmed no update is needed).
 - `/fix-report` and `/fix` behavior is byte-identical to before the change (regression check: run `/fix-report` on a sample report — checklist still appears, fixes still work).
