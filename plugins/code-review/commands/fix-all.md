@@ -274,4 +274,50 @@ For each issue in the filtered + sorted list from Step 2.3, in order, **sequenti
 
 ---
 
-<!-- Step 4 will be added in the next task. -->
+## Step 4: Update Reports and Summarize
+
+### Step 4.1: Mark fixed issues in their source reports
+
+For each issue with status `Fixed` or `Partially Fixed`, edit its `source_file` (from the mapping established in Step 1.2) to add a `**Status:**` line immediately after the issue's `### [SEVERITY] ID: Title` heading. In auto-merge mode this may invoke `Edit` against multiple files in a single run.
+
+**For Fixed issues**, insert after the heading:
+
+```
+**Status:** ✅ Fixed (YYYY-MM-DD)
+```
+
+**For Partially Fixed issues**, insert after the heading:
+
+```
+**Status:** ⚠️ Partially Fixed (YYYY-MM-DD)
+```
+
+**For Failed issues**, do NOT add a Status line — the issue remains unfixed and will appear again on the next `/fix-all` or `/fix-report` run.
+
+Use today's date in `YYYY-MM-DD` format.
+
+Use the `Edit` tool with `old_string = "<heading>\n"` and `new_string = "<heading>\n**Status:** <icon> <text> (YYYY-MM-DD)\n\n"`. This recipe handles both review reports (heading immediately followed by `**Location:**` or another field) and QA reports (heading followed by a blank line before `**ID:**`) — matching the strategy documented in `commands/fix.md` Step 8.2 and used by `commands/fix-report.md` Step 4.1.
+
+### Step 4.2: Display fix summary
+
+```markdown
+## Fix Summary
+
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | [SEVERITY] ID: Title — path:line | STATUS_ICON STATUS_TEXT |
+| 2 | [SEVERITY] ID: Title — path:line | STATUS_ICON STATUS_TEXT |
+
+**Fixed:** N | **Partially Fixed:** N | **Failed:** N
+**Reports updated:**
+- <source-file-1>
+- <source-file-2>
+```
+
+In single-file mode the list contains exactly one entry. In auto-merge mode, list each distinct `source_file` that was edited (deduplicated). Files that received no Status writes (all Failed, or no selections from that file) are omitted; if no file was edited at all, omit the entire `**Reports updated:**` block.
+
+Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌.
+
+**Task Update:** Mark task 4 as `completed` using TaskUpdate.
+
+**Changes remain uncommitted for your control.**
