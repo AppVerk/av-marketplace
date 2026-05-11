@@ -55,11 +55,32 @@ Rules:
 
 ---
 
+## Step 0: Parse `$ARGUMENTS`
+
+This step runs **before** any filesystem I/O so that argument-grammar errors (Rule 1 "Multiple severities", Rule 2 "Multiple paths") surface before "No reports found" or "Could not read file" errors from Step 1.
+
+Split `$ARGUMENTS` on whitespace into tokens. Track two slots: `severity_floor` (initially unset) and `path` (initially unset).
+
+For each token:
+
+- If the token matches `^(CRITICAL|HIGH|MEDIUM|LOW)$` case-insensitively:
+  - If `severity_floor` is already set, display the error from Rule 1, mark all tasks `completed`, and stop.
+  - Otherwise set `severity_floor` to the uppercase form.
+- Otherwise (any non-severity token):
+  - If `path` is already set, display the error from Rule 2, mark all tasks `completed`, and stop.
+  - Otherwise set `path` to the token.
+
+Empty `$ARGUMENTS` leaves both unset (auto-merge mode, no filter).
+
+These resolved values are consumed by Step 1.1 (mode detection: `path` set → single-file; unset → auto-merge) and Step 2.2 (severity-floor filter application).
+
+---
+
 ## Step 1: Parse Report(s)
 
 ### Step 1.1: Resolve files to read
 
-Determine the input mode based on whether the argument parser produced a `path` token (see Argument grammar above; the parser runs at the start of Step 2.1, but its mode detection is referenced here).
+Determine the input mode based on the `path` value resolved in Step 0 above.
 
 **Auto-merge mode** — path token absent (applies whether or not a severity token is present, so `/fix-all`, `/fix-all HIGH`, and `/fix-all CRITICAL` all auto-merge):
 
@@ -143,24 +164,9 @@ Mark all tasks as `completed` and stop.
 
 ## Step 2: Filter and Pre-flight Summary
 
-### Step 2.1: Parse `$ARGUMENTS`
+### Step 2.1: Argument values resolved
 
-Split `$ARGUMENTS` on whitespace into tokens. For each token, classify per the [Argument grammar](#argument-grammar) section above.
-
-Track two slots: `severity_floor` (initially unset) and `path` (initially unset).
-
-For each token:
-
-- If the token matches `^(CRITICAL|HIGH|MEDIUM|LOW)$` case-insensitively:
-  - If `severity_floor` is already set, display the error from Rule 1, mark remaining tasks `completed`, and stop.
-  - Otherwise set `severity_floor` to the uppercase form.
-- Otherwise (any non-severity token):
-  - If `path` is already set, display the error from Rule 2, mark remaining tasks `completed`, and stop.
-  - Otherwise set `path` to the token.
-
-Empty `$ARGUMENTS` leaves both unset (auto-merge mode, no filter).
-
-The `path` value is what Step 1.1 used to determine auto-merge vs single-file mode.
+Argument parsing happened in Step 0 — `severity_floor` and `path` are already resolved (each is either set or unset). No work is performed in this sub-step; proceed to Step 2.2.
 
 ### Step 2.2: Apply severity floor
 
