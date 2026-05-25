@@ -2,7 +2,7 @@
 
 Generate meaningful, well-formatted commit messages following the Conventional Commits specification.
 
-**Version:** 1.3.0
+**Version:** 1.3.1
 
 ## Commands
 
