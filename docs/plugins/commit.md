@@ -94,6 +94,14 @@ The hook blocks **every** form of `git push` from Claude Code, without exception
 
 - Nothing. To push, run `git push` yourself from your terminal, outside Claude Code.
 
-**Known limitation:** Commands like `gh pr create` may invoke `git push` as a subprocess. The hook only inspects the top-level Bash command string, so nested processes started by other tools may bypass the block.
+**Known limitations:** The hook is a guardrail against accidental Claude action, not a sandbox. It matches a literal `git` token bracketed by shell delimiters in the top-level Bash command string, so the following forms are not detected:
+
+- **Subprocesses:** Commands like `gh pr create` may invoke `git push` as a subprocess. The hook only inspects the top-level command, so nested processes started by other tools bypass the block.
+- **Absolute or relative paths:** `/usr/bin/git push`, `./git push`.
+- **Quoted tokens:** `"git" push`, `git "push"`, `'git' push`.
+- **Shell wrappers:** `eval "git push"`, `sh -c "git push"`, `bash -c "git push"`, `echo "git push" | bash`.
+- **Command substitution / variable indirection:** `$(echo git) push`, `GIT=git; $GIT push`.
+
+These gaps are accepted: Claude does not emit such constructs naturally — it consistently uses bare `git push`, which the hook catches. The user remains the ultimate gate by running `git push` from their own terminal.
 
 Both hooks are registered automatically when the plugin is enabled. No configuration required.

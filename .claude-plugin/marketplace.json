@@ -15,7 +15,7 @@
       "name": "commit",
       "source": "./plugins/commit",
       "description": "Generate meaningful commit messages and block direct git push",
-      "version": "1.3.0",
+      "version": "1.3.1",
       "category": "development"
     },
     {
