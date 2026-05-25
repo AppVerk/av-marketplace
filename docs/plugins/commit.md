@@ -2,7 +2,7 @@
 
 Generate meaningful, well-formatted commit messages following the Conventional Commits specification.
 
-**Version:** 1.2.0
+**Version:** 1.3.0
 
 ## Commands
 
@@ -61,7 +61,11 @@ feat!: change API response format
 
 ## Auto-enforcement
 
-This plugin includes a PreToolUse hook that automatically blocks direct `git commit` commands. When any agent or subagent attempts to run `git commit`, the hook denies the command and instructs the agent to use `/commit` instead.
+This plugin includes two PreToolUse hooks that automatically guard destructive git operations from Claude Code.
+
+### `git commit` block
+
+The hook blocks any direct `git commit` so all commits flow through the `/commit` skill.
 
 **What's blocked:**
 
@@ -74,4 +78,22 @@ This plugin includes a PreToolUse hook that automatically blocks direct `git com
 - `git commit --amend` — the `/commit` skill doesn't support amending
 - Commands from the `/commit` skill itself (identified by `AV_COMMIT_SKILL=1` prefix)
 
-The hook is registered automatically when the plugin is enabled. No configuration required.
+### `git push` block
+
+The hook blocks **every** form of `git push` from Claude Code, without exceptions. The user is the only party who pushes code — Claude can prepare commits, but the publication step is human-only.
+
+**What's blocked (non-exhaustive):**
+
+- `git push`, `git push origin <ref>`
+- `git push --force`, `git push -f`, `git push --force-with-lease`
+- `git push --mirror`, `git push --delete`, `git push --dry-run`
+- `git -C /path push`, `git --git-dir=… push`
+- Chained commands containing `git push` (e.g., `cd repo && git push`)
+
+**What's allowed:**
+
+- Nothing. To push, run `git push` yourself from your terminal, outside Claude Code.
+
+**Known limitation:** Commands like `gh pr create` may invoke `git push` as a subprocess. The hook only inspects the top-level Bash command string, so nested processes started by other tools may bypass the block.
+
+Both hooks are registered automatically when the plugin is enabled. No configuration required.
