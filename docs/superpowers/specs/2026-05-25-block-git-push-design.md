@@ -44,8 +44,12 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
 # Block: any form of `git push` (no exceptions).
 # Matches `git push`, `git push --force`, `git -C /path push`,
-# `git --git-dir=... push`, and `git push` after `;`, `&&`, `||`, `|`, `` ` ``, `(`.
-if echo "$COMMAND" | grep -qE '(^|[;&|`(]|\s)git(\s+(-[A-Za-z]|--[A-Za-z-]+(=\S*)?))*\s+push(\s|$)'; then
+# `git --git-dir=... push`, and `git push` after `;`, `&&`, `||`, `|`, `` ` ``, `(`,
+# or wrapped in a parenthesised subshell like `(cd repo && git push)`.
+# `(\S+)*` between `git` and `push` allows any non-whitespace tokens (flags AND
+# their arguments, e.g. `-C /tmp`). The end anchor includes shell terminators
+# (`;`, `&`, `|`, `` ` ``, `)`) so subshell-closing `)` does not slip through.
+if echo "$COMMAND" | grep -qE '(^|[;&|`(]|\s)git(\s+(\S+))*\s+push(\s|$|[);&|`])'; then
   echo '{
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
@@ -123,6 +127,7 @@ Plugin count badge in `README.md` is unaffected (no plugin added/removed).
 | `git pushd` (hypothetical) | Allowed (regex requires `push` as a whole word followed by space or end) |
 | `git commit` (existing rule) | Blocked by `block-git-commit.sh`, unchanged |
 | `echo "git push"` | Blocked (acceptable false positive — extremely niche, prefer over-eager blocking) |
+| `git remote add push <url>`, `git tag push`, `git fetch push` | Blocked (acceptable false positive — `(\S+)*` is greedy on purpose; cases where `push` is a remote/tag/argument name are very rare) |
 | `gh pr create` (subprocess push) | **Not** caught by this hook (documented limitation) |
 
 ## Testing
