@@ -95,8 +95,8 @@ bun add -d vitest @testing-library/react
 # Add a specific version
 bun add react@18.3.1
 
-# Add to a specific workspace package (monorepo)
-bun add lodash --filter @myapp/utils
+# Add to a specific workspace package (cd into the package)
+cd packages/utils && bun add lodash
 ```
 
 ### Removing Dependencies
@@ -105,8 +105,8 @@ bun add lodash --filter @myapp/utils
 # Remove a dependency
 bun remove lodash
 
-# Remove from a specific workspace package
-bun remove lodash --filter @myapp/utils
+# Remove from a specific workspace package (cd into the package)
+cd packages/utils && bun remove lodash
 ```
 
 ### Updating Dependencies
@@ -212,6 +212,8 @@ Bun supports two lockfile formats:
 | Text | `bun.lock` | **Preferred** (Bun 1.2+ default) | New projects, all PR-reviewable codebases |
 | Binary | `bun.lockb` | Legacy (Bun 1.0–1.1 default) | Existing projects pre-migration |
 
+> **Note on defaults:** Bun 1.2+ writes text-form `bun.lock` by default at the CLI level, but the `bunfig.toml` flag `[install].saveTextLockfile` defaults to `false`. New projects created with `bun init` on Bun 1.2+ get `bun.lock`; if you don't see it, run `bun install --save-text-lockfile` once or set `saveTextLockfile = true` in `bunfig.toml` to make the behaviour explicit.
+
 ### Why prefer `bun.lock` (text)?
 
 - Reviewable in PRs — diffs are human-readable
@@ -249,8 +251,7 @@ After migration, all collaborators and CI must use Bun 1.2 or later (which recog
 # bunfig.toml
 
 [install]
-saveTextLockfile = true     # Use bun.lock, not bun.lockb
-auto = "auto"               # Auto-install peer deps
+saveTextLockfile = true     # Use bun.lock (text), not bun.lockb (binary)
 exact = false               # Use semver ranges in package.json
 
 [install.cache]
@@ -269,7 +270,6 @@ dir = "~/.bun/install/cache"
 | Setting | Value | Purpose |
 |---|---|---|
 | `install.saveTextLockfile` | `true` | Use text-form `bun.lock` for PR-friendly diffs |
-| `install.auto` | `"auto"` | Resolve peer dependencies automatically |
 | `install.exact` | `false` | Allow semver range updates (`^x.y.z`) |
 
 ---
@@ -319,8 +319,8 @@ bun run --filter @myapp/web build
 # Run a script across all workspaces
 bun run --filter '*' build
 
-# Add a dependency to a specific workspace
-bun add lodash --filter @myapp/utils
+# Add a dependency to a specific workspace (cd into the package)
+cd packages/utils && bun add lodash
 
 # Add a dev dependency to the workspace root
 bun add -d typescript
@@ -426,14 +426,12 @@ bun update conflicting-package
 # Option 2: Pin a compatible version in package.json
 ```
 
-For Bun, peer-dependency overrides are configured via `package.json#bun.overrides` (analog of `pnpm.overrides`):
+For Bun, dependency overrides are configured via the **top-level** `overrides` field in `package.json` (npm-style). Bun also recognises the Yarn-style top-level `resolutions` field as a fallback for projects migrating from Yarn:
 
 ```json
 {
-  "bun": {
-    "overrides": {
-      "react": "^18.3.0"
-    }
+  "overrides": {
+    "react": "^18.3.0"
   }
 }
 ```
@@ -597,7 +595,7 @@ bunx create-vite my-app
 2. ✅ `bun run` for scripts, `bunx` instead of `npx`
 3. ✅ Prefer `bun.lock` (text) over `bun.lockb` (binary); always commit lockfile
 4. ✅ `--frozen-lockfile` in CI
-5. ✅ `bunfig.toml` with `saveTextLockfile = true` and `auto = "auto"`
+5. ✅ `bunfig.toml` with `saveTextLockfile = true`
 6. ✅ `oven-sh/setup-bun@v2` for GitHub Actions
 7. ✅ `workspace:*` for monorepo cross-dependencies (no separate workspace file needed)
 8. ✅ Do NOT migrate from Vitest/Vite to `bun test`/`bun build` as unrelated work
