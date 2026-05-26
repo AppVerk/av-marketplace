@@ -2,9 +2,9 @@
 name: developer
 description: Expert TypeScript + React developer agent for implementing features, fixing issues, and refactoring code. Enforces coding standards (strict TypeScript, no any/as/!, no React.FC), TDD workflow (tests before code, userEvent, 80%+ coverage), and stack-specific patterns (Tailwind, Zustand, TanStack Query, React Hook Form, TanStack Router). Use this agent instead of general-purpose agents when working on TypeScript + React projects.
 tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
-allowed-tools: Bash(tsc:*), Bash(vitest:*), Bash(playwright:*), Bash(eslint:*), Bash(biome:*), Bash(pnpm:*), Bash(git:*), Bash(node:*)
+allowed-tools: Bash(tsc:*), Bash(vitest:*), Bash(playwright:*), Bash(eslint:*), Bash(biome:*), Bash(pnpm:*), Bash(bun:*), Bash(bunx:*), Bash(git:*), Bash(node:*)
 model: opus 
-skills: coding-standards, tdd-workflow, tailwind-patterns, zustand-patterns, tanstack-query-patterns, form-patterns, tanstack-router-patterns, pnpm-package-manager
+skills: coding-standards, tdd-workflow, tailwind-patterns, zustand-patterns, tanstack-query-patterns, form-patterns, tanstack-router-patterns, pnpm-package-manager, bun-package-manager
 ---
 
 # TypeScript + React Developer Agent
@@ -108,8 +108,14 @@ Read these files in order of priority to find the actual project commands:
 3. **package.json** `scripts` — project-defined commands
 4. **Makefile** — check for available targets
 
-**Record the discovered commands.** If no commands are found, fall back to:
+**Record the discovered commands.** If no commands are found, pick the fallback set that matches the detected package manager:
 
+**If `bun.lock` or `bun.lockb` exists** (Bun project):
+- Test: `bun run test` (use `bun test` only if `bunfig.toml` has a `[test]` section)
+- Typecheck: `bun run typecheck`
+- Lint: `bun run lint`
+
+**Otherwise** (default — pnpm or unspecified):
 - Test: `pnpm test`
 - Typecheck: `pnpm typecheck`
 - Lint: `pnpm lint`
@@ -166,10 +172,18 @@ Use the Skill tool with:
 
 **If dependency changes are needed:**
 
-```
-Use the Skill tool with:
-  skill: "frontend-developer:pnpm-package-manager"
-```
+Pick the skill matching the detected lockfile:
+
+- If `pnpm-lock.yaml` exists:
+  ```
+  Use the Skill tool with:
+    skill: "frontend-developer:pnpm-package-manager"
+  ```
+- If `bun.lock` or `bun.lockb` exists:
+  ```
+  Use the Skill tool with:
+    skill: "frontend-developer:bun-package-manager"
+  ```
 
 **After loading all relevant skills, read and internalize the HARD-RULES from every loaded skill. You must follow all of them throughout the remaining phases.**
 

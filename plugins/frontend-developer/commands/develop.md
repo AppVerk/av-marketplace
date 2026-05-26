@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Grep, Glob, Bash(tsc:*), Bash(vitest:*), Bash(playwright:*), Bash(eslint:*), Bash(biome:*), Bash(pnpm:*), Bash(git:*), Bash(node:*)
+allowed-tools: Read, Grep, Glob, Bash(tsc:*), Bash(vitest:*), Bash(playwright:*), Bash(eslint:*), Bash(biome:*), Bash(pnpm:*), Bash(bun:*), Bash(bunx:*), Bash(git:*), Bash(node:*)
 description: TypeScript + React development workflow enforcing coding standards, TDD, and stack-specific patterns. Loads the right skills automatically.
 argument-hint: <task description>
 ---
@@ -38,7 +38,16 @@ Use the Skill tool with:
 3. **package.json** `scripts` — project-defined commands
 4. **Makefile** — check for available targets
 
-**Record the discovered commands.** You will use them in Steps 5 and 6 instead of fallback defaults. If no commands are found in any of these sources, fall back to:
+**Record the discovered commands.** You will use them in Steps 5 and 6 instead of fallback defaults. If no commands are found in any of these sources, pick the fallback set that matches the detected package manager:
+
+**If `bun.lock` or `bun.lockb` exists** (Bun project):
+- Dev: `bun dev`
+- Test: `bun run test` (use `bun test` only if `bunfig.toml` has a `[test]` section)
+- Test watch: `bun run test:watch` (or `bun test --watch` for Bun-native tests)
+- Typecheck: `bun run typecheck` (or `bun tsc --noEmit`)
+- Lint: `bun run lint`
+
+**Otherwise** (default — pnpm or unspecified):
 - Dev: `pnpm dev`
 - Test: `pnpm test`
 - Test watch: `pnpm test:watch`
@@ -53,7 +62,12 @@ Use the Skill tool with:
    - `@tanstack/react-query` — TanStack Query
    - `react-hook-form` — React Hook Form
    - `@tanstack/react-router` — TanStack Router
-2. **pnpm-lock.yaml** — confirm pnpm is the package manager
+2. **Lockfile** — confirm which package manager the project uses:
+   - `bun.lock` or `bun.lockb` → Bun
+   - `pnpm-lock.yaml` → pnpm
+   - `package-lock.json` → npm
+   - `yarn.lock` → yarn
+   - If multiple lockfiles are present, flag this as an anti-pattern and ask the user which manager to keep
 3. **tsconfig.json** — verify `strict: true` is enabled
 4. **src/** — scan directory structure to detect feature-based architecture
 5. **Task description** — parse `$ARGUMENTS` for keywords: component, form, route, state, query, API, store
@@ -121,6 +135,13 @@ Use the Skill tool with:
 ```
 Use the Skill tool with:
   skill: "frontend-developer:pnpm-package-manager"
+```
+
+### If `bun.lock` or `bun.lockb` exists AND task involves dependency changes:
+
+```
+Use the Skill tool with:
+  skill: "frontend-developer:bun-package-manager"
 ```
 
 **After loading skills, read and internalize the HARD-RULES from every loaded skill. You must follow all of them.**
@@ -246,5 +267,6 @@ Zero warnings. Zero errors.
 - [ ] Forms: Zod schema as source of truth, `zodResolver`, server errors via `setError`
 - [ ] Router: File-based routes, `ensureQueryData` in loader, `beforeLoad` for auth
 - [ ] pnpm: `pnpm` commands only, lock file committed
+- [ ] bun: `bun` commands only, lockfile committed (prefer `bun.lock` text form)
 
 **If all checks pass, the task is complete. Changes remain uncommitted for user review.**

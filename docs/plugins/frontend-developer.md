@@ -2,7 +2,7 @@
 
 Advanced TypeScript + React SPA development with TDD, coding standards, and stack-specific patterns.
 
-**Version:** 1.0.2
+**Version:** 1.1.0
 
 ## Installation
 
@@ -36,6 +36,7 @@ Autonomous development workflow for features, bugfixes, and refactoring.
 | form-patterns | `react-hook-form` dep | RHF, Zod, validation, server errors |
 | tanstack-router-patterns | `@tanstack/react-router` dep | File-based routing, loaders, search params |
 | pnpm-package-manager | `pnpm-lock.yaml` + deps change | pnpm commands, CI, workspace |
+| bun-package-manager | `bun.lock(b)` + deps change | bun commands, lockfile policy, workspaces, CI, Bun-native tooling primer |
 
 ## Workflow
 
