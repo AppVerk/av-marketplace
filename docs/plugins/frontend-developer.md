@@ -2,7 +2,7 @@
 
 Advanced TypeScript + React SPA development with TDD, coding standards, and stack-specific patterns.
 
-**Version:** 1.1.0
+**Version:** 1.1.1
 
 ## Installation
 

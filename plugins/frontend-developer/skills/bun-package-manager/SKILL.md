@@ -25,7 +25,7 @@ These rules are NON-NEGOTIABLE. Violating any of them is a bug.
 
 - ALWAYS use `bun` for all package operations — NEVER `npm`, `yarn`, or `pnpm` in Bun projects
 - ALWAYS use `bun run <script>` (or implicit `bun <script>`) — NEVER `npm run`/`yarn`/`pnpm run`
-- ALWAYS commit the lockfile (`bun.lock` or `bun.lockb`) — the lock file MUST be in version control
+- ALWAYS commit exactly one Bun lockfile (`bun.lock` preferred, `bun.lockb` for legacy projects) — the lockfile MUST be in version control and the two formats MUST NOT coexist
 - PREFER `bun.lock` (text) over `bun.lockb` (binary) — Bun 1.2+ default, diff-friendly in PRs; migrate via `bun install --save-text-lockfile` when feasible
 - ALWAYS use `bunx` instead of `npx` for one-off package execution
 - ALWAYS use `--frozen-lockfile` in CI — NEVER allow lockfile modifications in CI
@@ -364,7 +364,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.0    # or read from .bun-version / package.json packageManager
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -382,13 +382,7 @@ jobs:
         run: bun run build
 ```
 
-### Pin Bun version explicitly (recommended for reproducible builds)
-
-```yaml
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.2.0    # or read from .bun-version / package.json packageManager
-```
+> Note: `bun-version: latest` exists but is discouraged — it produces non-reproducible CI runs because an unannounced Bun release can be picked up silently, and `--frozen-lockfile` gives false reproducibility confidence when the runtime itself is unpinned. Always pin (see Key CI Principle #2 below).
 
 ### Key CI Principles
 
