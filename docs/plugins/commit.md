@@ -2,7 +2,7 @@
 
 Generate meaningful, well-formatted commit messages following the Conventional Commits specification.
 
-**Version:** 1.3.1
+**Version:** 1.4.0
 
 ## Commands
 
@@ -78,30 +78,34 @@ The hook blocks any direct `git commit` so all commits flow through the `/commit
 - `git commit --amend` — the `/commit` skill doesn't support amending
 - Commands from the `/commit` skill itself (identified by `AV_COMMIT_SKILL=1` prefix)
 
-### `git push` block
+### `git push` policy
 
-The hook blocks **every** form of `git push` from Claude Code, without exceptions. The user is the only party who pushes code — Claude can prepare commits, but the publication step is human-only.
+The hook applies a graduated policy (first match wins):
 
-**What's blocked (non-exhaustive):**
+| Operation | Decision |
+|---|---|
+| Push a feature branch to `origin` (e.g. `git push -u origin fix/x`) | allowed |
+| `git push` whose upstream is a feature branch on origin | allowed |
+| Push to `master`/`main` (add commits) | prompts (ask) |
+| Tag push (`--tags`, `--follow-tags`, `git push origin v1.0`) | prompts (ask) |
+| Push to a remote other than `origin`, or a URL | prompts (ask) |
+| Target cannot be verified (detached HEAD, ambiguous command) | prompts (ask) |
+| Any force-push (`--force`, `-f`, `--force-with-lease`, `+refspec`) | blocked (deny) |
+| `git push --mirror` | blocked (deny) |
+| Delete a protected branch (`:master`, `--delete master`) | blocked (deny) |
 
-- `git push`, `git push origin <ref>`
-- `git push --force`, `git push -f`, `git push --force-with-lease`
-- `git push --mirror`, `git push --delete`, `git push --dry-run`
-- `git -C /path push`, `git --git-dir=… push`
-- Chained commands containing `git push` (e.g., `cd repo && git push`)
+**Known limitations** (guardrail, not a sandbox — the hook reads only the
+top-level command string):
 
-**What's allowed:**
-
-- Nothing. To push, run `git push` yourself from your terminal, outside Claude Code.
-
-**Known limitations:** The hook is a guardrail against accidental Claude action, not a sandbox. It matches a literal `git` token bracketed by shell delimiters in the top-level Bash command string, so the following forms are not detected:
-
-- **Subprocesses:** Commands like `gh pr create` may invoke `git push` as a subprocess. The hook only inspects the top-level command, so nested processes started by other tools bypass the block.
-- **Absolute or relative paths:** `/usr/bin/git push`, `./git push`.
-- **Quoted tokens:** `"git" push`, `git "push"`, `'git' push`.
-- **Shell wrappers:** `eval "git push"`, `sh -c "git push"`, `bash -c "git push"`, `echo "git push" | bash`.
-- **Command substitution / variable indirection:** `$(echo git) push`, `GIT=git; $GIT push`.
-
-These gaps are accepted: Claude does not emit such constructs naturally — it consistently uses bare `git push`, which the hook catches. The user remains the ultimate gate by running `git push` from their own terminal.
+- **Subprocesses:** `gh pr create` may invoke `git push` internally; nested
+  processes are not inspected.
+- **Shell wrappers / substitution:** `sh -c "git push --force"`,
+  `$(echo git) push`, `eval "git push -f"` bypass detection.
+- **Ambiguous quoting / repo-changing prefixes** (`git -c x='a b' push`,
+  `cd /other && git push`) degrade to a confirmation prompt rather than a
+  silent allow.
+- **Secret leakage:** allowing feature-branch pushes means a branch containing
+  accidentally-committed secrets can be published to `origin`. Content is not
+  scanned. The non-origin/URL prompt mitigates exfiltration to other remotes.
 
 Both hooks are registered automatically when the plugin is enabled. No configuration required.
