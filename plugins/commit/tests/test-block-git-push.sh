@@ -39,6 +39,19 @@ run() {
   assert allow 'git commit -m "docs: mention git push in the body"'
   assert allow 'AV_COMMIT_SKILL=1 git add . && git commit -m "feat: git push docs"'
 
+  # --- force-push -> deny ---
+  assert deny 'git push --force origin fix/x'
+  assert deny 'git push -f origin fix/x'
+  assert deny 'git push -fu origin fix/x'
+  assert deny 'git push -uf origin fix/x'
+  assert deny 'git push --force-with-lease origin fix/x'
+  assert deny 'git push --force-with-lease=origin/fix/x origin fix/x'
+  assert deny 'git push --force-if-includes origin fix/x'
+  assert deny 'git push origin +fix/x'
+  assert deny 'git push origin +HEAD:master'
+  assert allow 'git push origin fix/x'
+  assert allow 'git push -- -funny-branch'
+
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   [ "$FAIL" -eq 0 ]
 }

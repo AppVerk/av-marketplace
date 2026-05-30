@@ -58,7 +58,28 @@ find_push_inv() {
       printf '%s' "${t[*]:$i}"
       return 0
     fi
-  done < <(printf '%s' "$cmd" | sed -E 's/(\&\&|\|\||[;&|`()])/\n/g')
+  done < <(printf '%s\n' "$cmd" | sed -E 's/(\&\&|\|\||[;&|`()])/\n/g')
+  return 1
+}
+
+# inv_has_force "<push-invocation>" -> 0 if a force-push is present.
+inv_has_force() {
+  local -a t; read -r -a t <<< "$1"
+  local i seen_dd=0
+  for ((i=1;i<${#t[@]};i++)); do
+    local x="${t[$i]}"
+    if [ "$x" = "--" ]; then seen_dd=1; continue; fi
+    if [ $seen_dd -eq 1 ]; then
+      case "$x" in +*) return 0;; esac
+      continue
+    fi
+    case "$x" in
+      --force|--force-with-lease|--force-with-lease=*|--force-if-includes) return 0;;
+      --*) ;;
+      -*) [[ "$x" =~ ^-[A-Za-z0-9]+$ && "$x" == *f* ]] && return 0;;
+      +*) return 0;;
+    esac
+  done
   return 1
 }
 
@@ -72,7 +93,7 @@ main() {
   [ -n "$inv" ] || exit 0
   [ "$inv" = "AMBIGUOUS" ] && emit ask "$R_UNDET"
 
-  # cascade layers are added here in later tasks
+  inv_has_force "$inv" && emit deny "$R_FORCE"
 
   exit 0   # allow
 }
