@@ -141,6 +141,16 @@ dst_is_tag() {
   return 1
 }
 
+# has_cd_prefix "<command>" -> 0 if a cd/pushd precedes the push (repo may differ).
+_HAS_CD_RE='(^|[;&|(]|[[:space:]])(cd|pushd)[[:space:]]'
+has_cd_prefix() { [[ "$1" =~ $_HAS_CD_RE ]]; }
+
+# resolve_push "<dir>" -> prints "<remote>/<branch>" via @{push} (fallback @{upstream}).
+resolve_push() {
+  git -C "$1" rev-parse --abbrev-ref --symbolic-full-name '@{push}' 2>/dev/null \
+    || git -C "$1" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null
+}
+
 # remote_kind "<remote-token>" -> prints origin | other | url
 remote_kind() {
   local r="$1"
@@ -183,6 +193,30 @@ main() {
   local dir; dir="$(effective_dir "$cmd" "$cwd")"
   inv_has_tag_flag "$inv" && emit ask "$R_TAG"
   for rs in "${REFSPECS[@]}"; do dst_is_tag "$rs" "$dir" && emit ask "$R_TAG"; done
+
+  # Determine remote + target branches for classification.
+  local -a dsts=()
+  if [ ${#REFSPECS[@]} -gt 0 ]; then
+    for rs in "${REFSPECS[@]}"; do dsts+=("$(dst_of "$rs")"); done
+  elif [ -n "$REMOTE" ]; then
+    : # remote given but no refspec; treat current branch via resolution below
+  fi
+
+  if [ ${#dsts[@]} -eq 0 ]; then
+    case " $inv " in *" --all "*) dsts+=("master");; esac
+  fi
+
+  if [ ${#dsts[@]} -eq 0 ]; then
+    has_cd_prefix "$cmd" && emit ask "$R_UNDET"
+    local rp; rp="$(resolve_push "$dir")" || emit ask "$R_UNDET"
+    [ -n "$rp" ] || emit ask "$R_UNDET"
+    local rr="${rp%%/*}"
+    case "$(remote_kind "$rr")" in url|other) emit ask "$R_REMOTE";; esac
+    dsts+=("${rp#*/}")
+  fi
+
+  for d in "${dsts[@]}"; do is_protected "$d" && emit ask "$R_PROT"; done
+  for d in "${dsts[@]}"; do [ -n "$d" ] || emit ask "$R_UNDET"; done
 
   exit 0   # allow
 }

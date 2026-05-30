@@ -79,6 +79,44 @@ run() {
   assert allow 'git push origin feature/x' "$tagrepo"
   rm -rf "$tagrepo"
 
+  # --- explicit protected target -> ask ---
+  assert ask 'git push origin master'
+  assert ask 'git push origin HEAD:main'
+  assert ask 'git push origin feature/x master'
+  assert ask 'git push --all'
+
+  # --- bare push resolved via @{push} ---
+  local fr; fr="$(mktemp -d)/remote.git"; mkdir -p "$(dirname "$fr")"
+  git init -q --bare -b main "$fr"
+  local feat; feat="$(mktemp -d)"; git clone -q "$fr" "$feat"
+  git -C "$feat" config user.email t@t.t; git -C "$feat" config user.name t
+  git -C "$feat" commit -q --allow-empty -m init
+  git -C "$feat" push -q origin main
+  git -C "$feat" checkout -q -b feature/x
+  git -C "$feat" push -q -u origin feature/x
+  assert allow 'git push' "$feat"            # upstream = origin/feature/x
+
+  git -C "$feat" checkout -q main
+  assert ask 'git push' "$feat"              # upstream = origin/main -> protected
+
+  # divergent tracking: local name != protected remote name (push.default=upstream)
+  git -C "$feat" checkout -q -b localtopic
+  git -C "$feat" config push.default upstream
+  git -C "$feat" config branch.localtopic.remote origin
+  git -C "$feat" config branch.localtopic.merge refs/heads/main
+  assert ask 'git push' "$feat"              # @{push} resolves to origin/main
+
+  # detached HEAD / no upstream -> ask (undeterminable)
+  local det; det="$(mktemp -d)"; mk_repo "$det" main
+  git -C "$det" checkout -q --detach
+  assert ask 'git push' "$det"
+
+  rm -rf "$feat" "$det" "$(dirname "$fr")"
+
+  # --- safety fallbacks -> ask ---
+  assert ask "git -c user.name='A B' push origin master"   # quoted value -> AMBIGUOUS
+  assert ask 'cd /nonexistent-xyz && git push'             # cd prefix, bare push
+
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   [ "$FAIL" -eq 0 ]
 }
