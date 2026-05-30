@@ -13,6 +13,9 @@
 #   8. otherwise (feature branch, origin)    -> allow (exit 0)
 # Safety rule: anything we cannot parse reliably -> ask, never silent allow.
 
+# Protected branches are intentionally hardcoded to master/main for v1.4.0
+# (deliberate design decision: no configuration, keep the guardrail simple).
+# A future version could add an opt-in env override if a real need arises.
 PROTECTED_RE='^(master|main)$'
 
 R_FORCE="Force-push is blocked for Claude Code. If you intend to force-push, run it yourself from your terminal."
@@ -45,10 +48,10 @@ find_push_invs() {
     [ -n "$seg" ] || continue
     local -a t; read -r -a t <<< "$seg"
     local i=0 n=${#t[@]}
-    while [ $i -lt $n ] && [[ ${t[$i]} =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do i=$((i+1)); done
-    { [ $i -lt $n ] && [ "${t[$i]}" = "git" ]; } || continue
+    while (( i < n )) && [[ ${t[$i]} =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do i=$((i+1)); done
+    { (( i < n )) && [ "${t[$i]}" = "git" ]; } || continue
     i=$((i+1))
-    while [ $i -lt $n ]; do
+    while (( i < n )); do
       case "${t[$i]}" in
         --git-dir=*|--work-tree=*|--namespace=*|--exec-path=*) i=$((i+1));;
         --git-dir|--work-tree|--namespace|--exec-path|-C|-c)
@@ -59,12 +62,12 @@ find_push_invs() {
         *) break;;
       esac
     done
-    if [ $i -lt $n ] && [ "${t[$i]}" = "push" ]; then
+    if (( i < n )) && [ "${t[$i]}" = "push" ]; then
       printf '%s\n' "${t[*]:$i}"
       found=1
     fi
   done < <(printf '%s\n' "$cmd" | sed -E 's/(\&\&|\|\||[;&|`()])/\n/g')
-  [ $found -eq 1 ] && return 0
+  (( found == 1 )) && return 0
   return 1
 }
 
@@ -75,7 +78,7 @@ inv_has_force() {
   for ((i=1;i<${#t[@]};i++)); do
     local x="${t[$i]}"
     if [ "$x" = "--" ]; then seen_dd=1; continue; fi
-    if [ $seen_dd -eq 1 ]; then
+    if (( seen_dd == 1 )); then
       case "$x" in +*) return 0;; esac
       continue
     fi
@@ -98,15 +101,15 @@ parse_remote_refspecs() {
   REMOTE=""; REFSPECS=(); local i seen_dd=0 positional=0
   for ((i=1;i<${#t[@]};i++)); do
     local x="${t[$i]}"
-    if [ $seen_dd -eq 0 ] && [ "$x" = "--" ]; then seen_dd=1; continue; fi
-    if [ $seen_dd -eq 0 ]; then
+    if (( seen_dd == 0 )) && [ "$x" = "--" ]; then seen_dd=1; continue; fi
+    if (( seen_dd == 0 )); then
       case "$x" in
         -o|--push-option|--repo|--receive-pack|--exec) i=$((i+1)); continue;;
         --*) continue;;
         -*) continue;;
       esac
     fi
-    if [ $positional -eq 0 ] && [[ "$x" != -* ]]; then REMOTE="$x"; positional=1
+    if (( positional == 0 )) && [[ "$x" != -* ]]; then REMOTE="$x"; positional=1
     else REFSPECS+=("$x"); fi
   done
 }
@@ -186,7 +189,7 @@ decide_inv() {
   local rs d
 
   # --delete with no refspecs: can't verify the delete target
-  if inv_is_delete "$inv" && [ ${#REFSPECS[@]} -eq 0 ]; then
+  if inv_is_delete "$inv" && (( ${#REFSPECS[@]} == 0 )); then
     printf 'ask|%s\n' "$R_UNDET"; return
   fi
 
@@ -209,17 +212,27 @@ decide_inv() {
 
   # Determine remote + target branches for classification.
   local -a dsts=()
-  if [ ${#REFSPECS[@]} -gt 0 ]; then
-    for rs in "${REFSPECS[@]}"; do dsts+=("$(dst_of "$rs")"); done
+  if (( ${#REFSPECS[@]} > 0 )); then
+    for rs in "${REFSPECS[@]}"; do
+      d="$(dst_of "$rs")"
+      # A bare HEAD/@ destination (no ":") refers to the current branch.
+      # Resolve it so protected-branch classification can't be bypassed.
+      if [ "$d" = "HEAD" ] || [ "$d" = "@" ]; then
+        d="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+        # Detached HEAD / unresolvable -> fail safe to ask, never silent allow.
+        { [ -n "$d" ] && [ "$d" != "HEAD" ]; } || { printf 'ask|%s\n' "$R_UNDET"; return; }
+      fi
+      dsts+=("$d")
+    done
   elif [ -n "$REMOTE" ]; then
     : # remote given but no refspec; treat current branch via resolution below
   fi
 
-  if [ ${#dsts[@]} -eq 0 ]; then
+  if (( ${#dsts[@]} == 0 )); then
     case " $inv " in *" --all "*) dsts+=("master");; esac
   fi
 
-  if [ ${#dsts[@]} -eq 0 ]; then
+  if (( ${#dsts[@]} == 0 )); then
     has_cd_prefix "$cmd" && { printf 'ask|%s\n' "$R_UNDET"; return; }
     local rp; rp="$(resolve_push "$dir")" || { printf 'ask|%s\n' "$R_UNDET"; return; }
     [ -n "$rp" ] || { printf 'ask|%s\n' "$R_UNDET"; return; }
@@ -235,9 +248,31 @@ decide_inv() {
 }
 
 main() {
+  # Fail closed if jq is missing/broken: without it we cannot parse the
+  # command, and an empty parse would silently allow. Reuse emit() (defined
+  # above) so a missing jq degrades to `ask`, never a silent allow. emit()
+  # itself falls back to a hardcoded ask JSON when jq cannot build the output.
+  if ! command -v jq >/dev/null 2>&1; then
+    emit ask "$R_UNDET"
+    # shellcheck disable=SC2317  # defensive: emit exits, this exit is belt-and-suspenders
+    exit 0
+  fi
+
   local cmd cwd
   local input; input="$(cat)"
   cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)"
+
+  # Fast path: this hook fires on EVERY Bash call, but only `push` can be a
+  # push. If the command contains no `push` substring at all, it cannot be a
+  # push, so allow immediately — skipping the .cwd jq read and the sed-based
+  # segment split below. `*push*` is a deliberately broad pre-filter; anything
+  # containing `push` (incl. compound `... && git push --force`, `git-push`,
+  # quoted mentions) still falls through to the full analysis.
+  case "$cmd" in
+    *push*) : ;;       # fall through to full analysis
+    *) exit 0 ;;       # no 'push' anywhere -> nothing to guard, allow fast
+  esac
+
   cwd="$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null)"
 
   local -a invs=()
@@ -245,7 +280,7 @@ main() {
     [ -n "$line" ] && invs+=("$line")
   done < <(find_push_invs "$cmd")
 
-  [ ${#invs[@]} -eq 0 ] && exit 0
+  (( ${#invs[@]} == 0 )) && exit 0
 
   # Aggregate decisions: deny > ask > allow
   local best_d="allow" best_r=""
@@ -257,6 +292,7 @@ main() {
     if [ "$d" = "deny" ]; then
       emit deny "$r"
       # emit exits, but be explicit:
+      # shellcheck disable=SC2317  # defensive: emit exits, this return is belt-and-suspenders
       return
     fi
     if [ "$d" = "ask" ] && [ "$best_d" != "ask" ]; then

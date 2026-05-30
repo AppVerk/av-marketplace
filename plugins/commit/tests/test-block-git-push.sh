@@ -87,6 +87,15 @@ run() {
   assert ask 'git push origin feature/x master'
   assert ask 'git push --all'
 
+  # --- bare HEAD/@ resolved to current branch (SEC-001 regression) ---
+  local hd; hd="$(mktemp -d)"; mk_repo "$hd" master
+  assert ask   'git push origin HEAD' "$hd"     # HEAD on master -> protected
+  assert ask   'git push origin @' "$hd"        # @ on master -> protected
+  git -C "$hd" checkout -q -b feature/x
+  assert allow 'git push origin HEAD' "$hd"     # HEAD on feature -> allow
+  assert allow 'git push origin @' "$hd"        # @ on feature -> allow
+  rm -rf "$hd"
+
   # --- bare push resolved via @{push} ---
   local fr; fr="$(mktemp -d)/remote.git"; mkdir -p "$(dirname "$fr")"
   git init -q --bare -b main "$fr"

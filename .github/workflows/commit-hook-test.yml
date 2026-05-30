@@ -24,6 +24,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
 
+      - name: Assert jq is available
+        run: command -v jq >/dev/null 2>&1 || { echo "::error::jq is required but not found on PATH"; exit 1; }
+
+      - name: Lint hook scripts
+        run: |
+          shellcheck --severity=warning \
+            plugins/commit/scripts/block-git-push.sh \
+            plugins/commit/scripts/block-git-commit.sh
+
       - name: Run hook tests
         run: |
           chmod +x plugins/commit/tests/test-block-git-push.sh
