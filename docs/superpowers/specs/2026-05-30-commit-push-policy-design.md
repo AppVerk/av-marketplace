@@ -13,6 +13,12 @@ to the remote, and the blanket block prevents that. The result is that ordinary,
 safe work (push a feature branch → open a PR) is blocked alongside genuinely
 dangerous operations (force-push, pushing straight to the main branch).
 
+Separately, the current detection regex over-matches: it flags any `push`
+token that appears after a `git` token anywhere in the command string —
+including inside a quoted commit message. So `git commit -m "…git push…"` is
+wrongly blocked. (This false-positive was hit while committing this very spec.)
+The rewrite fixes it.
+
 We want to keep guarding the dangerous operations while letting normal
 Claude Code workflows proceed.
 
@@ -29,6 +35,9 @@ Claude Code workflows proceed.
   rather than silently allowing or hard-denying.
 - Protect the (now non-trivial) parsing logic against silent regression with an
   automated test, enforced in CI.
+- Fix the detection false-positive: match only a real `git push` *subcommand*,
+  never the word "push" appearing inside an unrelated argument such as a commit
+  message.
 
 ## Non-goals
 
@@ -49,6 +58,7 @@ The protected branches are exactly `master` and `main`.
 | Bare `git push` while on a feature branch | **allow** (resolved via `git rev-parse`) |
 | `git push origin HEAD` on a feature branch | **allow** |
 | `gh pr create …` (not a `git push`) | **allow** (not matched) |
+| `git commit -m "…git push…"` (push only inside the message) | **allow** (subcommand is `commit`) |
 | `git push origin --delete old-feature` (delete a feature branch) | **allow** |
 | Bare `git push` while on `master`/`main` | **ask** |
 | `git push origin master` / `git push origin HEAD:main` | **ask** |
@@ -77,10 +87,22 @@ The hook reads `tool_input.command` from stdin (as today) and applies a
 **priority cascade** — the first matching rule wins:
 
 ```
-0. Is there a `git push` invocation at all?
-   Reuse the existing delimiter-bracketed regex that matches `git push` in
-   various positions (after ;, &&, ||, |, `, (, whitespace, or line start).
-   └─ NO  → exit 0 (allow; not a push command)
+0. Is there a real `git push` *subcommand* invocation?
+   For each `git` token bracketed by a shell delimiter (line start, whitespace,
+   or one of ; & | ` ( ), find the first following token that is NOT a global
+   option (or an option's value) and test whether it is `push`:
+     • skip global options that may precede the subcommand: --git-dir[=…],
+       --work-tree[=…], --namespace[=…], --exec-path[=…], -C <path>, -c <key=val>
+       (bare `-C` / `-c` also consume the next token as their value)
+     • the first remaining non-option token is the git subcommand
+   Match only when that subcommand is `push`. This deliberately does NOT match a
+   `push` that appears later as an argument — e.g. `git commit -m "…git push…"`
+   has subcommand `commit`, so it is ignored (fixes the false-positive).
+   Steps 1–4 below operate on the tokens of the matched `push` invocation
+   (from `push` up to the next top-level shell delimiter), not the whole command
+   line — so a force flag belonging to a different chained command is not
+   mistaken for a force-push.
+   └─ no `git push` subcommand found → exit 0 (allow; not a push command)
 
 1. FORCE?  Detect any of:
      --force            (word-boundary)
@@ -192,7 +214,9 @@ A self-contained harness `plugins/commit/tests/test-block-git-push.sh`
   asserts the resulting `permissionDecision` (or allow = empty output, exit 0).
 - Covers every row of the decision matrix plus edge cases: combined short flags
   (`-fu`), `+`-prefixed refspec, `HEAD:master`, `:master` delete, `--all`,
-  `--mirror`, feature-branch delete.
+  `--mirror`, feature-branch delete, and the false-positive guard
+  (`git commit -m "…git push…"` must be allowed; `git -C <path> push` must still
+  be matched).
 - For branch-resolution cases (bare `git push`, `HEAD`, detached HEAD), the
   harness creates a throwaway git repo in a temp dir, checks out the relevant
   branch (or detaches HEAD), runs the hook with that repo as the working
