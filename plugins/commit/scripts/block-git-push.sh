@@ -25,17 +25,22 @@ R_UNDET="The push target could not be verified. Confirm this push is safe."
 
 # Emit a decision as PreToolUse JSON and exit. $1=decision $2=reason
 emit() {
-  jq -n --arg d "$1" --arg r "$2" \
-    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:$d,permissionDecisionReason:$r}}'
+  local out
+  if out="$(jq -n --arg d "$1" --arg r "$2" \
+      '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:$d,permissionDecisionReason:$r}}' 2>/dev/null)"; then
+    printf '%s\n' "$out"
+  else
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Hook internal error; confirm this push is safe."}}'
+  fi
   exit 0
 }
 
-# find_push_inv "<command>" -> prints the push invocation (tokens from `push`
-# to end of its segment, space-joined) or nothing; returns 1 if no git-push
-# subcommand. Prints the sentinel AMBIGUOUS when a global option's value is
-# quoted (tokenization unreliable).
-find_push_inv() {
-  local cmd="$1" seg
+# find_push_invs "<command>" -> prints every push invocation, one per line
+# (tokens from `push` to end of its segment, space-joined).
+# Prints the single line AMBIGUOUS when a global-option value is quoted
+# (tokenization unreliable). Returns 1 if NO push invocation found.
+find_push_invs() {
+  local cmd="$1" seg found=0
   while IFS= read -r seg; do
     [ -n "$seg" ] || continue
     local -a t; read -r -a t <<< "$seg"
@@ -48,17 +53,18 @@ find_push_inv() {
         --git-dir=*|--work-tree=*|--namespace=*|--exec-path=*) i=$((i+1));;
         --git-dir|--work-tree|--namespace|--exec-path|-C|-c)
           local val="${t[$((i+1))]}"
-          case "$val" in *\'*|*\"*) printf 'AMBIGUOUS'; return 0;; esac
+          case "$val" in *\'*|*\"*) printf 'AMBIGUOUS\n'; return 0;; esac
           i=$((i+2));;
         -*) i=$((i+1));;
         *) break;;
       esac
     done
     if [ $i -lt $n ] && [ "${t[$i]}" = "push" ]; then
-      printf '%s' "${t[*]:$i}"
-      return 0
+      printf '%s\n' "${t[*]:$i}"
+      found=1
     fi
   done < <(printf '%s\n' "$cmd" | sed -E 's/(\&\&|\|\||[;&|`()])/\n/g')
+  [ $found -eq 1 ] && return 0
   return 1
 }
 
@@ -122,6 +128,7 @@ refspec_is_delete() { local r="${1#+}"; case "$r" in :*) return 0;; esac; return
 is_protected() { [[ "$1" =~ $PROTECTED_RE ]]; }
 
 # effective_dir "<command>" "<cwd>" -> dir to run git in (honors -C/--git-dir).
+# Note: paths with spaces are not supported and fall back to ask via resolve_push.
 effective_dir() {
   local cmd="$1" cwd="$2"
   if [[ "$cmd" =~ (^|[[:space:]])-C[[:space:]]+([^[:space:]]+) ]]; then printf '%s' "${BASH_REMATCH[2]}"; return; fi
@@ -146,6 +153,7 @@ _HAS_CD_RE='(^|[;&|(]|[[:space:]])(cd|pushd)[[:space:]]'
 has_cd_prefix() { [[ "$1" =~ $_HAS_CD_RE ]]; }
 
 # resolve_push "<dir>" -> prints "<remote>/<branch>" via @{push} (fallback @{upstream}).
+# Note: @{upstream} fallback may be imprecise if push.default differs from tracking branch.
 resolve_push() {
   git -C "$1" rev-parse --abbrev-ref --symbolic-full-name '@{push}' 2>/dev/null \
     || git -C "$1" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null
@@ -162,37 +170,42 @@ remote_kind() {
   echo other
 }
 
-main() {
-  local cmd cwd inv
-  local input; input="$(cat)"
-  cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)"
-  cwd="$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null)"
+# decide_inv "<inv>" "<cmd>" "<cwd>" -> echoes one line "DECISION|REASON".
+# DECISION is deny/ask/allow; REASON is the reason string (empty for allow).
+# Must NOT call exit. Runs in a subshell context (command substitution).
+decide_inv() {
+  local inv="$1" cmd="$2" cwd="$3"
 
-  inv="$(find_push_inv "$cmd")" || exit 0
-  [ -n "$inv" ] || exit 0
-  [ "$inv" = "AMBIGUOUS" ] && emit ask "$R_UNDET"
+  [ "$inv" = "AMBIGUOUS" ] && { printf 'ask|%s\n' "$R_UNDET"; return; }
 
-  inv_has_force "$inv" && emit deny "$R_FORCE"
-  inv_has_mirror "$inv" && emit deny "$R_MIRROR"
+  inv_has_force "$inv" && { printf 'deny|%s\n' "$R_FORCE"; return; }
+  inv_has_mirror "$inv" && { printf 'deny|%s\n' "$R_MIRROR"; return; }
 
+  local REMOTE="" REFSPECS=()
   parse_remote_refspecs "$inv"
   local rs d
+
+  # --delete with no refspecs: can't verify the delete target
+  if inv_is_delete "$inv" && [ ${#REFSPECS[@]} -eq 0 ]; then
+    printf 'ask|%s\n' "$R_UNDET"; return
+  fi
+
   for rs in "${REFSPECS[@]}"; do
     if inv_is_delete "$inv" || refspec_is_delete "$rs"; then
       d="$(dst_of "$rs")"
-      is_protected "$d" && emit deny "$R_DELPROT"
+      is_protected "$d" && { printf 'deny|%s\n' "$R_DELPROT"; return; }
     fi
   done
 
   if [ -n "$REMOTE" ]; then
     case "$(remote_kind "$REMOTE")" in
-      url|other) emit ask "$R_REMOTE";;
+      url|other) printf 'ask|%s\n' "$R_REMOTE"; return;;
     esac
   fi
 
   local dir; dir="$(effective_dir "$cmd" "$cwd")"
-  inv_has_tag_flag "$inv" && emit ask "$R_TAG"
-  for rs in "${REFSPECS[@]}"; do dst_is_tag "$rs" "$dir" && emit ask "$R_TAG"; done
+  inv_has_tag_flag "$inv" && { printf 'ask|%s\n' "$R_TAG"; return; }
+  for rs in "${REFSPECS[@]}"; do dst_is_tag "$rs" "$dir" && { printf 'ask|%s\n' "$R_TAG"; return; }; done
 
   # Determine remote + target branches for classification.
   local -a dsts=()
@@ -207,17 +220,54 @@ main() {
   fi
 
   if [ ${#dsts[@]} -eq 0 ]; then
-    has_cd_prefix "$cmd" && emit ask "$R_UNDET"
-    local rp; rp="$(resolve_push "$dir")" || emit ask "$R_UNDET"
-    [ -n "$rp" ] || emit ask "$R_UNDET"
+    has_cd_prefix "$cmd" && { printf 'ask|%s\n' "$R_UNDET"; return; }
+    local rp; rp="$(resolve_push "$dir")" || { printf 'ask|%s\n' "$R_UNDET"; return; }
+    [ -n "$rp" ] || { printf 'ask|%s\n' "$R_UNDET"; return; }
     local rr="${rp%%/*}"
-    case "$(remote_kind "$rr")" in url|other) emit ask "$R_REMOTE";; esac
+    case "$(remote_kind "$rr")" in url|other) printf 'ask|%s\n' "$R_REMOTE"; return;; esac
     dsts+=("${rp#*/}")
   fi
 
-  for d in "${dsts[@]}"; do is_protected "$d" && emit ask "$R_PROT"; done
-  for d in "${dsts[@]}"; do [ -n "$d" ] || emit ask "$R_UNDET"; done
+  for d in "${dsts[@]}"; do is_protected "$d" && { printf 'ask|%s\n' "$R_PROT"; return; }; done
+  for d in "${dsts[@]}"; do [ -n "$d" ] || { printf 'ask|%s\n' "$R_UNDET"; return; }; done
 
+  printf 'allow|\n'
+}
+
+main() {
+  local cmd cwd
+  local input; input="$(cat)"
+  cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)"
+  cwd="$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null)"
+
+  local -a invs=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && invs+=("$line")
+  done < <(find_push_invs "$cmd")
+
+  [ ${#invs[@]} -eq 0 ] && exit 0
+
+  # Aggregate decisions: deny > ask > allow
+  local best_d="allow" best_r=""
+  local inv res d r
+  for inv in "${invs[@]}"; do
+    res="$(decide_inv "$inv" "$cmd" "$cwd")"
+    d="${res%%|*}"
+    r="${res#*|}"
+    if [ "$d" = "deny" ]; then
+      emit deny "$r"
+      # emit exits, but be explicit:
+      return
+    fi
+    if [ "$d" = "ask" ] && [ "$best_d" != "ask" ]; then
+      best_d="ask"
+      best_r="$r"
+    fi
+  done
+
+  if [ "$best_d" = "ask" ]; then
+    emit ask "$best_r"
+  fi
   exit 0   # allow
 }
 

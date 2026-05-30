@@ -2,6 +2,8 @@
 # Black-box tests for block-git-push.sh.
 # Pipes a JSON payload into the hook and asserts the permissionDecision.
 set -u
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_CONFIG_GLOBAL=/dev/null
 HOOK="$(cd "$(dirname "$0")/.." && pwd)/scripts/block-git-push.sh"
 PASS=0; FAIL=0
 
@@ -116,6 +118,11 @@ run() {
   # --- safety fallbacks -> ask ---
   assert ask "git -c user.name='A B' push origin master"   # quoted value -> AMBIGUOUS
   assert ask 'cd /nonexistent-xyz && git push'             # cd prefix, bare push
+
+  # --- compound commands: every push is analyzed ---
+  assert ask  'git push origin feature/x && git push origin main'
+  assert deny 'git push origin feature/x && git push --force origin feature/y'
+  assert allow 'git push origin feat/a && git push origin feat/b'
 
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   [ "$FAIL" -eq 0 ]
