@@ -83,6 +83,9 @@ inv_has_force() {
   return 1
 }
 
+# inv_has_mirror "<push-invocation>" -> 0 if --mirror present.
+inv_has_mirror() { case " $1 " in *" --mirror "*) return 0;; esac; return 1; }
+
 main() {
   local cmd cwd inv
   local input; input="$(cat)"
@@ -94,6 +97,7 @@ main() {
   [ "$inv" = "AMBIGUOUS" ] && emit ask "$R_UNDET"
 
   inv_has_force "$inv" && emit deny "$R_FORCE"
+  inv_has_mirror "$inv" && emit deny "$R_MIRROR"
 
   exit 0   # allow
 }

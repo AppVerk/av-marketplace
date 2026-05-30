@@ -52,6 +52,10 @@ run() {
   assert allow 'git push origin fix/x'
   assert allow 'git push -- -funny-branch'
 
+  # --- mirror -> deny ---
+  assert deny 'git push --mirror origin'
+  assert deny 'git push --mirror'
+
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   [ "$FAIL" -eq 0 ]
 }
