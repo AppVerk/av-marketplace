@@ -86,6 +86,41 @@ inv_has_force() {
 # inv_has_mirror "<push-invocation>" -> 0 if --mirror present.
 inv_has_mirror() { case " $1 " in *" --mirror "*) return 0;; esac; return 1; }
 
+# parse_remote_refspecs "<push-invocation>" — sets globals REMOTE and REFSPECS[].
+parse_remote_refspecs() {
+  local -a t; read -r -a t <<< "$1"
+  REMOTE=""; REFSPECS=(); local i seen_dd=0 positional=0
+  for ((i=1;i<${#t[@]};i++)); do
+    local x="${t[$i]}"
+    if [ $seen_dd -eq 0 ] && [ "$x" = "--" ]; then seen_dd=1; continue; fi
+    if [ $seen_dd -eq 0 ]; then
+      case "$x" in
+        -o|--push-option|--repo|--receive-pack|--exec) i=$((i+1)); continue;;
+        --*) continue;;
+        -*) continue;;
+      esac
+    fi
+    if [ $positional -eq 0 ]; then REMOTE="$x"; positional=1
+    else REFSPECS+=("$x"); fi
+  done
+}
+
+# dst_of "<refspec>" -> normalized destination branch/ref name.
+dst_of() {
+  local r="${1#+}"
+  case "$r" in *:*) r="${r##*:}";; esac
+  r="${r#refs/heads/}"; r="${r#refs/tags/}"
+  printf '%s' "$r"
+}
+
+# inv_is_delete "<push-invocation>" -> 0 if --delete/-d present.
+inv_is_delete() { case " $1 " in *" --delete "*|*" -d "*) return 0;; esac; return 1; }
+
+# refspec_is_delete "<refspec>" -> 0 if empty-src delete form (:dst).
+refspec_is_delete() { local r="${1#+}"; case "$r" in :*) return 0;; esac; return 1; }
+
+is_protected() { [[ "$1" =~ $PROTECTED_RE ]]; }
+
 main() {
   local cmd cwd inv
   local input; input="$(cat)"
@@ -98,6 +133,15 @@ main() {
 
   inv_has_force "$inv" && emit deny "$R_FORCE"
   inv_has_mirror "$inv" && emit deny "$R_MIRROR"
+
+  parse_remote_refspecs "$inv"
+  local rs d
+  for rs in "${REFSPECS[@]}"; do
+    if inv_is_delete "$inv" || refspec_is_delete "$rs"; then
+      d="$(dst_of "$rs")"
+      is_protected "$d" && emit deny "$R_DELPROT"
+    fi
+  done
 
   exit 0   # allow
 }

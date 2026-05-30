@@ -56,6 +56,13 @@ run() {
   assert deny 'git push --mirror origin'
   assert deny 'git push --mirror'
 
+  # --- delete of protected branch -> deny; feature delete -> allow ---
+  assert deny  'git push origin :master'
+  assert deny  'git push origin :main'
+  assert deny  'git push origin --delete master'
+  assert allow 'git push origin :old-feature'
+  assert allow 'git push origin --delete old-feature'
+
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   [ "$FAIL" -eq 0 ]
 }
