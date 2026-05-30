@@ -121,6 +121,26 @@ refspec_is_delete() { local r="${1#+}"; case "$r" in :*) return 0;; esac; return
 
 is_protected() { [[ "$1" =~ $PROTECTED_RE ]]; }
 
+# effective_dir "<command>" "<cwd>" -> dir to run git in (honors -C/--git-dir).
+effective_dir() {
+  local cmd="$1" cwd="$2"
+  if [[ "$cmd" =~ (^|[[:space:]])-C[[:space:]]+([^[:space:]]+) ]]; then printf '%s' "${BASH_REMATCH[2]}"; return; fi
+  if [[ "$cmd" =~ (^|[[:space:]])--git-dir=([^[:space:]]+) ]]; then printf '%s' "${BASH_REMATCH[2]}"; return; fi
+  printf '%s' "$cwd"
+}
+
+# inv_has_tag_flag "<push-invocation>" -> 0 if --tags/--follow-tags.
+inv_has_tag_flag() { case " $1 " in *" --tags "*|*" --follow-tags "*) return 0;; esac; return 1; }
+
+# dst_is_tag "<refspec>" "<dir>" -> 0 if dst is under refs/tags or an existing tag.
+dst_is_tag() {
+  local raw="${1#+}" dst; dst="${raw##*:}"
+  case "$dst" in refs/tags/*) return 0;; esac
+  local name="${dst#refs/heads/}"
+  [ -n "$2" ] && git -C "$2" show-ref --verify --quiet "refs/tags/$name" 2>/dev/null && return 0
+  return 1
+}
+
 # remote_kind "<remote-token>" -> prints origin | other | url
 remote_kind() {
   local r="$1"
@@ -159,6 +179,10 @@ main() {
       url|other) emit ask "$R_REMOTE";;
     esac
   fi
+
+  local dir; dir="$(effective_dir "$cmd" "$cwd")"
+  inv_has_tag_flag "$inv" && emit ask "$R_TAG"
+  for rs in "${REFSPECS[@]}"; do dst_is_tag "$rs" "$dir" && emit ask "$R_TAG"; done
 
   exit 0   # allow
 }

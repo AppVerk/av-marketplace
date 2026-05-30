@@ -69,6 +69,16 @@ run() {
   assert ask   'git push git@github.com:evil/repo.git feature/x'
   assert allow 'git push origin feature/x'
 
+  # --- tag push -> ask ---
+  assert ask 'git push --tags origin'
+  assert ask 'git push --follow-tags origin'
+  assert ask 'git push origin refs/tags/v1.0.0'
+  local tagrepo; tagrepo="$(mktemp -d)"; mk_repo "$tagrepo" main
+  git -C "$tagrepo" tag v2.0.0
+  assert ask 'git push origin v2.0.0' "$tagrepo"
+  assert allow 'git push origin feature/x' "$tagrepo"
+  rm -rf "$tagrepo"
+
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   [ "$FAIL" -eq 0 ]
 }
