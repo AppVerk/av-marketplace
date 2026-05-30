@@ -100,7 +100,7 @@ parse_remote_refspecs() {
         -*) continue;;
       esac
     fi
-    if [ $positional -eq 0 ]; then REMOTE="$x"; positional=1
+    if [ $positional -eq 0 ] && [[ "$x" != -* ]]; then REMOTE="$x"; positional=1
     else REFSPECS+=("$x"); fi
   done
 }
@@ -120,6 +120,17 @@ inv_is_delete() { case " $1 " in *" --delete "*|*" -d "*) return 0;; esac; retur
 refspec_is_delete() { local r="${1#+}"; case "$r" in :*) return 0;; esac; return 1; }
 
 is_protected() { [[ "$1" =~ $PROTECTED_RE ]]; }
+
+# remote_kind "<remote-token>" -> prints origin | other | url
+remote_kind() {
+  local r="$1"
+  case "$r" in
+    *"://"*) echo url; return;;
+    *@*:*)   echo url; return;;   # scp-like user@host:path
+  esac
+  [ "$r" = "origin" ] && { echo origin; return; }
+  echo other
+}
 
 main() {
   local cmd cwd inv
@@ -142,6 +153,12 @@ main() {
       is_protected "$d" && emit deny "$R_DELPROT"
     fi
   done
+
+  if [ -n "$REMOTE" ]; then
+    case "$(remote_kind "$REMOTE")" in
+      url|other) emit ask "$R_REMOTE";;
+    esac
+  fi
 
   exit 0   # allow
 }

