@@ -107,5 +107,9 @@ top-level command string):
 - **Secret leakage:** allowing feature-branch pushes means a branch containing
   accidentally-committed secrets can be published to `origin`. Content is not
   scanned. The non-origin/URL prompt mitigates exfiltration to other remotes.
+- **`jq` dependency:** both hooks parse their input with `jq`. If `jq` is not
+  on `PATH` the hook cannot read the command and allows it through (the same
+  assumption the `git commit` block makes). Claude Code's hook runtime and the
+  CI image both provide `jq`.
 
 Both hooks are registered automatically when the plugin is enabled. No configuration required.
