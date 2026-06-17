@@ -208,3 +208,128 @@ Create or update the sidecar JSON file with this exact schema:
 The sidecar is **real JSON**, read/written via Read/Write/Edit tools, and queried with `jq`.
 
 **Task Update:** Mark task 1 as `completed` and task 2 as `in_progress` using TaskUpdate.
+
+---
+
+### Step 2: Baseline Run
+
+#### Step 2.1: Launch Testers
+
+Load the `report-format` skill:
+
+```
+Skill(skill: "report-format")
+```
+
+Parse the plan to identify FE and BE scenarios. Launch both in parallel if both exist:
+
+**If FE scenarios exist:**
+
+Apply the mutation guard: if a scenario contains a POST/PUT/PATCH/DELETE request in the plan **and** `--allow-mutations` is not set, mark it to SKIP with reason `mutation-guard` in the results (do not execute it).
+
+```
+Task(
+  subagent_type: "qa:fe-tester",
+  run_in_background: true,
+  description: "Execute FE test scenarios (baseline)",
+  prompt: "Execute all FE test scenarios from this plan:
+
+<paste all FE-XX scenarios from the plan>
+
+Base URL: <resolved from Step 0.3>
+
+Follow the fe-testing skill patterns. For each scenario that should run, execute it and report PASS/FAIL/SKIP.
+
+Scenarios marked mutation-guard should return SKIP with reason 'mutation-guard'.
+
+Return results for every scenario."
+)
+```
+
+**If BE scenarios exist:**
+
+Apply the mutation guard: if a scenario specifies a state-changing HTTP method (POST/PUT/PATCH/DELETE) or a DB-write check in the plan **and** `--allow-mutations` is not set, mark it to SKIP with reason `mutation-guard`.
+
+```
+Task(
+  subagent_type: "qa:be-tester",
+  run_in_background: true,
+  description: "Execute BE test scenarios (baseline)",
+  prompt: "Execute all BE test scenarios from this plan:
+
+<paste all BE-XX scenarios from the plan>
+
+Base URL: <resolved from Step 0.3>
+DB connection: <detect from plan or project config>
+
+Follow the be-testing skill patterns. For each scenario that should run, execute it and report PASS/FAIL/SKIP.
+
+Scenarios marked mutation-guard should return SKIP with reason 'mutation-guard'.
+
+Return results for every scenario."
+)
+```
+
+Collect results with:
+
+```
+fe_results = TaskOutput(fe_tester_id, block: true)  # if FE was launched
+be_results = TaskOutput(be_tester_id, block: true)  # if BE was launched
+```
+
+#### Step 2.2: Render Report (report-format Step 6)
+
+Using the `report-format` skill, build the QA-XXX report:
+
+1. **Count results:** tally pass/fail/skip across all scenarios.
+2. **Assign QA-XXX IDs:**
+   - If reusing a prior report (Step 1, Case 1), use the existing scenario→QA-ID map; assign new IDs at `max(existing) + 1`.
+   - If adopting a report (Step 1, Case 2), use the extracted IDs; new ones at `max(existing) + 1`.
+   - If fresh (Step 1, Cases 3–4), start at `qa_count = 0` and assign sequentially: QA-001, QA-002, etc.
+3. **Determine severity** for each failure (per the report-format skill guidance).
+4. **Derive issue fields:** Location, Category, Problem, Remediation, Impact (per report-format).
+5. **Build the report** following the report-format exact template.
+
+#### Step 2.3: Update Sidecar with Baseline
+
+Edit the sidecar to record:
+
+```json
+{
+  ...
+  "baseline": {
+    "FE-01": "pass",
+    "FE-02": "fail",
+    "BE-03": "fail",
+    "BE-04": "skip"
+  },
+  "scenario_issues": {
+    "FE-02": ["QA-001"],
+    "BE-03": ["QA-002", "QA-003"]
+  }
+}
+```
+
+#### Step 2.4: Zero-Failure Exit
+
+Count failures at or above `--severity` (default: all):
+
+- If **zero failures** → print:
+
+> All passing, nothing to fix.
+
+  Skip the loop (Step 3) AND the final run (Step 4), and exit success.
+
+- If **all scenarios are SKIP** (no executable verifier) → abort:
+
+> Error: No executable verifier — cannot gate (all scenarios marked SKIP or unavailable). Check your test plan and tool availability.
+
+  Stop execution.
+
+#### Step 2.5: Save Report
+
+Write the report to `docs/testing/reports/<YYYY-MM-DD>-<topic>-report.md` using the Write tool.
+
+Write the sidecar to `docs/testing/reports/<topic>-loop-state.json` using the Write tool.
+
+**Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
