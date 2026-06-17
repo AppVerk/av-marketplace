@@ -27,13 +27,13 @@ This command orchestrates existing agents (`qa:fe-tester`, `qa:be-tester`, `code
 | `--allow-mutations` | Permit state-changing BE scenarios (POST/PUT/PATCH/DELETE, DB writes) | (off) | Present → on; absent → off; no value needed |
 | `--allow-host` | Whitelist additional hosts beyond loopback | (loopback only) | Repeatable; each invocation appends; format: hostname or IP |
 
-**Validation timing:** All arguments are validated **before any I/O** (mirror `/fix-all` Step 0). Exit on any error.
+**Validation timing:** All **flag** arguments (`--mode`, `--max-iterations`, `--max-dispatches`, `--time-budget`, `--severity`, `--allow-mutations`, `--allow-host`) are validated before any I/O (mirror `/fix-all` Step 0). Plan-path resolution legitimately performs I/O. Exit on any validation error.
 
 ---
 
 ## Workflow
 
-### Step 1: Create Progress Tasks
+### Create Progress Tasks
 
 Use TaskCreate to set up progress tracking:
 
@@ -207,8 +207,6 @@ Create or update the sidecar JSON file with this exact schema:
 
 The sidecar is **real JSON**, read/written via Read/Write/Edit tools, and queried with `jq`.
 
-**Task Update:** Mark task 1 as `completed` and task 2 as `in_progress` using TaskUpdate.
-
 ---
 
 ### Step 2: Baseline Run
@@ -277,7 +275,13 @@ fe_results = TaskOutput(fe_tester_id, block: true)  # if FE was launched
 be_results = TaskOutput(be_tester_id, block: true)  # if BE was launched
 ```
 
-Increment `dispatch_count` by the number of testers launched (1 for FE-only or BE-only, 2 if both) — every tester launch counts toward `--max-dispatches` (spec §5.3).
+Baseline launches count toward the budget:
+
+```
+dispatch_count += (1 if FE launched) + (1 if BE launched)
+```
+
+Every tester launch counts toward `--max-dispatches`.
 
 #### Step 2.2: Render Report (report-format Step 6)
 
@@ -569,7 +573,11 @@ Task(
   subagent_type: "qa:fe-tester",
   run_in_background: true,
   description: "Final run — FE scenarios",
-  prompt: "<all FE scenarios; mutation guard applied>"
+  prompt: "<all FE scenarios; mutation guard applied>
+
+Base URL: <resolved from Step 0.3>
+
+Execute all scenarios in order. This is the authoritative final run."
 )
 
 dispatch_count++
@@ -577,7 +585,12 @@ Task(
   subagent_type: "qa:be-tester",
   run_in_background: true,
   description: "Final run — BE scenarios",
-  prompt: "<all BE scenarios; mutation guard applied>"
+  prompt: "<all BE scenarios; mutation guard applied>
+
+Base URL: <resolved from Step 0.3>
+DB connection: <detect from plan or project config>
+
+Execute all scenarios in order. This is the authoritative final run."
 )
 
 fe_results = TaskOutput(fe_tester_id, block: true)
