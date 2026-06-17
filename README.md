@@ -24,7 +24,7 @@ After installation, verify with `/help` — you should see the new commands list
 | [Frontend Developer](docs/plugins/frontend-developer.md) | 1.1.1 | TypeScript + React development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (Tailwind, Zustand, TanStack Query, React Hook Form, TanStack Router) |
 | [PHP Developer](docs/plugins/php-developer.md) | 1.0.2 | PHP development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (Symfony, Doctrine ORM, DDD) |
 | [Python Developer](docs/plugins/python-developer.md) | 3.0.3 | Python development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery) |
-| [QA](docs/plugins/qa.md) | 2.0.1 | Automated QA testing — analyzes code changes, generates test plans (`/qa:create-plan`), executes FE (Playwright) and BE (API/DB) tests (`/qa:run`), and produces reports compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge |
+| [QA](docs/plugins/qa.md) | 2.1.0 | Automated QA testing — analyzes code changes, generates test plans (`/qa:create-plan`), executes FE (Playwright) and BE (API/DB) tests (`/qa:run`), closes the test→fix→retest loop (`/qa:loop`), and produces reports compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge |
 | [Sequential Thinking](https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking) | MCP | Structured problem-solving through dynamic thinking process |
 
 ## Documentation

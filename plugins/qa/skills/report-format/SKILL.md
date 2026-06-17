@@ -184,6 +184,28 @@ List ALL scenarios (pass, fail, skip) in order:
 
 ---
 
+## Loop History (optional — written by `/qa:loop`)
+
+A `##`-level section placed **AFTER** `## Detailed Results`. It MUST NOT contain any
+`### [SEVERITY] …` headings or `---` separators (so `/fix-report`'s block parser
+ignores it). One row per loop iteration:
+
+| Iteration | Failing in | Now passing | Still failing | Warnings | Regressions | Dispatches |
+|------|-----------|-------------|---------------|----------|-------------|------------|
+| 1 | BE-03, FE-05 | BE-03, FE-05 | — | QA-001 ⚠ | — | 4 |
+| 2 | — | — | — | — | — | 2 |
+
+Columns:
+- **Iteration** — iteration number
+- **Failing in** — scenarios that were failing at iteration start
+- **Now passing** — scenarios that passed this iteration (newly fixed)
+- **Still failing** — scenarios still failing after this iteration
+- **Warnings** — comma-separated QA-XXX IDs with warnings (anti-hardcoding flags, "⚠" symbol)
+- **Regressions** — scenarios that passed at baseline but failed this iteration (newly detected regressions)
+- **Dispatches** — fix + re-run count for this iteration
+
+---
+
 ## Compatibility with code-review
 
 The QA-XXX format is identical in structure to code-review's other prefixes (SEC, PERF, ARCH, MAINT, DOC). This means:
@@ -208,3 +230,4 @@ Before saving the report, verify:
 - [ ] Every QA-NNN issue has the required fields: `ID`, `Location`, `Category: Testing`, `Problem` (with Expected/Actual bullets), `Remediation`
 - [ ] Screenshots referenced in issues actually exist on disk
 - [ ] No placeholder text (TBD, TODO)
+- [ ] If a Loop History section is present, it contains no `### [SEVERITY]` headings and no `---` separators
