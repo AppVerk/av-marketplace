@@ -519,7 +519,7 @@ Append a human-facing row to the report's `## Loop History` section (if it doesn
 ```markdown
 ## Loop History
 
-| Iteration | Failing in | Now Passing | Still Failing | Warnings | Regressions | Dispatches |
+| Iteration | Failing in | Now passing | Still failing | Warnings | Regressions | Dispatches |
 |-----------|-----------|-----------|-----------|-----------|-----------|-----------|
 | 1 | FE-02, BE-03, BE-04 | FE-02, BE-03 | BE-04 | QA-001 ⚠ | — | 3 |
 | 2 | BE-04 | BE-04 | — | — | — | 2 |

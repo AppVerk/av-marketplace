@@ -190,7 +190,7 @@ A `##`-level section placed **AFTER** `## Detailed Results`. It MUST NOT contain
 `### [SEVERITY] …` headings or `---` separators (so `/fix-report`'s block parser
 ignores it). One row per loop iteration:
 
-| Iter | Failing in | Now passing | Still failing | Warnings | Regressions | Dispatches |
+| Iteration | Failing in | Now passing | Still failing | Warnings | Regressions | Dispatches |
 |------|-----------|-------------|---------------|----------|-------------|------------|
 | 1 | BE-03, FE-05 | BE-03 (QA-001, QA-002) | FE-05 (QA-003) | — | — | 4 |
 

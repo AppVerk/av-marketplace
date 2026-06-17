@@ -104,11 +104,11 @@ Close a test → fix → retest loop: run a QA plan, auto-fix failures via `code
 
 **Modes:**
 
-| Mode | Behavior | HITL | Interactive-only |
+| Mode | Behavior | HITL | Headless-Safe |
 |---|---|---|---|
-| **approve** *(default)* | Single batch approval before fixing; shows fix-set + warnings | Yes (one gate) | Yes |
-| **auto** | No HITL gate; prints scope banner; abort via Esc | No | No |
-| **step** | Approve before each re-test (maximum control) | Yes (per iteration) | Yes |
+| **approve** *(default)* | Single batch approval before fixing; shows fix-set + warnings | Yes (one gate) | No |
+| **auto** | No HITL gate; prints scope banner; abort via Esc | No | Yes |
+| **step** | Approve before each re-test (maximum control) | Yes (per iteration) | No |
 
 **Algorithm summary:**
 
