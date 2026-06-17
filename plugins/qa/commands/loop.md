@@ -277,6 +277,8 @@ fe_results = TaskOutput(fe_tester_id, block: true)  # if FE was launched
 be_results = TaskOutput(be_tester_id, block: true)  # if BE was launched
 ```
 
+Increment `dispatch_count` by the number of testers launched (1 for FE-only or BE-only, 2 if both) — every tester launch counts toward `--max-dispatches` (spec §5.3).
+
 #### Step 2.2: Render Report (report-format Step 6)
 
 Using the `report-format` skill, build the QA-XXX report:
