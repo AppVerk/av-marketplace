@@ -552,3 +552,183 @@ Exit loop.
 After checking, loop back to Step 3.0.
 
 **Task Update:** Periodically update task 3 with the current iteration count.
+
+---
+
+### Step 4: Final Run (Authoritative)
+
+**Skip this step if the zero-failure exit fired in Step 2.4.**
+
+Re-run the **entire plan** (all FE and BE scenarios, in order):
+
+```
+dispatch_count++
+Task(
+  subagent_type: "qa:fe-tester",
+  run_in_background: true,
+  description: "Final run — FE scenarios",
+  prompt: "<all FE scenarios; mutation guard applied>"
+)
+
+dispatch_count++
+Task(
+  subagent_type: "qa:be-tester",
+  run_in_background: true,
+  description: "Final run — BE scenarios",
+  prompt: "<all BE scenarios; mutation guard applied>"
+)
+
+fe_results = TaskOutput(fe_tester_id, block: true)
+be_results = TaskOutput(be_tester_id, block: true)
+```
+
+#### Step 4.1: Write Status (One-Time, Authoritative)
+
+For each scenario that **PASSES** in the final run:
+
+1. Locate all its QA-XXX headings in the report.
+2. For each heading, use the Edit tool to insert immediately after the `### [SEVERITY] QA-XXX: Title` line:
+
+```
+**Status:** ✅ Fixed (YYYY-MM-DD)
+```
+
+Use today's date in YYYY-MM-DD format.
+
+**Still-failing scenarios:** leave their issues unmarked (no `**Status:**` line; they remain retryable by a future run).
+
+**`⚠️ Partially Fixed` is never written** — it would freeze issues out of `/fix-report`. The report stays compatible with `/fix` / `/fix-report`.
+
+#### Step 4.2: Handle Regressions
+
+A scenario that passed at baseline (recorded in the sidecar `baseline` map) but fails in the final run is a regression:
+
+1. Create a **new QA-XXX** for the regression (deduped vs. still-open IDs), at `max(existing) + 1`.
+2. Record it in the sidecar's `iterations[]` as a "regression" entry.
+3. Append a row to the Loop History section (in the `Regressions` column, list the new QA-XXX).
+4. Do NOT write `**Status:** Fixed` (it's not fixed; it's a regression).
+
+**Task Update:** Mark task 4 as `completed` and task 5 as `in_progress` using TaskUpdate.
+
+---
+
+### Step 5: Final Report & Summary
+
+#### Step 5.1: Compute Summary Stats
+
+- **final_pass_count** — scenarios passing in the final run
+- **final_fail_count** — scenarios still failing
+- **fixed_count** — scenarios with `**Status:** ✅ Fixed` written
+- **warnings_count** — number of issues with anti-hardcoding warnings
+- **regressions_count** — number of regressions detected
+- **elapsed** — `$(date +%s) - start_time` in seconds
+
+#### Step 5.2: Print Summary
+
+```
+## Loop Summary
+
+**Result:** <Pass | Fail | Budget Exhausted | Stopped>
+
+**Final Status:**
+- Pass: N | Fail: N | Skip: N
+- Fixed (Status written): N
+- Remaining unfixed: N
+- Warnings: N (anti-hardcoding)
+- Regressions: N
+
+**Budget Used:**
+- Dispatches: N / <--max-dispatches>
+- Iterations: N / <--max-iterations>
+- Time: Nm Ns / <--time-budget>s
+
+**Next Steps:**
+
+If issues remain unfixed, use `/fix` to manually fix by ID, or run `/qa:loop` again with different settings (increase budgets, change `--mode`, adjust `--severity`).
+
+To recover uncommitted changes: `git restore .`
+
+**Changes remain uncommitted for your control.**
+```
+
+If any issues have warnings, append:
+
+```
+**Warnings (manual review recommended):**
+- <QA-XXX>: <warning text>
+- ...
+```
+
+#### Step 5.3: Save Report & Sidecar
+
+Write the updated report (with Loop History and Status lines) to `docs/testing/reports/<YYYY-MM-DD>-<topic>-report.md`.
+
+Write the updated sidecar to `docs/testing/reports/<topic>-loop-state.json` (include the final `iterations[]` entries and updated dispatch_count).
+
+**Task Update:** Mark task 5 as `completed` using TaskUpdate.
+
+---
+
+## Modes & Safety Guards
+
+### Modes Table
+
+| Mode | Behavior | HITL | Headless-Safe |
+|---|---|---|---|
+| **approve** *(default)* | Single batch approval before fixing; show fix-set + warnings. | Yes (one gate) | No |
+| **auto** | No per-batch gate; print scope banner; abort via Esc. | No | Yes |
+| **step** | Approve before each re-test. | Yes (per iteration) | No |
+
+**Headless behavior:** if stdin is not a TTY and `--mode approve` or `--mode step` is set → abort with "approve/step require an interactive session; use --mode auto."
+
+### Base-URL Resolution (Fail-Closed)
+
+Resolve in order:
+
+1. Explicit URLs in the plan's `## Source` section or scenario headers
+2. `QA_BASE_URL` env var
+3. Project config (best-effort)
+
+If none resolve → abort. Cannot guarantee loopback-only safety.
+
+### Safety Guards (Apply in All Modes)
+
+**Environment guard:** resolved host must be loopback (`localhost`, `127.0.0.1`, `::1`, `*.localhost`) or in `--allow-host`, else abort.
+
+**Mutation guard:** state-changing BE scenarios (HTTP POST/PUT/PATCH/DELETE or DB-write checks) SKIP with reason `mutation-guard` unless `--allow-mutations` is set. Issues on skipped scenarios are reported as "needs --allow-mutations"; never counted as fixed.
+
+---
+
+## Error Handling
+
+| Situation | Behavior |
+|---|---|
+| Invalid args (before I/O) | Clear error message → stop. Examples: unknown `--mode`, non-integer `--max-iterations`, unknown `--severity`. |
+| No plan found | Message → `/qa:create-plan` → stop. |
+| Base URL undetectable | Abort (fail-closed) — cannot guarantee loopback safety. |
+| Non-loopback host (no `--allow-host`) | Abort (environment guard). |
+| Mutating BE scenario without `--allow-mutations` | SKIP with reason `mutation-guard`; issue marked "needs --allow-mutations". |
+| Tool unavailable (Playwright, curl, DB) | Affected scenarios SKIP / "cannot confirm" (never counted as fixed). If all verifiers unavailable → abort. |
+| Entire baseline is SKIP | Abort: "no executable verifier — cannot gate." |
+| Zero baseline failures at/above floor | "All passing, nothing to fix" → skip loop AND final run → exit success. |
+| Issue `Location: unknown:0` / missing fields | Pre-filtered out; "needs manual location"; never dispatched. fix-auto also returns Failed if a location-less issue arrives. |
+| fix-auto fails on an issue | Mark failed for this iteration; keep looping on remaining issues. |
+| fix-auto says "Fixed" but re-run still fails | Re-run is authoritative; scenario stays failing. |
+| Anti-hardcoding warning | Surfaced for human review (approve mode) / logged (auto mode); not a credit block. |
+| No progress / oscillation / budget exceeded | Stop; report remaining issues; suggest `/fix` or another `/qa:loop` run. |
+| Regression in final run | New QA-XXX (deduped); reported in Loop History, not auto-fixed. |
+| Plan hash mismatch | Mid-run → abort; cross-run → re-baseline (archive prior artifacts to `.bak`). |
+| User abort (Esc in auto mode) | Uncommitted changes left; partial report + Loop History so far. |
+| Approve/step mode without TTY | Abort: "approve/step require an interactive session; use --mode auto." |
+
+---
+
+## Glossary
+
+- **Scenario-level granularity:** an issue is credited fixed **iff its whole scenario passes**. Intra-scenario partial progress is reported in Loop History but not separately credited.
+- **Section-level re-run:** re-run the entire FE and/or BE section containing failures (not individual scenarios). Dependency-safe by construction.
+- **Dispatch:** one fix-auto launch or one tester (fe-tester/be-tester) launch. The `--max-dispatches` budget counts both.
+- **Verifier authority:** only fresh re-runs (section-level + final) decide pass/fail. fix-auto's verdict is advisory (informs which scenarios to re-run).
+- **Sidecar:** a real JSON file (`<topic>-loop-state.json`) holding machine state (plan hash, scenario→QA-ID map, iteration results, dispatch count). The report keeps only human-facing Loop History.
+- **Status write-back:** `**Status:** ✅ Fixed (date)` is written exactly once, only from the authoritative final run. No premature `**Status:**` lines.
+- **Oscillation:** a scenario regresses (passes at baseline, fails in an iteration). The loop stops to prevent chasing.
