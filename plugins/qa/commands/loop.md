@@ -333,3 +333,222 @@ Write the report to `docs/testing/reports/<YYYY-MM-DD>-<topic>-report.md` using 
 Write the sidecar to `docs/testing/reports/<topic>-loop-state.json` using the Write tool.
 
 **Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
+
+---
+
+### Step 3: Loop Iterations
+
+Bounded loop (condition checked at iteration start):
+
+```
+while (still-failing scenarios exist at/above --severity)
+  AND (iteration < --max-iterations)
+  AND (dispatch_count < --max-dispatches)
+  AND (elapsed < --time-budget)
+```
+
+#### Step 3.0: Check Loop Conditions
+
+Compute `elapsed = $(date +%s) - start_time`. If elapsed >= `--time-budget`:
+
+> Time budget exhausted. Stopping loop.
+
+Exit the loop.
+
+#### Step 3a: Select & Pre-Filter Fix-Set
+
+From the sidecar `baseline` and `scenario_issues`:
+
+1. Identify all scenarios still failing (baseline == "fail" or later iteration status == "fail").
+2. For each failing scenario, extract its QA-XXX issues.
+3. Filter by `--severity` (keep issues at or above the floor).
+4. Pre-filter: drop any issue with:
+   - **Location field is `unknown:0`** or missing entirely
+   - **Missing fix-auto-required fields** (Location, Problem, Remediation)
+   
+   For dropped issues, record: `needs manual location` or `incomplete fields`. Never dispatch them.
+
+Call this list `fix_candidates`.
+
+#### Step 3b: HITL Gate Per Mode
+
+**Mode: `approve` (default)**
+
+Show the fix-set to the user using a single `AskUserQuestion`:
+
+```
+question: "Approve fixing N issues on Y scenarios? (Iteration Z/M)"
+options:
+  - label: "Approve & continue"
+    description: "Proceed with fixes"
+  - label: "Skip to final run"
+    description: "Stop fixing, run final verification"
+  - label: "Abort"
+    description: "Cancel the loop"
+```
+
+Also display:
+- List of issues (ID, severity, scenario, title)
+- Anti-hardcoding warnings (if any from prior iterations)
+- Target host (the resolved base URL)
+
+If user selects "Skip to final run" → jump to Step 4 (skip remaining iterations).
+If user selects "Abort" → exit immediately with partial report.
+If user selects "Approve & continue" → proceed to Step 3c.
+
+**Mode: `auto`**
+
+Print a text scope banner showing the fix-set (failures, dispatch budget, target host), then proceed to Step 3c without a gate. Abort is via session interrupt (Esc).
+
+**Mode: `step`**
+
+Per iteration, approve fixes before each re-test (after Step 3c, before Step 3d). Use `AskUserQuestion` with:
+
+```
+question: "Re-run affected sections with fixes?"
+options:
+  - label: "Yes"
+    description: "Run fixed scenarios"
+  - label: "No — skip to final run"
+    description: "Stop fixing"
+  - label: "Abort"
+    description: "Cancel the loop"
+```
+
+**Headless check:** if `--mode approve` or `--mode step` and stdin is not a TTY (non-interactive session):
+
+> Error: approve/step modes require an interactive session. Use --mode auto for headless execution.
+
+Abort.
+
+#### Step 3c: Fix
+
+For each issue in `fix_candidates`, **sequentially**:
+
+```
+dispatch_count++
+
+Task(
+  subagent_type: "code-review:fix-auto",
+  run_in_background: false,
+  description: "Auto-fix: [<SEVERITY>] <Issue-ID>: <Title>",
+  prompt: "<full issue block from the report, including all fields>
+
+INJECTED CONSTRAINTS FOR THIS FIX:
+
+1. Source-only fix: do not modify the test plan, plan-referenced test files, or test scenarios.
+2. Fix only the source code under test.
+3. Keep the working tree clean (uncommitted changes only, no staging).
+4. If a location-less issue arrives (Location: unknown:0 or missing), return Failed — do not prompt."
+)
+```
+
+Collect result: **Fixed**, **Partially Fixed**, or **Failed**.
+
+#### Step 3d: Anti-Hardcoding Warning (Per Fix)
+
+After each fix completes, run:
+
+```bash
+git diff --unified=0 <touched-files>
+```
+
+For each line added (starting with `+`), extract the literal string. For each scenario in `fix_candidates` (the one this issue came from), extract its request-payload value (from the plan). If the added literal **exactly matches** a request-payload value:
+
+Record a **WARNING** for this fix: `"Possible hardcoding: added literal matches scenario request-payload value X"`.
+
+Store the warning in the sidecar `iterations[]` entry (not a blocker — just a human-review flag).
+
+#### Step 3e: Re-Run Section(s)
+
+Identify which section(s) contain still-failing scenarios (FE and/or BE). Re-run the **whole section** (all scenarios in that section, in order):
+
+```
+dispatch_count++
+Task(
+  subagent_type: "qa:fe-tester",
+  run_in_background: true,
+  description: "Re-run FE section (iteration N)",
+  prompt: "<all FE scenarios from the plan; mutation guard applied again>
+Base URL: <re-resolve from Step 0.3>
+Execute all scenarios in order (dependency-safe)."
+)
+
+dispatch_count++
+Task(
+  subagent_type: "qa:be-tester",
+  run_in_background: true,
+  description: "Re-run BE section (iteration N)",
+  prompt: "<all BE scenarios from the plan; mutation guard applied again>
+Base URL: <re-resolve from Step 0.3>
+Execute all scenarios in order."
+)
+
+fe_results = TaskOutput(fe_tester_id, block: true)  # if FE section re-run
+be_results = TaskOutput(be_tester_id, block: true)  # if BE section re-run
+```
+
+#### Step 3f: Update Sidecar
+
+After the section re-run, update the sidecar with an entry in `iterations[]`:
+
+```json
+{
+  "iteration": 1,
+  "attempted_fixes": ["QA-001", "QA-003"],
+  "now_passing": ["FE-02", "BE-03"],
+  "still_failing": ["BE-04"],
+  "warnings": ["QA-001: Possible hardcoding — added literal matches scenario payload"],
+  "dispatch_count": 3,
+  "elapsed_s": 120
+}
+```
+
+Update the `baseline` map with the latest pass/fail/skip status for each scenario.
+
+#### Step 3g: Append Loop History Row
+
+Append a human-facing row to the report's `## Loop History` section (if it doesn't exist, create it after `## Detailed Results`):
+
+```markdown
+## Loop History
+
+| Iteration | Failing in | Now Passing | Still Failing | Warnings | Regressions | Dispatches |
+|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+| 1 | FE-02, BE-03, BE-04 | FE-02, BE-03 | BE-04 | QA-001 ⚠ | — | 3 |
+| 2 | BE-04 | BE-04 | — | — | — | 2 |
+```
+
+Columns:
+- **Iteration** — iteration number
+- **Failing in** — scenarios that were failing at iteration start
+- **Now Passing** — scenarios that passed this iteration (newly fixed)
+- **Still Failing** — scenarios still failing after this iteration
+- **Warnings** — comma-separated QA-XXX IDs with warnings (anti-hardcoding flags, "⚠" symbol)
+- **Regressions** — scenarios that passed at baseline but failed this iteration
+- **Dispatches** — fix + re-run count for this iteration
+
+**DO NOT write `**Status:**` headings yet** — they are written only from the authoritative final run (Step 4).
+
+#### Step 3h: Progress / Oscillation Check
+
+**Progress:** has at least one scenario newly passed this iteration? If **no**, stop (no progress):
+
+> No progress this iteration (no newly passing scenarios). Stopping loop.
+
+Exit loop.
+
+**Regression:** did any previously-passing scenario regress? If **yes**, stop:
+
+> Scenario regression detected (e.g., FE-01 passed at baseline but failed this iteration). Stopping loop to prevent oscillation.
+
+Exit loop.
+
+**Budgets:** check all three:
+- `iteration >= --max-iterations` → stop: "Max iterations reached."
+- `dispatch_count >= --max-dispatches` → stop: "Max dispatch budget exhausted."
+- `elapsed >= --time-budget` → stop: "Time budget exhausted."
+
+After checking, loop back to Step 3.0.
+
+**Task Update:** Periodically update task 3 with the current iteration count.
