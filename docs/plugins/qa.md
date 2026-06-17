@@ -94,21 +94,23 @@ Close a test → fix → retest loop: run a QA plan, auto-fix failures via `code
 |----------|---|---|---|
 | (empty) | Find the newest plan in `docs/testing/plans/` | — | If no plan found, prints "Run `/qa:create-plan` first." and stops |
 | `<path>` | Use the specified test plan file | — | File must exist and be readable |
-| `--mode` | Loop mode: `approve` (batch HITL), `auto` (headless), `step` (per-fix HITL) | `approve` | Case-sensitive; unknown value → error; `approve`/`step` require interactive session (TTY) |
+| `--mode` | Loop mode: `approve` (batch HITL), `auto` (headless), `step` (per-fix HITL) | `approve` | Case-sensitive; unknown value → error; `approve`/`step` require interactive session (TTY); headless → error |
 | `--max-iterations` | Maximum loop iterations | 3 | Must be positive integer; invalid → error |
-| `--max-dispatches` | Maximum fix-auto + tester launches combined | 50 | Must be positive integer; each launch counts (fix-auto, fe-tester, be-tester) |
+| `--max-dispatches` | Maximum fix-auto + tester launches combined | 50 | Must be positive integer; soft limit at iteration boundaries; final run always runs (not gated) |
 | `--time-budget` | Wall-clock seconds before timeout | 1800 | Must be positive integer; error on invalid |
 | `--severity` | Minimum severity to credit as fixed: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` | (none = all) | Case-insensitive; unknown value → error |
-| `--allow-mutations` | Permit state-changing BE scenarios (POST/PUT/PATCH/DELETE, DB writes) | (off) | Present → on; absent → off; no value needed |
+| `--allow-mutations` | Permit state-changing BE scenarios (POST/PUT/PATCH/DELETE, DB writes) | (off) | Present → on; absent → off; no value needed; **note: test DB must be disposable (no rollback)** |
 | `--allow-host` | Whitelist additional hosts beyond loopback | (loopback only) | Repeatable; each invocation appends; format: hostname or IP |
 
 **Modes:**
 
 | Mode | Behavior | HITL | Headless-Safe |
 |---|---|---|---|
-| **approve** *(default)* | Single batch approval before fixing; shows fix-set + warnings | Yes (one gate) | No |
-| **auto** | No HITL gate; prints scope banner; abort via Esc | No | Yes |
-| **step** | Approve before each re-test (maximum control) | Yes (per iteration) | No |
+| **approve** *(default)* | Single batch approval before fixing; shows fix-set + warnings | Yes (one gate) | No — requires TTY |
+| **auto** | No HITL gate; prints scope banner; abort via Esc | No | Yes — headless safe |
+| **step** | Approve before each re-test (maximum control) | Yes (per iteration) | No — requires TTY |
+
+**Headless behavior:** if `--mode approve` or `--mode step` and stdin is not a TTY (non-interactive session) → abort with "approve/step require an interactive session; use --mode auto."
 
 **Algorithm summary:**
 

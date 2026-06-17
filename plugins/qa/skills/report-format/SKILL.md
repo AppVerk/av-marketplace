@@ -192,7 +192,17 @@ ignores it). One row per loop iteration:
 
 | Iteration | Failing in | Now passing | Still failing | Warnings | Regressions | Dispatches |
 |------|-----------|-------------|---------------|----------|-------------|------------|
-| 1 | BE-03, FE-05 | BE-03 (QA-001, QA-002) | FE-05 (QA-003) | — | — | 4 |
+| 1 | BE-03, FE-05 | BE-03, FE-05 | — | QA-001 ⚠ | — | 4 |
+| 2 | — | — | — | — | — | 2 |
+
+Columns:
+- **Iteration** — iteration number
+- **Failing in** — scenarios that were failing at iteration start
+- **Now passing** — scenarios that passed this iteration (newly fixed)
+- **Still failing** — scenarios still failing after this iteration
+- **Warnings** — comma-separated QA-XXX IDs with warnings (anti-hardcoding flags, "⚠" symbol)
+- **Regressions** — scenarios that passed at baseline but failed this iteration (newly detected regressions)
+- **Dispatches** — fix + re-run count for this iteration
 
 ---
 
