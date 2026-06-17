@@ -105,16 +105,20 @@ Stop execution.
 
 #### Step 0.4: Environment Guard
 
-Parse the base URL to extract its hostname. Check:
+This guard is the only thing between the autonomous loop and the open network, so extract the host with **strict, fail-closed parsing** (when parsing is ambiguous, abort):
 
-- Is the hostname in {`localhost`, `127.0.0.1`, `::1`} or matches `*.localhost`?
-- Is the hostname in the `--allow-host` list?
+1. **Reject userinfo:** if the authority contains `@` (e.g. `http://localhost@evil.com/`), abort — never treat the userinfo as the host.
+2. **Take the host component only,** then strip IPv6 brackets and any `:port` suffix (`[::1]:8000` → `::1`, `127.0.0.1:8000` → `127.0.0.1`).
+3. **Match by exact equality, never substring.** The host is loopback iff it equals `localhost`, `127.0.0.1`, or `::1`, **or** it equals `localhost` / ends with `.localhost` (the `*.localhost` rule). `127.0.0.1.evil.com` and `0.0.0.0` are NOT loopback.
+4. Otherwise it is allowed only if it appears in the `--allow-host` list.
 
-If neither:
+If the host is neither loopback nor allow-listed:
 
 > Error: Base URL resolves to non-loopback host 'X' and is not in --allow-host. Loopback-only safety enforced. Add --allow-host X to override.
 
 Stop execution.
+
+**Re-resolution:** any base URL re-resolved later in the run (Steps 3e, 4) MUST pass this same guard before any tester is dispatched — a host that drifts off loopback mid-run aborts.
 
 #### Step 0.5: Hash the Plan & Init Counters
 
@@ -156,6 +160,8 @@ fi
 
 Read the sidecar and extract `scenario_issues` (scenario-id → [QA-IDs]) and the report's existing `**Status:**` lines. New issues will be assigned IDs at `max(existing_ids) + 1`.
 
+**If the sidecar matches but `report_file` is missing or empty** (the report was deleted out from under the sidecar), fall through to a FRESH render but carry the sidecar's existing IDs — new IDs still continue at `max + 1` so they never collide with the sidecar's `scenario_issues`.
+
 **Case 2: Sidecar absent but report exists**
 
 If `report_file` exists but `sidecar_file` does not:
@@ -165,15 +171,15 @@ If `report_file` exists but `sidecar_file` does not:
 # Create a fresh sidecar stamped with the current PLAN_HASH
 ```
 
-Read the report, extract all `### [SEVERITY] QA-NNN:` headings and any `**Status:**` lines, and build the `scenario_issues` map and `baseline` map. Create the sidecar with these values.
+Read the report, extract all `### [SEVERITY] QA-NNN:` headings and any `**Status:**` lines, and build the `scenario_issues` map. Create the sidecar with these IDs; leave `baseline`/`current` to be populated by the authoritative baseline run (Step 2.3).
 
 **Case 3: Hash mismatch**
 
 If `sidecar_file` exists but `stored_hash != PLAN_HASH`:
 
 ```bash
-cp "$report_file" "${report_file%.md}.bak"
-cp "$sidecar_file" "${sidecar_file%.json}.bak"
+[ -f "$report_file" ] && cp "$report_file" "${report_file%.md}.bak"
+[ -f "$sidecar_file" ] && cp "$sidecar_file" "${sidecar_file%.json}.bak"
 # Start FRESH with no prior IDs or Status lines
 ```
 
@@ -229,7 +235,7 @@ Parse the plan to identify FE and BE scenarios. Launch both in parallel if both 
 
 **If FE scenarios exist:**
 
-Apply the mutation guard: if a scenario contains a POST/PUT/PATCH/DELETE request in the plan **and** `--allow-mutations` is not set, mark it to SKIP with reason `mutation-guard` in the results (do not execute it).
+Apply the mutation guard: if a scenario contains a POST/PUT/PATCH/DELETE request (case-insensitive) in the plan **and** `--allow-mutations` is not set, mark it to SKIP with reason `mutation-guard` in the results (do not execute it). *(FE scenarios are UI-driven, so an action that triggers a write without a literal HTTP verb in the plan — e.g. a Delete button — is not detected; rely on a disposable test DB.)*
 
 ```
 Task(
@@ -252,7 +258,7 @@ Return results for every scenario."
 
 **If BE scenarios exist:**
 
-Apply the mutation guard: if a scenario specifies a state-changing HTTP method (POST/PUT/PATCH/DELETE) or a DB-write check in the plan **and** `--allow-mutations` is not set, mark it to SKIP with reason `mutation-guard`.
+Apply the mutation guard: if a scenario specifies a state-changing HTTP method (POST/PUT/PATCH/DELETE, case-insensitive) or a DB-write check in the plan **and** `--allow-mutations` is not set, mark it to SKIP with reason `mutation-guard`.
 
 ```
 Task(
@@ -291,10 +297,10 @@ Every tester launch counts toward `--max-dispatches`.
 
 #### Step 2.2: Render Report (report-format Step 6)
 
-Using the `report-format` skill, build the QA-XXX report:
+Using the `report-format` skill, build the QA-XXX report **in memory** (the actual write happens in Step 2.5, or — on the zero-failure path — in Step 2.4 just before exit):
 
 1. **Count results:** tally pass/fail/skip across all scenarios.
-2. **Assign QA-XXX IDs:**
+2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
    - If reusing a prior report (Step 1, Case 1), use the existing scenario→QA-ID map; assign new IDs at `max(existing) + 1`.
    - If adopting a report (Step 1, Case 2), use the extracted IDs; new ones at `max(existing) + 1`.
    - If fresh (Step 1, Cases 3–4), start at `qa_count = 0` and assign sequentially: QA-001, QA-002, etc.
@@ -338,7 +344,7 @@ Count failures at or above `--severity` (default: all):
 
 > All passing, nothing to fix.
 
-  Skip the loop (Step 3) AND the final run (Step 4), and exit success.
+  Save the report and sidecar first (Step 2.5 — on reuse/adopt this preserves any existing `**Status:**` lines), then skip the loop (Step 3) AND the final run (Step 4), and exit success.
 
 - If **all scenarios are SKIP** (no executable verifier) → abort:
 
@@ -350,7 +356,7 @@ Count failures at or above `--severity` (default: all):
 
 **For reuse (Case 1) and adopt (Case 2) modes:**
 
-Before writing, extract any existing `**Status:**` lines from the prior report (at the matching `### [SEVERITY] QA-NNN:` headings). When rendering the new report, preserve these Status lines by re-inserting them immediately after each matching heading. Alternatively, use the Edit tool to make surgical updates to the existing report (merge new issues, keep old Status lines intact).
+Before writing, extract any existing `**Status:**` lines from the prior report. **Match each Status line to its issue strictly by the `QA-NNN` token, not the full `### [SEVERITY] … Title` heading** — severity and title may be re-derived differently between runs. When rendering the new report, re-insert each preserved Status line immediately after its `QA-NNN` heading, **exactly once** (never add a second Status line to an issue that already has one). Alternatively, use the Edit tool to make surgical updates to the existing report (merge new issues, keep old Status lines intact).
 
 **For fresh mode (Case 3 mismatch / Case 4 none):**
 
@@ -375,21 +381,19 @@ while (still-failing scenarios exist at/above --severity)
 
 #### Step 3.0: Check Loop Conditions
 
-Increment the iteration counter:
-
-```bash
-iteration++
-```
+Run the pre-checks **before** committing to this iteration, so a pass that does no work never inflates the reported iteration count.
 
 Re-hash the plan to detect mid-run tampering:
 
 ```bash
 CURRENT_PLAN_HASH=$(shasum -a 256 "<plan_path>" | cut -d' ' -f1)
-if [ "$CURRENT_PLAN_HASH" != "$PLAN_HASH" ]; then
-  # Error: Plan changed mid-run
-  exit 1
-fi
 ```
+
+If `CURRENT_PLAN_HASH != PLAN_HASH`, the plan was edited mid-run. **Before stopping, flush the partial report + the Loop History rows accumulated so far** (do NOT write any `**Status:**` line — there is no authoritative final run), then print and stop:
+
+> Error: Plan changed mid-run (hash mismatch). Stopping. Uncommitted source changes left for review; recover with `git restore .`.
+
+This mirrors the Esc-abort path: a partial report is always flushed, Status is never written.
 
 Compute `elapsed = $(date +%s) - start_time`. If elapsed >= `--time-budget`:
 
@@ -403,6 +407,12 @@ Check dispatch budget before re-running:
 if [ "$dispatch_count" -ge "$--max-dispatches" ]; then
   # Skip fixing; proceed to Step 4
 fi
+```
+
+Only once the pre-checks pass and this iteration commits to doing fix work, increment the counter:
+
+```bash
+iteration++
 ```
 
 #### Step 3a: Select & Pre-Filter Fix-Set
@@ -526,7 +536,7 @@ Task(
   run_in_background: true,
   description: "Re-run FE section (iteration N)",
   prompt: "<all FE scenarios from the plan; mutation guard applied again>
-Base URL: <re-resolve from Step 0.3>
+Base URL: <re-resolve from Step 0.3, re-validated via Step 0.4>
 Execute all scenarios in order (dependency-safe)."
 )
 
@@ -542,7 +552,7 @@ Task(
   run_in_background: true,
   description: "Re-run BE section (iteration N)",
   prompt: "<all BE scenarios from the plan; mutation guard applied again>
-Base URL: <re-resolve from Step 0.3>
+Base URL: <re-resolve from Step 0.3, re-validated via Step 0.4>
 Execute all scenarios in order."
 )
 
@@ -561,7 +571,7 @@ If any regression is detected, stop:
 
 Exit loop. (Regressions are reported in Step 4.2.)
 
-**Progress:** has at least one scenario newly passed this iteration? Compare the sidecar state from the previous iteration's `current` map against the newly-received re-run results. If **at least one scenario went from "fail" to "pass"**, continue. If **no**, stop (no progress):
+**Progress:** has at least one scenario newly passed this iteration? Compare the `current` map **as it stood at the start of this iteration** (before Step 3g updates it) against the newly-received re-run results. If **at least one scenario went from "fail" to "pass"**, continue. If **no**, stop (no progress):
 
 > No progress this iteration (no newly passing scenarios). Stopping loop.
 
@@ -586,7 +596,7 @@ After progress/regression checks, update the sidecar with an entry in `iteration
 
 The `"iteration"` field must be set to the live `iteration` counter (e.g., iteration 1 on the first loop pass, iteration 2 on the second, etc.). If regressions were detected in Step 3f, record them in the `"regressions"` array.
 
-Update the `current` map with the latest pass/fail/skip status for each scenario:
+Update the `current` map with the latest pass/fail/skip status — **merge, don't replace:** only overwrite entries for scenarios actually re-run this iteration; leave all other entries (e.g. an un-re-run section's passing scenarios) unchanged:
 
 ```json
 {
@@ -622,6 +632,8 @@ Columns:
 - **Regressions** — scenarios that passed at baseline but failed this iteration (newly detected regressions)
 - **Dispatches** — fix + re-run count for this iteration
 
+This section is `##`-level (placed after `## Detailed Results`) and MUST contain no `### [SEVERITY]` headings and no `---` separators, so `/fix-report`'s block parser skips it (see the `report-format` skill).
+
 **DO NOT write `**Status:**` headings yet** — they are written only from the authoritative final run (Step 4).
 
 #### Step 3i: Budget Check
@@ -651,7 +663,7 @@ Task(
   description: "Final run — FE scenarios",
   prompt: "<all FE scenarios; mutation guard applied>
 
-Base URL: <resolved from Step 0.3>
+Base URL: <resolved from Step 0.3, re-validated via Step 0.4>
 
 Execute all scenarios in order. This is the authoritative final run."
 )
@@ -663,7 +675,7 @@ Task(
   description: "Final run — BE scenarios",
   prompt: "<all BE scenarios; mutation guard applied>
 
-Base URL: <resolved from Step 0.3>
+Base URL: <resolved from Step 0.3, re-validated via Step 0.4>
 DB connection: <detect from plan or project config>
 
 Execute all scenarios in order. This is the authoritative final run."
@@ -677,8 +689,8 @@ be_results = TaskOutput(be_tester_id, block: true)
 
 For each scenario that **PASSES** in the final run:
 
-1. Locate all its QA-XXX headings in the report.
-2. For each heading, use the Edit tool to insert immediately after the `### [SEVERITY] QA-XXX: Title` line:
+1. Locate all its QA-XXX headings in the report **by the `QA-NNN` token** (not the full heading text).
+2. For each heading, use the Edit tool to insert immediately after the `### [SEVERITY] QA-XXX: Title` line — **exactly once** (if a `**Status:**` line already exists for that issue, update it in place rather than adding a second):
 
 ```
 **Status:** ✅ Fixed (YYYY-MM-DD)
@@ -696,7 +708,7 @@ Read the sidecar `baseline` map. For each scenario, check if it passed at baseli
 
 For each regression:
 
-1. Create a **new QA-XXX** for the regression (deduped vs. still-open IDs), at `max(existing) + 1`.
+1. Create a **new QA-XXX** for the regression at `max(existing) + 1` (the union of report + sidecar + Loop History IDs, per Step 2.2), deduped vs. still-open IDs.
 2. Add it to the report with the issue format (Location, Problem, Remediation).
 3. Append a row to the Loop History section (in the `Regressions` column, list the new QA-XXX).
 4. Record it in the sidecar's `iterations[]` as a "regression" entry.
@@ -793,7 +805,7 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 
 **Mutation guard:** state-changing BE scenarios (HTTP POST/PUT/PATCH/DELETE or DB-write checks) SKIP with reason `mutation-guard` unless `--allow-mutations` is set. Issues on skipped scenarios are reported as "needs --allow-mutations"; never counted as fixed.
 
-*Mutation classification is syntactic and best-effort — it detects HTTP verbs and DB-write patterns in the plan, but does not detect GET-with-side-effects or other semantic mutations.*
+*Mutation classification is syntactic and best-effort (HTTP-verb matching is case-insensitive). It detects HTTP verbs and DB-write patterns in the plan, but does **not** detect GET-with-side-effects, GraphQL mutations without an explicit verb, or **FE UI actions that trigger writes** (e.g. clicking a Delete button). Treat the test DB as disposable regardless of `--allow-mutations`.*
 
 **Verifier-gaming residual (v1):** The loop defends against payload-literal hardcoding via the anti-hardcoding warning, but a capable fixer with visibility to deterministic scenarios can make a scenario pass without a real fix. The default `approve` mode is the runtime mitigation; randomized re-verification is planned for v2.
 
@@ -817,7 +829,7 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 | Anti-hardcoding warning | Surfaced for human review (approve mode) / logged (auto mode); not a credit block. |
 | No progress / oscillation / budget exceeded | Stop; report remaining issues; suggest `/fix` or another `/qa:loop` run. |
 | Regression in final run | New QA-XXX (deduped); reported in Loop History, not auto-fixed. |
-| Plan hash mismatch (mid-run) | Abort; plan changed during loop execution. |
+| Plan hash mismatch (mid-run) | Abort; flush partial report + Loop History (never Status); plan changed during loop execution. |
 | Plan hash mismatch (cross-run) | Re-baseline; archive prior artifacts to `.bak`. |
 | Dispatch budget exhausted | Skip remaining fixes; proceed to final run (always runs, not gated). |
 | User abort (Esc in auto mode) | Uncommitted changes left; partial report + Loop History so far. |
