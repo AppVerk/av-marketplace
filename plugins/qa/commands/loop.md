@@ -85,7 +85,7 @@ Resolve the effective auto-plan setting: `--mode approve`/`step` → ON, `--mode
 The loop auto-fixes source and its recovery guidance is `git restore`, so uncommitted **tracked** changes are at risk. This gate runs after argument validation, before plan resolution — it judges the pre-existing tree. Record the pre-existing tracked-modified set (used later for scoped recovery):
 
 ```bash
-pre_loop_dirty=$(git status --porcelain --untracked-files=no | awk '{print $2}')
+pre_loop_dirty=$(git -c core.quotePath=false diff --name-only HEAD)   # tracked-modified paths vs HEAD, one FULL path per line (space/quote-safe — do NOT field-split; compare as line-sets)
 ```
 
 - If `pre_loop_dirty` is non-empty (dirty tree):
@@ -93,7 +93,7 @@ pre_loop_dirty=$(git status --porcelain --untracked-files=no | awk '{print $2}')
   - `--mode approve`/`step`: **warn + confirm** (proceed / abort) via AskUserQuestion.
 - `--allow-dirty` bypasses the abort/confirm in all modes, but `pre_loop_dirty` is **still recorded** (so scoped recovery can subtract it later).
 
-`pre_loop_dirty` is the baseline subtracted in the fix phase to compute the loop's own touched files. (`Bash(git:*)` is already in allowed-tools.)
+`pre_loop_dirty` is the baseline subtracted in the fix phase to compute the loop's own touched files. **Persist it into the sidecar at Step 1.3** — it is not a durable shell variable, and Step 3g reads it back from the sidecar, so the subtraction survives the many tool calls (baseline, HITL gates, fixes) between here and the fix phase. (`Bash(git:*)` is already in allowed-tools.)
 
 #### Step 0.2: Resolve Plan Path
 
@@ -192,7 +192,7 @@ After generation + banner, and **before** Step 0.3 base-URL resolution: if the (
 
 Do not launch testers. This runs **before** Step 0.3 precisely so a URL-less empty plan does not trip Step 0.3's fail-closed base-URL abort. A valid-but-thin plan is **not** malformed (malformed plans already aborted in Step 0.2.1 step 6).
 
-If `plan_path` is not empty (resolved or generated), verify it is readable (Read tool will error if not).
+**Readability check (all paths — a user-resolved plan OR a generated one that was not thin).** Once `plan_path` is settled and not empty, verify it is readable before continuing to Step 0.3 (the Read tool will error if not).
 
 #### Step 0.3: Base-URL Resolution (Fail-Closed)
 
@@ -307,11 +307,14 @@ Create or update the sidecar JSON file with this exact schema:
   "baseline": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
   "current": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
   "auto_generated": false,
+  "pre_loop_dirty": [],
   "fix_touched_files": [],
   "dispatch_count": 0,
   "iterations": []
 }
 ```
+
+**When writing the sidecar:** set `auto_generated` to `true` if this run generated the plan in Step 0.2.1, else `false` (the example above shows the default) — do not take the literal `false` as unconditional. Persist `pre_loop_dirty` (recorded in Step 0.1.5). On the REUSE/ADOPT idempotency paths (Step 1.2), **preserve** the existing `auto_generated` value rather than overwriting it.
 
 - `plan_sha256`: the 64-hex SHA-256 hash of the plan file
 - `plan_path`: path to the test plan
@@ -322,6 +325,7 @@ Create or update the sidecar JSON file with this exact schema:
 - `baseline`: map of scenario-id → "pass" | "fail" | "skip" (immutable reference recorded after Step 2; used for regression detection)
 - `current`: map of scenario-id → "pass" | "fail" | "skip" (mutable, updated each iteration to track latest status; used for iteration logic)
 - `auto_generated`: `true` iff this run's loop generated the plan via auto-plan (Step 0.2.1); `false`/absent for a user-provided or pre-existing plan. Read by the thin/all-SKIP exit (Step 0.2.3 / Step 2.4) to decide graceful-success vs. error
+- `pre_loop_dirty`: array of tracked paths already modified **before** the loop started (recorded in Step 0.1.5, persisted here so it survives across the many tool calls before the fix phase); subtracted from the post-fix set to compute `fix_touched_files`. Persisting it (rather than relying on a shell variable that can be lost mid-run) is what keeps scoped recovery from over-restoring the user's pre-existing edits
 - `fix_touched_files`: array of tracked paths the loop's own fixes edited (post-fix tracked-modified set **minus** `pre_loop_dirty`, accumulated cumulatively across iterations in Step 3g); what scoped recovery (`git restore <fix_touched_files>`) restores — never the user's pre-existing changes
 - `dispatch_count`: incremented each time a fix-auto or tester is launched
 - `iterations`: array of iteration results (appended in Step 3e)
@@ -738,11 +742,11 @@ Update the `current` map with the latest pass/fail/skip status — **merge, don'
 
 Keep the `baseline` map immutable (it is the reference for regression detection).
 
-**Accumulate `fix_touched_files` (the loop's own edits).** After the fix phase, compute the set of tracked files the loop's fixes edited, excluding the user's pre-existing dirt recorded in Step 0.1.5 (`pre_loop_dirty`):
+**Accumulate `fix_touched_files` (the loop's own edits).** After the fix phase, compute the set of tracked files the loop's fixes edited, excluding the user's pre-existing dirt — **read `pre_loop_dirty` back from the sidecar** (persisted in Step 1.3, not a shell variable that may have been lost across the intervening tool calls):
 
 ```bash
-post=$(git status --porcelain --untracked-files=no | awk '{print $2}')
-# fix_touched_files = post − pre_loop_dirty  (set difference)
+post=$(git -c core.quotePath=false diff --name-only HEAD)   # same robust form as Step 0.1.5 (one FULL path per line)
+# fix_touched_files = post − pre_loop_dirty  (line-set difference; read pre_loop_dirty back from the sidecar, not a shell var)
 ```
 
 Persist `fix_touched_files` (the array) in the sidecar — **merge cumulatively** across iterations so it reflects every file the loop has touched, not just this iteration's:
