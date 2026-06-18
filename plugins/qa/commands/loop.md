@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(find:*), Bash(ls:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(command:*), Bash(echo:*), Bash(git:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Bash(mv:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion
+allowed-tools: Bash(find:*), Bash(ls:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(command:*), Bash(echo:*), Bash(git:*), Bash(gh:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Bash(mv:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion
 description: Closed test-fix-retest loop — run a QA plan, auto-fix failures via fix-auto, re-run affected sections, and repeat until green or budget exhausted.
 model: opus
 argument-hint: [plan path] [--mode approve|auto|step] [--max-iterations N] [--max-dispatches D] [--time-budget S] [--severity LEVEL] [--allow-mutations] [--allow-host HOST] [--auto-plan] [--no-auto-plan] [--allow-dirty]
@@ -103,13 +103,96 @@ If `plan_path` is empty:
 plan_path=$(ls -t docs/testing/plans/*.md 2>/dev/null | head -1)
 ```
 
-If `plan_path` is still empty:
+If `plan_path` is still empty, branch on the **effective auto-plan setting** resolved in Step 0.1 (`approve`/`step` → ON by default; `auto` → OFF unless `--auto-plan`; `--no-auto-plan` forces OFF):
+
+**Auto-plan OFF** → keep the dead-stop:
 
 > No test plans found in `docs/testing/plans/`. Run `/qa:create-plan` first.
 
 Stop execution.
 
-If `plan_path` is not empty, verify it is readable (Read tool will error if not).
+**Auto-plan ON** → trigger inline generation:
+
+- **`approve`/`step`:** ask once via `AskUserQuestion`:
+  ```
+  question: "No QA plan found for this branch. Generate one and run the loop?"
+  options:
+    - label: "Generate & run"
+      description: "Generate a branch-vs-default plan, then run the loop"
+    - label: "Cancel"
+      description: "Stop without generating a plan"
+  ```
+  If the user selects **Cancel** → stop execution. If **Generate & run** → proceed to Step 0.2.1. *(Headless `approve`/`step` was already aborted in Step 0.1, so this prompt only ever runs interactively.)*
+- **`auto` (with `--auto-plan`):** print a **non-silent banner** (always shown, even in headless `--mode auto`) and proceed without a gate:
+  > No QA plan found. `--auto-plan` is set: generating a test plan for the current branch (vs the default branch), then continuing the loop.
+  Then proceed to Step 0.2.1.
+
+#### Step 0.2.1: Generate Plan Inline (branch-vs-default)
+
+This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Steps 2–7 but **only the current-branch-vs-default-branch path**. It **skips** create-plan Step 1 (its task scaffold — reuse this loop's tracker) and Step 8 (its "run `/qa:run`" prompt — that contradicts continuing the loop here).
+
+1. **Resolve the default branch** (the `--short` form returns `origin/master`, so the `origin/` strip is required; do **not** use `sed`):
+
+   ```bash
+   BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null); BASE=${BASE#origin/}
+   [ -z "$BASE" ] && git rev-parse --verify main   >/dev/null 2>&1 && BASE=main
+   [ -z "$BASE" ] && git rev-parse --verify master >/dev/null 2>&1 && BASE=master
+   [ -z "$BASE" ] && BASE=main
+   ```
+
+2. **Get the diff + changed files** (source is fixed to current-branch-vs-default — do **not** inline create-plan's PR / `last-N` / staged dispatch):
+
+   ```bash
+   git diff "$BASE"...HEAD
+   git diff --name-only "$BASE"...HEAD
+   ```
+
+3. **Analyze & detect tools.** Classify each changed file as FE or BE using create-plan's indicators (Step 3), and detect available testing tools (Playwright MCP, HTTP client, DB access) as in create-plan Step 5. Then render the plan body using the format skill:
+
+   ```
+   Skill(skill: "test-plan-format")
+   ```
+
+   Fill `## Source` (Type: branch `<current>`, Base: `$BASE`, Date), `## Changes Summary`, `## Detected Tools`, and the FE/BE scenario sections per the skill (including its section-omission rules).
+
+4. **Construct the path before writing** (bind it explicitly — there is nothing to "capture afterward"), then **Write** the plan to that literal path with the Write tool:
+
+   ```bash
+   mkdir -p docs/testing/plans
+   DATE=$(date +%Y-%m-%d)
+   # choose <topic> slug (lowercase, hyphens) from the changes
+   plan_path="docs/testing/plans/${DATE}-<topic>-test-plan.md"
+   ```
+
+   Do **not** re-glob `ls -t` to locate the file afterward — write to and keep this exact `plan_path`.
+
+5. **Provenance.** The sidecar created for this run (Step 1.3) records **`auto_generated: true`** for an auto-plan-generated plan. (A user-provided plan leaves it `false`/absent. The schema field is added by a later task; here, just set it true for this auto-generated path.)
+
+6. **Success / validity contract.** After the Write, verify the file exists at `plan_path` **and** is structurally valid — it has the always-present headers `## Source`, `## Changes Summary`, and `## Detected Tools`. *(The FE/BE scenario sections are OPTIONAL per the format's omission rules; their absence is **thin**, not malformed — handled in Step 0.2.3.)* If the file is **missing** or any of those structural headers is **absent** → **abort**:
+
+   > Error: Plan generation failed / produced a malformed plan. Aborting.
+
+   Never fall through to a stale plan on failure.
+
+7. **Re-entry.** Generation occurs in place of the dead-stop and has now set `plan_path` (non-empty), so the Step 0.2 `ls -t` fallback is **not** re-run. Control proceeds to the surfacing banner (Step 0.2.2), then the static thin-check (Step 0.2.3), then Step 0.3 (base-URL).
+
+#### Step 0.2.2: Pre-Baseline Surfacing Banner (all modes)
+
+Immediately after generation, **before** base-URL resolution, echo (counting `### FE-NN` and `### BE-NN` headings in the just-written plan):
+
+> Generated plan: `<plan_path>` — <N> FE scenarios, <M> BE scenarios
+
+In `--mode auto` this banner **is the audit trail** for the generated plan. Note that the **mutation-guarded SKIP count is reported post-baseline** — it is computed during the Step 2.1 mutation-guard pass, not here.
+
+#### Step 0.2.3: Static Thin-Plan Exit (graceful success)
+
+After generation + banner, and **before** Step 0.3 base-URL resolution: if the (valid) generated plan has **zero `### FE-NN` blocks and zero `### BE-NN` blocks** → exit **gracefully with success** (not an error):
+
+> Generated plan has no executable FE or BE scenarios — nothing to test (e.g. a backend-only change fully covered by the unit/integration suite). Relying on that suite; not launching testers.
+
+Do not launch testers. This runs **before** Step 0.3 precisely so a URL-less empty plan does not trip Step 0.3's fail-closed base-URL abort. A valid-but-thin plan is **not** malformed (malformed plans already aborted in Step 0.2.1 step 6).
+
+If `plan_path` is not empty (resolved or generated), verify it is readable (Read tool will error if not).
 
 #### Step 0.3: Base-URL Resolution (Fail-Closed)
 
