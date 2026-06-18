@@ -2,7 +2,7 @@
 allowed-tools: Bash(find:*), Bash(ls:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(command:*), Bash(echo:*), Bash(git:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Bash(mv:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion
 description: Closed test-fix-retest loop — run a QA plan, auto-fix failures via fix-auto, re-run affected sections, and repeat until green or budget exhausted.
 model: opus
-argument-hint: [plan path] [--mode approve|auto|step] [--max-iterations N] [--max-dispatches D] [--time-budget S] [--severity LEVEL] [--allow-mutations] [--allow-host HOST]
+argument-hint: [plan path] [--mode approve|auto|step] [--max-iterations N] [--max-dispatches D] [--time-budget S] [--severity LEVEL] [--allow-mutations] [--allow-host HOST] [--auto-plan] [--no-auto-plan] [--allow-dirty]
 ---
 
 # QA Loop Command
@@ -26,8 +26,11 @@ This command orchestrates existing agents (`qa:fe-tester`, `qa:be-tester`, `code
 | `--severity` | Minimum severity to credit as fixed: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` | (none = all) | Case-insensitive; normalized to uppercase; unknown value → error; stop |
 | `--allow-mutations` | Permit state-changing BE scenarios (POST/PUT/PATCH/DELETE, DB writes) | (off) | Present → on; absent → off; no value needed; **note: test DB must be disposable (no rollback)** |
 | `--allow-host` | Whitelist additional hosts beyond loopback | (loopback only) | Repeatable; each invocation appends; format: hostname or IP |
+| `--auto-plan` | Force auto-plan generation ON when no plan exists (required to enable it in `--mode auto`) | on in approve/step, off in auto | Valueless presence flag; mutually exclusive with `--no-auto-plan` |
+| `--no-auto-plan` | Force auto-plan OFF — restore the dead-stop when no plan exists | — | Valueless presence flag; mutually exclusive with `--auto-plan` |
+| `--allow-dirty` | Permit running with uncommitted **tracked** changes (bypass the working-tree gate); suppresses whole-tree recovery hints | (off) | Valueless presence flag; present → on |
 
-**Validation timing:** All **flag** arguments (`--mode`, `--max-iterations`, `--max-dispatches`, `--time-budget`, `--severity`, `--allow-mutations`, `--allow-host`) are validated before any I/O (mirror `/fix-all` Step 0). Plan-path resolution legitimately performs I/O. Exit on any validation error.
+**Validation timing:** All **flag** arguments (`--mode`, `--max-iterations`, `--max-dispatches`, `--time-budget`, `--severity`, `--allow-mutations`, `--allow-host`, `--auto-plan`, `--no-auto-plan`, `--allow-dirty`) are validated before any I/O (mirror `/fix-all` Step 0). Plan-path resolution legitimately performs I/O. Exit on any validation error.
 
 ---
 
@@ -68,10 +71,29 @@ Split `$ARGUMENTS` on whitespace. Extract:
 3. **Unknown `--severity`:** if present and not in {`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`} (case-insensitive):
    > Error: Unknown severity 'X'. Valid levels: CRITICAL, HIGH, MEDIUM, LOW
 
-4. **Headless check (fail-fast):** if `--mode approve` or `--mode step` and stdin is not a TTY (non-interactive session):
+4. **Mutually-exclusive auto-plan flags:** if both `--auto-plan` and `--no-auto-plan` are present → `Error: --auto-plan and --no-auto-plan are mutually exclusive` and stop.
+
+5. **Headless check (fail-fast):** if `--mode approve` or `--mode step` and stdin is not a TTY (non-interactive session):
    > Error: approve/step modes require an interactive session. Use --mode auto for headless execution.
 
 If any validation fails, print the error and stop immediately.
+
+Resolve the effective auto-plan setting: `--mode approve`/`step` → ON, `--mode auto` → OFF; `--auto-plan` forces ON, `--no-auto-plan` forces OFF. These three flags are valueless presence flags (like `--allow-mutations`).
+
+#### Step 0.1.5: Working-Tree Safety Gate
+
+The loop auto-fixes source and its recovery guidance is `git restore`, so uncommitted **tracked** changes are at risk. This gate runs after argument validation, before plan resolution — it judges the pre-existing tree. Record the pre-existing tracked-modified set (used later for scoped recovery):
+
+```bash
+pre_loop_dirty=$(git status --porcelain --untracked-files=no | awk '{print $2}')
+```
+
+- If `pre_loop_dirty` is non-empty (dirty tree):
+  - `--mode auto`: **abort** unless `--allow-dirty` → `Error: Uncommitted changes present; the loop's recovery could discard them. Commit/stash first, or pass --allow-dirty.`
+  - `--mode approve`/`step`: **warn + confirm** (proceed / abort) via AskUserQuestion.
+- `--allow-dirty` bypasses the abort/confirm in all modes, but `pre_loop_dirty` is **still recorded** (so scoped recovery can subtract it later).
+
+`pre_loop_dirty` is the baseline subtracted in the fix phase to compute the loop's own touched files. (`Bash(git:*)` is already in allowed-tools.)
 
 #### Step 0.2: Resolve Plan Path
 
