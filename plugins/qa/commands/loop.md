@@ -306,6 +306,8 @@ Create or update the sidecar JSON file with this exact schema:
   "scenario_issues": { "BE-03": ["QA-001", "QA-002"], "FE-05": ["QA-003"] },
   "baseline": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
   "current": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
+  "auto_generated": false,
+  "fix_touched_files": [],
   "dispatch_count": 0,
   "iterations": []
 }
@@ -319,6 +321,8 @@ Create or update the sidecar JSON file with this exact schema:
 - `scenario_issues`: map of scenario-id → array of QA-XXX IDs assigned to that scenario
 - `baseline`: map of scenario-id → "pass" | "fail" | "skip" (immutable reference recorded after Step 2; used for regression detection)
 - `current`: map of scenario-id → "pass" | "fail" | "skip" (mutable, updated each iteration to track latest status; used for iteration logic)
+- `auto_generated`: `true` iff this run's loop generated the plan via auto-plan (Step 0.2.1); `false`/absent for a user-provided or pre-existing plan. Read by the thin/all-SKIP exit (Step 0.2.3 / Step 2.4) to decide graceful-success vs. error
+- `fix_touched_files`: array of tracked paths the loop's own fixes edited (post-fix tracked-modified set **minus** `pre_loop_dirty`, accumulated cumulatively across iterations in Step 3g); what scoped recovery (`git restore <fix_touched_files>`) restores — never the user's pre-existing changes
 - `dispatch_count`: incremented each time a fix-auto or tester is launched
 - `iterations`: array of iteration results (appended in Step 3e)
 
