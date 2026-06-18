@@ -404,6 +404,10 @@ Every tester launch counts toward `--max-dispatches`.
 
 Using the `report-format` skill, build the QA-XXX report **in memory** (the actual write happens in Step 2.5, or — on the zero-failure path — in Step 2.4 just before exit):
 
+**Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, surface the count the pre-baseline banner (Step 0.2.2) deferred:
+
+> Mutation-guarded SKIPs: <count> scenarios skipped under the mutation guard (re-run with `--allow-mutations` to execute them; test DB must be disposable).
+
 1. **Count results:** tally pass/fail/skip across all scenarios.
 2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
    - If reusing a prior report (Step 1, Case 1), use the existing scenario→QA-ID map; assign new IDs at `max(existing) + 1`.
@@ -451,11 +455,24 @@ Count failures at or above `--severity` (default: all):
 
   Save the report and sidecar first (Step 2.5 — on reuse/adopt this preserves any existing `**Status:**` lines), then skip the loop (Step 3) AND the final run (Step 4), and exit success.
 
-- If **all scenarios are SKIP** (no executable verifier) → abort:
+- If **all scenarios are SKIP**, branch on provenance (`auto_generated`, the sidecar flag set during generation in Step 0.2.1) and the SKIP reasons:
 
-> Error: No executable verifier — cannot gate (all scenarios marked SKIP or unavailable). Check your test plan and tool availability.
+  - **Auto-generated plan (`auto_generated == true`):**
+    - If **every** SKIP reason is `mutation-guard` → exit **gracefully with success** (not an error):
 
-  Stop execution.
+      > Auto-generated plan is backend-write-only under the mutation guard — nothing executable here; rely on the unit/integration suite.
+
+    - Else (**any** SKIP is `tool-unavailable` / `cannot-confirm` / `parse-failure`, i.e. not purely mutation-guard) → exit **gracefully** but print a **coverage-zero WARNING**:
+
+      > Warning: All scenarios skipped for tooling/parse reasons, not mutation-guard — coverage is zero; verify the generated plan and tool availability.
+
+  - **User-provided plan (`auto_generated` false/absent)** → abort (no executable verifier):
+
+    > Error: No executable verifier — cannot gate (all scenarios marked SKIP or unavailable). Check your test plan and tool availability.
+
+    Stop execution.
+
+  On either graceful auto-generated path, save the report and sidecar (Step 2.5) first, then skip the loop (Step 3) and the final run (Step 4) and exit success.
 
 #### Step 2.5: Save Report
 
@@ -496,7 +513,9 @@ CURRENT_PLAN_HASH=$(shasum -a 256 "<plan_path>" | cut -d' ' -f1)
 
 If `CURRENT_PLAN_HASH != PLAN_HASH`, the plan was edited mid-run. **Before stopping, flush the partial report + the Loop History rows accumulated so far** (do NOT write any `**Status:**` line — there is no authoritative final run), then print and stop:
 
-> Error: Plan changed mid-run (hash mismatch). Stopping. Uncommitted source changes left for review; recover with `git restore .`.
+> Error: Plan changed mid-run (hash mismatch). Stopping. Uncommitted source changes left for review; recover the loop's own edits with `git restore <fix_touched_files>` (scoped — never touches your pre-existing changes).
+
+Substitute the accumulated `fix_touched_files` list (Step 3g) for `<fix_touched_files>`; this restores only the loop's fixes, never the user's pre-existing dirt. **Under `--allow-dirty` the whole-tree hint is suppressed** — print the scoped `fix_touched_files` list plus the overlap note (files both pre-existing-dirty and fix-edited are left for the user to reconcile).
 
 This mirrors the Esc-abort path: a partial report is always flushed, Status is never written.
 
@@ -715,6 +734,27 @@ Update the `current` map with the latest pass/fail/skip status — **merge, don'
 
 Keep the `baseline` map immutable (it is the reference for regression detection).
 
+**Accumulate `fix_touched_files` (the loop's own edits).** After the fix phase, compute the set of tracked files the loop's fixes edited, excluding the user's pre-existing dirt recorded in Step 0.1.5 (`pre_loop_dirty`):
+
+```bash
+post=$(git status --porcelain --untracked-files=no | awk '{print $2}')
+# fix_touched_files = post − pre_loop_dirty  (set difference)
+```
+
+Persist `fix_touched_files` (the array) in the sidecar — **merge cumulatively** across iterations so it reflects every file the loop has touched, not just this iteration's:
+
+```json
+{
+  "fix_touched_files": ["src/api/users.py", "src/services/auth.py"]
+}
+```
+
+This set is what scoped recovery (`git restore <fix_touched_files>`) restores — never the user's pre-existing changes.
+
+**Overlap note (pre-existing AND fix-edited):** a file that is in **both** `pre_loop_dirty` and `post` (the user already had it dirty *and* a fix further edited it) is **excluded** from `fix_touched_files` by the set difference above — restoring it would discard the user's own work. Surface these as a one-line note for the user to reconcile, rather than restoring them:
+
+> Note: <files> were already modified before the loop and also edited by a fix — left untouched for you to reconcile (not included in scoped recovery).
+
 #### Step 3h: Append Loop History Row
 
 Append a human-facing row to the report's `## Loop History` section (if it doesn't exist, create it after `## Detailed Results`):
@@ -857,12 +897,14 @@ For each regression:
 
 If issues remain unfixed, use `/fix` to manually fix by ID, or run `/qa:loop` again with different settings (increase budgets, change `--mode`, adjust `--severity`).
 
-To recover uncommitted changes: `git restore .`
+To recover the loop's own edits: `git restore <fix_touched_files>`  (scoped — restores only what the loop's fixes touched, never your pre-existing changes)
 
 **Changes remain uncommitted for your control.**
 
 **Note on --allow-mutations:** Mutation-allowing runs modify the database (POST/PUT/PATCH/DELETE). Ensure your test database is disposable and can be safely reset between runs.
 ```
+
+For the recovery line, substitute the accumulated `fix_touched_files` list (Step 3g) for `<fix_touched_files>`. **Under `--allow-dirty` the whole-tree hint is suppressed** (the gate was bypassed, so the tree intentionally held pre-existing dirt): print the scoped `fix_touched_files` list **plus the overlap note** — files that were both pre-existing-dirty and fix-edited are excluded from scoped recovery and left for the user to reconcile. If `fix_touched_files` is empty, state that the loop touched nothing to recover.
 
 If any issues have warnings, append:
 
@@ -926,7 +968,8 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 | Non-loopback host (no `--allow-host`) | Abort (environment guard). |
 | Mutating BE scenario without `--allow-mutations` | SKIP with reason `mutation-guard`; issue marked "needs --allow-mutations". |
 | Tool unavailable (Playwright, curl, DB) | Affected scenarios SKIP / "cannot confirm" (never counted as fixed). If all verifiers unavailable → abort. |
-| Entire baseline is SKIP | Abort: "no executable verifier — cannot gate." |
+| Entire baseline is SKIP (user-provided plan) | Abort: "no executable verifier — cannot gate." |
+| Entire baseline is SKIP (auto-generated plan) | Graceful success if every SKIP reason is `mutation-guard` (backend-write-only — rely on unit/integration suite); graceful exit **with a coverage-zero WARNING** if any SKIP is tooling/parse-related (`tool-unavailable` / `cannot-confirm` / `parse-failure`). |
 | Zero baseline failures at/above floor | "All passing, nothing to fix" → skip loop AND final run → exit success. |
 | Issue `Location: unknown:0` / missing fields | Pre-filtered out; "needs manual location"; never dispatched. fix-auto also returns Failed if a location-less issue arrives. |
 | fix-auto fails on an issue | Mark failed for this iteration; keep looping on remaining issues. |
@@ -934,10 +977,10 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 | Anti-hardcoding warning | Surfaced for human review (approve mode) / logged (auto mode); not a credit block. |
 | No progress / oscillation / budget exceeded | Stop; report remaining issues; suggest `/fix` or another `/qa:loop` run. |
 | Regression in final run | New QA-XXX (deduped); reported in Loop History, not auto-fixed. |
-| Plan hash mismatch (mid-run) | Abort; flush partial report + Loop History (never Status); plan changed during loop execution. |
+| Plan hash mismatch (mid-run) | Abort; flush partial report + Loop History (never Status); plan changed during loop execution. Recover the loop's own edits with scoped `git restore <fix_touched_files>` (suppressed under `--allow-dirty`). |
 | Plan hash mismatch (cross-run) | Re-baseline; archive prior artifacts to `.bak`. |
 | Dispatch budget exhausted | Skip remaining fixes; proceed to final run (always runs, not gated). |
-| User abort (Esc in auto mode) | Uncommitted changes left; partial report + Loop History so far. |
+| User abort (Esc in auto mode) | Uncommitted changes left; partial report + Loop History so far. Recover the loop's own edits with scoped `git restore <fix_touched_files>` (suppressed under `--allow-dirty`, where the scoped list + overlap note are printed instead). |
 | Approve/step mode without TTY | Abort: "approve/step require an interactive session; use --mode auto." |
 
 ---
