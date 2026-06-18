@@ -1,8 +1,8 @@
 ---
-allowed-tools: Bash(find:*), Bash(ls:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(command:*), Bash(echo:*), Bash(git:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Bash(mv:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion
+allowed-tools: Bash(find:*), Bash(ls:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(command:*), Bash(echo:*), Bash(git:*), Bash(gh:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Bash(mv:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion
 description: Closed test-fix-retest loop — run a QA plan, auto-fix failures via fix-auto, re-run affected sections, and repeat until green or budget exhausted.
 model: opus
-argument-hint: [plan path] [--mode approve|auto|step] [--max-iterations N] [--max-dispatches D] [--time-budget S] [--severity LEVEL] [--allow-mutations] [--allow-host HOST]
+argument-hint: [plan path] [--mode approve|auto|step] [--max-iterations N] [--max-dispatches D] [--time-budget S] [--severity LEVEL] [--allow-mutations] [--allow-host HOST] [--auto-plan] [--no-auto-plan] [--allow-dirty]
 ---
 
 # QA Loop Command
@@ -26,8 +26,11 @@ This command orchestrates existing agents (`qa:fe-tester`, `qa:be-tester`, `code
 | `--severity` | Minimum severity to credit as fixed: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` | (none = all) | Case-insensitive; normalized to uppercase; unknown value → error; stop |
 | `--allow-mutations` | Permit state-changing BE scenarios (POST/PUT/PATCH/DELETE, DB writes) | (off) | Present → on; absent → off; no value needed; **note: test DB must be disposable (no rollback)** |
 | `--allow-host` | Whitelist additional hosts beyond loopback | (loopback only) | Repeatable; each invocation appends; format: hostname or IP |
+| `--auto-plan` | Force auto-plan generation ON when no plan exists (required to enable it in `--mode auto`) | on in approve/step, off in auto | Valueless presence flag; mutually exclusive with `--no-auto-plan` |
+| `--no-auto-plan` | Force auto-plan OFF — restore the dead-stop when no plan exists | — | Valueless presence flag; mutually exclusive with `--auto-plan` |
+| `--allow-dirty` | Permit running with uncommitted **tracked** changes (bypass the working-tree gate); suppresses whole-tree recovery hints | (off) | Valueless presence flag; present → on |
 
-**Validation timing:** All **flag** arguments (`--mode`, `--max-iterations`, `--max-dispatches`, `--time-budget`, `--severity`, `--allow-mutations`, `--allow-host`) are validated before any I/O (mirror `/fix-all` Step 0). Plan-path resolution legitimately performs I/O. Exit on any validation error.
+**Validation timing:** All **flag** arguments (`--mode`, `--max-iterations`, `--max-dispatches`, `--time-budget`, `--severity`, `--allow-mutations`, `--allow-host`, `--auto-plan`, `--no-auto-plan`, `--allow-dirty`) are validated before any I/O (mirror `/fix-all` Step 0). Plan-path resolution legitimately performs I/O. Exit on any validation error.
 
 ---
 
@@ -68,10 +71,29 @@ Split `$ARGUMENTS` on whitespace. Extract:
 3. **Unknown `--severity`:** if present and not in {`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`} (case-insensitive):
    > Error: Unknown severity 'X'. Valid levels: CRITICAL, HIGH, MEDIUM, LOW
 
-4. **Headless check (fail-fast):** if `--mode approve` or `--mode step` and stdin is not a TTY (non-interactive session):
+4. **Mutually-exclusive auto-plan flags:** if both `--auto-plan` and `--no-auto-plan` are present → `Error: --auto-plan and --no-auto-plan are mutually exclusive` and stop.
+
+5. **Headless check (fail-fast):** if `--mode approve` or `--mode step` and stdin is not a TTY (non-interactive session):
    > Error: approve/step modes require an interactive session. Use --mode auto for headless execution.
 
 If any validation fails, print the error and stop immediately.
+
+Resolve the effective auto-plan setting: `--mode approve`/`step` → ON, `--mode auto` → OFF; `--auto-plan` forces ON, `--no-auto-plan` forces OFF. These three flags are valueless presence flags (like `--allow-mutations`).
+
+#### Step 0.1.5: Working-Tree Safety Gate
+
+The loop auto-fixes source and its recovery guidance is `git restore`, so uncommitted **tracked** changes are at risk. This gate runs after argument validation, before plan resolution — it judges the pre-existing tree. Record the pre-existing tracked-modified set (used later for scoped recovery):
+
+```bash
+pre_loop_dirty=$(git -c core.quotePath=false diff --name-only HEAD)   # tracked-modified paths vs HEAD, one FULL path per line (space/quote-safe — do NOT field-split; compare as line-sets)
+```
+
+- If `pre_loop_dirty` is non-empty (dirty tree):
+  - `--mode auto`: **abort** unless `--allow-dirty` → `Error: Uncommitted changes present; the loop's recovery could discard them. Commit/stash first, or pass --allow-dirty.`
+  - `--mode approve`/`step`: **warn + confirm** (proceed / abort) via AskUserQuestion.
+- `--allow-dirty` bypasses the abort/confirm in all modes, but `pre_loop_dirty` is **still recorded** (so scoped recovery can subtract it later).
+
+`pre_loop_dirty` is the baseline subtracted in the fix phase to compute the loop's own touched files. **Persist it into the sidecar at Step 1.3** — it is not a durable shell variable, and Step 3g reads it back from the sidecar, so the subtraction survives the many tool calls (baseline, HITL gates, fixes) between here and the fix phase. (`Bash(git:*)` is already in allowed-tools.)
 
 #### Step 0.2: Resolve Plan Path
 
@@ -81,13 +103,96 @@ If `plan_path` is empty:
 plan_path=$(ls -t docs/testing/plans/*.md 2>/dev/null | head -1)
 ```
 
-If `plan_path` is still empty:
+If `plan_path` is still empty, branch on the **effective auto-plan setting** resolved in Step 0.1 (`approve`/`step` → ON by default; `auto` → OFF unless `--auto-plan`; `--no-auto-plan` forces OFF):
+
+**Auto-plan OFF** → keep the dead-stop:
 
 > No test plans found in `docs/testing/plans/`. Run `/qa:create-plan` first.
 
 Stop execution.
 
-If `plan_path` is not empty, verify it is readable (Read tool will error if not).
+**Auto-plan ON** → trigger inline generation:
+
+- **`approve`/`step`:** ask once via `AskUserQuestion`:
+  ```
+  question: "No QA plan found for this branch. Generate one and run the loop?"
+  options:
+    - label: "Generate & run"
+      description: "Generate a branch-vs-default plan, then run the loop"
+    - label: "Cancel"
+      description: "Stop without generating a plan"
+  ```
+  If the user selects **Cancel** → stop execution. If **Generate & run** → proceed to Step 0.2.1. *(Headless `approve`/`step` was already aborted in Step 0.1, so this prompt only ever runs interactively.)*
+- **`auto` (with `--auto-plan`):** print a **non-silent banner** (always shown, even in headless `--mode auto`) and proceed without a gate:
+  > No QA plan found. `--auto-plan` is set: generating a test plan for the current branch (vs the default branch), then continuing the loop.
+  Then proceed to Step 0.2.1.
+
+#### Step 0.2.1: Generate Plan Inline (branch-vs-default)
+
+This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Steps 2–7 but **only the current-branch-vs-default-branch path**. It **skips** create-plan Step 1 (its task scaffold — reuse this loop's tracker) and Step 8 (its "run `/qa:run`" prompt — that contradicts continuing the loop here).
+
+1. **Resolve the default branch** (the `--short` form returns `origin/master`, so the `origin/` strip is required; do **not** use `sed`):
+
+   ```bash
+   BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null); BASE=${BASE#origin/}
+   [ -z "$BASE" ] && git rev-parse --verify main   >/dev/null 2>&1 && BASE=main
+   [ -z "$BASE" ] && git rev-parse --verify master >/dev/null 2>&1 && BASE=master
+   [ -z "$BASE" ] && BASE=main
+   ```
+
+2. **Get the diff + changed files** (source is fixed to current-branch-vs-default — do **not** inline create-plan's PR / `last-N` / staged dispatch):
+
+   ```bash
+   git diff "$BASE"...HEAD
+   git diff --name-only "$BASE"...HEAD
+   ```
+
+3. **Analyze & detect tools.** Classify each changed file as FE or BE using create-plan's indicators (Step 3), and detect available testing tools (Playwright MCP, HTTP client, DB access) as in create-plan Step 5. Then render the plan body using the format skill:
+
+   ```
+   Skill(skill: "test-plan-format")
+   ```
+
+   Fill `## Source` (Type: branch `<current>`, Base: `$BASE`, Date), `## Changes Summary`, `## Detected Tools`, and the FE/BE scenario sections per the skill (including its section-omission rules).
+
+4. **Construct the path before writing** (bind it explicitly — there is nothing to "capture afterward"), then **Write** the plan to that literal path with the Write tool:
+
+   ```bash
+   mkdir -p docs/testing/plans
+   DATE=$(date +%Y-%m-%d)
+   # choose <topic> slug (lowercase, hyphens) from the changes
+   plan_path="docs/testing/plans/${DATE}-<topic>-test-plan.md"
+   ```
+
+   Do **not** re-glob `ls -t` to locate the file afterward — write to and keep this exact `plan_path`.
+
+5. **Provenance.** The sidecar created for this run (Step 1.3) records **`auto_generated: true`** for an auto-plan-generated plan. (A user-provided plan leaves it `false`/absent. The schema field is added by a later task; here, just set it true for this auto-generated path.)
+
+6. **Success / validity contract.** After the Write, verify the file exists at `plan_path` **and** is structurally valid — it has the always-present headers `## Source`, `## Changes Summary`, and `## Detected Tools`. *(The FE/BE scenario sections are OPTIONAL per the format's omission rules; their absence is **thin**, not malformed — handled in Step 0.2.3.)* If the file is **missing** or any of those structural headers is **absent** → **abort**:
+
+   > Error: Plan generation failed / produced a malformed plan. Aborting.
+
+   Never fall through to a stale plan on failure.
+
+7. **Re-entry.** Generation occurs in place of the dead-stop and has now set `plan_path` (non-empty), so the Step 0.2 `ls -t` fallback is **not** re-run. Control proceeds to the surfacing banner (Step 0.2.2), then the static thin-check (Step 0.2.3), then Step 0.3 (base-URL).
+
+#### Step 0.2.2: Pre-Baseline Surfacing Banner (all modes)
+
+Immediately after generation, **before** base-URL resolution, echo (counting `### FE-NN` and `### BE-NN` headings in the just-written plan):
+
+> Generated plan: `<plan_path>` — <N> FE scenarios, <M> BE scenarios
+
+In `--mode auto` this banner **is the audit trail** for the generated plan. Note that the **mutation-guarded SKIP count is reported post-baseline** — it is computed during the Step 2.1 mutation-guard pass, not here.
+
+#### Step 0.2.3: Static Thin-Plan Exit (graceful success)
+
+After generation + banner, and **before** Step 0.3 base-URL resolution: if the (valid) generated plan has **zero `### FE-NN` blocks and zero `### BE-NN` blocks** → exit **gracefully with success** (not an error):
+
+> Generated plan has no executable FE or BE scenarios — nothing to test (e.g. a backend-only change fully covered by the unit/integration suite). Relying on that suite; not launching testers.
+
+Do not launch testers. This runs **before** Step 0.3 precisely so a URL-less empty plan does not trip Step 0.3's fail-closed base-URL abort. A valid-but-thin plan is **not** malformed (malformed plans already aborted in Step 0.2.1 step 6).
+
+**Readability check (all paths — a user-resolved plan OR a generated one that was not thin).** Once `plan_path` is settled and not empty, verify it is readable before continuing to Step 0.3 (the Read tool will error if not).
 
 #### Step 0.3: Base-URL Resolution (Fail-Closed)
 
@@ -201,10 +306,15 @@ Create or update the sidecar JSON file with this exact schema:
   "scenario_issues": { "BE-03": ["QA-001", "QA-002"], "FE-05": ["QA-003"] },
   "baseline": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
   "current": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
+  "auto_generated": false,
+  "pre_loop_dirty": [],
+  "fix_touched_files": [],
   "dispatch_count": 0,
   "iterations": []
 }
 ```
+
+**When writing the sidecar:** set `auto_generated` to `true` if this run generated the plan in Step 0.2.1, else `false` (the example above shows the default) — do not take the literal `false` as unconditional. Persist `pre_loop_dirty` (recorded in Step 0.1.5). On the REUSE/ADOPT idempotency paths (Step 1.2), **preserve** the existing `auto_generated` value rather than overwriting it.
 
 - `plan_sha256`: the 64-hex SHA-256 hash of the plan file
 - `plan_path`: path to the test plan
@@ -214,6 +324,9 @@ Create or update the sidecar JSON file with this exact schema:
 - `scenario_issues`: map of scenario-id → array of QA-XXX IDs assigned to that scenario
 - `baseline`: map of scenario-id → "pass" | "fail" | "skip" (immutable reference recorded after Step 2; used for regression detection)
 - `current`: map of scenario-id → "pass" | "fail" | "skip" (mutable, updated each iteration to track latest status; used for iteration logic)
+- `auto_generated`: `true` iff this run's loop generated the plan via auto-plan (Step 0.2.1); `false`/absent for a user-provided or pre-existing plan. Read by the thin/all-SKIP exit (Step 0.2.3 / Step 2.4) to decide graceful-success vs. error
+- `pre_loop_dirty`: array of tracked paths already modified **before** the loop started (recorded in Step 0.1.5, persisted here so it survives across the many tool calls before the fix phase); subtracted from the post-fix set to compute `fix_touched_files`. Persisting it (rather than relying on a shell variable that can be lost mid-run) is what keeps scoped recovery from over-restoring the user's pre-existing edits
+- `fix_touched_files`: array of tracked paths the loop's own fixes edited (post-fix tracked-modified set **minus** `pre_loop_dirty`, accumulated cumulatively across iterations in Step 3g); what scoped recovery (`git restore <fix_touched_files>`) restores — never the user's pre-existing changes
 - `dispatch_count`: incremented each time a fix-auto or tester is launched
 - `iterations`: array of iteration results (appended in Step 3e)
 
@@ -299,6 +412,10 @@ Every tester launch counts toward `--max-dispatches`.
 
 Using the `report-format` skill, build the QA-XXX report **in memory** (the actual write happens in Step 2.5, or — on the zero-failure path — in Step 2.4 just before exit):
 
+**Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, surface the count the pre-baseline banner (Step 0.2.2) deferred:
+
+> Mutation-guarded SKIPs: <count> scenarios skipped under the mutation guard (re-run with `--allow-mutations` to execute them; test DB must be disposable).
+
 1. **Count results:** tally pass/fail/skip across all scenarios.
 2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
    - If reusing a prior report (Step 1, Case 1), use the existing scenario→QA-ID map; assign new IDs at `max(existing) + 1`.
@@ -346,11 +463,24 @@ Count failures at or above `--severity` (default: all):
 
   Save the report and sidecar first (Step 2.5 — on reuse/adopt this preserves any existing `**Status:**` lines), then skip the loop (Step 3) AND the final run (Step 4), and exit success.
 
-- If **all scenarios are SKIP** (no executable verifier) → abort:
+- If **all scenarios are SKIP**, branch on provenance (`auto_generated`, the sidecar flag set during generation in Step 0.2.1) and the SKIP reasons:
 
-> Error: No executable verifier — cannot gate (all scenarios marked SKIP or unavailable). Check your test plan and tool availability.
+  - **Auto-generated plan (`auto_generated == true`):**
+    - If **every** SKIP reason is `mutation-guard` → exit **gracefully with success** (not an error):
 
-  Stop execution.
+      > Auto-generated plan is backend-write-only under the mutation guard — nothing executable here; rely on the unit/integration suite.
+
+    - Else (**any** SKIP is `tool-unavailable` / `cannot-confirm` / `parse-failure`, i.e. not purely mutation-guard) → exit **gracefully** but print a **coverage-zero WARNING**:
+
+      > Warning: All scenarios skipped for tooling/parse reasons, not mutation-guard — coverage is zero; verify the generated plan and tool availability.
+
+  - **User-provided plan (`auto_generated` false/absent)** → abort (no executable verifier):
+
+    > Error: No executable verifier — cannot gate (all scenarios marked SKIP or unavailable). Check your test plan and tool availability.
+
+    Stop execution.
+
+  On either graceful auto-generated path, save the report and sidecar (Step 2.5) first, then skip the loop (Step 3) and the final run (Step 4) and exit success.
 
 #### Step 2.5: Save Report
 
@@ -391,7 +521,9 @@ CURRENT_PLAN_HASH=$(shasum -a 256 "<plan_path>" | cut -d' ' -f1)
 
 If `CURRENT_PLAN_HASH != PLAN_HASH`, the plan was edited mid-run. **Before stopping, flush the partial report + the Loop History rows accumulated so far** (do NOT write any `**Status:**` line — there is no authoritative final run), then print and stop:
 
-> Error: Plan changed mid-run (hash mismatch). Stopping. Uncommitted source changes left for review; recover with `git restore .`.
+> Error: Plan changed mid-run (hash mismatch). Stopping. Uncommitted source changes left for review; recover the loop's own edits with `git restore <fix_touched_files>` (scoped — never touches your pre-existing changes).
+
+Substitute the accumulated `fix_touched_files` list (Step 3g) for `<fix_touched_files>`; this restores only the loop's fixes, never the user's pre-existing dirt. **Under `--allow-dirty` the whole-tree hint is suppressed** — print the scoped `fix_touched_files` list plus the overlap note (files both pre-existing-dirty and fix-edited are left for the user to reconcile).
 
 This mirrors the Esc-abort path: a partial report is always flushed, Status is never written.
 
@@ -610,6 +742,27 @@ Update the `current` map with the latest pass/fail/skip status — **merge, don'
 
 Keep the `baseline` map immutable (it is the reference for regression detection).
 
+**Accumulate `fix_touched_files` (the loop's own edits).** After the fix phase, compute the set of tracked files the loop's fixes edited, excluding the user's pre-existing dirt — **read `pre_loop_dirty` back from the sidecar** (persisted in Step 1.3, not a shell variable that may have been lost across the intervening tool calls):
+
+```bash
+post=$(git -c core.quotePath=false diff --name-only HEAD)   # same robust form as Step 0.1.5 (one FULL path per line)
+# fix_touched_files = post − pre_loop_dirty  (line-set difference; read pre_loop_dirty back from the sidecar, not a shell var)
+```
+
+Persist `fix_touched_files` (the array) in the sidecar — **merge cumulatively** across iterations so it reflects every file the loop has touched, not just this iteration's:
+
+```json
+{
+  "fix_touched_files": ["src/api/users.py", "src/services/auth.py"]
+}
+```
+
+This set is what scoped recovery (`git restore <fix_touched_files>`) restores — never the user's pre-existing changes.
+
+**Overlap note (pre-existing AND fix-edited):** a file that is in **both** `pre_loop_dirty` and `post` (the user already had it dirty *and* a fix further edited it) is **excluded** from `fix_touched_files` by the set difference above — restoring it would discard the user's own work. Surface these as a one-line note for the user to reconcile, rather than restoring them:
+
+> Note: <files> were already modified before the loop and also edited by a fix — left untouched for you to reconcile (not included in scoped recovery).
+
 #### Step 3h: Append Loop History Row
 
 Append a human-facing row to the report's `## Loop History` section (if it doesn't exist, create it after `## Detailed Results`):
@@ -752,12 +905,14 @@ For each regression:
 
 If issues remain unfixed, use `/fix` to manually fix by ID, or run `/qa:loop` again with different settings (increase budgets, change `--mode`, adjust `--severity`).
 
-To recover uncommitted changes: `git restore .`
+To recover the loop's own edits: `git restore <fix_touched_files>`  (scoped — restores only what the loop's fixes touched, never your pre-existing changes)
 
 **Changes remain uncommitted for your control.**
 
 **Note on --allow-mutations:** Mutation-allowing runs modify the database (POST/PUT/PATCH/DELETE). Ensure your test database is disposable and can be safely reset between runs.
 ```
+
+For the recovery line, substitute the accumulated `fix_touched_files` list (Step 3g) for `<fix_touched_files>`. **Under `--allow-dirty` the whole-tree hint is suppressed** (the gate was bypassed, so the tree intentionally held pre-existing dirt): print the scoped `fix_touched_files` list **plus the overlap note** — files that were both pre-existing-dirty and fix-edited are excluded from scoped recovery and left for the user to reconcile. If `fix_touched_files` is empty, state that the loop touched nothing to recover.
 
 If any issues have warnings, append:
 
@@ -821,7 +976,8 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 | Non-loopback host (no `--allow-host`) | Abort (environment guard). |
 | Mutating BE scenario without `--allow-mutations` | SKIP with reason `mutation-guard`; issue marked "needs --allow-mutations". |
 | Tool unavailable (Playwright, curl, DB) | Affected scenarios SKIP / "cannot confirm" (never counted as fixed). If all verifiers unavailable → abort. |
-| Entire baseline is SKIP | Abort: "no executable verifier — cannot gate." |
+| Entire baseline is SKIP (user-provided plan) | Abort: "no executable verifier — cannot gate." |
+| Entire baseline is SKIP (auto-generated plan) | Graceful success if every SKIP reason is `mutation-guard` (backend-write-only — rely on unit/integration suite); graceful exit **with a coverage-zero WARNING** if any SKIP is tooling/parse-related (`tool-unavailable` / `cannot-confirm` / `parse-failure`). |
 | Zero baseline failures at/above floor | "All passing, nothing to fix" → skip loop AND final run → exit success. |
 | Issue `Location: unknown:0` / missing fields | Pre-filtered out; "needs manual location"; never dispatched. fix-auto also returns Failed if a location-less issue arrives. |
 | fix-auto fails on an issue | Mark failed for this iteration; keep looping on remaining issues. |
@@ -829,10 +985,10 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 | Anti-hardcoding warning | Surfaced for human review (approve mode) / logged (auto mode); not a credit block. |
 | No progress / oscillation / budget exceeded | Stop; report remaining issues; suggest `/fix` or another `/qa:loop` run. |
 | Regression in final run | New QA-XXX (deduped); reported in Loop History, not auto-fixed. |
-| Plan hash mismatch (mid-run) | Abort; flush partial report + Loop History (never Status); plan changed during loop execution. |
+| Plan hash mismatch (mid-run) | Abort; flush partial report + Loop History (never Status); plan changed during loop execution. Recover the loop's own edits with scoped `git restore <fix_touched_files>` (suppressed under `--allow-dirty`). |
 | Plan hash mismatch (cross-run) | Re-baseline; archive prior artifacts to `.bak`. |
 | Dispatch budget exhausted | Skip remaining fixes; proceed to final run (always runs, not gated). |
-| User abort (Esc in auto mode) | Uncommitted changes left; partial report + Loop History so far. |
+| User abort (Esc in auto mode) | Uncommitted changes left; partial report + Loop History so far. Recover the loop's own edits with scoped `git restore <fix_touched_files>` (suppressed under `--allow-dirty`, where the scoped list + overlap note are printed instead). |
 | Approve/step mode without TTY | Abort: "approve/step require an interactive session; use --mode auto." |
 
 ---

@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.1.0
+**Version:** 2.2.0
 
 ## Commands
 
@@ -65,9 +65,17 @@ The command:
 
 Close a test → fix → retest loop: run a QA plan, auto-fix failures via `code-review:fix-auto`, re-run affected sections, and repeat until all issues pass or the budget is exhausted.
 
+**Self-driving (2.2.0):** when no plan exists, `/qa:loop` can generate one for the current branch (diffed against the default branch) and continue straight into the loop — no separate `/qa:create-plan` step. Whether it does so depends on the mode (see [Auto-plan](#auto-plan-self-driving-loop-220) below).
+
 ```bash
 # Run the most recent test plan in default mode (approve — one batch HITL gate)
 /qa:loop
+
+# No plan yet? In approve/step the loop offers to generate one for the branch and run it
+/qa:loop
+
+# Headless auto mode: opt in to plan generation explicitly
+/qa:loop --mode auto --auto-plan
 
 # Run a specific plan in automatic mode (headless, no HITL gates)
 /qa:loop docs/testing/plans/2026-06-17-user-auth-test-plan.md --mode auto
@@ -80,6 +88,9 @@ Close a test → fix → retest loop: run a QA plan, auto-fix failures via `code
 
 # Only fix CRITICAL and HIGH issues; set a 30-minute time budget
 /qa:loop --severity HIGH --time-budget 1800
+
+# Run with uncommitted changes already in the tree (bypass the working-tree gate)
+/qa:loop --allow-dirty
 ```
 
 **Invocation & flags:**
@@ -88,11 +99,12 @@ Close a test → fix → retest loop: run a QA plan, auto-fix failures via `code
 /qa:loop [plan-path] [--mode approve|auto|step] [--max-iterations N] 
          [--max-dispatches D] [--time-budget S] [--severity LEVEL] 
          [--allow-mutations] [--allow-host HOST]
+         [--auto-plan] [--no-auto-plan] [--allow-dirty]
 ```
 
 | Argument | Interpretation | Default | Rules |
 |----------|---|---|---|
-| (empty) | Find the newest plan in `docs/testing/plans/` | — | If no plan found, prints "Run `/qa:create-plan` first." and stops |
+| (empty) | Find the newest plan in `docs/testing/plans/` | — | If no plan found, **auto-plan** decides: approve/step generate one for the branch (after a confirm); auto stops with "Run `/qa:create-plan` first." unless `--auto-plan` (see [Auto-plan](#auto-plan-self-driving-loop-220)) |
 | `<path>` | Use the specified test plan file | — | File must exist and be readable |
 | `--mode` | Loop mode: `approve` (batch HITL), `auto` (headless), `step` (per-fix HITL) | `approve` | Case-sensitive; unknown value → error; `approve`/`step` require interactive session (TTY); headless → error |
 | `--max-iterations` | Maximum loop iterations | 3 | Must be positive integer; invalid → error |
@@ -101,6 +113,9 @@ Close a test → fix → retest loop: run a QA plan, auto-fix failures via `code
 | `--severity` | Minimum severity to credit as fixed: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` | (none = all) | Case-insensitive; unknown value → error |
 | `--allow-mutations` | Permit state-changing BE scenarios (POST/PUT/PATCH/DELETE, DB writes) | (off) | Present → on; absent → off; no value needed; **note: test DB must be disposable (no rollback)** |
 | `--allow-host` | Whitelist additional hosts beyond loopback | (loopback only) | Repeatable; each invocation appends; format: hostname or IP |
+| `--auto-plan` | Force auto-plan generation ON when no plan exists (required to enable it in `--mode auto`) | on in approve/step, off in auto | Valueless presence flag; mutually exclusive with `--no-auto-plan` |
+| `--no-auto-plan` | Force auto-plan OFF — restore the 2.1.0 dead-stop when no plan exists | — | Valueless presence flag; mutually exclusive with `--auto-plan` |
+| `--allow-dirty` | Permit running with uncommitted **tracked** changes (bypass the working-tree gate); suppresses whole-tree recovery hints | (off) | Valueless presence flag; present → on |
 
 **Modes:**
 
@@ -111,6 +126,56 @@ Close a test → fix → retest loop: run a QA plan, auto-fix failures via `code
 | **step** | Approve before each re-test (maximum control) | Yes (per iteration) | No — requires TTY |
 
 **Headless behavior:** if `--mode approve` or `--mode step` and stdin is not a TTY (non-interactive session) → abort with "approve/step require an interactive session; use --mode auto."
+
+#### Auto-plan (self-driving loop, 2.2.0)
+
+When no plan exists, instead of dead-stopping, `/qa:loop` can generate one for the **current branch** (diffed against the default branch) and continue into the loop. The default is **mode-dependent**:
+
+| Mode | Auto-plan default | No-plan behavior |
+|---|---|---|
+| **approve** *(default)* / **step** | **ON** | One confirm — *"No QA plan found for this branch. Generate one and run the loop?"* → generate → continue. Fixes are still gated by the per-mode HITL gate. Headless (no TTY) aborts first, so this prompt only ever runs interactively. |
+| **auto** | **OFF** | The 2.1.0 dead-stop, **unless `--auto-plan`** is passed. With `--auto-plan`, a non-silent banner is printed (even headless) and a plan is generated, then the loop continues with no gate. |
+
+**Why mode-dependent:** `approve`/`step` gate every fix, so generating a plan there is low-risk and merely prompted. `auto` has no gate, so silently turning a CI `qa:loop --mode auto` (which previously expected a no-op stop) into source-mutating execution would be a behavior change — it is opt-in via `--auto-plan`.
+
+**Overrides:** `--auto-plan` forces ON, `--no-auto-plan` forces OFF (restores the dead-stop). Both are valueless presence flags; passing both is an error.
+
+**Surfacing the generated plan:**
+
+- **Before baseline:** the generated plan path plus FE/BE scenario counts are echoed — e.g. `Generated plan: <path> — 4 FE scenarios, 2 BE scenarios`. In `--mode auto` this banner is the audit trail.
+- **After baseline:** the **mutation-guarded SKIP count** is folded into the baseline report (it is only knowable once the Step 2.1 guard pass has classified SKIPs, so it is not claimed in the pre-baseline banner).
+
+**Working-tree safety gate:** because the loop auto-fixes source and recovers via `git restore`, uncommitted **tracked** changes are at risk. After argument validation and before plan resolution, the loop inspects the tree (`git status --porcelain` over tracked files; untracked files are excluded — `git restore` cannot destroy them):
+
+- **`auto`** — a dirty tree **aborts** unless `--allow-dirty`.
+- **`approve`/`step`** — a dirty tree **warns and confirms** (this prompt comes *before* the generate confirm, so a dirty no-plan run shows two prompts).
+- `--allow-dirty` bypasses the gate in all modes.
+
+**Scoped recovery (never whole-tree):** every recovery hint the loop prints restores only the loop's own edits — `git restore <fix_touched_files>` — never `git restore .`. `fix_touched_files` is the post-fix tracked-modified set minus what was already dirty before the loop, recorded in the sidecar. This guarantees recovery never discards your pre-existing edits. A file that was *both* already dirty and further edited by a fix is left untouched (surfaced as a one-line note for you to reconcile). Under `--allow-dirty`, the whole-tree hint is suppressed entirely.
+
+**Graceful, reason-aware thin-plan exit:** an **auto-generated** plan with nothing executable exits **successfully** (the unit/integration suite is the real coverage there), not as an error:
+
+- **Empty plan** (zero `FE-NN` and zero `BE-NN` scenarios — e.g. a change with no testable UI/API surface) → graceful success before any tester launches.
+- **All scenarios SKIP, all under the mutation guard** (the legitimate backend-write-only case) → graceful success; rely on the unit/integration suite.
+- **All scenarios SKIP, but any for tooling/parse reasons** (`tool-unavailable` / `cannot-confirm` / parse failure) → graceful exit **with a coverage-zero warning** — so a broken generation isn't laundered into "success."
+- A **user-provided** all-SKIP plan still **errors** (`No executable verifier — cannot gate`): an operator-supplied plan that cannot gate is worth flagging.
+
+A *malformed* generated plan (missing the always-present `## Source` / `## Changes Summary` / `## Detected Tools` headers) is a different case — it **aborts**, never falls through to a stale plan.
+
+**Mode matrix (no-plan / dirty-tree / thin-plan):**
+
+| Situation | `auto` | `approve` / `step` |
+|---|---|---|
+| No plan | dead-stop, unless `--auto-plan` → banner → generate → run | confirm → generate → run (headless: abort) |
+| Dirty tree | abort unless `--allow-dirty` | warn + confirm (before the generate confirm) |
+| After generation | pre-baseline banner (path + FE/BE counts) → continue | pre-baseline banner → continue |
+| Empty plan (0 FE + 0 BE) | graceful success | graceful success |
+| All-SKIP, auto-generated, mutation-guard only | graceful success | graceful success |
+| All-SKIP, auto-generated, tooling/parse reasons | graceful exit + coverage-zero warning | graceful exit + warning |
+| All-SKIP, user-provided plan | existing error | existing error |
+
+> [!IMPORTANT]
+> **Behavior change for `--mode auto` users.** The no-plan default in `auto` **stays a no-op stop** unless you add `--auto-plan`, so existing CI invocations are unaffected. The **interactive default** (`approve`/`step`), however, changes from "stop" to "**confirm, then generate**" — a prompted action, not a silent one. Pass `--no-auto-plan` to restore the 2.1.0 dead-stop in any mode.
 
 **Algorithm summary:**
 
@@ -145,6 +210,8 @@ Contains:
 - `plan_sha256` — fingerprint to detect plan tampering (cross-run or mid-run)
 - `scenario_issues` — scenario-id → [QA-IDs] map
 - `baseline` — baseline pass/fail for each scenario
+- `auto_generated` — `true` iff this run generated the plan via auto-plan (drives the graceful thin/all-SKIP exit vs. error)
+- `fix_touched_files` — tracked paths the loop's own fixes edited (post-fix tracked-modified minus pre-loop dirt); the set scoped recovery restores
 - `iterations[]` — per-iteration results (attempted fixes, now-passing, still-failing, warnings, dispatches)
 - `dispatch_count` — running total
 
