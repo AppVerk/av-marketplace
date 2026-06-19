@@ -184,6 +184,19 @@ List ALL scenarios (pass, fail, skip) in order:
 
 ---
 
+## Coverage (optional — written by `/qa:loop`)
+
+An optional `## Coverage` block may appear in the Summary section, immediately after the Summary stats. It is `##`-level with **no** `### [SEVERITY]` headings and **no** `---` separators (so `/fix-report`'s block parser skips it — same rule as Loop History). Shape:
+
+```
+## Coverage
+- Exercised: <feature-PASS> feature · <sanity-PASS> sanity · <negative-PASS> enforcement
+- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
+- Confidence: <high | low — reason>
+```
+
+---
+
 ## Loop History (optional — written by `/qa:loop`)
 
 A `##`-level section placed **AFTER** `## Detailed Results`. It MUST NOT contain any

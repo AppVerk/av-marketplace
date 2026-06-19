@@ -166,7 +166,9 @@ This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Ste
 
    Do **not** re-glob `ls -t` to locate the file afterward — write to and keep this exact `plan_path`.
 
-5. **Provenance.** The sidecar created for this run (Step 1.3) records **`auto_generated: true`** for an auto-plan-generated plan. (A user-provided plan leaves it `false`/absent. The schema field is added by a later task; here, just set it true for this auto-generated path.)
+5. **Provenance.** The sidecar created for this run (Step 1.3) records **`auto_generated: true`** for an auto-plan-generated plan. (A user-provided plan leaves it `false`/absent.)
+
+**Assertion fidelity (auto-plan only).** Bias generated assertions toward observable invariants the generator can be confident about (non-5xx, no stack-trace/secret leak in the body, auth-gate present) over guessed exact path+status. Where an exact value must be asserted that the generator could not observe, mark that scenario **provisional** and generate it as its **own** scenario (never co-located with a robust invariant, so Step 3a's scenario-level exclusion can't drop a real finding). The provisional split happens **before** BE-NN/FE-NN numbers are assigned; number once over the final set; collect the provisional IDs. (Also note the provisional IDs in the surfacing output so they survive to Step 1.3 across a context loss.)
 
 6. **Success / validity contract.** After the Write, verify the file exists at `plan_path` **and** is structurally valid — it has the always-present headers `## Source`, `## Changes Summary`, and `## Detected Tools`. *(The FE/BE scenario sections are OPTIONAL per the format's omission rules; their absence is **thin**, not malformed — handled in Step 0.2.3.)* If the file is **missing** or any of those structural headers is **absent** → **abort**:
 
@@ -304,6 +306,9 @@ Create or update the sidecar JSON file with this exact schema:
   "topic": "user-auth",
   "created": "2026-06-17",
   "scenario_issues": { "BE-03": ["QA-001", "QA-002"], "FE-05": ["QA-003"] },
+  "scenario_kind": { "BE-03": "negative", "BE-04": "feature" },
+  "scenario_reason": { "BE-04": "auth-unverified", "BE-05": "mutation-guard" },
+  "provisional_scenarios": [],
   "baseline": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
   "current": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
   "auto_generated": false,
@@ -314,7 +319,7 @@ Create or update the sidecar JSON file with this exact schema:
 }
 ```
 
-**When writing the sidecar:** set `auto_generated` to `true` if this run generated the plan in Step 0.2.1, else `false` (the example above shows the default) — do not take the literal `false` as unconditional. Persist `pre_loop_dirty` (recorded in Step 0.1.5). On the REUSE/ADOPT idempotency paths (Step 1.2), **preserve** the existing `auto_generated` value rather than overwriting it.
+**When writing the sidecar:** set `auto_generated` to `true` if this run generated the plan in Step 0.2.1, else `false` (the example above shows the default) — do not take the literal `false` as unconditional. Persist `pre_loop_dirty` (recorded in Step 0.1.5). On the REUSE/ADOPT idempotency paths (Step 1.2), **preserve** the existing `auto_generated` value rather than overwriting it. Persist `provisional_scenarios` (the IDs decided in Step 0.2.1; empty array if not auto-generated). On REUSE/ADOPT, preserve the existing value (like `auto_generated`). Do NOT write it at Step 0.2.1 — the sidecar does not exist yet.
 
 - `plan_sha256`: the 64-hex SHA-256 hash of the plan file
 - `plan_path`: path to the test plan
@@ -322,13 +327,18 @@ Create or update the sidecar JSON file with this exact schema:
 - `topic`: extracted from the plan filename
 - `created`: date stamp (YYYY-MM-DD)
 - `scenario_issues`: map of scenario-id → array of QA-XXX IDs assigned to that scenario
-- `baseline`: map of scenario-id → "pass" | "fail" | "skip" (immutable reference recorded after Step 2; used for regression detection)
-- `current`: map of scenario-id → "pass" | "fail" | "skip" (mutable, updated each iteration to track latest status; used for iteration logic)
+- `scenario_kind`: map of scenario-id → "sanity" | "negative" | "feature" (set once at baseline ingest, Step 2.1; classifies what a PASS means for coverage)
+- `scenario_reason`: map of scenario-id → normalized reason for every non-PASS scenario ("mutation-guard" | "tool-unavailable" | "cannot-confirm" | "transport"), refreshed each ingest; drives the Coverage block and unlock-hints
+- `provisional_scenarios`: array of auto-generated scenario-ids whose assertions are guessed-exact (decided in Step 0.2.1, persisted here); read by Step 3a to treat their failures as plan-suspect
+- `baseline`: map of scenario-id → "pass" | "fail" | "skip" | "auth-unverified" (immutable reference recorded after Step 2; used for regression detection)
+- `current`: map of scenario-id → "pass" | "fail" | "skip" | "auth-unverified" (mutable, updated each iteration to track latest status; used for iteration logic)
 - `auto_generated`: `true` iff this run's loop generated the plan via auto-plan (Step 0.2.1); `false`/absent for a user-provided or pre-existing plan. Read by the thin/all-SKIP exit (Step 0.2.3 / Step 2.4) to decide graceful-success vs. error
 - `pre_loop_dirty`: array of tracked paths already modified **before** the loop started (recorded in Step 0.1.5, persisted here so it survives across the many tool calls before the fix phase); subtracted from the post-fix set to compute `fix_touched_files`. Persisting it (rather than relying on a shell variable that can be lost mid-run) is what keeps scoped recovery from over-restoring the user's pre-existing edits
 - `fix_touched_files`: array of tracked paths the loop's own fixes edited (post-fix tracked-modified set **minus** `pre_loop_dirty`, accumulated cumulatively across iterations in Step 3g); what scoped recovery (`git restore <fix_touched_files>`) restores — never the user's pre-existing changes
 - `dispatch_count`: incremented each time a fix-auto or tester is launched
 - `iterations`: array of iteration results (appended in Step 3e)
+
+An older /qa:loop build reading a 2.3.0 sidecar treats the unknown "auth-unverified" status as non-failing (neither "pass" nor "fail"), degrading like "skip"; a hash-mismatch re-baseline recovers cleanly.
 
 The sidecar is **real JSON**, read/written via Read/Write/Edit tools, and queried with `jq`.
 
@@ -408,13 +418,42 @@ dispatch_count += (1 if FE launched) + (1 if BE launched)
 
 Every tester launch counts toward `--max-dispatches`.
 
+#### Step 2.1.5: Structured Result Ingest
+
+The testers return free-text result blocks (`be-tester.md:60-79`). Before tallying, parse **each** scenario block into a structured record `{ id, verdict, observed_status, reason, kind }`:
+
+- **`verdict`** — the `**Status:**` line (`PASS`/`FAIL`/`SKIP`).
+- **`observed_status`** — the **first integer** after `**Response status:**`, ignoring any `(expected: N)` parenthetical (the tester prints `500 (expected: 201)`); this is the scenario's **main-request** status. **BE only** — FE blocks have no `**Response status:**` line, so `observed_status` is `null` for FE.
+- **`reason`** (non-PASS only) — **normalize** the tester's free prose into one bucket (the testers emit prose, not these tokens):
+  - `mutation-guard` — **orchestrator-assigned** at dispatch (Step 2.1), authoritative; never parsed from output.
+  - `/no .*client|unavailable|not supported/i` → `tool-unavailable`.
+  - `/connection refused|could not connect|timeout/i` → `transport` (feeds the reachability suggestion in Step 5.2; **not** a coverage SKIP reason).
+  - any other prose → `cannot-confirm`.
+- **`kind`** — per Step 2.1.6.
+- **Edge-case sub-blocks** (`be-tester.md:76-79`, nested `- <name>: PASS/FAIL`) are read for their inline verdict only; they have no isolatable `**Response status:**`, so they are NOT reclassified (Step 2.1.7) and inherit the parent's `kind`.
+
+Persist `scenario_kind` and `scenario_reason` in the sidecar. `observed_status` is used transiently here (Step 2.1.7) and need not persist. If a block lacks a parseable status/reason, record `null` and degrade gracefully (the scenario keeps its bare verdict).
+
+#### Step 2.1.6: Scenario-Kind Classification
+
+For each scenario, derive `kind` from its declared `**Expected:**` status + endpoint path (the plan is already parsed at Step 2.1):
+
+- BE: `**Expected:**` status **≥ 400** ⇒ `negative`; endpoint path ∈ {`/health`, `/healthz`, `/openapi.json`, `/version`, `/`, `/docs`, `/api/docs`} ⇒ `sanity`; otherwise ⇒ `feature`.
+- FE: default `feature` unless purely navigational/sanity.
+
+`scenario_kind` MUST be fully populated by the end of Step 2.3 (before Step 2.4 reads it). Best-effort and non-gating — a feature endpoint that asserts a 4xx is misclassified `negative`; this only shapes confidence wording, never a pass/fail decision.
+
+#### Step 2.1.7: Auth-Unverified Reclassification (at ingest, BE only)
+
+For a BE scenario with `kind == feature`: if the parsed `observed_status` ∈ {401, 403} **and** the declared `**Expected:**` is a 2xx, set `verdict = auth-unverified` (executed, but the feature path was gated — no token). Counted and surfaced, **never** credited as PASS. A scenario that *expected* 401 and got 401 stays a normal `negative` PASS. If `observed_status` is `null`, leave the verdict unchanged (best-effort).
+
+**Not detected (residual, see §8 of the spec):** 2xx-shaped gating (empty `200 []`, tenant `404`), auth surfaced only via an edge-case sub-test, and any FE gating (no FE HTTP status). Hence the Coverage block reports **"Exercised"**, not "Verified", for feature PASSes.
+
 #### Step 2.2: Render Report (report-format Step 6)
 
 Using the `report-format` skill, build the QA-XXX report **in memory** (the actual write happens in Step 2.5, or — on the zero-failure path — in Step 2.4 just before exit):
 
-**Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, surface the count the pre-baseline banner (Step 0.2.2) deferred:
-
-> Mutation-guarded SKIPs: <count> scenarios skipped under the mutation guard (re-run with `--allow-mutations` to execute them; test DB must be disposable).
+**Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, the count is rendered in the Step 5.2 "Next steps to widen coverage" table (single source of truth).
 
 1. **Count results:** tally pass/fail/skip across all scenarios.
 2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
@@ -457,9 +496,21 @@ The `baseline` map is immutable and serves as the regression reference. The `cur
 
 Count failures at or above `--severity` (default: all):
 
-- If **zero failures** → print:
+- If **zero failures and at least one scenario executed** (an all-SKIP run is handled by the next bullet, which takes precedence) → print:
 
 > All passing, nothing to fix.
+
+  **Shallow-coverage check.** Let `meaningful = count(verdict == PASS AND kind == feature)`. Coverage is **shallow** when `meaningful == 0` AND ≥1 `feature` scenario did not PASS (it was `auth-unverified`/`skip`/`fail`). On shallow coverage, emit:
+
+  > Warning: shallow coverage — no feature behavior was exercised (N feature scenarios were auth-unverified/skipped/unreachable). This green reflects infrastructure and enforcement checks only.
+
+  **Precedence:** this WARNING does NOT fire on the existing mutation-guard-only all-SKIP graceful path (the "backend-write-only — rely on the unit/integration suite" branch below); that branch keeps its own message. The WARNING also does not fire when the plan contains **zero** feature-kind scenarios (a deliberately sanity-only plan — nothing claimed-but-unverified).
+
+  **Low-confidence green:** when the message would print AND coverage is shallow AND `auto_generated == true`, replace the "All passing, nothing to fix" line (still exit **success**) with:
+
+  > All assertions passed, but coverage is shallow — no feature behavior was exercised (see Coverage). Low-confidence green: the plan was auto-generated and may not reflect runtime auth/setup.
+
+  One authoritative coverage verdict per run: on the auto-generated zero-failure path the low-confidence-green line subsumes the shallow-coverage WARNING (print one, not both); otherwise the shallow-coverage WARNING is the verdict. The Coverage block restates counts and never re-decides.
 
   Save the report and sidecar first (Step 2.5 — on reuse/adopt this preserves any existing `**Status:**` lines), then skip the loop (Step 3) AND the final run (Step 4), and exit success.
 
@@ -470,7 +521,7 @@ Count failures at or above `--severity` (default: all):
 
       > Auto-generated plan is backend-write-only under the mutation guard — nothing executable here; rely on the unit/integration suite.
 
-    - Else (**any** SKIP is `tool-unavailable` / `cannot-confirm` / `parse-failure`, i.e. not purely mutation-guard) → exit **gracefully** but print a **coverage-zero WARNING**:
+    - Else (**any** SKIP reason is non-`mutation-guard` — `tool-unavailable`, `cannot-confirm`, or unparseable/`null`) → exit **gracefully** but print a **coverage-zero WARNING**:
 
       > Warning: All scenarios skipped for tooling/parse reasons, not mutation-guard — coverage is zero; verify the generated plan and tool availability.
 
@@ -561,6 +612,12 @@ From the sidecar `current` and `scenario_issues`:
    For dropped issues, record: `needs manual location` or `incomplete fields`. Never dispatch them.
 
 Call this list `fix_candidates`.
+
+**Provisional plan-suspect guard (T3).** For a failing scenario whose ID is in `provisional_scenarios`:
+- `approve`/`step`: keep it in the HITL gate but flag it `⚠ auto-generated assertion — verify before fixing`.
+- `auto`: **exclude** it from `fix_candidates` and log `auto-generated assertion suspected; not auto-fixing — verify the plan.` (Step 3c only iterates `fix_candidates`, so the "fix source, don't touch the plan" injection is never reached for it.)
+
+A failure on a **non-provisional** assertion uses the normal fix path (real 5xx/leak bugs are still fixed). Absent `provisional_scenarios` (every user-provided plan) ⇒ no scenario is plan-suspect → normal fix path for all.
 
 #### Step 3b: HITL Gate Per Mode
 
@@ -708,6 +765,8 @@ Exit loop. (Regressions are reported in Step 4.2.)
 > No progress this iteration (no newly passing scenarios). Stopping loop.
 
 Exit loop.
+
+**`auth-unverified` across consumers:** it is never `"fail"`, so it is excluded from the fix-set (Step 3a, `current == "fail"`), is never a regression (Step 3f / 4.2, which key on `baseline == "pass" ∧ current == "fail"`), and is inert for the progress check (a scenario the loop is not fixing). A re-run scenario that becomes `auth-unverified` updates `current` normally (Step 3g merge).
 
 #### Step 3g: Update Sidecar
 
@@ -896,6 +955,33 @@ For each regression:
 - Warnings: N (anti-hardcoding)
 - Regressions: N
 
+**Coverage** (computed from `scenario_kind` + verdicts + `scenario_reason`):
+
+```
+## Coverage
+- Exercised: <feature-PASS> feature · <sanity-PASS> sanity · <negative-PASS> enforcement
+- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
+- Confidence: <high | low — reason>
+```
+
+"Exercised" (not "Verified") because a feature PASS means "reached and returned non-4xx" — an upper bound (see the auth-detection residual in Step 2.1.7).
+
+**Next steps to widen coverage** (render only rows whose count > 0, from `scenario_reason`):
+
+- `mutation-guard` (N): re-run with `--allow-mutations` (test DB must be disposable).
+- `auth-unverified` (N): the app is auth-gated; `/qa:loop` verifies enforcement only. Exercise authenticated behavior via the project's integration/e2e suite. (No `--auth-token` intake in this version.)
+- `tool-unavailable` (N): install/enable the missing tool (Playwright / curl / DB client).
+- `dispatch-exhausted`: raise `--max-dispatches`.
+
+Counts come from the normalized `scenario_reason`: `mutation-guard` is exact (orchestrator-assigned); the rest are heuristic prose-matches and may under-count — acceptable for an advisory hint.
+
+**Reactive suggestions** (each with its caveat, shown only when triggered):
+
+- **Reachability:** if **every BE scenario** is `FAIL` with a `transport` reason (Details matched `/connection refused|could not connect|timeout/i`) and a `null` `observed_status` (FE SKIPs ignored), print: "no BE scenario returned an HTTP status at `<host:port>` — the dev stack may be down (or every endpoint is 5xx'ing)." Assemble `<host:port>` from the resolved base URL's authority (Step 0.4 already rejected any userinfo, so it is safe to display) — **never** from the raw transport error string.
+- **Mutation:** if every BE scenario was `mutation-guard` SKIP, print the `--allow-mutations` hint (disposable DB).
+
+No proactive guard-widening nudges: flags that widen a guard appear only in the reactive unlock-hints after the guard actually blocked something.
+
 **Budget Used:**
 - Dispatches: N / <--max-dispatches>
 - Iterations: N / <--max-iterations>
@@ -977,7 +1063,9 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 | Mutating BE scenario without `--allow-mutations` | SKIP with reason `mutation-guard`; issue marked "needs --allow-mutations". |
 | Tool unavailable (Playwright, curl, DB) | Affected scenarios SKIP / "cannot confirm" (never counted as fixed). If all verifiers unavailable → abort. |
 | Entire baseline is SKIP (user-provided plan) | Abort: "no executable verifier — cannot gate." |
-| Entire baseline is SKIP (auto-generated plan) | Graceful success if every SKIP reason is `mutation-guard` (backend-write-only — rely on unit/integration suite); graceful exit **with a coverage-zero WARNING** if any SKIP is tooling/parse-related (`tool-unavailable` / `cannot-confirm` / `parse-failure`). |
+| Entire baseline is SKIP (auto-generated plan) | Graceful success if every SKIP reason is `mutation-guard` (backend-write-only — rely on unit/integration suite); graceful exit **with a coverage-zero WARNING** if any SKIP is non-`mutation-guard` (`tool-unavailable` / `cannot-confirm` / unparseable). |
+| Feature scenario auth-gated (no token) | Reclassified `auth-unverified`; counted, surfaced, never PASS; unlock-hint shown. |
+| Shallow coverage (no feature PASS) | WARNING + low-confidence green on auto-generated; still exit success. |
 | Zero baseline failures at/above floor | "All passing, nothing to fix" → skip loop AND final run → exit success. |
 | Issue `Location: unknown:0` / missing fields | Pre-filtered out; "needs manual location"; never dispatched. fix-auto also returns Failed if a location-less issue arrives. |
 | fix-auto fails on an issue | Mark failed for this iteration; keep looping on remaining issues. |

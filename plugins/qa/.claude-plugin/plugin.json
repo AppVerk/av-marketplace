@@ -1,5 +1,5 @@
 {
   "name": "qa",
   "description": "Automated QA testing plugin — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports compatible with code-review.",
-  "version": "2.2.0"
+  "version": "2.3.0"
 }

@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.2.0
+**Version:** 2.3.0
 
 ## Commands
 
@@ -143,7 +143,7 @@ When no plan exists, instead of dead-stopping, `/qa:loop` can generate one for t
 **Surfacing the generated plan:**
 
 - **Before baseline:** the generated plan path plus FE/BE scenario counts are echoed — e.g. `Generated plan: <path> — 4 FE scenarios, 2 BE scenarios`. In `--mode auto` this banner is the audit trail.
-- **After baseline:** the **mutation-guarded SKIP count** is folded into the baseline report (it is only knowable once the Step 2.1 guard pass has classified SKIPs, so it is not claimed in the pre-baseline banner).
+- **After baseline:** the **mutation-guarded SKIP count** is rendered in the Loop Summary's "Next steps to widen coverage" table (it is only knowable once the Step 2.1 guard pass has classified SKIPs, so it is not claimed in the pre-baseline banner).
 
 **Working-tree safety gate:** because the loop auto-fixes source and recovers via `git restore`, uncommitted **tracked** changes are at risk. After argument validation and before plan resolution, the loop inspects the tree (`git status --porcelain` over tracked files; untracked files are excluded — `git restore` cannot destroy them):
 
@@ -175,7 +175,11 @@ A *malformed* generated plan (missing the always-present `## Source` / `## Chang
 | All-SKIP, user-provided plan | existing error | existing error |
 
 > [!IMPORTANT]
-> **Behavior change for `--mode auto` users.** The no-plan default in `auto` **stays a no-op stop** unless you add `--auto-plan`, so existing CI invocations are unaffected. The **interactive default** (`approve`/`step`), however, changes from "stop" to "**confirm, then generate**" — a prompted action, not a silent one. Pass `--no-auto-plan` to restore the 2.1.0 dead-stop in any mode.
+> **Behavior changes for all `/qa:loop` users (2.3.0).** The no-plan default in `auto` **stays a no-op stop** unless you add `--auto-plan`, so existing CI invocations are unaffected. The **interactive default** (`approve`/`step`), however, changes from "stop" to "**confirm, then generate**" — a prompted action, not a silent one. Pass `--no-auto-plan` to restore the 2.1.0 dead-stop in any mode.
+>
+> **New in 2.3.0:**
+> - The **shallow-coverage WARNING** can now appear in any mode (`approve`, `step`, `auto`) and on **user-authored plans** — a visible change to a previously-silent green exit. The exit is still success; it is a disclosure, not a gate.
+> - **`--mode auto --auto-plan`** may now produce an **empty fix-set** (all feature scenarios were `auth-unverified` or provisional) and exit green-with-caveat *by design* — this is correct behavior, not a regression.
 
 **Algorithm summary:**
 
@@ -237,6 +241,54 @@ Before integrating, verify these five manual checks:
 4. **Environment guard aborts on non-loopback:** attempt `/qa:loop` against a plan with a non-loopback URL (`staging.example.com`) without `--allow-host staging.example.com`; confirm the loop aborts with "Base URL resolves to non-loopback host 'X'…" (fail-closed).
 
 5. **Reuse/adopt idempotency preserves manual Status:** run `/qa:loop` once, then manually add `**Status:** ✅ Fixed (YYYY-MM-DD)` to one issue in the report; run `/qa:loop` again on the same plan with hash match (no plan change); confirm the Status line is preserved (not overwritten or lost) and the sidecar re-uses the existing scenario→QA-ID map.
+
+### Coverage honesty (2.3.0)
+
+`/qa:loop` now reports what it actually verified, not just whether all scenarios passed.
+
+**Coverage block.** Every Loop Summary includes a `## Coverage` block:
+
+```
+## Coverage
+- Exercised: <N> feature · <M> sanity · <K> enforcement
+- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
+- Confidence: high | low — <reason>
+```
+
+"Exercised" (not "Verified") because a feature PASS means the endpoint was reached and returned a non-4xx — an upper bound on true verification (see `auth-unverified` below).
+
+**Shallow-coverage WARNING.** When no feature scenario passed (every feature scenario was `auth-unverified`, skipped, or failed) but ≥1 feature scenario existed, the loop emits:
+
+> Warning: shallow coverage — no feature behavior was exercised (N feature scenarios were auth-unverified/skipped/unreachable). This green reflects infrastructure and enforcement checks only.
+
+This WARNING is **provenance-independent**: it fires in `--mode approve`, `--mode step`, and `--mode auto`, and on both user-authored and auto-generated plans. It does **not** fire on the legitimate mutation-guard-only all-SKIP graceful path (that already has its own message), nor on a plan that contains zero feature scenarios.
+
+**Low-confidence green (auto-generated plans only).** On a zero-failure exit with shallow coverage on an auto-generated plan, the "All passing" message is replaced with:
+
+> All assertions passed, but coverage is shallow — no feature behavior was exercised (see Coverage). Low-confidence green: the plan was auto-generated and may not reflect runtime auth/setup.
+
+The exit is still success; only the wording changes. A user-authored plan keeps the plain "All passing" message alongside the Coverage block.
+
+**`auth-unverified` outcome.** When a BE feature scenario gets HTTP 401 or 403 (instead of the expected 2xx), the orchestrator reclassifies it as `auth-unverified` at ingest — meaning the app is auth-gated and the feature path was never exercised (no token was available). An `auth-unverified` scenario is:
+- Counted and surfaced in the Coverage block under "Not verified"
+- **Never** credited as PASS
+- Excluded from the fix-set (never sent to `fix-auto`)
+- Not a regression trigger
+
+A scenario that *expected* 401 and got 401 stays a normal enforcement PASS.
+
+**Unlock-hints.** When scenarios are blocked or unverified, the Loop Summary shows a "Next steps to widen coverage" list keyed by reason:
+
+- `mutation-guard` (N): re-run with `--allow-mutations` (test DB must be disposable)
+- `auth-unverified` (N): the app is auth-gated; `/qa:loop` verifies enforcement only; exercise authenticated behavior via the project's integration/e2e suite (no `--auth-token` intake in this version)
+- `tool-unavailable` (N): install/enable the missing tool (Playwright / curl / DB client)
+- `dispatch-exhausted`: raise `--max-dispatches`
+
+**Reactive suggestions.** Post-baseline, if every BE scenario failed with a transport reason (connection refused / timeout), the loop prints: "no BE scenario returned an HTTP status at `<host:port>` — the dev stack may be down (or every endpoint is 5xx'ing)."
+
+**T3 provisional guard.** Auto-generated plans now bias assertions toward observable invariants (non-5xx, no secret leak, auth-gate present). Where an exact value must be asserted that the generator could not observe, the scenario is marked **provisional**. In `--mode auto`, a failing provisional scenario is excluded from the fix-set (logged as "auto-generated assertion suspected; not auto-fixing — verify the plan") rather than driving `fix-auto` to edit correct source. In `approve`/`step`, it appears in the HITL gate flagged `⚠ auto-generated assertion — verify before fixing`.
+
+**Deliberate split with `/qa:run`.** These coverage-honesty mechanisms are `/qa:loop`-only — `/qa:run` is a single-shot executor with no fix loop, so a wrong auto-generated assertion has no code to "fix" there. The split is intentional and accepted.
 
 ## Two-Phase Workflow
 
