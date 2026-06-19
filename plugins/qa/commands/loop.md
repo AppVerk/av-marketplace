@@ -440,6 +440,15 @@ The testers return free-text result blocks (`be-tester.md:60-79`). Before tallyi
 
 Persist `scenario_kind` and `scenario_reason` in the sidecar. `observed_status` is used transiently here (Step 2.1.7) and need not persist. If a block lacks a parseable status/reason, record `null` and degrade gracefully (the scenario keeps its bare verdict).
 
+#### Step 2.1.6: Scenario-Kind Classification
+
+For each scenario, derive `kind` from its declared `**Expected:**` status + endpoint path (the plan is already parsed at Step 2.1):
+
+- BE: `**Expected:**` status **≥ 400** ⇒ `negative`; endpoint path ∈ {`/health`, `/healthz`, `/openapi.json`, `/version`, `/`, `/docs`, `/api/docs`} ⇒ `sanity`; otherwise ⇒ `feature`.
+- FE: default `feature` unless purely navigational/sanity.
+
+`scenario_kind` MUST be fully populated by the end of Step 2.3 (before Step 2.4 reads it). Best-effort and non-gating — a feature endpoint that asserts a 4xx is misclassified `negative`; this only shapes confidence wording, never a pass/fail decision.
+
 1. **Count results:** tally pass/fail/skip across all scenarios.
 2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
    - If reusing a prior report (Step 1, Case 1), use the existing scenario→QA-ID map; assign new IDs at `max(existing) + 1`.
