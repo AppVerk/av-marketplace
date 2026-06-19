@@ -1064,6 +1064,8 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 | Tool unavailable (Playwright, curl, DB) | Affected scenarios SKIP / "cannot confirm" (never counted as fixed). If all verifiers unavailable → abort. |
 | Entire baseline is SKIP (user-provided plan) | Abort: "no executable verifier — cannot gate." |
 | Entire baseline is SKIP (auto-generated plan) | Graceful success if every SKIP reason is `mutation-guard` (backend-write-only — rely on unit/integration suite); graceful exit **with a coverage-zero WARNING** if any SKIP is tooling/parse-related (`tool-unavailable` / `cannot-confirm` / `parse-failure`). |
+| Feature scenario auth-gated (no token) | Reclassified `auth-unverified`; counted, surfaced, never PASS; unlock-hint shown. |
+| Shallow coverage (no feature PASS) | WARNING + low-confidence green on auto-generated; still exit success. |
 | Zero baseline failures at/above floor | "All passing, nothing to fix" → skip loop AND final run → exit success. |
 | Issue `Location: unknown:0` / missing fields | Pre-filtered out; "needs manual location"; never dispatched. fix-auto also returns Failed if a location-less issue arrives. |
 | fix-auto fails on an issue | Mark failed for this iteration; keep looping on remaining issues. |
