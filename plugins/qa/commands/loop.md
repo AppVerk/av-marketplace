@@ -424,6 +424,22 @@ Using the `report-format` skill, build the QA-XXX report **in memory** (the actu
 
 > Mutation-guarded SKIPs: <count> scenarios skipped under the mutation guard (re-run with `--allow-mutations` to execute them; test DB must be disposable).
 
+#### Step 2.1.5: Structured Result Ingest
+
+The testers return free-text result blocks (`be-tester.md:60-79`). Before tallying, parse **each** scenario block into a structured record `{ id, verdict, observed_status, reason, kind }`:
+
+- **`verdict`** — the `**Status:**` line (`PASS`/`FAIL`/`SKIP`).
+- **`observed_status`** — the **first integer** after `**Response status:**`, ignoring any `(expected: N)` parenthetical (the tester prints `500 (expected: 201)`); this is the scenario's **main-request** status. **BE only** — FE blocks have no `**Response status:**` line, so `observed_status` is `null` for FE.
+- **`reason`** (non-PASS only) — **normalize** the tester's free prose into one bucket (the testers emit prose, not these tokens):
+  - `mutation-guard` — **orchestrator-assigned** at dispatch (Step 2.1), authoritative; never parsed from output.
+  - `/no .*client|unavailable|not supported/i` → `tool-unavailable`.
+  - `/connection refused|could not connect|timeout/i` → `transport` (feeds §4 reachability; **not** a coverage SKIP reason).
+  - any other prose → `cannot-confirm`.
+- **`kind`** — per Step 2.1.6 (§1a).
+- **Edge-case sub-blocks** (`be-tester.md:76-79`, nested `- <name>: PASS/FAIL`) are read for their inline verdict only; they have no isolatable `**Response status:**`, so they are NOT reclassified (Step 2.1.7) and inherit the parent's `kind`.
+
+Persist `scenario_kind` and `scenario_reason` in the sidecar. `observed_status` is used transiently here (Step 2.1.7) and need not persist. If a block lacks a parseable status/reason, record `null` and degrade gracefully (the scenario keeps its bare verdict).
+
 1. **Count results:** tally pass/fail/skip across all scenarios.
 2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
    - If reusing a prior report (Step 1, Case 1), use the existing scenario→QA-ID map; assign new IDs at `max(existing) + 1`.
