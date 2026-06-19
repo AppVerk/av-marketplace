@@ -168,6 +168,8 @@ This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Ste
 
 5. **Provenance.** The sidecar created for this run (Step 1.3) records **`auto_generated: true`** for an auto-plan-generated plan. (A user-provided plan leaves it `false`/absent. The schema field is added by a later task; here, just set it true for this auto-generated path.)
 
+**Assertion fidelity (auto-plan only).** Bias generated assertions toward observable invariants the generator can be confident about (non-5xx, no stack-trace/secret leak in the body, auth-gate present) over guessed exact path+status. Where an exact value must be asserted that the generator could not observe, mark that scenario **provisional** and generate it as its **own** scenario (never co-located with a robust invariant, so Step 3a's scenario-level exclusion can't drop a real finding). The provisional split happens **before** BE-NN/FE-NN numbers are assigned; number once over the final set; collect the provisional IDs. (Also note the provisional IDs in the surfacing output so they survive to Step 1.3 across a context loss.)
+
 6. **Success / validity contract.** After the Write, verify the file exists at `plan_path` **and** is structurally valid — it has the always-present headers `## Source`, `## Changes Summary`, and `## Detected Tools`. *(The FE/BE scenario sections are OPTIONAL per the format's omission rules; their absence is **thin**, not malformed — handled in Step 0.2.3.)* If the file is **missing** or any of those structural headers is **absent** → **abort**:
 
    > Error: Plan generation failed / produced a malformed plan. Aborting.
@@ -317,7 +319,7 @@ Create or update the sidecar JSON file with this exact schema:
 }
 ```
 
-**When writing the sidecar:** set `auto_generated` to `true` if this run generated the plan in Step 0.2.1, else `false` (the example above shows the default) — do not take the literal `false` as unconditional. Persist `pre_loop_dirty` (recorded in Step 0.1.5). On the REUSE/ADOPT idempotency paths (Step 1.2), **preserve** the existing `auto_generated` value rather than overwriting it.
+**When writing the sidecar:** set `auto_generated` to `true` if this run generated the plan in Step 0.2.1, else `false` (the example above shows the default) — do not take the literal `false` as unconditional. Persist `pre_loop_dirty` (recorded in Step 0.1.5). On the REUSE/ADOPT idempotency paths (Step 1.2), **preserve** the existing `auto_generated` value rather than overwriting it. Persist `provisional_scenarios` (the IDs decided in Step 0.2.1; empty array if not auto-generated). On REUSE/ADOPT, preserve the existing value (like `auto_generated`). Do NOT write it at Step 0.2.1 — the sidecar does not exist yet.
 
 - `plan_sha256`: the 64-hex SHA-256 hash of the plan file
 - `plan_path`: path to the test plan
@@ -610,6 +612,12 @@ From the sidecar `current` and `scenario_issues`:
    For dropped issues, record: `needs manual location` or `incomplete fields`. Never dispatch them.
 
 Call this list `fix_candidates`.
+
+**Provisional plan-suspect guard (T3).** For a failing scenario whose ID is in `provisional_scenarios`:
+- `approve`/`step`: keep it in the HITL gate but flag it `⚠ auto-generated assertion — verify before fixing`.
+- `auto`: **exclude** it from `fix_candidates` and log `auto-generated assertion suspected; not auto-fixing — verify the plan.` (Step 3c only iterates `fix_candidates`, so the "fix source, don't touch the plan" injection is never reached for it.)
+
+A failure on a **non-provisional** assertion uses the normal fix path (real 5xx/leak bugs are still fixed). Absent `provisional_scenarios` (every user-provided plan) ⇒ no scenario is plan-suspect → normal fix path for all.
 
 #### Step 3b: HITL Gate Per Mode
 
