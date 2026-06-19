@@ -937,6 +937,17 @@ For each regression:
 - Warnings: N (anti-hardcoding)
 - Regressions: N
 
+**Coverage** (computed from `scenario_kind` + verdicts + `scenario_reason`):
+
+```
+## Coverage
+- Exercised: <feature-PASS> feature · <sanity-PASS> sanity · <negative-PASS> enforcement
+- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K>
+- Confidence: <high | low — reason>
+```
+
+"Exercised" (not "Verified") because a feature PASS means "reached and returned non-4xx" — an upper bound (§1b residual).
+
 **Budget Used:**
 - Dispatches: N / <--max-dispatches>
 - Iterations: N / <--max-iterations>
