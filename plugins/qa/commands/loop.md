@@ -500,6 +500,18 @@ Count failures at or above `--severity` (default: all):
 
 > All passing, nothing to fix.
 
+  **Shallow-coverage check.** Let `meaningful = count(verdict == PASS AND kind == feature)`. Coverage is **shallow** when `meaningful == 0` AND ≥1 `feature` scenario did not PASS (it was `auth-unverified`/`skip`/`fail`). On shallow coverage, emit:
+
+  > Warning: shallow coverage — no feature behavior was exercised (N feature scenarios were auth-unverified/skipped/unreachable). This green reflects infrastructure and enforcement checks only.
+
+  **Precedence:** this WARNING does NOT fire on the existing mutation-guard-only all-SKIP graceful path (the "backend-write-only — rely on the unit/integration suite" branch below); that branch keeps its own message. The WARNING also does not fire when the plan contains **zero** feature-kind scenarios (a deliberately sanity-only plan — nothing claimed-but-unverified).
+
+  **§2c low-confidence green:** when the message would print AND coverage is shallow AND `auto_generated == true`, replace the "All passing, nothing to fix" line (still exit **success**) with:
+
+  > All assertions passed, but coverage is shallow — no feature behavior was exercised (see Coverage). Low-confidence green: the plan was auto-generated and may not reflect runtime auth/setup.
+
+  One authoritative coverage verdict per run: on the auto-generated zero-failure path the §2c line subsumes the §2b WARNING (print one, not both); otherwise the §2b WARNING is the verdict. The Coverage block restates counts and never re-decides.
+
   Save the report and sidecar first (Step 2.5 — on reuse/adopt this preserves any existing `**Status:**` lines), then skip the loop (Step 3) AND the final run (Step 4), and exit success.
 
 - If **all scenarios are SKIP**, branch on provenance (`auto_generated`, the sidecar flag set during generation in Step 0.2.1) and the SKIP reasons:
