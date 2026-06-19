@@ -420,9 +420,7 @@ Every tester launch counts toward `--max-dispatches`.
 
 Using the `report-format` skill, build the QA-XXX report **in memory** (the actual write happens in Step 2.5, or — on the zero-failure path — in Step 2.4 just before exit):
 
-**Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, surface the count the pre-baseline banner (Step 0.2.2) deferred:
-
-> Mutation-guarded SKIPs: <count> scenarios skipped under the mutation guard (re-run with `--allow-mutations` to execute them; test DB must be disposable).
+**Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, the count is rendered in the Step 5.2 "Next steps to widen coverage" table (single source of truth).
 
 #### Step 2.1.5: Structured Result Ingest
 
@@ -959,6 +957,15 @@ For each regression:
 ```
 
 "Exercised" (not "Verified") because a feature PASS means "reached and returned non-4xx" — an upper bound (§1b residual).
+
+**Next steps to widen coverage** (render only rows whose count > 0, from `scenario_reason`):
+
+- `mutation-guard` (N): re-run with `--allow-mutations` (test DB must be disposable).
+- `auth-unverified` (N): the app is auth-gated; `/qa:loop` verifies enforcement only. Exercise authenticated behavior via the project's integration/e2e suite. (No `--auth-token` intake in this version.)
+- `tool-unavailable` (N): install/enable the missing tool (Playwright / curl / DB client).
+- `dispatch-exhausted`: raise `--max-dispatches`.
+
+Counts come from the normalized `scenario_reason`: `mutation-guard` is exact (orchestrator-assigned); the rest are heuristic prose-matches and may under-count — acceptable for an advisory hint.
 
 **Budget Used:**
 - Dispatches: N / <--max-dispatches>
