@@ -967,6 +967,13 @@ For each regression:
 
 Counts come from the normalized `scenario_reason`: `mutation-guard` is exact (orchestrator-assigned); the rest are heuristic prose-matches and may under-count — acceptable for an advisory hint.
 
+**Reactive suggestions** (each with its caveat, shown only when triggered):
+
+- **Reachability:** if **every BE scenario** is `FAIL` with a `transport` reason (Details matched `/connection refused|could not connect|timeout/i`) and a `null` `observed_status` (FE SKIPs ignored), print: "no BE scenario returned an HTTP status at `<host:port>` — the dev stack may be down (or every endpoint is 5xx'ing)." Assemble `<host:port>` from the Step 0.4-sanitized host plus the parsed port — **never** from the raw error string.
+- **Mutation:** if every BE scenario was `mutation-guard` SKIP, print the `--allow-mutations` hint (disposable DB).
+
+No proactive guard-widening nudges: flags that widen a guard appear only in the reactive unlock-hints after the guard actually blocked something.
+
 **Budget Used:**
 - Dispatches: N / <--max-dispatches>
 - Iterations: N / <--max-iterations>
