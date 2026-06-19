@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.3.0
+**Version:** 2.4.0
 
 ## Commands
 
@@ -381,6 +381,18 @@ The plugin detects available tools at plan creation and re-validates before exec
 **Database access priority:** MCP server > CLI client > SKIP
 
 If a required tool is unavailable, affected scenarios are marked as SKIP (not FAIL).
+
+## Skills
+
+The qa plugin ships these skills (loaded automatically with the plugin):
+
+| Skill | Purpose |
+|-------|---------|
+| `loop-engineering` | Doctrine for authoring robust closed agent loops — the minimum-bar checklist, the ground-truth oracle taxonomy, and the anti-patterns, anchored to `/qa:loop` as the reference implementation. |
+| `report-format` | Test report format with `QA-XXX` issue IDs, compatible with the code-review plugin. |
+| `test-plan-format` | Test plan structure produced by `/qa:create-plan` and consumed by `/qa:run` and `/qa:loop`. |
+| `fe-testing` | Frontend test-execution guidance for the `qa:fe-tester` agent (Playwright MCP). |
+| `be-testing` | Backend test-execution guidance for the `qa:be-tester` agent (HTTP + DB checks). |
 
 ## Prerequisites
 
