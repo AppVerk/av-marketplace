@@ -304,6 +304,9 @@ Create or update the sidecar JSON file with this exact schema:
   "topic": "user-auth",
   "created": "2026-06-17",
   "scenario_issues": { "BE-03": ["QA-001", "QA-002"], "FE-05": ["QA-003"] },
+  "scenario_kind": { "BE-03": "negative", "BE-04": "feature" },
+  "scenario_reason": { "BE-04": "auth-unverified", "BE-05": "mutation-guard" },
+  "provisional_scenarios": [],
   "baseline": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
   "current": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
   "auto_generated": false,
@@ -322,13 +325,18 @@ Create or update the sidecar JSON file with this exact schema:
 - `topic`: extracted from the plan filename
 - `created`: date stamp (YYYY-MM-DD)
 - `scenario_issues`: map of scenario-id → array of QA-XXX IDs assigned to that scenario
-- `baseline`: map of scenario-id → "pass" | "fail" | "skip" (immutable reference recorded after Step 2; used for regression detection)
-- `current`: map of scenario-id → "pass" | "fail" | "skip" (mutable, updated each iteration to track latest status; used for iteration logic)
+- `scenario_kind`: map of scenario-id → "sanity" | "negative" | "feature" (set once at baseline ingest, Step 2.1; classifies what a PASS means for coverage)
+- `scenario_reason`: map of scenario-id → normalized reason for every non-PASS scenario ("mutation-guard" | "tool-unavailable" | "cannot-confirm" | "transport"), refreshed each ingest; drives the Coverage block and unlock-hints
+- `provisional_scenarios`: array of auto-generated scenario-ids whose assertions are guessed-exact (decided in Step 0.2.1, persisted here); read by Step 3a to treat their failures as plan-suspect
+- `baseline`: map of scenario-id → "pass" | "fail" | "skip" | "auth-unverified" (immutable reference recorded after Step 2; used for regression detection)
+- `current`: map of scenario-id → "pass" | "fail" | "skip" | "auth-unverified" (mutable, updated each iteration to track latest status; used for iteration logic)
 - `auto_generated`: `true` iff this run's loop generated the plan via auto-plan (Step 0.2.1); `false`/absent for a user-provided or pre-existing plan. Read by the thin/all-SKIP exit (Step 0.2.3 / Step 2.4) to decide graceful-success vs. error
 - `pre_loop_dirty`: array of tracked paths already modified **before** the loop started (recorded in Step 0.1.5, persisted here so it survives across the many tool calls before the fix phase); subtracted from the post-fix set to compute `fix_touched_files`. Persisting it (rather than relying on a shell variable that can be lost mid-run) is what keeps scoped recovery from over-restoring the user's pre-existing edits
 - `fix_touched_files`: array of tracked paths the loop's own fixes edited (post-fix tracked-modified set **minus** `pre_loop_dirty`, accumulated cumulatively across iterations in Step 3g); what scoped recovery (`git restore <fix_touched_files>`) restores — never the user's pre-existing changes
 - `dispatch_count`: incremented each time a fix-auto or tester is launched
 - `iterations`: array of iteration results (appended in Step 3e)
+
+An older /qa:loop build reading a 2.3.0 sidecar treats the unknown "auth-unverified" status as non-failing (neither "pass" nor "fail"), degrading like "skip"; a hash-mismatch re-baseline recovers cleanly.
 
 The sidecar is **real JSON**, read/written via Read/Write/Edit tools, and queried with `jq`.
 
