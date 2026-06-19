@@ -449,6 +449,12 @@ For each scenario, derive `kind` from its declared `**Expected:**` status + endp
 
 `scenario_kind` MUST be fully populated by the end of Step 2.3 (before Step 2.4 reads it). Best-effort and non-gating — a feature endpoint that asserts a 4xx is misclassified `negative`; this only shapes confidence wording, never a pass/fail decision.
 
+#### Step 2.1.7: Auth-Unverified Reclassification (at ingest, BE only)
+
+For a BE scenario with `kind == feature`: if the parsed `observed_status` ∈ {401, 403} **and** the declared `**Expected:**` is a 2xx, set `verdict = auth-unverified` (executed, but the feature path was gated — no token). Counted and surfaced, **never** credited as PASS. A scenario that *expected* 401 and got 401 stays a normal `negative` PASS. If `observed_status` is `null`, leave the verdict unchanged (best-effort).
+
+**Not detected (residual, see §8 of the spec):** 2xx-shaped gating (empty `200 []`, tenant `404`), auth surfaced only via an edge-case sub-test, and any FE gating (no FE HTTP status). Hence the Coverage block reports **"Exercised"**, not "Verified", for feature PASSes.
+
 1. **Count results:** tally pass/fail/skip across all scenarios.
 2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
    - If reusing a prior report (Step 1, Case 1), use the existing scenario→QA-ID map; assign new IDs at `max(existing) + 1`.
@@ -741,6 +747,8 @@ Exit loop. (Regressions are reported in Step 4.2.)
 > No progress this iteration (no newly passing scenarios). Stopping loop.
 
 Exit loop.
+
+**`auth-unverified` across consumers:** it is never `"fail"`, so it is excluded from the fix-set (Step 3a, `current == "fail"`), is never a regression (Step 3f / 4.2, which key on `baseline == "pass" ∧ current == "fail"`), and is inert for the progress check (a scenario the loop is not fixing). A re-run scenario that becomes `auth-unverified` updates `current` normally (Step 3g merge).
 
 #### Step 3g: Update Sidecar
 
