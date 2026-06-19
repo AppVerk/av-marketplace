@@ -166,7 +166,7 @@ This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Ste
 
    Do **not** re-glob `ls -t` to locate the file afterward — write to and keep this exact `plan_path`.
 
-5. **Provenance.** The sidecar created for this run (Step 1.3) records **`auto_generated: true`** for an auto-plan-generated plan. (A user-provided plan leaves it `false`/absent. The schema field is added by a later task; here, just set it true for this auto-generated path.)
+5. **Provenance.** The sidecar created for this run (Step 1.3) records **`auto_generated: true`** for an auto-plan-generated plan. (A user-provided plan leaves it `false`/absent.)
 
 **Assertion fidelity (auto-plan only).** Bias generated assertions toward observable invariants the generator can be confident about (non-5xx, no stack-trace/secret leak in the body, auth-gate present) over guessed exact path+status. Where an exact value must be asserted that the generator could not observe, mark that scenario **provisional** and generate it as its **own** scenario (never co-located with a robust invariant, so Step 3a's scenario-level exclusion can't drop a real finding). The provisional split happens **before** BE-NN/FE-NN numbers are assigned; number once over the final set; collect the provisional IDs. (Also note the provisional IDs in the surfacing output so they survive to Step 1.3 across a context loss.)
 
@@ -418,12 +418,6 @@ dispatch_count += (1 if FE launched) + (1 if BE launched)
 
 Every tester launch counts toward `--max-dispatches`.
 
-#### Step 2.2: Render Report (report-format Step 6)
-
-Using the `report-format` skill, build the QA-XXX report **in memory** (the actual write happens in Step 2.5, or — on the zero-failure path — in Step 2.4 just before exit):
-
-**Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, the count is rendered in the Step 5.2 "Next steps to widen coverage" table (single source of truth).
-
 #### Step 2.1.5: Structured Result Ingest
 
 The testers return free-text result blocks (`be-tester.md:60-79`). Before tallying, parse **each** scenario block into a structured record `{ id, verdict, observed_status, reason, kind }`:
@@ -433,9 +427,9 @@ The testers return free-text result blocks (`be-tester.md:60-79`). Before tallyi
 - **`reason`** (non-PASS only) — **normalize** the tester's free prose into one bucket (the testers emit prose, not these tokens):
   - `mutation-guard` — **orchestrator-assigned** at dispatch (Step 2.1), authoritative; never parsed from output.
   - `/no .*client|unavailable|not supported/i` → `tool-unavailable`.
-  - `/connection refused|could not connect|timeout/i` → `transport` (feeds §4 reachability; **not** a coverage SKIP reason).
+  - `/connection refused|could not connect|timeout/i` → `transport` (feeds the reachability suggestion in Step 5.2; **not** a coverage SKIP reason).
   - any other prose → `cannot-confirm`.
-- **`kind`** — per Step 2.1.6 (§1a).
+- **`kind`** — per Step 2.1.6.
 - **Edge-case sub-blocks** (`be-tester.md:76-79`, nested `- <name>: PASS/FAIL`) are read for their inline verdict only; they have no isolatable `**Response status:**`, so they are NOT reclassified (Step 2.1.7) and inherit the parent's `kind`.
 
 Persist `scenario_kind` and `scenario_reason` in the sidecar. `observed_status` is used transiently here (Step 2.1.7) and need not persist. If a block lacks a parseable status/reason, record `null` and degrade gracefully (the scenario keeps its bare verdict).
@@ -454,6 +448,12 @@ For each scenario, derive `kind` from its declared `**Expected:**` status + endp
 For a BE scenario with `kind == feature`: if the parsed `observed_status` ∈ {401, 403} **and** the declared `**Expected:**` is a 2xx, set `verdict = auth-unverified` (executed, but the feature path was gated — no token). Counted and surfaced, **never** credited as PASS. A scenario that *expected* 401 and got 401 stays a normal `negative` PASS. If `observed_status` is `null`, leave the verdict unchanged (best-effort).
 
 **Not detected (residual, see §8 of the spec):** 2xx-shaped gating (empty `200 []`, tenant `404`), auth surfaced only via an edge-case sub-test, and any FE gating (no FE HTTP status). Hence the Coverage block reports **"Exercised"**, not "Verified", for feature PASSes.
+
+#### Step 2.2: Render Report (report-format Step 6)
+
+Using the `report-format` skill, build the QA-XXX report **in memory** (the actual write happens in Step 2.5, or — on the zero-failure path — in Step 2.4 just before exit):
+
+**Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, the count is rendered in the Step 5.2 "Next steps to widen coverage" table (single source of truth).
 
 1. **Count results:** tally pass/fail/skip across all scenarios.
 2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
@@ -496,7 +496,7 @@ The `baseline` map is immutable and serves as the regression reference. The `cur
 
 Count failures at or above `--severity` (default: all):
 
-- If **zero failures** → print:
+- If **zero failures and at least one scenario executed** (an all-SKIP run is handled by the next bullet, which takes precedence) → print:
 
 > All passing, nothing to fix.
 
@@ -506,11 +506,11 @@ Count failures at or above `--severity` (default: all):
 
   **Precedence:** this WARNING does NOT fire on the existing mutation-guard-only all-SKIP graceful path (the "backend-write-only — rely on the unit/integration suite" branch below); that branch keeps its own message. The WARNING also does not fire when the plan contains **zero** feature-kind scenarios (a deliberately sanity-only plan — nothing claimed-but-unverified).
 
-  **§2c low-confidence green:** when the message would print AND coverage is shallow AND `auto_generated == true`, replace the "All passing, nothing to fix" line (still exit **success**) with:
+  **Low-confidence green:** when the message would print AND coverage is shallow AND `auto_generated == true`, replace the "All passing, nothing to fix" line (still exit **success**) with:
 
   > All assertions passed, but coverage is shallow — no feature behavior was exercised (see Coverage). Low-confidence green: the plan was auto-generated and may not reflect runtime auth/setup.
 
-  One authoritative coverage verdict per run: on the auto-generated zero-failure path the §2c line subsumes the §2b WARNING (print one, not both); otherwise the §2b WARNING is the verdict. The Coverage block restates counts and never re-decides.
+  One authoritative coverage verdict per run: on the auto-generated zero-failure path the low-confidence-green line subsumes the shallow-coverage WARNING (print one, not both); otherwise the shallow-coverage WARNING is the verdict. The Coverage block restates counts and never re-decides.
 
   Save the report and sidecar first (Step 2.5 — on reuse/adopt this preserves any existing `**Status:**` lines), then skip the loop (Step 3) AND the final run (Step 4), and exit success.
 
@@ -521,7 +521,7 @@ Count failures at or above `--severity` (default: all):
 
       > Auto-generated plan is backend-write-only under the mutation guard — nothing executable here; rely on the unit/integration suite.
 
-    - Else (**any** SKIP is `tool-unavailable` / `cannot-confirm` / `parse-failure`, i.e. not purely mutation-guard) → exit **gracefully** but print a **coverage-zero WARNING**:
+    - Else (**any** SKIP reason is non-`mutation-guard` — `tool-unavailable`, `cannot-confirm`, or unparseable/`null`) → exit **gracefully** but print a **coverage-zero WARNING**:
 
       > Warning: All scenarios skipped for tooling/parse reasons, not mutation-guard — coverage is zero; verify the generated plan and tool availability.
 
@@ -960,11 +960,11 @@ For each regression:
 ```
 ## Coverage
 - Exercised: <feature-PASS> feature · <sanity-PASS> sanity · <negative-PASS> enforcement
-- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K>
+- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
 - Confidence: <high | low — reason>
 ```
 
-"Exercised" (not "Verified") because a feature PASS means "reached and returned non-4xx" — an upper bound (§1b residual).
+"Exercised" (not "Verified") because a feature PASS means "reached and returned non-4xx" — an upper bound (see the auth-detection residual in Step 2.1.7).
 
 **Next steps to widen coverage** (render only rows whose count > 0, from `scenario_reason`):
 
@@ -977,7 +977,7 @@ Counts come from the normalized `scenario_reason`: `mutation-guard` is exact (or
 
 **Reactive suggestions** (each with its caveat, shown only when triggered):
 
-- **Reachability:** if **every BE scenario** is `FAIL` with a `transport` reason (Details matched `/connection refused|could not connect|timeout/i`) and a `null` `observed_status` (FE SKIPs ignored), print: "no BE scenario returned an HTTP status at `<host:port>` — the dev stack may be down (or every endpoint is 5xx'ing)." Assemble `<host:port>` from the Step 0.4-sanitized host plus the parsed port — **never** from the raw error string.
+- **Reachability:** if **every BE scenario** is `FAIL` with a `transport` reason (Details matched `/connection refused|could not connect|timeout/i`) and a `null` `observed_status` (FE SKIPs ignored), print: "no BE scenario returned an HTTP status at `<host:port>` — the dev stack may be down (or every endpoint is 5xx'ing)." Assemble `<host:port>` from the resolved base URL's authority (Step 0.4 already rejected any userinfo, so it is safe to display) — **never** from the raw transport error string.
 - **Mutation:** if every BE scenario was `mutation-guard` SKIP, print the `--allow-mutations` hint (disposable DB).
 
 No proactive guard-widening nudges: flags that widen a guard appear only in the reactive unlock-hints after the guard actually blocked something.
@@ -1063,7 +1063,7 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 | Mutating BE scenario without `--allow-mutations` | SKIP with reason `mutation-guard`; issue marked "needs --allow-mutations". |
 | Tool unavailable (Playwright, curl, DB) | Affected scenarios SKIP / "cannot confirm" (never counted as fixed). If all verifiers unavailable → abort. |
 | Entire baseline is SKIP (user-provided plan) | Abort: "no executable verifier — cannot gate." |
-| Entire baseline is SKIP (auto-generated plan) | Graceful success if every SKIP reason is `mutation-guard` (backend-write-only — rely on unit/integration suite); graceful exit **with a coverage-zero WARNING** if any SKIP is tooling/parse-related (`tool-unavailable` / `cannot-confirm` / `parse-failure`). |
+| Entire baseline is SKIP (auto-generated plan) | Graceful success if every SKIP reason is `mutation-guard` (backend-write-only — rely on unit/integration suite); graceful exit **with a coverage-zero WARNING** if any SKIP is non-`mutation-guard` (`tool-unavailable` / `cannot-confirm` / unparseable). |
 | Feature scenario auth-gated (no token) | Reclassified `auth-unverified`; counted, surfaced, never PASS; unlock-hint shown. |
 | Shallow coverage (no feature PASS) | WARNING + low-confidence green on auto-generated; still exit success. |
 | Zero baseline failures at/above floor | "All passing, nothing to fix" → skip loop AND final run → exit success. |

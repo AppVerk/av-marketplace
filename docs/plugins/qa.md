@@ -143,7 +143,7 @@ When no plan exists, instead of dead-stopping, `/qa:loop` can generate one for t
 **Surfacing the generated plan:**
 
 - **Before baseline:** the generated plan path plus FE/BE scenario counts are echoed — e.g. `Generated plan: <path> — 4 FE scenarios, 2 BE scenarios`. In `--mode auto` this banner is the audit trail.
-- **After baseline:** the **mutation-guarded SKIP count** is folded into the baseline report (it is only knowable once the Step 2.1 guard pass has classified SKIPs, so it is not claimed in the pre-baseline banner).
+- **After baseline:** the **mutation-guarded SKIP count** is rendered in the Loop Summary's "Next steps to widen coverage" table (it is only knowable once the Step 2.1 guard pass has classified SKIPs, so it is not claimed in the pre-baseline banner).
 
 **Working-tree safety gate:** because the loop auto-fixes source and recovers via `git restore`, uncommitted **tracked** changes are at risk. After argument validation and before plan resolution, the loop inspects the tree (`git status --porcelain` over tracked files; untracked files are excluded — `git restore` cannot destroy them):
 
@@ -251,7 +251,7 @@ Before integrating, verify these five manual checks:
 ```
 ## Coverage
 - Exercised: <N> feature · <M> sanity · <K> enforcement
-- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K>
+- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
 - Confidence: high | low — <reason>
 ```
 

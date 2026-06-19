@@ -191,7 +191,7 @@ An optional `## Coverage` block may appear in the Summary section, immediately a
 ```
 ## Coverage
 - Exercised: <feature-PASS> feature · <sanity-PASS> sanity · <negative-PASS> enforcement
-- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K>
+- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
 - Confidence: <high | low — reason>
 ```
 
