@@ -1,0 +1,5 @@
+{
+  "name": "hermes-tweet",
+  "description": "Hermes Agent X/Twitter workflow skill for research, reading, and approval-gated posting with Hermes Tweet",
+  "version": "0.1.6"
+}

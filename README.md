@@ -1,7 +1,7 @@
 # AppVerk Claude Code Marketplace
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Plugins](https://img.shields.io/badge/plugins-9-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/plugins-10-green.svg)](#available-plugins)
 
 Plugins for Claude Code that enhance code quality, security, and development workflows.
 
@@ -25,6 +25,7 @@ After installation, verify with `/help` — you should see the new commands list
 | [PHP Developer](docs/plugins/php-developer.md) | 1.0.2 | PHP development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (Symfony, Doctrine ORM, DDD) |
 | [Python Developer](docs/plugins/python-developer.md) | 3.0.3 | Python development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery) |
 | [QA](docs/plugins/qa.md) | 2.4.0 | Automated QA testing — analyzes code changes, generates test plans (`/qa:create-plan`), executes FE (Playwright) and BE (API/DB) tests (`/qa:run`), and self-drives the test→fix→retest loop (`/qa:loop` now generates a plan for the branch when none exists, then runs). Produces reports compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge |
+| [Hermes Tweet](docs/plugins/hermes-tweet.md) | 0.1.6 | Hermes Agent X/Twitter workflow skill for research, reading, and approval-gated posting through Hermes Tweet |
 | [Sequential Thinking](https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking) | MCP | Structured problem-solving through dynamic thinking process |
 
 ## Documentation

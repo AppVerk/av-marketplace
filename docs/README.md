@@ -12,6 +12,7 @@
 - [PHP Developer](plugins/php-developer.md) — PHP best practices, TDD, Symfony, Doctrine, DDD patterns
 - [Python Developer](plugins/python-developer.md) — Python best practices, TDD, Django, Celery, FastAPI, async patterns
 - [QA](plugins/qa.md) — Automated QA testing: code-change analysis, FE/BE test plans, Playwright + API/DB execution, code-review-compatible reports
+- [Hermes Tweet](plugins/hermes-tweet.md) — Hermes Agent X/Twitter research, reading, and approval-gated posting
 - [Security Pipeline](plugins/security-pipeline.md) — CI/CD security scanning setup (Semgrep SAST + TruffleHog)
 - [Web Auditor](plugins/web-auditor.md) — Comprehensive web audit: security, SEO, performance, compliance
 

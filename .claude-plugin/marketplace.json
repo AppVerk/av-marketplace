@@ -61,6 +61,13 @@
       "category": "testing"
     },
     {
+      "name": "hermes-tweet",
+      "source": "./plugins/hermes-tweet",
+      "description": "Hermes Agent X/Twitter workflow skill for research, reading, and approval-gated posting with Hermes Tweet",
+      "version": "0.1.6",
+      "category": "productivity"
+    },
+    {
       "name": "sequentialthinking",
       "description": "An MCP server implementation that provides a tool for dynamic and reflective problem-solving through a structured thinking process.",
       "source": "./external_plugins/sequentialthinking",
