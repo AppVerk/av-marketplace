@@ -384,15 +384,15 @@ If a required tool is unavailable, affected scenarios are marked as SKIP (not FA
 
 ## Skills
 
-The qa plugin ships these skills (loaded automatically with the plugin):
+The qa plugin ships these skills. `loop-engineering`, `report-format`, and `test-plan-format` load with the plugin; `fe-testing` and `be-testing` are scoped to the `qa:fe-tester` and `qa:be-tester` agents and load on demand inside them (declared via `skills:` in each agent's frontmatter), not ambiently across the plugin.
 
-| Skill | Purpose |
-|-------|---------|
-| `loop-engineering` | Doctrine for authoring robust closed agent loops — the minimum-bar checklist, the ground-truth oracle taxonomy, and the anti-patterns, anchored to `/qa:loop` as the reference implementation. |
-| `report-format` | Test report format with `QA-XXX` issue IDs, compatible with the code-review plugin. |
-| `test-plan-format` | Test plan structure produced by `/qa:create-plan` and consumed by `/qa:run` and `/qa:loop`. |
-| `fe-testing` | Frontend test-execution guidance for the `qa:fe-tester` agent (Playwright MCP). |
-| `be-testing` | Backend test-execution guidance for the `qa:be-tester` agent (HTTP + DB checks). |
+| Skill | Loaded | Purpose |
+|-------|--------|---------|
+| `loop-engineering` | With plugin | Doctrine for authoring robust closed agent loops — the minimum-bar checklist, the ground-truth oracle taxonomy, and the anti-patterns, anchored to `/qa:loop` as the reference implementation. |
+| `report-format` | With plugin | Test report format with `QA-XXX` issue IDs, compatible with the code-review plugin. |
+| `test-plan-format` | With plugin | Test plan structure produced by `/qa:create-plan` and consumed by `/qa:run` and `/qa:loop`. |
+| `fe-testing` | `qa:fe-tester` agent | Frontend test-execution guidance using Playwright MCP — navigation, interaction, assertions, and screenshots on failure. |
+| `be-testing` | `qa:be-tester` agent | Backend test-execution guidance — API request construction, response verification, database state checks, error-path testing, and adaptive CLI/MCP tool detection. |
 
 ## Prerequisites
 
