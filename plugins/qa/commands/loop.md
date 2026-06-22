@@ -11,6 +11,8 @@ Execute a closed test → fix → retest loop. Runs a QA plan, identifies failur
 
 This command orchestrates existing agents (`qa:fe-tester`, `qa:be-tester`, `code-review:fix-auto`) and applies strict safety guards (environment, mutation, budget) to prevent uncontrolled loops.
 
+> **Doctrine:** the loop-engineering discipline this command implements — oracle taxonomy, the minimum-bar checklist, and the anti-patterns — is documented in the `qa:loop-engineering` skill.
+
 ## Arguments
 
 **Input:** `$ARGUMENTS`
