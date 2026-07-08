@@ -218,9 +218,13 @@ findings = {
   quality: [code quality auditor results],
   documentation: [documentation auditor results, if launched],
   performance: [your performance analysis from Step 2],
-  architecture: [your architecture analysis from Steps 3-4]
+  architecture: [your architecture analysis from Steps 3-4],
+  rejected: {security: [...], quality: [...], documentation: [...]},
+  doctrine_gaps: {security: [...], quality: [...], documentation: [...]}
 }
 ```
+
+The `rejected` / `doctrine_gaps` collections come from each auditor's self-falsification output (security-auditor: trailing JSON object; code-quality-auditor: Final Report sections 7–8; documentation-auditor: trailing markdown sections), normalized to `{title, reason}` entries. Forward them verbatim — for the cross-verifier they are pass-through context (no action).
 
 **2. Spawn Cross-Verifier (background):**
 
@@ -254,6 +258,9 @@ Here are the findings from all auditors:
 
 Challenge CRITICAL and HIGH findings from both security and quality auditors.
 Check for false positives, especially in linter results and SAST output.
+Spot-check the rejected collections: flag wrongly-rejected findings for
+reinstatement per your Output Format. The doctrine_gaps collections are
+pass-through context.
 Follow your output format exactly."
 )
 ```
@@ -272,6 +279,17 @@ challenger_results = TaskOutput(challenger_id, block: true)
 1. Apply Challenger decisions (remove false positives, adjust severity)
 2. Add Cross-Verifier composite findings
 3. Tag confirmed findings as `[verified]`
+4. Reinstate spot-checked rejections: for each entry in the Challenger's
+   `### Rejected findings (spot-check)` subsection, reconstruct a minimal
+   full-format finding and move it from its auditor's `rejected` collection
+   into `findings` before Step 5.6 — severity from the entry's
+   `reinstate at {SEVERITY}`; Category from the source auditor's bundle key
+   (security → Security, documentation → Documentation, quality → the
+   category named in the Challenger's reasoning, defaulting to
+   Maintainability); Location from the reasoning where cited, else `—`;
+   Problem/Remediation from the entry title, the original rejection reason,
+   and the Challenger's reasoning. (Reconstruction is needed because
+   rejected collections carry only `{title, reason}`.)
 
 **Task Update:** Mark task 6 as `completed`.
 
@@ -318,6 +336,8 @@ For each issue found, format as structured markdown:
 **OWASP:** A05:2025 (if applicable)
 **CWE:** CWE-89 (if applicable)
 **Effort:** trivial | easy | medium | hard
+**Drift-class:** mechanical | decision | dead-reference   <- documentation findings only
+**Fix-policy:** auto | needs-decision                     <- documentation findings only
 
 **Problem:**
 Brief description of what's wrong and why it matters.
@@ -399,6 +419,12 @@ Include this section in the review output:
 
 ### Challenged Findings
 {Findings removed or downgraded by Challenger, with reasoning}
+
+### Rejected by auditors (self-falsification)
+{Per-auditor rejected entries as plain bullets `- {title} — {reason}`; `None` when empty. NEVER render these as `### [SEVERITY]` headings — fix-all/fix-report extract any such heading as a fixable issue.}
+
+### Doctrine-gap candidates
+{Same bullet format; `None` when empty.}
 ```
 
 ---
@@ -429,6 +455,7 @@ Before rendering the final report, assign unique identifiers to each issue based
    - Format ID as `{PREFIX}-{NNN}` with zero-padded 3-digit counter (e.g., SEC-001, PERF-002)
    - Modify the issue heading: `### [SEVERITY] {ID}: Title`
    - Add `**ID:** {ID}` field right after the heading (before **Location:**)
+   - Preserve `**Drift-class:**` and `**Fix-policy:**` field lines verbatim when re-rendering issue blocks — they must reach the saved report for `/fix-all`'s Fix-policy filter to work.
 
 **Example transformation:**
 
