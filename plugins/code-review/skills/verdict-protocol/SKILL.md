@@ -34,8 +34,8 @@ Boundary: this skill owns the closing contract (verdict line, predicate, triage 
 
 No in-repo agent implements the full closed-verdict-with-predicate contract today; the worked example below is *(Prospective)*. Partial references:
 
-- `plugins/code-review/agents/challenger.md`, **Output Format** section — `confirmed | downgraded | false-positive`: a closed vocabulary (bar item 1) but *per-finding*, not agent-closing. A contrast case, like qa's per-scenario PASS/FAIL/SKIP.
-- If the qa plugin is installed: `plugins/qa/commands/loop.md`, Step 5.2 "Loop Summary" template, the `**Result:**` line — `Pass | Fail | Budget Exhausted | Stopped`: a closed final vocabulary with exhaustion semantics (bar items 1 + 3).
+- `plugins/code-review/agents/challenger.md`, **Output Format** section — a closed three-value per-finding disposition vocabulary (see the file for exact tokens): closed (bar item 1) but *per-finding*, not agent-closing. A contrast case, like qa's per-scenario PASS/FAIL/SKIP.
+- If the qa plugin is installed: `plugins/qa/commands/loop.md`, Step 5.2 "Loop Summary" template, the `**Result:**` line — a closed four-value final vocabulary including an explicit budget-exhaustion value (see the file for exact tokens) (bar items 1 + 3).
 - Boundary: qa's `report-format` skill (if installed) owns the report *file* — structure, QA-XXX IDs, severity table, parser compatibility. This skill owns the agent's *closing contract* only.
 
 ## Worked example *(Prospective)*

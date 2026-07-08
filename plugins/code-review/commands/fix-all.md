@@ -247,7 +247,7 @@ Render to stdout (Markdown):
 **Reports:** <report_basenames>
 **Severity floor:** <severity_floor>            <-- omit this line if severity_floor is unset
 **Total to fix:** <total_count> issues
-**Requires user decision (skipped):** <needs_decision count> issues        <-- omit this line when zero
+**Requires user decision (skipped):** <needs_decision count> issues (<comma-separated IDs>)        <-- omit this line when zero
 
 **By severity:**
 | CRITICAL | HIGH | MEDIUM | LOW |
@@ -380,7 +380,9 @@ This list is consumed by Step 4.2's "Status write failures" block.
 
 **Requires user decision (skipped):**
 - [SEVERITY] ID: Title — Drift-class: <class>
+
 Use `/fix-report` or `/fix <ID>` to address these.
+
 **Reports updated:**
 - <source-file-1>
 - <source-file-2>

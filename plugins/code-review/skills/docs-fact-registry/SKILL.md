@@ -19,7 +19,7 @@ Drift is checked against a registry: *claim in docs → source of truth in code 
 |---|---|---|
 | version string in a plugin table row | manifest `version` field | mechanical |
 | "N plugins" count / badge | manifest entry count | mechanical |
-| script path cited in a guide | file exists at that path | dead-reference check |
+| script path cited in a guide | file exists at that path | dead reference |
 | "coverage ≥ 80%" aspiration | CI config threshold | decision |
 
 ## Three-way classification (MUST — not binary)

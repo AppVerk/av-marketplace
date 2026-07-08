@@ -240,6 +240,8 @@ Here are the findings from all auditors:
 
 Identify correlations between security and quality findings.
 Focus on cases where security vulnerabilities intersect with architectural issues.
+The rejected and doctrine_gaps collections are context only — do not
+correlate them or use them as a composite basis.
 Follow your output format exactly."
 )
 ```
@@ -283,13 +285,17 @@ challenger_results = TaskOutput(challenger_id, block: true)
    `### Rejected findings (spot-check)` subsection, reconstruct a minimal
    full-format finding and move it from its auditor's `rejected` collection
    into `findings` before Step 5.6 — severity from the entry's
-   `reinstate at {SEVERITY}`; Category from the source auditor's bundle key
-   (security → Security, documentation → Documentation, quality → the
-   category named in the Challenger's reasoning, defaulting to
-   Maintainability); Location from the reasoning where cited, else `—`;
-   Problem/Remediation from the entry title, the original rejection reason,
-   and the Challenger's reasoning. (Reconstruction is needed because
-   rejected collections carry only `{title, reason}`.)
+   `reinstate at {SEVERITY}`; Category from the entry's domain tag
+   (`[security]` → Security, `[documentation]` → Documentation, `[quality]` →
+   the category named in the Challenger's reasoning, defaulting to
+   Maintainability); Location from the reasoning where cited, else `—`; for
+   Documentation-category reinstatements, additionally set **Fix-policy:**
+   needs-decision and **Drift-class:** from the Challenger's reasoning where
+   stated, else decision (the class was discarded at rejection and must not
+   silently default to auto-fix); Problem/Remediation from the entry title,
+   the original rejection reason, and the Challenger's reasoning.
+   (Reconstruction is needed because rejected collections carry only
+   `{title, reason}`.)
 
 **Task Update:** Mark task 6 as `completed`.
 

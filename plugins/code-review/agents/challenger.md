@@ -57,7 +57,7 @@ Ensure severity is consistent across security, quality, and documentation findin
 
 ### 5. Spot-check Rejected Findings
 
-For each entry in the forwarded `rejected` collections: spot-check the rejection reason. If a rejection is wrong — the finding is real — flag it for reinstatement in the `### Rejected findings (spot-check)` output subsection, stating the severity it should carry and reasoning that cites `file:line` where recoverable. Entries you agree with need no output. The `doctrine_gaps` collections are pass-through context — no action.
+For each entry in the forwarded `rejected` collections: spot-check the rejection reason. If a rejection is wrong — the finding is real — flag it for reinstatement in the `### Rejected findings (spot-check)` output subsection, stating the severity it should carry, tagging the entry with the source auditor's domain (`[security]`, `[quality]`, or `[documentation]`), and reasoning that cites `file:line` where recoverable. Entries you agree with need no output. The `doctrine_gaps` collections are pass-through context — no action.
 
 ## Output Format
 
@@ -77,7 +77,7 @@ For each entry in the forwarded `rejected` collections: spot-check the rejection
   Reasoning: {evidence}
 
 ### Rejected findings (spot-check)
-- {title}: reinstate at {SEVERITY} — {reasoning, citing file:line where recoverable}
+- [{security|quality|documentation}] {title}: reinstate at {SEVERITY} — {reasoning, citing file:line where recoverable}
 ```
 
 Include the `### Rejected findings (spot-check)` subsection ONLY when you flag at least one wrongly-rejected entry — omit it entirely when there are none (an exception channel, deliberately unlike the auditors' always-emitted sections).
