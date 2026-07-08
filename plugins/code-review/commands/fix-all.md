@@ -1,6 +1,6 @@
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
-description: Fix every unfixed issue from a review/QA report after a single yes/no confirmation. Optional severity floor.
+description: Fix unfixed issues from a review/QA report after a single yes/no confirmation — everything except issues flagged needs-decision. Optional severity floor.
 model: opus
 argument-hint: [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
 ---
@@ -208,6 +208,21 @@ If `severity_floor` is unset, the list is unchanged.
 
 Follow the [Abort helper](#abort-helper) procedure. (When `severity_floor` is unset and the list is empty, Step 1.5 has already terminated the command.)
 
+### Step 2.2.5: Apply Fix-policy filter
+
+Partition the current list on each issue block's `**Fix-policy:**` field:
+
+- `**Fix-policy:** needs-decision` → move to a `needs_decision` list — skipped from fixing, listed in the pre-flight (Step 2.4) and final summary (Step 4.2).
+- `**Fix-policy:** auto`, or **no Fix-policy field at all** → keep in the fix list. **Absent field ⇒ `auto`** — all pre-existing review/QA reports behave exactly as before this filter existed.
+
+There is no override flag (Rule 8: flag-like tokens classify as paths). To fix a skipped issue, use `/fix <ID>` or `/fix-report`.
+
+**Edge case — zero issues after filter:** if the fix list is now empty and `needs_decision` is non-empty, output:
+
+> All remaining issues are flagged `needs-decision` and require your decision. Use `/fix-report` to select them interactively, or `/fix <ID>` for a single issue.
+
+Follow the [Abort helper](#abort-helper) procedure.
+
 ### Step 2.3: Sort issues
 
 Sort by severity: CRITICAL → HIGH → MEDIUM → LOW. Within a severity, preserve the order issues appeared in their source files (stable sort).
@@ -232,6 +247,7 @@ Render to stdout (Markdown):
 **Reports:** <report_basenames>
 **Severity floor:** <severity_floor>            <-- omit this line if severity_floor is unset
 **Total to fix:** <total_count> issues
+**Requires user decision (skipped):** <needs_decision count> issues        <-- omit this line when zero
 
 **By severity:**
 | CRITICAL | HIGH | MEDIUM | LOW |
@@ -361,10 +377,16 @@ This list is consumed by Step 4.2's "Status write failures" block.
 | 2 | [SEVERITY] ID: Title — path:line | STATUS_ICON STATUS_TEXT |
 
 **Fixed:** N | **Partially Fixed:** N | **Failed:** N
+
+**Requires user decision (skipped):**
+- [SEVERITY] ID: Title — Drift-class: <class>
+Use `/fix-report` or `/fix <ID>` to address these.
 **Reports updated:**
 - <source-file-1>
 - <source-file-2>
 ```
+
+Omit the `**Requires user decision (skipped):**` block entirely when the `needs_decision` list from Step 2.2.5 is empty. `<class>` is the issue's `**Drift-class:**` value; render `—` if the field is missing.
 
 In single-file mode the list contains exactly one entry. In auto-merge mode, list each distinct `source_file` that was edited (deduplicated). Files that received no Status writes (all Failed, or no selections from that file) are omitted; if no file was edited at all, omit the entire `**Reports updated:**` block.
 

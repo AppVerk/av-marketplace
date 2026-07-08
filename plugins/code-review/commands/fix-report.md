@@ -136,6 +136,8 @@ Display the issues using AskUserQuestion with multiSelect, **4 issues per page**
   - label: "[SEVERITY] Short title"
   - description: "path/to/file.py:line — first sentence of the Problem field"
 
+**Needs-decision prefix:** if the issue block contains `**Fix-policy:** needs-decision`, prefix the option's *description* with `[needs-decision: <Drift-class value>] ` (labels stay unchanged so `/fix <ID>` referencing remains stable). Example: `[needs-decision: dead-reference] docs/guide.md:12 — Doc cites a removed script`.
+
 **Auto-merge mode hint:** When `files` (from Step 1.1) contains more than one path, append a separator and the basename of `issue.source_file` to each option's description so the user can tell which report each issue came from. Example:
 
 ```
