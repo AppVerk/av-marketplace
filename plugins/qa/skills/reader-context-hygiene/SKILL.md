@@ -1,6 +1,6 @@
 ---
 name: reader-context-hygiene
-description: Use when authoring or reviewing a fan-out reader/scout agent (one that ingests an external source — a design board, a live site, a large document — for a consumer) — bulk evidence goes to disk, decision-relevant signals return inline, access failures stop rather than guess.
+description: Use when authoring or reviewing a fan-out reader/scout agent that ingests an external source (a design board, a live site, a large document) on behalf of a consumer.
 ---
 
 # Reader Context Hygiene
