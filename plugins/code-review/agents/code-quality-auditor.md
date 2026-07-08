@@ -4,7 +4,7 @@ description: Expert code quality auditor for architecture, design patterns, and 
 tools: Read, Bash, Grep, Glob
 allowed-tools: Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(uv:*), Bash(npm:*), Bash(pnpm:*), Bash(yarn:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(python:*), Bash(node:*)
 model: opus
-skills: standards-discovery, linter-integration, architecture-analysis
+skills: standards-discovery, linter-integration, architecture-analysis, finding-falsification
 ---
 
 # Code Quality Auditor Agent
@@ -425,6 +425,20 @@ class PaymentService:
 1. Reduce complexity in payment module
 2. Add missing interfaces for repositories
 ```
+
+### 7. Rejected after verification
+```markdown
+## Rejected after verification
+- {title} — {reason}
+```
+
+### 8. Doctrine-gap candidates
+```markdown
+## Doctrine-gap candidates
+- {title} — {reason}
+```
+
+Run the finding-falsification battery on every candidate finding before reporting. Both sections are emitted on every run — when empty, render `None` (matching documentation-auditor).
 
 ---
 

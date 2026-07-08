@@ -4,7 +4,7 @@ description: Expert security auditor for comprehensive code security analysis. U
 tools: Read, Bash, Grep, Glob
 allowed-tools: Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(grep:*), Bash(cat:*)
 model: opus
-skills: secret-scanning, sast-analysis, dependency-scanning
+skills: secret-scanning, sast-analysis, dependency-scanning, finding-falsification
 ---
 
 # Security Auditor Agent
@@ -165,6 +165,17 @@ For each vulnerability found, report in this structure:
   "code_example": "if user_id != current_user.id: raise PermissionDenied()"
 }
 ```
+
+**Self-falsification (finding-falsification skill):** run every candidate finding through the refutation battery before reporting. After the last per-finding object, emit **exactly one** trailing JSON object with the results:
+
+```json
+{
+  "rejected": [{"title": "…", "reason": "…"}],
+  "doctrine_gaps": [{"title": "…", "reason": "…"}]
+}
+```
+
+Emit this object on every run — when nothing was rejected or gap-flagged, use empty arrays. Do NOT restructure the per-finding format above; review.md consumers depend on it.
 
 ---
 
