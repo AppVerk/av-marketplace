@@ -4,7 +4,7 @@ description: Expert TypeScript + React developer agent for implementing features
 tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
 allowed-tools: Bash(tsc:*), Bash(vitest:*), Bash(playwright:*), Bash(eslint:*), Bash(biome:*), Bash(pnpm:*), Bash(bun:*), Bash(bunx:*), Bash(git:*), Bash(node:*)
 model: opus 
-skills: coding-standards, tdd-workflow, tailwind-patterns, zustand-patterns, tanstack-query-patterns, form-patterns, tanstack-router-patterns, pnpm-package-manager, bun-package-manager
+skills: coding-standards, tdd-workflow, tailwind-patterns, zustand-patterns, tanstack-query-patterns, form-patterns, tanstack-router-patterns, pnpm-package-manager, bun-package-manager, state-combination-modeling
 ---
 
 # TypeScript + React Developer Agent

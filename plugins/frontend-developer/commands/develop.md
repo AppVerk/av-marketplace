@@ -144,6 +144,13 @@ Use the Skill tool with:
   skill: "frontend-developer:bun-package-manager"
 ```
 
+### If task description involves multiple boolean props/flags/permissions/states driving one component:
+
+```
+Use the Skill tool with:
+  skill: "frontend-developer:state-combination-modeling"
+```
+
 **After loading skills, read and internalize the HARD-RULES from every loaded skill. You must follow all of them.**
 
 ---
