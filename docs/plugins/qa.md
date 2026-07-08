@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.4.0
+**Version:** 2.5.0
 
 ## Commands
 
@@ -384,11 +384,12 @@ If a required tool is unavailable, affected scenarios are marked as SKIP (not FA
 
 ## Skills
 
-The qa plugin ships these skills. `loop-engineering`, `report-format`, and `test-plan-format` load with the plugin; `fe-testing` and `be-testing` are scoped to the `qa:fe-tester` and `qa:be-tester` agents and load on demand inside them (declared via `skills:` in each agent's frontmatter), not ambiently across the plugin.
+The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, `report-format`, and `test-plan-format` load with the plugin; `fe-testing` and `be-testing` are scoped to the `qa:fe-tester` and `qa:be-tester` agents and load on demand inside them (declared via `skills:` in each agent's frontmatter), not ambiently across the plugin.
 
 | Skill | Loaded | Purpose |
 |-------|--------|---------|
 | `loop-engineering` | With plugin | Doctrine for authoring robust closed agent loops — the minimum-bar checklist, the ground-truth oracle taxonomy, and the anti-patterns, anchored to `/qa:loop` as the reference implementation. |
+| `reader-context-hygiene` | With plugin | Doctrine for authoring fan-out reader/scout agents — bulk evidence to disk, decision-relevant signals inline, fail-closed on access failure, declared truncation. |
 | `report-format` | With plugin | Test report format with `QA-XXX` issue IDs, compatible with the code-review plugin. |
 | `test-plan-format` | With plugin | Test plan structure produced by `/qa:create-plan` and consumed by `/qa:run` and `/qa:loop`. |
 | `fe-testing` | `qa:fe-tester` agent | Frontend test-execution guidance using Playwright MCP — navigation, interaction, assertions, and screenshots on failure. |
