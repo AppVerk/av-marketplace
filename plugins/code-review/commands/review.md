@@ -224,7 +224,7 @@ findings = {
 }
 ```
 
-The `rejected` / `doctrine_gaps` collections come from each auditor's self-falsification output (security-auditor: trailing JSON object; code-quality-auditor: Final Report sections 7–8; documentation-auditor: trailing markdown sections), normalized to `{title, reason}` entries. Forward them verbatim — for the cross-verifier they are pass-through context (no action).
+The `rejected` / `doctrine_gaps` collections come from each auditor's self-falsification output (security-auditor: trailing JSON object — extract it out of the security results when building the bundle; it is not a finding and must not remain in `findings.security`; code-quality-auditor: Final Report sections 7–8; documentation-auditor: trailing markdown sections). Normalize `rejected` entries to `{title, reason, severity, category, location, drift-class}`: split markdown bullets on the FIRST ` — ` (title before, reason after); the trailing `(was: …)` suffix carries the remaining fields; default any absent field to `—`. `doctrine_gaps` entries stay `{title, reason}`. Forward them verbatim — for the cross-verifier they are pass-through context (no action).
 
 **2. Spawn Cross-Verifier (background):**
 
@@ -285,17 +285,22 @@ challenger_results = TaskOutput(challenger_id, block: true)
    `### Rejected findings (spot-check)` subsection, reconstruct a minimal
    full-format finding and move it from its auditor's `rejected` collection
    into `findings` before Step 5.6 — severity from the entry's
-   `reinstate at {SEVERITY}`; Category from the entry's domain tag
-   (`[security]` → Security, `[documentation]` → Documentation, `[quality]` →
-   the category named in the Challenger's reasoning, defaulting to
-   Maintainability); Location from the reasoning where cited, else `—`; for
-   Documentation-category reinstatements, additionally set **Fix-policy:**
-   needs-decision and **Drift-class:** from the Challenger's reasoning where
-   stated, else decision (the class was discarded at rejection and must not
-   silently default to auto-fix); Problem/Remediation from the entry title,
-   the original rejection reason, and the Challenger's reasoning.
-   (Reconstruction is needed because rejected collections carry only
-   `{title, reason}`.)
+   `reinstate at {SEVERITY}`; Category from the rejected entry's normalized
+   `category` field where present, else from the domain tag
+   (`[security]` → Security, `[documentation]` → Documentation,
+   `[quality]` → Maintainability); Location from the normalized `location`
+   field where present, else from the Challenger's reasoning where cited,
+   else `—`; for Documentation-category reinstatements, set **Fix-policy:**
+   needs-decision and **Drift-class:** from the normalized `drift-class`
+   field or the Challenger's reasoning, else decision (the class must not
+   silently default to auto-fix); for ANY reinstated finding whose Location
+   resolves to `—`, also set **Fix-policy:** needs-decision — a synthesized
+   finding without a locatable target must not enter `/fix-all`'s auto
+   queue (fix-auto requires a `path:line` Location and cannot ask for one
+   inside a subagent); Problem/Remediation from the entry title, the
+   original rejection reason, and the Challenger's reasoning.
+   (Reconstruction is needed because rejected collections carry compact
+   entries, not full finding blocks.)
 
 **Task Update:** Mark task 6 as `completed`.
 
@@ -343,7 +348,7 @@ For each issue found, format as structured markdown:
 **CWE:** CWE-89 (if applicable)
 **Effort:** trivial | easy | medium | hard
 **Drift-class:** mechanical | decision | dead-reference   <- documentation findings only
-**Fix-policy:** auto | needs-decision                     <- documentation findings only
+**Fix-policy:** auto | needs-decision                     <- documentation findings, and any reinstated finding with Location `—`
 
 **Problem:**
 Brief description of what's wrong and why it matters.
@@ -424,7 +429,7 @@ Include this section in the review output:
 {Correlations from Cross-Verifier}
 
 ### Challenged Findings
-{Findings removed or downgraded by Challenger, with reasoning}
+{Findings removed or downgraded by Challenger, with reasoning — as plain bullets. NEVER paste original `### [SEVERITY]` issue blocks here; fix-all/fix-report extract any such heading as a fixable issue, which would resurrect a removed false positive.}
 
 ### Rejected by auditors (self-falsification)
 {Per-auditor rejected entries as plain bullets `- {title} — {reason}`; `None` when empty. NEVER render these as `### [SEVERITY]` headings — fix-all/fix-report extract any such heading as a fixable issue.}
@@ -459,6 +464,7 @@ Before rendering the final report, assign unique identifiers to each issue based
    - Read the issue's `Category` field
    - Map the category to its prefix using the canonical [Category→Prefix mapping](../../../docs/plugins/code-review.md#category-prefix-mapping) (single source of truth), then increment the corresponding counter (e.g., Security → SEC → `sec_count`)
    - Format ID as `{PREFIX}-{NNN}` with zero-padded 3-digit counter (e.g., SEC-001, PERF-002)
+   - Strip any pre-existing `{PREFIX}-{NNN}: ` prefix from the heading and drop any pre-existing `**ID:**` line before assigning (documentation-auditor emits its own DOC-NNN IDs; reinstated findings have none) — IDs are assigned exactly once, here
    - Modify the issue heading: `### [SEVERITY] {ID}: Title`
    - Add `**ID:** {ID}` field right after the heading (before **Location:**)
    - Preserve `**Drift-class:**` and `**Fix-policy:**` field lines verbatim when re-rendering issue blocks — they must reach the saved report for `/fix-all`'s Fix-policy filter to work.

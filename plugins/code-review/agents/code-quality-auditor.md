@@ -429,8 +429,10 @@ class PaymentService:
 ### 7. Rejected after verification
 ```markdown
 ## Rejected after verification
-- {title} — {reason}
+- {title} — {reason} (was: {SEVERITY} {Category} @ {location})
 ```
+
+The `(was: …)` suffix preserves the candidate finding's original severity, category, and location — the challenger's spot-check and any reinstatement depend on them.
 
 ### 8. Doctrine-gap candidates
 ```markdown

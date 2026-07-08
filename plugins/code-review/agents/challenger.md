@@ -57,7 +57,7 @@ Ensure severity is consistent across security, quality, and documentation findin
 
 ### 5. Spot-check Rejected Findings
 
-For each entry in the forwarded `rejected` collections: spot-check the rejection reason. If a rejection is wrong — the finding is real — flag it for reinstatement in the `### Rejected findings (spot-check)` output subsection, stating the severity it should carry, tagging the entry with the source auditor's domain (`[security]`, `[quality]`, or `[documentation]`), and reasoning that cites `file:line` where recoverable. Entries you agree with need no output. The `doctrine_gaps` collections are pass-through context — no action.
+For each entry in the forwarded `rejected` collections: spot-check the rejection reason. If a rejection is wrong — the finding is real — flag it for reinstatement in the `### Rejected findings (spot-check)` output subsection, stating the severity it should carry (default to the entry's original `severity` where forwarded; justify any departure from it), tagging the entry with the source auditor's domain (`[security]`, `[quality]`, or `[documentation]`), and reasoning that cites `file:line` where recoverable. Entries you agree with need no output. The `doctrine_gaps` collections are pass-through context — no action.
 
 ## Output Format
 
@@ -87,4 +87,4 @@ Include the `### Rejected findings (spot-check)` subsection ONLY when you flag a
 - Be rigorous but fair — challenge based on evidence, not opinion
 - Linter results are not automatically correct — check project context
 - If a finding is in test code only, consider downgrading severity
-- Before returning, run the finding-falsification battery on your own verdicts: try to refute each `false-positive` and `downgraded` call; a call that fails your own battery resolves back to `confirmed`. Do not add Rejected/Doctrine-gap sections of your own — the reversal is visible in the disposition itself.
+- Before returning, run the finding-falsification battery on your own verdicts: try to refute each `false-positive`, `downgraded`, and reinstatement call; a `false-positive`/`downgraded` call that fails your own battery resolves back to `confirmed`, and a reinstatement call that fails it is dropped from the spot-check subsection. Do not add Rejected/Doctrine-gap sections of your own — the reversal is visible in the disposition itself.

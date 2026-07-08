@@ -170,10 +170,12 @@ For each vulnerability found, report in this structure:
 
 ```json
 {
-  "rejected": [{"title": "…", "reason": "…"}],
+  "rejected": [{"title": "…", "reason": "…", "severity": "…", "category": "…", "location": "path:line"}],
   "doctrine_gaps": [{"title": "…", "reason": "…"}]
 }
 ```
+
+`rejected` entries carry the candidate finding's original `severity`, `category`, and `location` — the challenger's spot-check and any reinstatement depend on them; without them a reinstated finding's severity would be a guess.
 
 Emit this object on every run — when nothing was rejected or gap-flagged, use empty arrays. Do NOT restructure the per-finding format above; review.md consumers depend on it.
 
