@@ -13,8 +13,8 @@ Invoke when authoring or reviewing a code-review reporting agent, and at report 
 
 ## The refutation battery (MUST, per finding)
 
-1. **Toolchain check.** Is this already enforced by a linter/type-checker/formatter? Don't duplicate the toolchain — duplicated findings train readers to skim.
-2. **Backing check.** Does it cite a concrete standard (file + section) OR an established code pattern, operationalized as **≥3 occurrences outside the diff (grep)**? "Established" without a count is vibes.
+1. **Toolchain check.** Is this a hand-derived finding duplicating what a linter/type-checker/formatter that ran in this session already reports? Don't duplicate the toolchain — duplicated findings train readers to skim. Surfacing the toolchain's own results where the agent's contract mandates it (a Linter Results section, a SAST report) is not duplication; check 1 targets hand-derived duplicates only.
+2. **Backing check** *(pattern-claim findings only)*. A finding claiming a convention/standard/pattern violation must cite a concrete standard (file + section) OR an established code pattern, operationalized as **≥3 occurrences outside the diff (grep)** — "established" without a count is vibes. A defect demonstrable on its own terms (an exploit scenario, a crash, incorrect output) is its own backing; check 2 does not apply to it.
 3. **Evidence-elsewhere check.** Could the evidence live where you didn't look — another file, a test, existing code outside the diff? Grep before you report MISSING.
 4. **Deliberate-omission check.** Is the "gap" an explicit no-op or deferral recorded in the plan or ticket? A recorded decision is not a defect.
 5. **Verifiability-class check.** Is this actually unverifiable in this scope (runtime/visual behavior) mislabeled as a static finding? Route it onward — name the venue in the disposition reason — don't report it as a violation.
@@ -24,9 +24,9 @@ Invoke when authoring or reviewing a code-review reporting agent, and at report 
 
 - **(a) Survives** → report it.
 - **(b) Fails the battery** → list under **"Rejected after verification"** with a one-line reason. Never silently drop: without this list, the next reviewer re-derives and re-rejects the same ghosts, forever.
-- **(c) Real signal, no backing rule** → list under **"Doctrine-gap candidates"** — a candidate for a new standard. Distinct from Rejected: not a violation, not noise.
+- **(c) Real signal, no backing rule** → list under **"Doctrine-gap candidates"** — a candidate for a new standard. Distinct from Rejected: not a violation, not noise. Bucket (c) holds missing-rule *observations* only: a finding describing a concrete risk or defect always ships as a finding (bucket a) with the doctrine gap noted alongside it — nothing downstream ever fixes a doctrine-gap entry.
 
-Both sections are emitted on every run; when empty, render `None` — absence of rejections is itself information.
+Both sections are emitted on every run; when empty, render `None` — absence of rejections is itself information. A wired agent MAY render the two sections in its native output structure (e.g. security-auditor's trailing JSON object with `rejected` / `doctrine_gaps` keys) provided both are emitted every run.
 
 ## Scope and exemptions
 
