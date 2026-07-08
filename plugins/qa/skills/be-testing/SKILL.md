@@ -296,7 +296,7 @@ For each scenario, return results in this format:
 - **Status:** PASS / FAIL / SKIP
 - **Request:** <METHOD> <URL>
 - **Response status:** <actual status code>
-- **Response body:** <relevant excerpt or full body if short>
+- **Response body:** <relevant excerpt; short bodies may be inlined in full — longer bodies go to a file under docs/testing/reports/, referenced by path (see reader-context-hygiene)>
 - **DB check:** <PASS/FAIL/SKIP — actual value vs expected>
 - **Details:** <what was verified / what went wrong>
 - **Edge cases:**
