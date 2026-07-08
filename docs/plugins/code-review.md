@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.16.2
+**Version:** 1.17.0
 
 ## Commands
 
@@ -85,6 +85,8 @@ The command:
 
 The reports become living documents — fixed issues won't appear on subsequent `/fix-report` runs.
 
+Issues flagged `**Fix-policy:** needs-decision` show a `[needs-decision: <drift-class>]` prefix in the checklist description so you can decide them consciously.
+
 ### `/fix-all`
 
 Bulk-fix every unfixed issue from one or more saved reports after a single yes/no confirmation. Supports an optional minimum severity filter.
@@ -119,7 +121,7 @@ The command:
 |---|---|
 | Pick specific issues from a long report | `/fix-report` (paginated checklist) |
 | Fix one issue by ID | `/fix <ID>` |
-| Trust the report, fix everything | `/fix-all` |
+| Trust the report, fix everything except `needs-decision`-flagged issues | `/fix-all` |
 | Fix only the most-severe issues | `/fix-all CRITICAL` or `/fix-all HIGH` |
 
 **Note on feedback-origin issues** (those with `**Source:**` from `/analyze-feedback`): `/fix-all` lists them with a `Source` column showing the reviewer handle, but does **not** apply the "untrusted-provenance" framing that `/fix` and `/fix-report` use. The framing decision is documented in [the design spec](../superpowers/specs/2026-05-11-fix-all-design.md#2-scope-decided).
@@ -127,6 +129,8 @@ The command:
 **Restart safety.** Re-running `/fix-all` against the same report(s) is safe and idempotent. After each Fixed / Partially Fixed issue, the command writes a `**Status:**` line into the source report and then re-reads the file to verify the line landed. On the next run, Step 1.3's filter sees that Status line and skips the issue, so no edit is applied twice. If a Status write fails (heading drift, read-only file, write race), the failure surfaces in the final summary under **Status write failures** with per-issue reasons — re-run `/fix-all` to retry that subset, or add the `**Status:**` line manually under each affected heading. The code change itself already landed; only the report annotation is missing.
 
 **Performance.** `/fix-all` runs sequentially — each issue spawns its own `fix-auto` subagent (analyze → edit → verify → report) before the next one starts. Expect roughly 20–60 s per issue depending on file size and which verifiers run (linter alone is fast; SAST + typecheck + tests is slower), so a 30-issue report can take 10–30 minutes end-to-end. During the run, each iteration prints a `Fixing issue N/<total>: [<SEVERITY>] <ID>: <Title>` heartbeat so you can see progress. You can Ctrl+C between issues and partial progress is preserved: fixed source files keep their edits on disk, and `**Status:**` lines already written into the report stay — Step 1.3's filter will skip those issues on the next run. The only thing lost on interrupt is the in-memory final summary table.
+
+**Fix-policy handling:** issues carrying `**Fix-policy:** needs-decision` (documentation drift classified `decision` or `dead-reference` by the docs-fact-registry doctrine) are skipped by default and listed under "Requires user decision" in the pre-flight and final summaries. Issues without a `Fix-policy` field are treated as `auto`, so pre-existing reports behave exactly as before. There is no override flag — use `/fix-report` or `/fix <ID>` for the skipped issues.
 
 ### `/analyze-feedback`
 
@@ -217,6 +221,8 @@ Every review includes a Verification Summary showing:
 - Number of findings verified, removed, and adjusted
 - Cross-analysis correlations (security <-> quality <-> documentation)
 - Challenged findings with reasoning
+- Rejected by auditors (self-falsification) — findings the auditors rejected in their own refutation pass, with reasons
+- Doctrine-gap candidates — real signals with no backing rule, candidates for new standards
 
 ### Cost Considerations
 
@@ -274,6 +280,24 @@ Automatically detects installed developer plugins (python-developer, frontend-de
 - `fix-auto` agent — Same as `/fix` but autonomous
 
 **Graceful degradation:** If no developer plugins are installed, the review and fix workflows proceed with standard behavior. No additional action needed.
+
+### Finding Falsification
+
+**Skill:** `finding-falsification`
+
+Doctrine for self-falsification in reporting agents: a six-check refutation battery every finding must survive, and a three-bucket disposition (report / "Rejected after verification" / "Doctrine-gap candidates" — never silently dropped). Preloaded by security-auditor, code-quality-auditor, documentation-auditor, and challenger.
+
+### Verdict Protocol
+
+**Skill:** `verdict-protocol`
+
+Authoring-time doctrine for a reporting agent's closing contract: closed verdict vocabulary, verdict computed by a declared predicate, exhaustion semantics, consumer routing, and a Required/Advised/Optional triage axis distinct from severity. Referenced from `docs/contributing.md`; not preloaded by any agent (applies when writing or reviewing agent definitions).
+
+### Docs Fact Registry
+
+**Skill:** `docs-fact-registry`
+
+Declarative docs↔code drift checking: a claim → source-of-truth → policy registry with three-way classification (mechanical → auto-fixable; decision and dead references → escalated as `needs-decision`). Preloaded by documentation-auditor; its `Fix-policy` field drives `/fix-all`'s default skip.
 
 ## Helper Scripts
 

@@ -68,6 +68,8 @@ Markdown files in `agents/` define specialized subagents that run in the backgro
 
 Example: the code-review plugin has `security-auditor` and `code-quality-auditor` agents that run in parallel during `/review`.
 
+When defining a new reporting agent's or command's closing contract (verdict line, routing), follow the code-review plugin's `verdict-protocol` skill (`plugins/code-review/skills/verdict-protocol/SKILL.md`).
+
 ### Skills
 
 Markdown files in `skills/<skill-name>/SKILL.md` define reusable modules. Skills can be:
