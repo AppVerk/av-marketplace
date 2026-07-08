@@ -1,6 +1,6 @@
 ---
 name: finding-falsification
-description: Use when authoring or reviewing any code-review reporting agent, or when a code-review agent is about to report findings — mandates a self-falsification pass: every finding survives a refutation battery before reporting; rejected findings and doctrine-gap candidates are recorded in dedicated sections, never silently dropped.
+description: "Use when authoring or reviewing any code-review reporting agent, or when a code-review agent is about to report findings — mandates a self-falsification pass: every finding survives a refutation battery before reporting; rejected findings and doctrine-gap candidates are recorded in dedicated sections, never silently dropped."
 ---
 
 # Finding Falsification

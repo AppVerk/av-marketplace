@@ -1,6 +1,6 @@
 ---
 name: verdict-protocol
-description: Use when writing or reviewing the definition of a reporting agent or command (a review, audit, verification, or test-run agent) to set its closing contract: a typed closed verdict computed by a declared predicate over finding categories, a blocking-triage axis distinct from severity, and machine-locatable status.
+description: "Use when writing or reviewing the definition of a reporting agent or command (a review, audit, verification, or test-run agent) to set its closing contract: a typed closed verdict computed by a declared predicate over finding categories, a blocking-triage axis distinct from severity, and machine-locatable status."
 ---
 
 # Verdict Protocol
