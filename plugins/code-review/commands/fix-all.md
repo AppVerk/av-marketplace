@@ -202,11 +202,13 @@ If `severity_floor` is set, filter the unfixed-issues list from Step 1 to keep o
 
 If `severity_floor` is unset, the list is unchanged.
 
-**Edge case — zero issues after filter:** if the filtered list is empty and `severity_floor` was set, output:
+**needs-decision issues are exempt from the floor.** An issue whose block carries `**Fix-policy:** needs-decision` (or any non-`auto` policy — the same set Step 2.2.5 partitions) is **not** dropped for being below the floor; it passes through to Step 2.2.5, which moves it into the `needs_decision` (skipped-but-surfaced) list. This preserves the guarantee that needs-decision issues are always listed. Applying the floor *before* the split (the naive order) would silently discard a sub-floor needs-decision issue from both the fix list and the "Requires user decision" list — the failure this exemption prevents. The floor still drops sub-floor `auto` issues as normal, so reading each issue's `**Fix-policy:**` here is required to decide exemption.
+
+**Edge case — zero issues after filter:** if the filtered list is empty and `severity_floor` was set — i.e. no issue survives, neither a floor-passing `auto` issue nor a floor-exempt needs-decision issue — output:
 
 > No issues match severity floor `<FLOOR>`. Nothing to fix.
 
-Follow the [Abort helper](#abort-helper) procedure. (When `severity_floor` is unset and the list is empty, Step 1.5 has already terminated the command.)
+Follow the [Abort helper](#abort-helper) procedure. (When `severity_floor` is unset and the list is empty, Step 1.5 has already terminated the command. When only needs-decision issues survive the floor, the list is non-empty and Step 2.2.5's edge case surfaces them instead.)
 
 ### Step 2.2.5: Apply Fix-policy filter
 

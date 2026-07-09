@@ -281,8 +281,17 @@ challenger_results = TaskOutput(challenger_id, block: true)
 1. Apply Challenger decisions (remove false positives, adjust severity)
 2. Add Cross-Verifier composite findings
 3. Tag confirmed findings as `[verified]`
-4. Reinstate spot-checked rejections: for each entry in the Challenger's
-   `### Rejected findings (spot-check)` subsection, reconstruct a minimal
+4. Reinstate spot-checked rejections: each entry in the Challenger's
+   `### Rejected findings (spot-check)` subsection has the shape
+   `[{domain}] {title}: reinstate at {SEVERITY} — {reasoning}`. Parse it by
+   anchoring on the literal delimiter `: reinstate at ` (NOT the first `:`):
+   the domain tag is the leading `[…]`, the **title** is the text between the
+   tag and that delimiter, the severity is the `{SEVERITY}` token after it, and
+   the reasoning is everything after the following ` — `. The title may itself
+   contain `:` (e.g. `God Object: UserService`, which the auditors are told to
+   write), so a first-`:` split would truncate the title and break the match
+   back to the rejected record — always anchor on `: reinstate at `. For each
+   entry, reconstruct a minimal
    full-format finding and move it from its auditor's `rejected` collection
    into `findings` before Step 5.6 — severity from the entry's
    `reinstate at {SEVERITY}`; Category from the rejected entry's normalized

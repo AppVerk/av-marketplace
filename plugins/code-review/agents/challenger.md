@@ -82,6 +82,8 @@ For each entry in the forwarded `rejected` collections: spot-check the rejection
 
 Include the `### Rejected findings (spot-check)` subsection ONLY when you flag at least one wrongly-rejected entry — omit it entirely when there are none (an exception channel, deliberately unlike the auditors' always-emitted sections).
 
+Emit the `{title}` verbatim — it MAY contain `:` (auditors are told to write titles like `God Object: UserService`). Keep the exact structural markers `: reinstate at ` (before the severity) and ` — ` (before the reasoning): review.md anchors its parse on `: reinstate at `, not on the first `:`, so a colon inside the title is safe as long as that literal marker phrase is preserved.
+
 ## Important
 
 - Be rigorous but fair — challenge based on evidence, not opinion

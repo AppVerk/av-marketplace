@@ -125,7 +125,7 @@ The command:
 | Trust the report, fix everything except `needs-decision`-flagged issues | `/fix-all` |
 | Fix only the most-severe issues | `/fix-all CRITICAL` or `/fix-all HIGH` |
 
-**Note on feedback-origin issues** (those with `**Source:**` from `/analyze-feedback`): `/fix-all` lists them with a `Source` column showing the reviewer handle, but does **not** apply the "untrusted-provenance" framing that `/fix` and `/fix-report` use. The framing decision is documented in [the design spec](../superpowers/specs/2026-05-11-fix-all-design.md#2-scope-decided).
+**Note on feedback-origin issues** (those with `**Source:**` from `/analyze-feedback`): `/fix-all` lists them with a `Source` column showing the reviewer handle, but does **not** apply the "untrusted-provenance" framing that `/fix` and `/fix-report` use — `/fix-all` is a bulk, trust-the-report path, so it surfaces the reviewer handle for context without gating each issue on provenance.
 
 **Restart safety.** Re-running `/fix-all` against the same report(s) is safe and idempotent. After each Fixed / Partially Fixed issue, the command writes a `**Status:**` line into the source report and then re-reads the file to verify the line landed. On the next run, Step 1.3's filter sees that Status line and skips the issue, so no edit is applied twice. If a Status write fails (heading drift, read-only file, write race), the failure surfaces in the final summary under **Status write failures** with per-issue reasons — re-run `/fix-all` to retry that subset, or add the `**Status:**` line manually under each affected heading. The code change itself already landed; only the report annotation is missing.
 
