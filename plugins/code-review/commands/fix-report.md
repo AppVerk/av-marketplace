@@ -182,7 +182,9 @@ Mark remaining tasks as `completed` and stop.
 For each selected issue whose block contains `**Fix-policy:** needs-decision`, ask a follow-up AskUserQuestion BEFORE dispatching (batch up to 4 such issues per call, one question each):
 
 - question: "How should [ID] be resolved?"
-- options derived from the issue's Remediation — for `dead-reference` drift typically "Remove the mention" vs "Restore/update the referent"; for `decision` drift, the alternatives the Remediation names
+- options derived from the issue's Remediation — for `dead-reference` drift typically "Remove the mention" vs "Restore/update the referent"; for `decision` drift, the alternatives the Remediation names. If the Remediation names no alternatives, offer "Apply the remediation as written" vs "Resolve differently (describe)".
+
+If the issue's Location is `—` or `unknown:0`, additionally ask for the target file (and line if known) in the same question flow — fix-auto requires a `path:line` Location and cannot ask for one itself; without an answer, mark the issue Failed up front instead of dispatching it.
 
 Record each chosen resolution for Step 3.1. Selecting the issue in the checklist is not the decision — the issue was flagged `needs-decision` precisely because the fix direction is a judgment call the fixer must not make alone.
 

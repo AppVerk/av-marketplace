@@ -102,7 +102,7 @@ Assign sequential IDs: DOC-001, DOC-002, DOC-003, etc.
 
 ## Output
 
-Return all findings in the format above, then append two sections (finding-falsification skill — run the refutation battery on every candidate finding before reporting): `## Rejected after verification` (bullets `- {title} — {reason} (was: {SEVERITY} @ {location}; drift-class: {class})` — the suffix preserves the candidate's original fields for the challenger's spot-check and any reinstatement) and `## Doctrine-gap candidates` (bullets `- {title} — {reason}`), rendering `None` when empty. Emit both sections on EVERY run — the no-findings run is where rejected findings carry the most signal.
+Return all findings in the format above, then append two sections (finding-falsification skill — run the refutation battery on every candidate finding before reporting): `## Rejected after verification` (bullets `- {title} — {reason} (was: {SEVERITY} @ {location}; drift-class: {class})` — the suffix preserves the candidate's original fields for the challenger's spot-check and any reinstatement; `{title}` must not contain ` — `, the consumer splits on the first one) and `## Doctrine-gap candidates` (bullets `- {title} — {reason}`), rendering `None` when empty. Emit both sections on EVERY run — the no-findings run is where rejected findings carry the most signal.
 
 If no documentation issues were found **and both falsification lists are empty**, return:
 

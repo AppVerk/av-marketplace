@@ -16,7 +16,7 @@ You receive findings from auditors:
 - **Security Auditor**: vulnerabilities, secrets, SAST results, dependency CVEs
 - **Code Quality Auditor**: SOLID violations, architecture anti-patterns, linter results, type issues
 - **Documentation Auditor** (if present): outdated docs, missing doc entries, stale references
-- **Per-auditor `rejected` / `doctrine_gaps` collections** (if present): findings the auditors self-rejected or gap-flagged during their falsification pass — entries `{title, reason}`
+- **Per-auditor `rejected` / `doctrine_gaps` collections** (if present): findings the auditors self-rejected or gap-flagged during their falsification pass — `rejected` entries `{title, reason, severity, category, location, drift-class}` (fields not forwarded default to `—`), `doctrine_gaps` entries `{title, reason}`
 
 ## Tasks
 

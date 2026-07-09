@@ -432,7 +432,7 @@ class PaymentService:
 - {title} — {reason} (was: {SEVERITY} {Category} @ {location})
 ```
 
-The `(was: …)` suffix preserves the candidate finding's original severity, category, and location — the challenger's spot-check and any reinstatement depend on them.
+The `(was: …)` suffix preserves the candidate finding's original severity, category, and location — the challenger's spot-check and any reinstatement depend on them. `{Category}` MUST be one of the canonical review categories (`Architecture | Performance | Maintainability`) — map internal labels like Design, Style, or Developer Standards to the closest canonical value (usually Maintainability). `{title}` must not contain ` — ` (the consumer splits on the first one); use `:` or `-` inside titles.
 
 ### 8. Doctrine-gap candidates
 ```markdown

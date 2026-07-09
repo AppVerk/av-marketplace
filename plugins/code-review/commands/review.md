@@ -286,14 +286,16 @@ challenger_results = TaskOutput(challenger_id, block: true)
    full-format finding and move it from its auditor's `rejected` collection
    into `findings` before Step 5.6 — severity from the entry's
    `reinstate at {SEVERITY}`; Category from the rejected entry's normalized
-   `category` field where present, else from the domain tag
+   `category` field where present and not `—`, else from the domain tag
    (`[security]` → Security, `[documentation]` → Documentation,
-   `[quality]` → Maintainability); Location from the normalized `location`
-   field where present, else from the Challenger's reasoning where cited,
-   else `—`; for Documentation-category reinstatements, set **Fix-policy:**
+   `[quality]` → Maintainability) — map any non-canonical forwarded
+   category (e.g. Design, Style, Developer Standards) to Maintainability
+   so Step 5.6 and fix-auto can always parse it; Location from the
+   normalized `location` field where present and not `—`, else from the
+   Challenger's reasoning where cited, else `—`; for Documentation-category reinstatements, set **Fix-policy:**
    needs-decision and **Drift-class:** from the normalized `drift-class`
-   field or the Challenger's reasoning, else decision (the class must not
-   silently default to auto-fix); for ANY reinstated finding whose Location
+   field where present and not `—`, else from the Challenger's reasoning,
+   else decision (the class must not silently default to auto-fix); for ANY reinstated finding whose Location
    resolves to `—`, also set **Fix-policy:** needs-decision — a synthesized
    finding without a locatable target must not enter `/fix-all`'s auto
    queue (fix-auto requires a `path:line` Location and cannot ask for one
