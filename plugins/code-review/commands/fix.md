@@ -227,7 +227,7 @@ Store the detected patterns for use in Phases 3 and 4.
 
 ## Phase 3: Propose Fix
 
-If the issue block carries `**Fix-policy:** needs-decision`, the proposal MUST lay out the alternative resolutions in an extra `**Alternatives:**` line (for a `dead-reference`: remove the mention vs restore/update the referent) and recommend one — and the closing question becomes `Which resolution should I apply? (A / B / no)` instead of the yes/no line. The choice is the user's, made at the approval gate below.
+If the issue block carries `**Fix-policy:** needs-decision` (or any `Fix-policy` value other than `auto` — unparseable policies get the same treatment), the proposal MUST lay out the alternative resolutions in an extra `**Alternatives:**` line (for a `dead-reference`: remove the mention vs restore/update the referent) and recommend one — and the closing question becomes `Which resolution should I apply? (A / B / no)` instead of the yes/no line. The choice is the user's, made at the approval gate below.
 
 Present the fix proposal in this exact format:
 
