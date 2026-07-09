@@ -11,7 +11,7 @@ A reader (scout) agent ingests an external source — a design board, a live sit
 
 ## The minimum bar (MUST)
 
-1. **Bulk to disk, signals inline.** The full artifact is written to disk (a gitignored workspace or report directory); the return message carries the path + a 3–5 sentence summary + top-N takeaways **plus every decision-relevant status as a named inline field** (e.g. `items_extracted=214`, `MISSING_DESIGN=<screen>`, `needs_escalation=yes|no`, coverage gaps). A gate flag buried in the artifact file is a gate the orchestrator never sees — the exact failure this contract exists to prevent.
+1. **Bulk to disk, signals inline.** The full artifact is written to disk (a gitignored workspace, or a *subdirectory* of a report directory — never at a path a consumer globs for reports, e.g. `docs/testing/reports/*.md`); the return message carries the path + a 3–5 sentence summary + top-N takeaways **plus every decision-relevant status as a named inline field** (e.g. `items_extracted=214`, `MISSING_DESIGN=<screen>`, `needs_escalation=yes|no`, coverage gaps). A gate flag buried in the artifact file is a gate the orchestrator never sees — the exact failure this contract exists to prevent.
 2. **Never inline bulk.** No base64, no full dumps; verbose evidence (screenshots, response bodies, board dumps) is referenced by path.
 3. **Fail-closed access.** No access / auth failure → STOP with a diagnostic; never guess or synthesize the missing content. A fabricated board is worse than no board.
 4. **Idempotent output.** Re-running overwrites the artifact as a fresh snapshot — no accumulating duplicates.
