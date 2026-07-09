@@ -177,6 +177,15 @@ If the user selected no issues across all pages:
 
 Mark remaining tasks as `completed` and stop.
 
+### Step 2.4: Elicit decisions for needs-decision selections
+
+For each selected issue whose block contains `**Fix-policy:** needs-decision`, ask a follow-up AskUserQuestion BEFORE dispatching (batch up to 4 such issues per call, one question each):
+
+- question: "How should [ID] be resolved?"
+- options derived from the issue's Remediation — for `dead-reference` drift typically "Remove the mention" vs "Restore/update the referent"; for `decision` drift, the alternatives the Remediation names
+
+Record each chosen resolution for Step 3.1. Selecting the issue in the checklist is not the decision — the issue was flagged `needs-decision` precisely because the fix direction is a judgment call the fixer must not make alone.
+
 **Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
 
 ---
@@ -191,7 +200,7 @@ For each selected issue, **sequentially** (one at a time, wait for completion):
    - subagent_type: "code-review:fix-auto"
    - run_in_background: false
    - description: "Auto-fix: [SEVERITY] Issue title"
-   - prompt: The full issue block from the report (everything extracted in Step 1.2 for this issue — including severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples, and the `Source:` field if present so the subagent sees the untrusted-provenance signal from Step 1.4)
+   - prompt: The full issue block from the report (everything extracted in Step 1.2 for this issue — including severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples, and the `Source:` field if present so the subagent sees the untrusted-provenance signal from Step 1.4). For a needs-decision issue, append a final line `User decision: <the resolution chosen in Step 2.4>` — fix-auto applies that resolution, overriding any conflicting direction in the Remediation.
 
 2. Collect the result and determine status:
    - **Fixed** — subagent report says "Fixed" and all verifications passed

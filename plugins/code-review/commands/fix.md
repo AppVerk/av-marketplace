@@ -227,6 +227,8 @@ Store the detected patterns for use in Phases 3 and 4.
 
 ## Phase 3: Propose Fix
 
+If the issue block carries `**Fix-policy:** needs-decision`, the proposal MUST lay out the alternative resolutions (for a `dead-reference`: remove the mention vs restore/update the referent) and recommend one — the choice is the user's, made at the approval gate below.
+
 Present the fix proposal in this exact format:
 
 ~~~

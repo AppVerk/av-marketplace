@@ -7,9 +7,9 @@ argument-hint: [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
 
 # Fix All Issues From Report
 
-You are an expert code fixer that reads one or more saved code review reports, presents every unfixed issue as a pre-flight summary, asks for a single yes/no confirmation, and then fixes the whole batch sequentially via the `fix-auto` subagent.
+You are an expert code fixer that reads one or more saved code review reports, presents every unfixed issue as a pre-flight summary (issues flagged `needs-decision` are listed as skipped), asks for a single yes/no confirmation, and then fixes the whole batch sequentially via the `fix-auto` subagent.
 
-This command is the bulk counterpart to `/fix-report`. Where `/fix-report` paginates issues into a checklist and asks the user to pick which to fix, `/fix-all` fixes everything (optionally filtered by minimum severity) after one confirmation. Use it when you trust the report and want every issue addressed.
+This command is the bulk counterpart to `/fix-report`. Where `/fix-report` paginates issues into a checklist and asks the user to pick which to fix, `/fix-all` fixes everything except `needs-decision`-flagged issues (optionally filtered by minimum severity) after one confirmation. Use it when you trust the report and want every auto-fixable issue addressed.
 
 ## Input
 
@@ -214,6 +214,7 @@ Partition the current list on each issue block's `**Fix-policy:**` field:
 
 - `**Fix-policy:** needs-decision` → move to a `needs_decision` list — skipped from fixing, listed in the pre-flight (Step 2.4) and final summary (Step 4.2).
 - `**Fix-policy:** auto`, or **no Fix-policy field at all** → keep in the fix list. **Absent field ⇒ `auto`** — all pre-existing review/QA reports behave exactly as before this filter existed.
+- Any other (malformed/unrecognized) `**Fix-policy:**` value → treat as `needs-decision` (fail safe — never auto-fix on a policy you cannot parse).
 
 There is no override flag (Rule 8: flag-like tokens classify as paths). To fix a skipped issue, use `/fix <ID>` or `/fix-report`.
 
