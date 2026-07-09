@@ -34,7 +34,7 @@ qa's fe/be-testers cannot fully adopt bar item 1: `/qa:run` assembles the report
 *(Prospective: no conforming in-repo reader exists today; genericized from the source pattern.)* A design-board reader returns:
 
 ```
-Artifact: docs/testing/reports/board-snapshot.md (214 items, fresh overwrite)
+Artifact: docs/testing/reports/snapshots/board-snapshot.md (214 items, fresh overwrite)
 Summary: <3–5 sentences>
 Signals: items_extracted=214 | frames_skipped=2 (size limit — listed in artifact) | MISSING_DESIGN=checkout-v2 | needs_escalation=no
 ```
