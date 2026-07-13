@@ -3,6 +3,7 @@ name: documentation-auditor
 description: Documentation auditor that verifies code changes are reflected in project documentation. Checks for outdated, missing, or inconsistent documentation against recent code changes.
 tools: Read, Glob, Grep
 model: opus
+skills: finding-falsification, docs-fact-registry
 ---
 
 # Documentation Auditor Agent
@@ -71,6 +72,8 @@ For each documentation issue found, produce a finding in this exact format:
 **ID:** DOC-NNN
 **Location:** `path/to/docs/file.md:line` (or "(none — needs creation)" for missing entries)
 **Category:** Documentation
+**Drift-class:** mechanical | decision | dead-reference
+**Fix-policy:** auto | needs-decision
 **Related change:** `path/to/code/file.ext:line` — brief description of what changed
 
 **Problem:**
@@ -82,6 +85,8 @@ How this affects developers or users relying on the documentation.
 **Remediation:**
 Specific instructions for what to add, update, or remove in the documentation.
 ```
+
+**Field derivation (docs-fact-registry skill):** `Drift-class` — uniquely derivable facts are `mechanical`; judgment calls are `decision`; docs citing removed/renamed code are `dead-reference`; **missing-entry findings are always `decision`** (authoring new doc content is a judgment call). `Fix-policy` is derived: mechanical → `auto`; decision and dead-reference → `needs-decision`.
 
 ### Severity Levels
 
@@ -97,13 +102,23 @@ Assign sequential IDs: DOC-001, DOC-002, DOC-003, etc.
 
 ## Output
 
-Return all findings in the format above. If no documentation issues were found, return:
+Return all findings in the format above, then append two sections (finding-falsification skill — run the refutation battery on every candidate finding before reporting): `## Rejected after verification` (bullets `- {title} — {reason} (was: {SEVERITY} @ {location}; drift-class: {class})` — the suffix preserves the candidate's original fields for the challenger's spot-check and any reinstatement; `{title}` must not contain ` — `, the consumer splits on the first one) and `## Doctrine-gap candidates` (bullets `- {title} — {reason}`), rendering `None` when empty. Emit both sections on EVERY run — the no-findings run is where rejected findings carry the most signal.
+
+If no documentation issues were found **and both falsification lists are empty**, return:
 
 ```
 ## Documentation Audit
 
 No documentation issues found. All documentation is up-to-date with code changes.
+
+## Rejected after verification
+None
+
+## Doctrine-gap candidates
+None
 ```
+
+When candidate findings were drafted but all of them were rejected by the battery, do NOT use this canned block — keep the "No documentation issues found…" line and emit the actual rejected bullets in place of `None`. Discarding them defeats the falsification contract.
 
 ## Important
 

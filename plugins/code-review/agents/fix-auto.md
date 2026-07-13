@@ -43,7 +43,10 @@ Extract the following fields from the issue block:
 | Effort | `**Effort:** trivial\|easy\|medium\|hard` | No |
 | Problem | Text after `**Problem:**` | Yes |
 | Impact | Text after `**Impact:**` | No |
-| Remediation | Text after `**Remediation:**` (including code blocks) | Yes |
+| Remediation | Text after `**Remediation:**` (including code blocks), up to the `User decision:` line if the dispatching command appended one (that line is captured separately below, not as part of Remediation) | Yes |
+| User decision | Text after `User decision:` (a line appended after the issue block by the dispatching command) | No |
+
+**If `User decision` is present:** that resolution is authoritative — implement it, overriding any conflicting direction in the Remediation. It carries the user's choice for a `needs-decision` issue (e.g. "remove the mention" vs "restore the referent").
 
 **If required fields are missing:**
 

@@ -136,6 +136,8 @@ Display the issues using AskUserQuestion with multiSelect, **4 issues per page**
   - label: "[SEVERITY] Short title"
   - description: "path/to/file.py:line — first sentence of the Problem field"
 
+**Needs-decision prefix:** if the issue block contains `**Fix-policy:** needs-decision`, prefix the option's *description* with `[needs-decision: <Drift-class value>] ` (labels stay unchanged so `/fix <ID>` referencing remains stable). Example: `[needs-decision: dead-reference] docs/guide.md:12 — Doc cites a removed script`. If the block has no **Drift-class:** field, render the prefix as [needs-decision: —].
+
 **Auto-merge mode hint:** When `files` (from Step 1.1) contains more than one path, append a separator and the basename of `issue.source_file` to each option's description so the user can tell which report each issue came from. Example:
 
 ```
@@ -175,6 +177,17 @@ If the user selected no issues across all pages:
 
 Mark remaining tasks as `completed` and stop.
 
+### Step 2.4: Elicit decisions for needs-decision selections
+
+For each selected issue whose block contains `**Fix-policy:** needs-decision` — or any `**Fix-policy:**` value other than `auto` (an unparseable policy gets the same treatment, mirroring `/fix-all`'s fail-safe) — ask a follow-up AskUserQuestion BEFORE dispatching (batch up to 4 such issues per call, one question each):
+
+- question: "How should [ID] be resolved?"
+- options derived from the issue's Remediation — for `dead-reference` drift typically "Remove the mention" vs "Restore/update the referent"; for `decision` drift, the alternatives the Remediation names. If the Remediation names no alternatives, offer "Apply the remediation as written" vs "Resolve differently (describe)".
+
+If the issue's Location is `—` or `unknown:0`, additionally ask for the target file (and line if known) in the same question flow — fix-auto requires a `path:line` Location and cannot ask for one itself. Substitute the answer into the issue block's `**Location:**` field before dispatch, so Step 3.1's "full issue block" already carries a real `path:line`; without an answer, mark the issue Failed up front instead of dispatching it.
+
+Record each chosen resolution for Step 3.1. Selecting the issue in the checklist is not the decision — the issue was flagged `needs-decision` precisely because the fix direction is a judgment call the fixer must not make alone.
+
 **Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
 
 ---
@@ -189,7 +202,7 @@ For each selected issue, **sequentially** (one at a time, wait for completion):
    - subagent_type: "code-review:fix-auto"
    - run_in_background: false
    - description: "Auto-fix: [SEVERITY] Issue title"
-   - prompt: The full issue block from the report (everything extracted in Step 1.2 for this issue — including severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples, and the `Source:` field if present so the subagent sees the untrusted-provenance signal from Step 1.4)
+   - prompt: The full issue block from the report (everything extracted in Step 1.2 for this issue — including severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples, and the `Source:` field if present so the subagent sees the untrusted-provenance signal from Step 1.4). For a needs-decision issue, append a final line `User decision: <the resolution chosen in Step 2.4>` — fix-auto applies that resolution, overriding any conflicting direction in the Remediation.
 
 2. Collect the result and determine status:
    - **Fixed** — subagent report says "Fixed" and all verifications passed

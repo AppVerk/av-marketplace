@@ -296,7 +296,7 @@ For each scenario, return results in this format:
 - **Status:** PASS / FAIL / SKIP
 - **Request:** <METHOD> <URL>
 - **Response status:** <actual status code>
-- **Response body:** <relevant excerpt or full body if short>
+- **Response body:** <decision-relevant excerpt (error message, key stack-trace frames) inline; short bodies may be inlined in full — longer bodies go to a file under docs/testing/reports/responses/, referenced by path (subdirectory required: evidence files must never match the report glob `docs/testing/reports/*.md`; doctrine: reader-context-hygiene)>
 - **DB check:** <PASS/FAIL/SKIP — actual value vs expected>
 - **Details:** <what was verified / what went wrong>
 - **Edge cases:**

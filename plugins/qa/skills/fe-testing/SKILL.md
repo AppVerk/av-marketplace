@@ -121,6 +121,8 @@ The screenshot is automatically captured by the tool. Reference it in your resul
 
 **Do NOT take screenshots for passing tests** — they waste tokens and storage.
 
+Verbose evidence goes to disk and is referenced by path, never inlined (doctrine: `reader-context-hygiene`).
+
 ---
 
 ## Common Scenario Patterns

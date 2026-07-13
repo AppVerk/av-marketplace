@@ -78,13 +78,15 @@ Return results for ALL scenarios in this format:
   - Duplicate email: FAIL — expected 409, got 500
 ```
 
+> **Response body handling:** inline a decision-relevant excerpt (as in the examples above) for short bodies. For a long body — especially on a failure — write the full body to `docs/testing/reports/responses/be-<NNN>-body.json` and put that path on the `Response body` line instead of the raw dump. This follows the `be-testing` skill and `reader-context-hygiene`: evidence files must live in the `responses/` subdirectory so they never match the report glob `docs/testing/reports/*.md`. Create the folder once with `mkdir -p docs/testing/reports/responses` before the first such write.
+
 ---
 
 ## Rules
 
 - Execute scenarios **in order** (BE-01, BE-02, ...)
 - **Do NOT skip scenarios** unless technically impossible (no HTTP client)
-- **Always capture full response body** for failed tests
+- **Always capture the full response body for failed tests** — inline a decision-relevant excerpt, and for a long body write the full body to `docs/testing/reports/responses/be-<NNN>-body.json` and reference it by path (see the *Response body handling* note above); run `mkdir -p docs/testing/reports/responses` before the first offload
 - **DB checks are best-effort** — if DB client is unavailable, skip the DB check but still test the API
 - If a scenario depends on data from a previous one (e.g., "delete the user created in BE-02"), use the actual ID from the previous response
 - Use `jq` for response parsing when available, fall back to `grep` if not

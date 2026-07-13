@@ -218,9 +218,13 @@ findings = {
   quality: [code quality auditor results],
   documentation: [documentation auditor results, if launched],
   performance: [your performance analysis from Step 2],
-  architecture: [your architecture analysis from Steps 3-4]
+  architecture: [your architecture analysis from Steps 3-4],
+  rejected: {security: [...], quality: [...], documentation: [...]},
+  doctrine_gaps: {security: [...], quality: [...], documentation: [...]}
 }
 ```
+
+The `rejected` / `doctrine_gaps` collections come from each auditor's self-falsification output (security-auditor: trailing JSON object — extract it out of the security results when building the bundle; it is not a finding and must not remain in `findings.security`; code-quality-auditor: Final Report sections 7–8; documentation-auditor: trailing markdown sections). Normalize `rejected` entries to `{title, reason, severity, category, location, drift-class}`: split markdown bullets on the FIRST ` — ` (title before, reason after); the trailing `(was: …)` suffix carries the remaining fields; default any absent field to `—`. `doctrine_gaps` entries stay `{title, reason}`. Forward them verbatim — for the cross-verifier they are pass-through context (no action).
 
 **2. Spawn Cross-Verifier (background):**
 
@@ -236,6 +240,8 @@ Here are the findings from all auditors:
 
 Identify correlations between security and quality findings.
 Focus on cases where security vulnerabilities intersect with architectural issues.
+The rejected and doctrine_gaps collections are context only — do not
+correlate them or use them as a composite basis.
 Follow your output format exactly."
 )
 ```
@@ -254,6 +260,9 @@ Here are the findings from all auditors:
 
 Challenge CRITICAL and HIGH findings from both security and quality auditors.
 Check for false positives, especially in linter results and SAST output.
+Spot-check the rejected collections: flag wrongly-rejected findings for
+reinstatement per your Output Format. The doctrine_gaps collections are
+pass-through context.
 Follow your output format exactly."
 )
 ```
@@ -272,6 +281,37 @@ challenger_results = TaskOutput(challenger_id, block: true)
 1. Apply Challenger decisions (remove false positives, adjust severity)
 2. Add Cross-Verifier composite findings
 3. Tag confirmed findings as `[verified]`
+4. Reinstate spot-checked rejections: each entry in the Challenger's
+   `### Rejected findings (spot-check)` subsection has the shape
+   `[{domain}] {title}: reinstate at {SEVERITY} — {reasoning}`. Parse it by
+   anchoring on the literal delimiter `: reinstate at ` (NOT the first `:`):
+   the domain tag is the leading `[…]`, the **title** is the text between the
+   tag and that delimiter, the severity is the `{SEVERITY}` token after it, and
+   the reasoning is everything after the following ` — `. The title may itself
+   contain `:` (e.g. `God Object: UserService`, which the auditors are told to
+   write), so a first-`:` split would truncate the title and break the match
+   back to the rejected record — always anchor on `: reinstate at `. For each
+   entry, reconstruct a minimal
+   full-format finding and move it from its auditor's `rejected` collection
+   into `findings` before Step 5.6 — severity from the entry's
+   `reinstate at {SEVERITY}`; Category from the rejected entry's normalized
+   `category` field where present and not `—`, else from the domain tag
+   (`[security]` → Security, `[documentation]` → Documentation,
+   `[quality]` → Maintainability) — map any non-canonical forwarded
+   category (e.g. Design, Style, Developer Standards) to Maintainability
+   so Step 5.6 and fix-auto can always parse it; Location from the
+   normalized `location` field where present and not `—`, else from the
+   Challenger's reasoning where cited, else `—`; for Documentation-category reinstatements, set **Fix-policy:**
+   needs-decision and **Drift-class:** from the normalized `drift-class`
+   field where present and not `—`, else from the Challenger's reasoning,
+   else decision (the class must not silently default to auto-fix); for ANY reinstated finding whose Location
+   resolves to `—`, also set **Fix-policy:** needs-decision — a synthesized
+   finding without a locatable target must not enter `/fix-all`'s auto
+   queue (fix-auto requires a `path:line` Location and cannot ask for one
+   inside a subagent); Problem/Remediation from the entry title, the
+   original rejection reason, and the Challenger's reasoning.
+   (Reconstruction is needed because rejected collections carry compact
+   entries, not full finding blocks.)
 
 **Task Update:** Mark task 6 as `completed`.
 
@@ -318,6 +358,8 @@ For each issue found, format as structured markdown:
 **OWASP:** A05:2025 (if applicable)
 **CWE:** CWE-89 (if applicable)
 **Effort:** trivial | easy | medium | hard
+**Drift-class:** mechanical | decision | dead-reference   <- documentation findings only
+**Fix-policy:** auto | needs-decision                     <- documentation findings, and any reinstated finding with Location `—`
 
 **Problem:**
 Brief description of what's wrong and why it matters.
@@ -398,7 +440,13 @@ Include this section in the review output:
 {Correlations from Cross-Verifier}
 
 ### Challenged Findings
-{Findings removed or downgraded by Challenger, with reasoning}
+{Findings removed or downgraded by Challenger, with reasoning — as plain bullets. NEVER paste original `### [SEVERITY]` issue blocks here; fix-all/fix-report extract any such heading as a fixable issue, which would resurrect a removed false positive.}
+
+### Rejected by auditors (self-falsification)
+{Per-auditor rejected entries as plain bullets `- {title} — {reason}`; `None` when empty. NEVER render these as `### [SEVERITY]` headings — fix-all/fix-report extract any such heading as a fixable issue.}
+
+### Doctrine-gap candidates
+{Same bullet format; `None` when empty.}
 ```
 
 ---
@@ -427,8 +475,10 @@ Before rendering the final report, assign unique identifiers to each issue based
    - Read the issue's `Category` field
    - Map the category to its prefix using the canonical [Category→Prefix mapping](../../../docs/plugins/code-review.md#category-prefix-mapping) (single source of truth), then increment the corresponding counter (e.g., Security → SEC → `sec_count`)
    - Format ID as `{PREFIX}-{NNN}` with zero-padded 3-digit counter (e.g., SEC-001, PERF-002)
+   - Strip any pre-existing `{PREFIX}-{NNN}: ` prefix from the heading and drop any pre-existing `**ID:**` line before assigning (documentation-auditor emits its own DOC-NNN IDs; reinstated findings have none) — IDs are assigned exactly once, here
    - Modify the issue heading: `### [SEVERITY] {ID}: Title`
    - Add `**ID:** {ID}` field right after the heading (before **Location:**)
+   - Preserve `**Drift-class:**` and `**Fix-policy:**` field lines verbatim when re-rendering issue blocks — they must reach the saved report for `/fix-all`'s Fix-policy filter to work.
 
 **Example transformation:**
 

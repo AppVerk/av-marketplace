@@ -1,15 +1,15 @@
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
-description: Fix every unfixed issue from a review/QA report after a single yes/no confirmation. Optional severity floor.
+description: Fix unfixed issues from a review/QA report after a single yes/no confirmation — everything except issues flagged needs-decision. Optional severity floor.
 model: opus
 argument-hint: [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
 ---
 
 # Fix All Issues From Report
 
-You are an expert code fixer that reads one or more saved code review reports, presents every unfixed issue as a pre-flight summary, asks for a single yes/no confirmation, and then fixes the whole batch sequentially via the `fix-auto` subagent.
+You are an expert code fixer that reads one or more saved code review reports, presents every unfixed issue as a pre-flight summary (issues flagged `needs-decision` are listed as skipped), asks for a single yes/no confirmation, and then fixes the whole batch sequentially via the `fix-auto` subagent.
 
-This command is the bulk counterpart to `/fix-report`. Where `/fix-report` paginates issues into a checklist and asks the user to pick which to fix, `/fix-all` fixes everything (optionally filtered by minimum severity) after one confirmation. Use it when you trust the report and want every issue addressed.
+This command is the bulk counterpart to `/fix-report`. Where `/fix-report` paginates issues into a checklist and asks the user to pick which to fix, `/fix-all` fixes everything except `needs-decision`-flagged issues (optionally filtered by minimum severity) after one confirmation. Use it when you trust the report and want every auto-fixable issue addressed.
 
 ## Input
 
@@ -202,11 +202,29 @@ If `severity_floor` is set, filter the unfixed-issues list from Step 1 to keep o
 
 If `severity_floor` is unset, the list is unchanged.
 
-**Edge case — zero issues after filter:** if the filtered list is empty and `severity_floor` was set, output:
+**needs-decision issues are exempt from the floor.** An issue whose block carries `**Fix-policy:** needs-decision` (or any non-`auto` policy — the same set Step 2.2.5 partitions) is **not** dropped for being below the floor; it passes through to Step 2.2.5, which moves it into the `needs_decision` (skipped-but-surfaced) list. This preserves the guarantee that needs-decision issues are always listed. Applying the floor *before* the split (the naive order) would silently discard a sub-floor needs-decision issue from both the fix list and the "Requires user decision" list — the failure this exemption prevents. The floor still drops sub-floor `auto` issues as normal, so reading each issue's `**Fix-policy:**` here is required to decide exemption.
+
+**Edge case — zero issues after filter:** if the filtered list is empty and `severity_floor` was set — i.e. no issue survives, neither a floor-passing `auto` issue nor a floor-exempt needs-decision issue — output:
 
 > No issues match severity floor `<FLOOR>`. Nothing to fix.
 
-Follow the [Abort helper](#abort-helper) procedure. (When `severity_floor` is unset and the list is empty, Step 1.5 has already terminated the command.)
+Follow the [Abort helper](#abort-helper) procedure. (When `severity_floor` is unset and the list is empty, Step 1.5 has already terminated the command. When only needs-decision issues survive the floor, the list is non-empty and Step 2.2.5's edge case surfaces them instead.)
+
+### Step 2.2.5: Apply Fix-policy filter
+
+Partition the current list on each issue block's `**Fix-policy:**` field:
+
+- `**Fix-policy:** needs-decision` → move to a `needs_decision` list — skipped from fixing, listed in the pre-flight (Step 2.4) and final summary (Step 4.2).
+- `**Fix-policy:** auto`, or **no Fix-policy field at all** → keep in the fix list. **Absent field ⇒ `auto`** — all pre-existing review/QA reports behave exactly as before this filter existed.
+- Any other (malformed/unrecognized) `**Fix-policy:**` value → treat as `needs-decision` (fail safe — never auto-fix on a policy you cannot parse).
+
+There is no override flag (Rule 8: flag-like tokens classify as paths). To fix a skipped issue, use `/fix <ID>` or `/fix-report`.
+
+**Edge case — zero issues after filter:** if the fix list is now empty and `needs_decision` is non-empty, output:
+
+> All remaining issues are flagged `needs-decision` and require your decision. Use `/fix-report` to select them interactively, or `/fix <ID>` for a single issue.
+
+Follow the [Abort helper](#abort-helper) procedure.
 
 ### Step 2.3: Sort issues
 
@@ -232,6 +250,7 @@ Render to stdout (Markdown):
 **Reports:** <report_basenames>
 **Severity floor:** <severity_floor>            <-- omit this line if severity_floor is unset
 **Total to fix:** <total_count> issues
+**Requires user decision (skipped):** <needs_decision count> issues (<comma-separated IDs>)        <-- omit this line when zero
 
 **By severity:**
 | CRITICAL | HIGH | MEDIUM | LOW |
@@ -361,10 +380,18 @@ This list is consumed by Step 4.2's "Status write failures" block.
 | 2 | [SEVERITY] ID: Title — path:line | STATUS_ICON STATUS_TEXT |
 
 **Fixed:** N | **Partially Fixed:** N | **Failed:** N
+
+**Requires user decision (skipped):**
+- [SEVERITY] ID: Title — Drift-class: <class>
+
+Use `/fix-report` or `/fix <ID>` to address these.
+
 **Reports updated:**
 - <source-file-1>
 - <source-file-2>
 ```
+
+Omit the `**Requires user decision (skipped):**` block entirely when the `needs_decision` list from Step 2.2.5 is empty. `<class>` is the issue's `**Drift-class:**` value; render `—` if the field is missing.
 
 In single-file mode the list contains exactly one entry. In auto-merge mode, list each distinct `source_file` that was edited (deduplicated). Files that received no Status writes (all Failed, or no selections from that file) are omitted; if no file was edited at all, omit the entire `**Reports updated:**` block.
 

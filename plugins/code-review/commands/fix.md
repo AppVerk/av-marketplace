@@ -164,6 +164,14 @@ Ask user to provide:
 - Problem description
 - Remediation suggestion
 
+**If Location is present but not usable** (`—`, `unknown:0`, or any value lacking a real `path:line`):
+
+The `**Location:**` field exists, so the "required fields missing" branch above does **not** fire — but Phase 2 Step 2.1 opens the file at Location and would fail on a placeholder like `—`. Before proceeding, ask the user for the target (this mirrors `/fix-report` Step 2.4, which does the same for `needs-decision` issues routed here):
+
+> This issue has no usable location (`—`). Which file — and line, if known — should I target?
+
+Wait for the reply and substitute it into the parsed Location before Phase 2. If the user cannot supply one, stop and report the issue as **Failed** (no location to fix) rather than opening a file named `—`.
+
 **Store parsed data mentally for next phases.**
 
 **Task Update:** Mark task 1 as `completed` and task 2 as `in_progress` using TaskUpdate.
@@ -227,6 +235,8 @@ Store the detected patterns for use in Phases 3 and 4.
 
 ## Phase 3: Propose Fix
 
+If the issue block carries `**Fix-policy:** needs-decision` (or any `Fix-policy` value other than `auto` — unparseable policies get the same treatment), the proposal MUST lay out the alternative resolutions in an extra `**Alternatives:**` line (for a `dead-reference`: remove the mention vs restore/update the referent) and recommend one — and the closing question becomes `Which resolution should I apply? (A / B / no)` instead of the yes/no line. The choice is the user's, made at the approval gate below.
+
 Present the fix proposal in this exact format:
 
 ~~~
@@ -258,7 +268,7 @@ Proposed fix:
 - [ ] [Tool 1] - [reason based on change type]
 - [ ] [Tool 2] - [reason if applicable]
 
-**Proceed with this fix? (yes/no)**
+**Proceed with this fix? (yes/no)**        <-- for a needs-decision issue (or any non-`auto` Fix-policy), render **Which resolution should I apply? (A / B / no)** instead, per Phase 3's needs-decision paragraph
 ~~~
 
 **Stack-Aware Proposals (if developer skills available):**
@@ -272,7 +282,7 @@ This ensures the user sees that the fix follows project conventions, not just ge
 
 **CRITICAL: Wait for explicit user approval before proceeding to Phase 4.**
 
-Do NOT make any changes until the user confirms with "yes" or similar affirmation.
+Do NOT make any changes until the user confirms with "yes" or similar affirmation. For a needs-decision issue presented with the `Which resolution should I apply? (A / B / no)` question, a reply of `A` or `B` **is** the approval — implement the chosen alternative; `no` cancels. Do not pick the alternative yourself.
 
 **Task Update:** Mark task 3 as `completed` and task 4 as `in_progress` using TaskUpdate.
 
