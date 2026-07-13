@@ -168,16 +168,18 @@ before the fix phase; this round's minor/nit → `reported-only`.
 entries (+ split criticals) → AskUserQuestion, options: accept the proposed
 fix / supply an alternative / keep as is. Sub-major needs-decision →
 `reported-only`, never asked. Accepted (with the exact edit content stored in
-`decisions`) → joins the fix batch. Keep-as-is → recorded, excluded from
-significance from now on, reported under Accepted risks. Decided entries are
+`decisions`) → joins the fix batch. Keep-as-is → outcome `accepted-risk`:
+recorded, excluded from significance from now on, reported under Accepted
+risks. Decided entries are
 never re-asked (in-run or on resume). `--auto`: skip → `pending-decision`.
 
 **8. Fix (two-phase).** ⟨stage budget check⟩ Batch = confirmed major+ +
 accepted decisions + minor/nit not flagged needs-decision. Dispatch
 `superutils:spec-fixer` (batch + spec path) → edit pairs, no writes. Then:
 1. Re-hash the spec (tamper flow 0.5 on mismatch).
-2. Materialize the candidate: copy the spec to the session scratchpad, apply
-   all pairs there. Pairs whose `old` fails to match → `fix-failed` (atomic
+2. Materialize the candidate: copy the spec to the session scratchpad (outside the repo, so the
+   scoped-writes rule holds), apply all pairs there. Pairs whose `old`
+   fails to match → `fix-failed` (atomic
    groups: overlapping pairs — target ranges intersect or one edit changes
    the region another must match — succeed or fail together; revert the
    group's earlier pairs from the candidate on failure).
@@ -189,7 +191,8 @@ accepted decisions + minor/nit not flagged needs-decision. Dispatch
    applied → `STOPPED(user-declined)`). `--no-approve`/`--auto`: apply
    immediately, then print the same full diff.
 5. Apply approved pairs to the spec via Edit (orchestrator tool work, not a
-   dispatch); re-stamp `last_written_hash`; write the sidecar.
+   dispatch) — each successfully applied finding gets outcome `applied`;
+   re-stamp `last_written_hash`; write the sidecar.
 6. **Empty-batch convergence:** if after the gate nothing will be applied and
    the significant set is empty after this round's decisions → CONVERGED now
    (the spec is byte-identical to what this panel reviewed). Otherwise a
