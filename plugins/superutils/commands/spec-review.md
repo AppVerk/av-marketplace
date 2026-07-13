@@ -103,3 +103,120 @@ exists are marked stale and excluded from matching) or **stop**
 (`STOPPED(external-edit)`). `--auto` → abort as `STOPPED(external-edit)`.
 The fixer-write→re-stamp window is non-atomic; a crash inside it surfaces
 here on resume — same choice applies.
+
+## Workflow
+
+Create progress tasks (TaskCreate): 1 Validate & resolve · 2 Round N/M ·
+3 Write report. Update as the loop proceeds.
+
+### Round r (repeat up to --max-iterations)
+
+**Stage budget rule (enforced at every stage boundary below):** before
+dispatching a stage, check `dispatches_used + 2 × planned_stage_dispatches ≤
+max_dispatches` (the ×2 is retry headroom) and active time < budget. On
+failure → skip to Terminalization with `STOPPED(budget)`; never cut within a
+dispatch phase. Major+ entries whose challengers were never dispatched →
+`unconfirmed`.
+
+**1. Decompose & select panel.** Units = the spec's `##` headings (use the
+sequential-thinking tool when available, else inline). Select 3–6 lenses per
+`superutils:lens-catalog`; log panel + rationale + units to the sidecar.
+
+**2. Review fan-out.** ⟨stage budget check⟩ Dispatch one
+`superutils:spec-reviewer` Task per lens **in parallel**, prompt = lens id +
+mandate + spec path + unit list. A reviewer that fails or returns unparseable
+JSON is retried once; still failing → its lens goes to Coverage "not
+returned" and the round proceeds (shallow-coverage WARNING; a converged run
+becomes `CONVERGED (low-confidence)`).
+
+**3. Registry.** For each finding: anchor slug (rules in
+`superutils:report-format`), derive the canonical phrase, match semantically
+against the registry (within-round and cross-round; log every equivalence
+verdict), merge duplicates at max severity recording all lenses, assign SR
+ids in discovery order.
+
+**4. Challenger quorum.** ⟨stage budget check⟩ Entries with a recorded user
+decision are skipped (settled). Dispatch per major+ entry **in parallel**:
+majors 1 × `superutils:spec-challenger`, criticals 2. Prompt = the entry (all
+finder descriptions + proposed fix) + spec path. Failure → one retry; still
+failing → `unconfirmed` (for a critical: `unconfirmed` if either challenger
+is missing, regardless of the other verdict). Verdicts: major upheld →
+significant; refuted → `refuted`. Critical: both uphold → significant; both
+refute → `refuted`; split → escalate to the gate as needs-decision (stays in
+the significant set until decided). **Significant = major+ ∧ survived
+refutation.**
+
+**5. Stop evaluation (after quorum, before the gate)** — precedence:
+pending-decisions → oscillation → no-progress → budget.
+- *pending-decisions:* significant set non-empty and consists entirely of
+  `--auto`-skipped needs-decision entries.
+- *oscillation:* an entry fixed in round r−2 reappears in this round's
+  post-refutation significant set (sub-major reappearance: log only).
+- *no-progress:* comparison sets for this and the previous round are
+  identical, where each set = that round's post-refutation significant
+  entries minus every entry user-decided or `--auto`-skipped **as of now**
+  (decisions filter retroactively); an empty comparison set never triggers.
+A stop here skips gate+fix: significant findings → `confirmed (not fixed —
+stopped)` (except skipped needs-decision → `pending-decision`); the round's
+minor/nit → `reported-only`.
+
+**6. Convergence check (before the gate).** Zero significant findings after
+excluding entries user-decided in earlier rounds → CONVERGED: terminate
+before the fix phase; this round's minor/nit → `reported-only`.
+
+**7. Needs-decision gate.** Only challenger-surviving major+ needs-decision
+entries (+ split criticals) → AskUserQuestion, options: accept the proposed
+fix / supply an alternative / keep as is. Sub-major needs-decision →
+`reported-only`, never asked. Accepted (with the exact edit content stored in
+`decisions`) → joins the fix batch. Keep-as-is → recorded, excluded from
+significance from now on, reported under Accepted risks. Decided entries are
+never re-asked (in-run or on resume). `--auto`: skip → `pending-decision`.
+
+**8. Fix (two-phase).** ⟨stage budget check⟩ Batch = confirmed major+ +
+accepted decisions + minor/nit not flagged needs-decision. Dispatch
+`superutils:spec-fixer` (batch + spec path) → edit pairs, no writes. Then:
+1. Re-hash the spec (tamper flow 0.5 on mismatch).
+2. Materialize the candidate: copy the spec to the session scratchpad, apply
+   all pairs there. Pairs whose `old` fails to match → `fix-failed` (atomic
+   groups: overlapping pairs — target ranges intersect or one edit changes
+   the region another must match — succeed or fail together; revert the
+   group's earlier pairs from the candidate on failure).
+3. Compute the unified diff (spec vs candidate) + SR-id → hunk mapping.
+4. **Gate by mode.** Default: show the diff → approve (apply all) / approve
+   subset (unselected → `declined`, sticky: recorded as a decision, excluded
+   from significance and no-progress, never re-proposed; a decline of a
+   gate-accepted fix supersedes that acceptance) / decline & stop (nothing
+   applied → `STOPPED(user-declined)`). `--no-approve`/`--auto`: apply
+   immediately, then print the same full diff.
+5. Apply approved pairs to the spec via Edit (orchestrator tool work, not a
+   dispatch); re-stamp `last_written_hash`; write the sidecar.
+6. **Empty-batch convergence:** if after the gate nothing will be applied and
+   the significant set is empty after this round's decisions → CONVERGED now
+   (the spec is byte-identical to what this panel reviewed). Otherwise a
+   fresh round is required.
+
+**9. Round end.** Write the sidecar (round record: panel, units, findings +
+outcomes, equivalence log; counters). Fixes applied in the final permitted
+round → `applied (not re-reviewed)` under `STOPPED(budget)`.
+
+### Terminalization
+
+Write the terminal status to the sidecar (once, from the authoritative final
+state) and generate the report per `superutils:report-format`: round traces,
+Coverage (3 sublists + WARNING when shallow), Accepted risks, Declined,
+residual risks (verifier gaming; stochasticity; lens drift; no token
+ceiling; soft registry matching; best-effort headless detection), recovery
+(loop-touched files; point at `snapshot_path`; never `git restore` on the
+spec). Nothing is ever committed. Print: terminal status + one-line
+per-round summary + report path + "Re-reviewed (advisory)".
+
+### Error handling
+
+| Event | Handling |
+|---|---|
+| Reviewer fails twice | Lens → Coverage "not returned"; WARNING; proceed |
+| Challenger fails twice / never dispatched | Entry `unconfirmed`; blocks convergence; never refuted |
+| Fixer fails / pair mismatch | `fix-failed`; fresh panel re-finds next round |
+| AskUserQuestion fails (interactive modes) | `STOPPED(interaction-unavailable)` before any fix application |
+| Hash mismatch | Tamper flow 0.5 (adopt / stop / `--auto` abort) |
+| User abort (Esc) | Report partial state; changes stay uncommitted; recovery = snapshot |
