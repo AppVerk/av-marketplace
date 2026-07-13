@@ -59,6 +59,7 @@ Explicit path → validate scope (table above). No argument:
 
 ```bash
 ls -t docs/superpowers/specs/*.md 2>/dev/null | head -5
+# BSD stat; on GNU/Linux use: stat -c '%Y %n' … (the 2>/dev/null would otherwise hide the failure)
 stat -f '%m %N' docs/superpowers/specs/*.md 2>/dev/null | sort -rn | head -5
 ```
 
@@ -148,11 +149,11 @@ refutation.**
 
 **5. Stop evaluation (after quorum, before the gate)** — precedence:
 pending-decisions → oscillation → no-progress → budget.
-- *pending-decisions:* significant set non-empty and consists entirely of
+- *pending-decisions* (→ `STOPPED(pending-decisions)`): significant set non-empty and consists entirely of
   `--auto`-skipped needs-decision entries.
-- *oscillation:* an entry fixed in round r−2 reappears in this round's
+- *oscillation* (→ `STOPPED(oscillation)`): an entry fixed in round r−2 reappears in this round's
   post-refutation significant set (sub-major reappearance: log only).
-- *no-progress:* comparison sets for this and the previous round are
+- *no-progress* (→ `STOPPED(no-progress)`): comparison sets for this and the previous round are
   identical, where each set = that round's post-refutation significant
   entries minus every entry user-decided or `--auto`-skipped **as of now**
   (decisions filter retroactively); an empty comparison set never triggers.
