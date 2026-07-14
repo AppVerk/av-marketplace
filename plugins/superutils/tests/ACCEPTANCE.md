@@ -12,6 +12,8 @@ report, or snapshot present.
 
 Run `/superutils:spec-review docs/superpowers/specs/seeded-spec.md` in the
 default mode with this answer script:
+- the working-tree gate (fires on every run — the fixture copy is untracked)
+  → **proceed**
 - every needs-decision prompt → **accept the proposed fix**
 - every batch-approve gate → **approve (full batch)**
 
@@ -38,4 +40,11 @@ and result here.
 Run the command on its own design spec
 (`docs/superpowers/specs/2026-07-13-superutils-spec-review-design.md`); pass =
 a valid terminal status within default budgets and a report + sidecar
-conforming to `superutils:report-format`.
+conforming to `superutils:spec-report-format`.
+
+**Isolate it — the loop edits its target in place.** The design spec is a
+committed, approved contract, and a clean tracked file passes the working-tree
+gate silently, so an unisolated dogfood run rewrites the contract with no
+warning. Run it on a scratch branch and discard that branch afterwards (or
+`git restore` the spec once the report is captured); never merge the loop's
+edits to the contract without a deliberate spec revision.

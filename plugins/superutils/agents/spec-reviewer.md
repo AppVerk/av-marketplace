@@ -1,10 +1,9 @@
 ---
 name: spec-reviewer
 description: Single-lens spec reviewer for the /superutils:spec-review loop. Reviews a design spec through exactly one assigned lens and returns raw JSON findings after a self-falsification pass.
-tools: Read, Grep, Glob, Bash
-allowed-tools: Bash(ls:*), Bash(head:*), Bash(cat:*), Bash(grep:*)
+tools: Read, Grep, Glob
 model: opus
-skills: lens-catalog, report-format
+skills: lens-catalog, spec-report-format
 ---
 
 # Spec Reviewer Agent
@@ -24,6 +23,10 @@ You receive no prior-round context by design (fresh panel). Only the
 
 ## Rules
 
+- **Never read the loop's own state.** `docs/superpowers/specs/reviews/**`
+  (reports, sidecars, snapshots, archives) is off limits — it is the loop's
+  answer key, and a fresh panel that reads it is no longer fresh. If you open
+  such a file by accident, discard what you saw and report nothing from it.
 - Grade severity and needs_decision strictly by the anchors in the
   lens-catalog skill.
 - Do NOT compute SR ids or fingerprints; `location` is the verbatim `##`
@@ -37,5 +40,6 @@ You receive no prior-round context by design (fresh panel). Only the
 ## Output
 
 Your final message is parsed, not read by a human. Return EXACTLY one JSON
-object in the reviewer finding shape defined in the report-format skill —
-no prose before or after it.
+object in the reviewer finding shape defined in the spec-report-format skill —
+no prose before or after it. The orchestrator records your `rejected` list in
+the round record and the report; it is output, not scratch.

@@ -45,8 +45,9 @@ plugins/superutils/
   agents/spec-reviewer.md        # lens-parameterized reviewer
   agents/spec-challenger.md      # adversarial verifier of findings
   agents/spec-fixer.md           # proposes edit pairs for confirmed findings
-  skills/lens-catalog/SKILL.md   # lens catalog + panel-selection rules
-  skills/report-format/SKILL.md  # report + sidecar format
+  skills/lens-catalog/SKILL.md        # lens catalog + panel-selection rules
+  skills/spec-report-format/SKILL.md  # report + sidecar format (named apart
+                                      # from the shipped qa:report-format)
 ```
 
 The lens catalog's roster and panel-selection rules are a deliverable of the
@@ -128,9 +129,15 @@ Round `r` on spec `S`:
    entry** (not per raw finding); a merged entry's challenger receives all
    finder descriptions; each challenger sees only its assigned entry plus the
    spec. Registry entries carrying a recorded user decision are excluded from
-   challenger dispatch — their significance is already settled. The challenger
-   returns exactly **uphold or refute at the finder's
-   severity**; re-grading is out of scope for v1. **Significant = major+ AND
+   challenger dispatch — their significance is already settled. **Exception: an
+   entry whose last fix attempt ended `fix-failed` is not settled.** It still
+   skips the challenger (its significance was established when it was gated),
+   but it re-enters the significant set and blocks convergence until the fix
+   lands, is declined, or the run stops — otherwise a fix the loop committed to
+   could be dropped silently while the run still reports success. The
+   challenger returns exactly **uphold or refute at the finder's
+   severity**; re-grading is out of scope for v1. A refutation must rest on
+   textual evidence: an uncertain challenger upholds. **Significant = major+ AND
    survived refutation.** Critical entries get 2 independent challengers: both
    uphold → confirmed; both refute → dropped; split → escalated to the
    needs-decision gate. A split-verdict critical remains in the
@@ -182,7 +189,8 @@ Round `r` on spec `S`:
    fresh panel** on the updated spec: the loop converges when a fresh round
    yields zero significant findings (post-refutation; the convergence
    condition is evaluated before the gate, excluding entries user-decided in
-   earlier rounds). A round whose effective fix batch is empty after its own
+   earlier rounds — **except entries carrying an unresolved `fix-failed`, which,
+   like `unconfirmed`, block convergence**). A round whose effective fix batch is empty after its own
    gate (nothing will be applied) also completes convergence immediately — the
    spec is byte-identical to what the fresh panel just reviewed; if anything
    is applied, a subsequent fresh round is required. A converging round
@@ -277,7 +285,12 @@ Round `r` on spec `S`:
   {old, new} pair for accepted decisions, preserving user-supplied
   alternatives}), and
   `rounds[]` (panel composition, unit list, findings with SR id / severity /
-  lenses / outcome, equivalence verdicts). The fixer write → re-stamp window is
+  lenses / outcome, each reviewer's self-falsified `rejected` list verbatim,
+  equivalence verdicts). Severity and lenses are recorded **per round**, not
+  back-filled from the registry, which holds only the current values. The
+  `rejected` lists are rendered in the report: a fresh panel re-derives the same
+  ghosts every round, so discarding them is the silent drop reviewers are
+  themselves forbidden to perform. The fixer write → re-stamp window is
   non-atomic; a crash inside it surfaces as a hash mismatch on resume and is
   handled by the tamper flow below.
 - **Tamper detection:** the orchestrator re-hashes the spec at round start and
@@ -317,11 +330,15 @@ Written to `docs/superpowers/specs/reviews/<spec>-review.md`:
 
 - round-by-round trace: panel composition, findings with `SR-XXX` ids and
   outcomes. **Outcome enum:** `applied`, `applied (not re-reviewed)`,
-  `fix-failed`, `refuted`, `unconfirmed` (challenger unavailable — failed twice
+  `fix-failed` (pair did not match; blocks convergence, is re-batched next
+  round with a **re-derived** pair — never a replay of the pair that already
+  failed — and is not settled by any user decision it carries),
+  `refuted`, `unconfirmed` (challenger unavailable — failed twice
   or never dispatched at a budget stop; blocks convergence, never treated as
   refuted, excluded from the no-progress comparison), `confirmed (not fixed —
-  stopped)` (significant findings of a round stopped by oscillation,
-  no-progress, or budget), `reported-only` (sub-major needs-decision findings,
+  stopped)` (significant findings of any round that ends before or during its
+  fix phase — oscillation, no-progress, budget, interaction-unavailable, or
+  external-edit), `reported-only` (sub-major needs-decision findings,
   and any minor/nit finding of a round that terminates before its fix phase —
   converging, stop-triggering, or aborted), `accepted-risk` (user keep-as-is),
   `pending-decision`
@@ -385,7 +402,8 @@ cannot verify completeness against unstated requirements.
 - Dogfooding: this design document is the loop's first real target. **Pass
   condition:** the dogfood run terminates with a valid terminal status within
   default budgets and produces a report and sidecar conforming to the
-  report-format skill.
+  spec-report-format skill. The dogfood run is isolated to a scratch branch —
+  the loop edits its target in place, and this document is a committed contract.
 
 ## Loop-engineering compliance checklist
 

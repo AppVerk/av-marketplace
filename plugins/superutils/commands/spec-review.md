@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(ls:*), Bash(stat:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(echo:*), Bash(git:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Bash(mv:*), Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion, mcp__plugin_sequentialthinking_sequential-thinking__sequentialthinking
+allowed-tools: Bash(ls:*), Bash(stat:*), Bash(sort:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(echo:*), Bash(git status:*), Bash(git diff:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion, mcp__plugin_sequentialthinking_sequential-thinking__sequentialthinking
 description: Closed spec-review loop — MoA lens panel, challenger quorum, needs-decision gate, fix batch behind an approve gate, fresh-panel convergence. For superpowers-produced design specs.
 model: opus
 argument-hint: [spec path] [--no-approve] [--auto] [--allow-dirty] [--max-iterations N] [--max-dispatches D] [--time-budget S]
@@ -14,8 +14,8 @@ stop. The full design contract is
 `docs/superpowers/specs/2026-07-13-superutils-spec-review-design.md`.
 
 > **Doctrine:** this command implements the `qa:loop-engineering` bar. Load
-> the `superutils:lens-catalog` and `superutils:report-format` skills before
-> Step 1 — they define the vocabulary this command uses.
+> the `superutils:lens-catalog` and `superutils:spec-report-format` skills
+> before Step 1 — they define the vocabulary this command uses.
 
 **Oracle (soft, advisory):** panel verdict + challenger survival. It cannot
 verify user intent, external facts, or unstated requirements. Every verdict
@@ -65,7 +65,8 @@ stat -f '%m %N' docs/superpowers/specs/*.md 2>/dev/null | sort -rn | head -5
 
 Newest by mtime wins; byte-equal top mtimes → AskUserQuestion with the tied
 files (interactive) or abort (`--auto`). Zero candidates → same ask/abort.
-Set `spec` = basename without `.md`, and:
+Set `spec_path` = the resolved target file, `spec` = its basename without
+`.md`, and:
 `sidecar_path = docs/superpowers/specs/reviews/<spec>-review.state.json`,
 `report_path = docs/superpowers/specs/reviews/<spec>-review.md`,
 `snapshot_path = docs/superpowers/specs/reviews/<spec>.pre-loop.bak`.
@@ -91,7 +92,7 @@ Hash the spec: `shasum -a 256 "$spec_path"`. Then, if the sidecar exists:
 | terminal status ∧ hash ≠ `last_written_hash` | **New run:** archive sidecar `rounds[]` + report to `.bak` under an incremented `run`; retake the snapshot; SR ids continue at max+1; carry `decisions` forward keyed by registry identity, revalidating each (its heading slug must still exist — stale ones dropped with a report note) and replaying without re-asking |
 
 No sidecar → fresh run: `mkdir -p docs/superpowers/specs/reviews`, write the
-initial sidecar (schema: `superutils:report-format` skill), pin
+initial sidecar (schema: `superutils:spec-report-format` skill), pin
 `last_written_hash`. **Snapshot rule:** copy the spec to `snapshot_path`
 before the first fix application of a run, at most once per run.
 
@@ -131,13 +132,18 @@ returned" and the round proceeds (shallow-coverage WARNING; a converged run
 becomes `CONVERGED (low-confidence)`).
 
 **3. Registry.** For each finding: anchor slug (rules in
-`superutils:report-format`), derive the canonical phrase, match semantically
-against the registry (within-round and cross-round; log every equivalence
-verdict), merge duplicates at max severity recording all lenses, assign SR
-ids in discovery order.
+`superutils:spec-report-format`), derive the canonical phrase, match
+semantically against the registry (within-round and cross-round; log every
+equivalence verdict), merge duplicates at max severity recording all lenses,
+assign SR ids in discovery order. Each reviewer's `rejected` list is recorded
+verbatim in the round record — never dropped.
 
 **4. Challenger quorum.** ⟨stage budget check⟩ Entries with a recorded user
-decision are skipped (settled). Dispatch per major+ entry **in parallel**:
+decision are skipped (settled) — **except an entry whose last fix attempt
+ended `fix-failed`, which is not settled**: its significance was already
+established, so it re-enters this round's significant set without a challenger
+and blocks convergence until it is applied, declined, or the run stops.
+Dispatch per major+ entry **in parallel**:
 majors 1 × `superutils:spec-challenger`, criticals 2. Prompt = the entry (all
 finder descriptions + proposed fix) + spec path. Failure → one retry; still
 failing → `unconfirmed` (for a critical: `unconfirmed` if either challenger
@@ -157,13 +163,19 @@ pending-decisions → oscillation → no-progress → budget.
   identical, where each set = that round's post-refutation significant
   entries minus every entry user-decided or `--auto`-skipped **as of now**
   (decisions filter retroactively); an empty comparison set never triggers.
+  **An entry carrying an unresolved `fix-failed` is not removed by the decision
+  filter** — it is unfinished work, not a settled decision, so a fix that keeps
+  failing stops the loop here rather than silently burning the iteration cap.
 A stop here skips gate+fix: significant findings → `confirmed (not fixed —
 stopped)` (except skipped needs-decision → `pending-decision`); the round's
 minor/nit → `reported-only`.
 
 **6. Convergence check (before the gate).** Zero significant findings after
 excluding entries user-decided in earlier rounds → CONVERGED: terminate
-before the fix phase; this round's minor/nit → `reported-only`.
+before the fix phase; this round's minor/nit → `reported-only`. **An entry
+carrying an unresolved `fix-failed` is never excluded by this filter** (like
+`unconfirmed`, it blocks convergence) — the loop may not report success while
+a fix it committed to has not landed.
 
 **7. Needs-decision gate.** Only challenger-surviving major+ needs-decision
 entries (+ split criticals) → AskUserQuestion, options: accept the proposed
@@ -175,7 +187,11 @@ risks. Decided entries are
 never re-asked (in-run or on resume). `--auto`: skip → `pending-decision`.
 
 **8. Fix (two-phase).** ⟨stage budget check⟩ Batch = confirmed major+ +
-accepted decisions + minor/nit not flagged needs-decision. Dispatch
+accepted decisions + minor/nit not flagged needs-decision. An accepted
+decision whose previous attempt ended `fix-failed` is re-included and marked
+**re-derive**: the fixer must produce a fresh pair that preserves the decided
+intent against the current text, never replay the stored `old` (replaying a
+pair that already failed to match cannot succeed). Dispatch
 `superutils:spec-fixer` (batch + spec path) → edit pairs, no writes. Then:
 1. Re-hash the spec (tamper flow 0.5 on mismatch).
 2. Materialize the candidate: copy the spec to the session scratchpad (outside the repo, so the
@@ -189,25 +205,36 @@ accepted decisions + minor/nit not flagged needs-decision. Dispatch
    subset (unselected → `declined`, sticky: recorded as a decision, excluded
    from significance and no-progress, never re-proposed; a decline of a
    gate-accepted fix supersedes that acceptance) / decline & stop (nothing
-   applied → `STOPPED(user-declined)`). `--no-approve`/`--auto`: apply
+   applied → `STOPPED(user-declined)`). **The selection unit of approve-subset
+   is the overlapping-edit group of 8.2, not the individual finding**:
+   selecting or deselecting any member selects or deselects the whole group,
+   partial in-group selection is never offered (an intersecting group renders
+   as one diff hunk — offering half of it would apply text the user never
+   approved). Elicit the subset with AskUserQuestion (`multiSelect`), **4
+   groups per page**, paginating until every group has been shown; a group the
+   user never saw is never `declined`. `--no-approve`/`--auto`: apply
    immediately, then print the same full diff.
-5. Apply approved pairs to the spec via Edit (orchestrator tool work, not a
-   dispatch) — each successfully applied finding gets outcome `applied`;
+5. **Re-hash the spec (tamper flow 0.5 on mismatch) — the gate is an unbounded
+   human wait, so this check, not 8.1's, is the one that guards the write.**
+   Then apply approved pairs to the spec via Edit (orchestrator tool work, not
+   a dispatch) — each successfully applied finding gets outcome `applied`;
    re-stamp `last_written_hash`; write the sidecar.
 6. **Empty-batch convergence:** if after the gate nothing will be applied and
    the significant set is empty after this round's decisions → CONVERGED now
    (the spec is byte-identical to what this panel reviewed). Otherwise a
    fresh round is required.
 
-**9. Round end.** Write the sidecar (round record: panel, units, findings +
-outcomes, equivalence log; counters). Fixes applied in the final permitted
-round → `applied (not re-reviewed)` under `STOPPED(budget)`.
+**9. Round end.** Write the sidecar (round record: panel, units, findings with
+severity + lenses + outcome, each reviewer's `rejected` list, equivalence log;
+counters). Fixes applied in the final permitted round → `applied (not
+re-reviewed)` under `STOPPED(budget)`.
 
 ### Terminalization
 
 Write the terminal status to the sidecar (once, from the authoritative final
-state) and generate the report per `superutils:report-format`: round traces,
-Coverage (3 sublists + WARNING when shallow), Accepted risks, Declined,
+state) and generate the report per `superutils:spec-report-format`: round
+traces, Coverage (3 sublists + WARNING when shallow), Rejected by the panel
+(self-falsification), Accepted risks, Declined,
 residual risks (verifier gaming; stochasticity; lens drift; no token
 ceiling; soft registry matching; best-effort headless detection), recovery
 (loop-touched files; point at `snapshot_path`; never `git restore` on the
@@ -220,7 +247,7 @@ per-round summary + report path + "Re-reviewed (advisory)".
 |---|---|
 | Reviewer fails twice | Lens → Coverage "not returned"; WARNING; proceed |
 | Challenger fails twice / never dispatched | Entry `unconfirmed`; blocks convergence; never refuted |
-| Fixer fails / pair mismatch | `fix-failed`; fresh panel re-finds next round |
+| Fixer fails / pair mismatch | `fix-failed`; blocks convergence (Steps 4 + 6); re-batched next round with a **re-derived** pair — never a replay of the pair that failed |
 | AskUserQuestion fails (interactive modes) | `STOPPED(interaction-unavailable)` before any fix application |
 | Hash mismatch | Tamper flow 0.5 (adopt / stop / `--auto` abort) |
 | User abort (Esc) | Report partial state; changes stay uncommitted; recovery = snapshot |
