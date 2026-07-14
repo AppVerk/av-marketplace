@@ -3,7 +3,7 @@
 Companion utilities for the superpowers workflow — loop-engineered
 verification of design specs.
 
-**Version:** 1.0.1
+**Version:** 1.0.2
 
 ## Commands
 

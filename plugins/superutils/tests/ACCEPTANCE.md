@@ -37,14 +37,13 @@ and result here.
 
 ## Dogfood check (once per release)
 
-Run the command on its own design spec
-(`docs/superpowers/specs/2026-07-13-superutils-spec-review-design.md`); pass =
-a valid terminal status within default budgets and a report + sidecar
-conforming to `superutils:spec-report-format`.
+Run the command on a **real** design spec — one produced by the superpowers
+brainstorming→design flow, not the seeded fixture; this repo keeps no such
+document, so use one from the project you are working in. Pass = a valid
+terminal status within default budgets and a report + sidecar conforming to
+`superutils:spec-report-format`.
 
-**Isolate it — the loop edits its target in place.** The design spec is a
-committed, approved contract, and a clean tracked file passes the working-tree
-gate silently, so an unisolated dogfood run rewrites the contract with no
-warning. Run it on a scratch branch and discard that branch afterwards (or
-`git restore` the spec once the report is captured); never merge the loop's
-edits to the contract without a deliberate spec revision.
+**Isolate it — the loop edits its target in place.** A clean tracked file
+passes the working-tree gate silently, so an unisolated run rewrites a
+committed document with no warning. Run it on a scratch branch and discard that
+branch afterwards (or `git restore` the spec once the report is captured).

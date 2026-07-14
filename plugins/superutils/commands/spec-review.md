@@ -10,8 +10,9 @@ argument-hint: [spec path] [--no-approve] [--auto] [--allow-dirty] [--max-iterat
 Run a closed review loop on a design spec from `docs/superpowers/specs/`:
 decompose → lens-panel review → challenger quorum → needs-decision gate →
 fix batch (approve-gated) → fresh-panel re-review, until convergence or a
-stop. The full design contract is
-`docs/superpowers/specs/2026-07-13-superutils-spec-review-design.md`.
+stop. **This file, with the two skills it loads, is the contract** — it is
+self-contained by design, so the loop behaves identically in a marketplace
+install, where no repo-internal design document ships.
 
 > **Doctrine:** this command implements the `qa:loop-engineering` bar. Load
 > the `superutils:lens-catalog` and `superutils:spec-report-format` skills
