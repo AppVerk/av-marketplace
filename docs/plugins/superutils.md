@@ -48,27 +48,60 @@ success. Reports and a state sidecar land in
 `docs/superpowers/specs/reviews/`; the loop never commits, and recovery
 points at the pre-loop snapshot.
 
+**`CONVERGED` means the work actually landed.** The loop will not report success
+while it still owes you something, so convergence requires all three: no
+significant findings left, **no unlanded fix** (a fix that entered the batch but
+whose edit did not apply — at any severity, including a minor), and **no
+unconfirmed finding** (a major+ whose challenger never returned). Consequences
+worth knowing before you see them:
+
+- A fix you accepted whose edit fails to apply is re-proposed next round with a
+  freshly derived edit — never a replay of the one that already failed. If that
+  attempt fails too, the run ends `STOPPED(no-progress)`, not `CONVERGED`. You
+  are told the fix never landed rather than being handed a green report.
+- A challenger that dies is re-dispatched every round until it returns a
+  verdict; its finding is never silently treated as refuted.
+- Accepting a fix settles *which* edit to make, not *whether* the defect exists:
+  if a later fresh panel still finds it, it comes back as a normal finding.
+
 **Re-running (the sidecar is control flow, not just an artifact):**
 
 | State | What a re-run does |
 |---|---|
 | Spec unchanged since a finished run | Prints the prior report summary and exits — no dispatches, no new review |
 | Run interrupted mid-way | Resumes: counters continue, recorded decisions replay without re-asking |
-| Spec edited since the last run | Starts a new run; prior report and rounds are archived, decisions carry forward |
+| Spec edited since the last run | Starts a new run; prior report and rounds are archived. The finding registry carries forward whole — decisions **and** unfinished work (unlanded fixes, unconfirmed findings): a new run does not forgive them |
 
 To force a clean review of an unchanged spec (e.g. after a
 `CONVERGED (low-confidence)` run whose lens failures you want re-tried), delete
 `docs/superpowers/specs/reviews/<spec>-review.state.json` first.
 
-**Honest limits:** the oracle is soft (LLM panel + challenger) — verdicts are
-advisory; it cannot verify your intent, external facts, or unstated
-requirements. The command implements the `qa:loop-engineering` bar; see the acceptance protocol in `plugins/superutils/tests/ACCEPTANCE.md`.
+**Honest limits:**
+
+- The oracle is soft (an LLM panel plus challengers), so every verdict is
+  advisory — reported as "Re-reviewed", never "Verified". It cannot check your
+  intent, external facts, or requirements you never wrote down.
+- It meets the `qa:loop-engineering` bar on 10 of its 11 items. **Item 4 is only
+  partially met:** no fail-closed TTY check exists in this harness (a tool's
+  stdin is never a TTY), so interactivity is judged heuristically and fails
+  closed by default, with an AskUserQuestion failure aborting the run as a
+  backstop. Disclosed rather than designed away.
+- The dispatch cap doubles as the cost ceiling; there is no hard token budget.
+- **The acceptance protocol (`plugins/superutils/tests/ACCEPTANCE.md`) has not
+  been run.** The loop is verified statically — by review, not by execution — so
+  treat the first real run as the actual test.
 
 ## Agents
 
-- `spec-reviewer` — one lens per dispatch, self-falsifying, raw JSON findings
-- `spec-challenger` — refute-or-uphold at the finder's severity, one finding per dispatch
-- `spec-fixer` — proposes exact `{old, new}` edit pairs; has no write tools
+- `spec-reviewer` — one lens per dispatch, self-falsifying, raw JSON findings;
+  barred from reading the loop's own reports and sidecar, so a fresh panel
+  cannot read its own answer key
+- `spec-challenger` — one finding per dispatch, uphold or refute at the finder's
+  severity. `refute` means *not a real defect*: uncertainty upholds, and a real
+  defect graded too high is still upheld rather than deleted over its grade
+- `spec-fixer` — proposes exact `{old, new}` edit pairs (plus an `obsolete` list
+  for defects already gone from the text); has no write tools — the orchestrator
+  applies what you approve
 
 ## Skills
 
