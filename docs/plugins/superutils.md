@@ -38,7 +38,7 @@ convergence.
 | `--auto` | off | Headless; implies `--no-approve` |
 | `--allow-dirty` | off | Bypass the working-tree gate |
 | `--max-iterations` | 3 | Round cap |
-| `--max-dispatches` | 30 | Subagent-launch cap (retries count) |
+| `--max-dispatches` | 60 | Subagent-launch cap (retries count) |
 | `--time-budget` | 1800 | Active seconds (user waits excluded) |
 
 **Terminal statuses:** `CONVERGED`, `CONVERGED (low-confidence)`,

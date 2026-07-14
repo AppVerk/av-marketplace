@@ -41,29 +41,56 @@ or marketplace plugins.
 **The bar** (8 universal + 3 conditional; source of truth is the
 `qa:loop-engineering` skill — keep this copy in sync with it):
 
-1. The oracle is named, and what it *cannot* verify is stated.
-2. Verifier authority is separated from the actor; the loop gates and logs on
-   the raw signal, never on the actor's narration. A fixer's self-verdict is
-   advisory only.
-3. Coverage is disclosed, never gated: shallow coverage produces a WARNING and
-   a low-confidence pass, never a silent green.
-4. A human gate is the default; headless is opt-in with a fail-closed check.
-5. Safety guards are reused, not reinvented (environment/host, mutation/write,
-   ambiguous input → ask or abort).
-6. Hard budgets bound iterations ∧ dispatches ∧ time. *(Rider, not a MUST: a
-   model-heavy loop should also cap cost/tokens.)*
-7. No-progress and oscillation stops exist, and "stopped" is reported as
-   distinct from success.
-8. The residual-risk list is documented.
-9. *(Auto-correcting loops)* Provenance guard: a suspect or auto-generated
-   assertion is never auto-fixed against correct source.
-10. *(Stateful loops)* State lives in a durable sidecar with an input hash-pin;
-    re-runs are idempotent.
-11. *(Mutating loops)* Writes are scoped and recoverable; the user's
-    pre-existing work is never destroyed; nothing is committed.
+1. **Name the oracle, and state what it cannot verify.** An unstated oracle is
+   an unfalsifiable "it passed."
+2. **Separate verifier authority from the actor; gate and log on the raw
+   signal, not narration.** Only a fresh, independent re-run decides pass/fail;
+   the fixer's self-verdict is advisory; **never hand the verifier the exact
+   target it grades**; gate on the raw oracle output, never on the actor's
+   "I'm done."
+3. **Disclose, don't gate, on coverage.** Shallow coverage produces a WARNING
+   and a low-confidence pass — **never a green→red flip**. The loop must be able
+   to say "I converged but verified little."
+4. **Default to a human gate; go headless only on explicit opt-in with a
+   fail-closed TTY check.** Autonomous correctness is unreachable when the
+   verifier is stochastic. Judge this item as written: a loop that cannot probe
+   a TTY and judges interactivity heuristically **does not meet it** — grade it
+   unmet and let the spec disclose the gap. Do not grade the loop against a
+   softened restatement of the bar; that is how a loop passes the one item it
+   fails.
+5. **Reuse fail-closed safety guards; don't reinvent them** (environment/host,
+   mutation/write, ambiguous input → ask or abort).
+6. **Bound the loop with hard budgets:** iterations ∧ dispatches ∧ time.
+   *(Rider, not a universal MUST: a model-heavy loop should also cap
+   cost/tokens.)*
+7. **Stop on no-progress and oscillation, and report "stopped" as distinct from
+   success.** "Budget-exhausted" must never read as "passed."
+8. **Document the residual-risk list.** If you cannot enumerate what the loop
+   fails to catch, it is not ready.
+9. *(Auto-correcting loops)* **Guard provenance:** a suspect or auto-generated
+   assertion is never auto-fixed against correct source — the failure may be the
+   assertion, not the target.
+10. *(Stateful loops)* **Durable sidecar with input hash-pinning, idempotent
+    re-runs.** Loop-critical state lives on disk, never in conversation context;
+    the input is hashed to detect mid-run tampering; a re-run on identical input
+    reuses prior state and **never duplicates results or re-applies
+    corrections**.
+11. *(Mutating loops)* **Writes are scoped and recoverable:** touch only what
+    you changed, never destroy pre-existing work, leave changes uncommitted.
 
-Conditional items may be marked N/A only with a one-line justification that the
-loop neither persists state, mutates the workspace, nor auto-corrects.
+**Oracle taxonomy (also auditable):** prefer a *strong* oracle (tests, types,
+build, exit code, HTTP status, row count) over a *soft* one (LLM-judged). A soft
+oracle **MUST** self-label its verdict advisory. The actor must never author the
+oracle nor be able to see-and-game it, and re-verification must be independent
+of the corrector.
+
+Each conditional item (9–11) is gated **independently by its own trigger**. A
+loop that does not hit a trigger may mark that item **N/A with a one-line
+justification affirming it neither persists loop-critical state, mutates the
+workspace, nor auto-corrects** — never silently. (Quoted from the source bar,
+whose gating sentence and justification form sit in tension; when auditing,
+require the justification to at least address the item's own trigger —
+auto-correction for 9, persisted state for 10, workspace mutation for 11.)
 
 **Anti-patterns** (each is a finding): a self-graded fix loop; reading `--auto`
 or exit-code-0 as "verified"; auto-fixing a guessed assertion; a soft-only

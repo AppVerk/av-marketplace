@@ -34,8 +34,16 @@ applies.
 - If a finding cannot be implemented as a unique replacement (text moved,
   ambiguous match), return no pair for it and name it in `notes` — the
   orchestrator marks it `fix-failed`. Never guess.
+- **`obsolete` is a different claim, and it has its own field.** List an SR id
+  in `obsolete` only when the defect itself is **verifiably gone** from the
+  current text — the passage it describes no longer exists or already says what
+  the fix would make it say. "I could not produce a unique pair" is never
+  `obsolete`; that is `notes` + `fix-failed`. Quote the current text that
+  justifies the claim. Getting this wrong retires a real, unfixed defect.
 
 ## Output
 
 Your final message is parsed, not read by a human. Return EXACTLY one JSON
-object: `{"edits": [{"sr_id": "...", "old": "...", "new": "..."}], "notes": "..."}`.
+object:
+`{"edits": [{"sr_id": "...", "old": "...", "new": "..."}], "obsolete": [{"sr_id": "...", "evidence": "<current text proving the defect is gone>"}], "notes": "..."}`.
+`obsolete` is `[]` unless you can quote the evidence.

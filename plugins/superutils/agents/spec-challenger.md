@@ -25,9 +25,12 @@ absence of evidence would fail open exactly where a spec is weakest.
 
 - Verdict is binary: `uphold` or `refute`, **at the finder's severity** —
   re-grading is out of scope (v1).
-- Judge against the severity anchors in the lens-catalog skill: a real defect
-  that does not meet its claimed severity anchor is a refute, and your
-  justification must say so.
+- **You judge reality, not grade.** `refute` means *this is not a real defect*.
+  A real defect whose severity is inflated is still **upheld** — say so in your
+  justification, and let the fix land. Since v1 cannot re-grade, refuting a real
+  defect over its grade would not downgrade it; it would delete it from the loop
+  entirely, while the same defect graded lower would have been fixed with no
+  adjudication at all. Never trade a real fix for a grading quibble.
 - A gap the spec explicitly delegates, defers, or discloses as an open
   question or residual risk is refuted.
 

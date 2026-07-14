@@ -133,12 +133,15 @@ Round `r` on spec `S`:
    entry whose last fix attempt ended `fix-failed` is not settled.** It still
    skips the challenger (its significance was established when it was gated),
    but it re-enters the significant set and blocks convergence until the fix
-   lands, is declined, or the run stops — otherwise a fix the loop committed to
-   could be dropped silently while the run still reports success. The
+   lands (or is vacated as `obsolete`) or the run stops — a decision never
+   settles it, and a `declined` never clears it; otherwise a fix the loop
+   committed to could be dropped silently while the run still reports success. The
    challenger returns exactly **uphold or refute at the finder's
    severity**; re-grading is out of scope for v1. A refutation must rest on
-   textual evidence: an uncertain challenger upholds. **Significant = major+ AND
-   survived refutation.** Critical entries get 2 independent challengers: both
+   textual evidence: an uncertain challenger upholds. `refute` means *not a real
+   defect* — a real defect at an inflated severity is upheld, because with no
+   re-grading a severity refutation would delete it from the loop rather than
+   downgrade it. **Significant = major+ AND survived refutation.** Critical entries get 2 independent challengers: both
    uphold → confirmed; both refute → dropped; split → escalated to the
    needs-decision gate. A split-verdict critical remains in the
    post-refutation significant set until its gate decision is recorded; if
@@ -186,14 +189,18 @@ Round `r` on spec `S`:
    gets `fix-failed`. Per-finding outcomes: `applied` / `fix-failed`; the
    fixer's "done" is advisory.
 8. **Verifier authority.** Convergence is decided solely by the **next round's
-   fresh panel** on the updated spec: the loop converges when a fresh round
-   yields zero significant findings (post-refutation; the convergence
-   condition is evaluated before the gate, excluding entries user-decided in
-   earlier rounds — **except entries carrying an unresolved `fix-failed`, which,
-   like `unconfirmed`, block convergence**). A round whose effective fix batch is empty after its own
+   fresh panel** on the updated spec, and requires **all three** conditions:
+   (a) zero significant findings (post-refutation, evaluated before the gate,
+   excluding entries user-decided in earlier rounds); (b) **zero unlanded
+   fixes**, at any severity; (c) **zero `unconfirmed` entries**. (b) and (c) are
+   conditions in their own right, never filters on (a). A round whose effective
+   fix batch is empty after its own
    gate (nothing will be applied) also completes convergence immediately — the
    spec is byte-identical to what the fresh panel just reviewed; if anything
-   is applied, a subsequent fresh round is required. A converging round
+   is applied, a subsequent fresh round is required. **Every convergence exit
+   carries all three conditions**: a batch that produced no applicable pair is a
+   failed fix, not a converged spec — otherwise the loop reports success through
+   whichever exit was left open. A converging round
    terminates **before its fix
    phase**: its minor/nit findings receive outcome `reported-only` and are not
    applied — a CONVERGED spec contains no edits that a fresh panel has not
@@ -237,8 +244,14 @@ Round `r` on spec `S`:
   challenger, or fixer); retries count as dispatches; orchestrator tool calls
   (including fix application) are excluded.
 - **Triple gate:** `--max-iterations` (default 3), `--max-dispatches`
-  (default 30 — doubles as the soft cost ceiling for this model-heavy loop, per
-  the loop-engineering rider), `--time-budget` (default 30 min). Budgets are
+  (default 60 — doubles as the soft cost ceiling for this model-heavy loop, per
+  the loop-engineering rider), `--time-budget` (default 30 min). The dispatch
+  default must be able to fund the iteration default, or the two gates
+  contradict each other: a 5-lens panel with ~5 major+ entries costs ~11
+  dispatches per round, and the stage rule reserves 2× the next stage's
+  worst case, so 30 stops the run inside round 3 — `--max-iterations 3` would be
+  unreachable and round-2 fixes would ship as `applied (not re-reviewed)`. 60
+  funds three full rounds with headroom. Budgets are
   enforced at **stage boundaries** within each round — before the review
   fan-out, before the challenger fan-out, and before the fixer dispatch: if the
   remaining dispatch budget cannot cover the next stage's worst case including
@@ -255,13 +268,46 @@ Round `r` on spec `S`:
   terminates as CONVERGED (before its fix phase) and still counts. Fixes
   applied in the final permitted round are reported as
   `applied (not re-reviewed)` under `STOPPED(budget)`.
-- **No-progress stop:** an identical significant-finding set in two
-  consecutive rounds. The comparison set for each of the two rounds is
-  computed at evaluation time: that round's post-refutation significant
-  entries (by registry identity) minus every entry carrying a recorded user
-  decision or `--auto` skip as of the current evaluation — decisions filter
-  retroactively into the previous round's set. An empty comparison set never
+- **No-progress stop:** an identical comparison set in two consecutive rounds.
+  The comparison set for each of the two rounds is computed at evaluation time:
+  that round's post-refutation significant entries (by registry identity)
+  **plus every unlanded fix, at any severity**, minus entries carrying a
+  recorded user decision or `--auto` skip as of the current evaluation
+  (decisions filter retroactively into the previous round's set — **but this
+  filter never removes an unlanded fix**), minus `unconfirmed` entries (their
+  challenger has yet to be re-dispatched), and minus unlanded fixes at
+  `fix_failures ≤ 1` (their re-derived retry has yet to run). An unlanded fix at
+  `fix_failures ≥ 2` stays in the set, so a fix that cannot land stops the run
+  here rather than consuming the iteration cap. An empty comparison set never
   triggers no-progress.
+- **Unfinished work (definition):** two registry flags, both orthogonal to
+  severity and to any user decision. **`unlanded`** — a batched fix did not land
+  (pair mismatch, no pair returned, or a fixer failure that survived its one
+  retry), at **any** severity (minor and nit are batched without a challenger,
+  so their failures never pass through the significant set); it is never
+  re-challenged and never refuted, and is cleared by exactly four events: a
+  successful apply, an `obsolete` verdict (the fresh panel no longer finds it
+  *and* the fixer reports, in its structured `obsolete` field, that the target
+  text is gone), a user `declined` at the batch gate, or a stale-drop whose
+  anchor no longer exists — and a stale-drop of unfinished work is **reported**,
+  never silently vacated. **`unconfirmed`** — a major+ entry whose challenger
+  never returned; it is **re-dispatched to a challenger every round until a
+  verdict returns**, whether or not the fresh panel re-found it (without that
+  rule the flag is a one-way latch and convergence is unreachable).
+  **Convergence requires zero of both, checked as conditions in
+  their own right, not as filters on the significant set** — a minor/nit is
+  never in that set, and an `unconfirmed` entry survived no refutation, so
+  folding either into the significance test lets the loop converge green over an
+  unlanded fix or an unadjudicated major.
+- **A decision settles *which* fix, not *whether* the defect exists.** An
+  `accepted` decision suppresses re-asking, never re-finding: once its fix is
+  applied, the entry returns to normal adjudication, so a fresh panel that
+  re-finds it produces a challenger and a significant finding as if it were new
+  — an accepted fix that landed but did not work must not be invisible to the
+  loop that applied it. Only `keep-as-is` and `declined` waive significance.
+  Correspondingly, the fix batch carries only accepted decisions **whose fix has
+  not yet been applied**; re-batching a landed one would re-apply a correction
+  (doctrine item 10).
 - **Oscillation stop:** a registry entry fixed in round `r−2` reappears in
   round `r`'s post-refutation significant set. Reappearance at sub-major
   severity is logged in the report but does not trigger the stop.
@@ -330,17 +376,29 @@ Written to `docs/superpowers/specs/reviews/<spec>-review.md`:
 
 - round-by-round trace: panel composition, findings with `SR-XXX` ids and
   outcomes. **Outcome enum:** `applied`, `applied (not re-reviewed)`,
-  `fix-failed` (pair did not match; blocks convergence, is re-batched next
-  round with a **re-derived** pair — never a replay of the pair that already
-  failed — and is not settled by any user decision it carries),
+  `fix-failed` (a batched fix did not land — pair mismatch, no pair returned, or
+  fixer failure → the entry is an **unlanded fix** at any severity; it closes
+  **every** convergence exit, is never re-challenged or refuted, is re-batched
+  next round with a **re-derived** pair — never a replay of the pair that already
+  failed — and is not settled by any user decision it carries. Per entry,
+  `fix_failures` gates the retry: at ≤ 1 the entry is excluded from the
+  no-progress comparison so the retry can run; at ≥ 2 — the re-derived pair
+  failed too — it re-enters that comparison, so an unlandable fix stops the loop
+  as `STOPPED(no-progress)` rather than consuming the iteration cap),
+  `obsolete` (the fresh panel no longer finds the entry **and** the fixer reports
+  its target text is gone — the defect is fixed, not unfixed; the only vacate
+  path for `unlanded`),
   `refuted`, `unconfirmed` (challenger unavailable — failed twice
-  or never dispatched at a budget stop; blocks convergence, never treated as
+  or never dispatched at a budget stop; blocks convergence as its own condition,
+  never treated as
   refuted, excluded from the no-progress comparison), `confirmed (not fixed —
-  stopped)` (significant findings of any round that ends before or during its
+  stopped)` (significant findings **and unlanded fixes of any severity** of a
+  round that ends before or during its
   fix phase — oscillation, no-progress, budget, interaction-unavailable, or
   external-edit), `reported-only` (sub-major needs-decision findings,
   and any minor/nit finding of a round that terminates before its fix phase —
-  converging, stop-triggering, or aborted), `accepted-risk` (user keep-as-is),
+  converging, stop-triggering, or aborted; **never an unlanded fix**),
+  `accepted-risk` (user keep-as-is),
   `pending-decision`
   (`--auto` skip), `declined` (user-declined at the batch gate). Every finding
   emitted by any reviewer appears in the trace with exactly one outcome —
@@ -413,9 +471,13 @@ cannot verify completeness against unstated requirements.
       advisory, finder excluded from the challenger vote
 - [x] 3. Coverage disclosed (three-sublist Coverage block; shallow-coverage
       WARNING + low-confidence CONVERGED label), never gated
-- [x] 4. Human gate by default (approve-before-apply with full diff preview);
-      headless only via `--auto`; parse-time headless check is best-effort,
-      the AskUserQuestion runtime backstop is the fail-closed element
+- [~] 4. **Partial — the one item this loop does not meet cleanly.** Human gate
+      by default (approve-before-apply with full diff preview) and headless only
+      via `--auto` are met; the **fail-closed TTY check is not**. No shell TTY
+      probe exists in this harness (Bash stdin is never a TTY), so interactivity
+      is model-judged and best-effort, with the AskUserQuestion runtime backstop
+      as the fail-closed element. Disclosed, not designed away — the bar's
+      wording is a TTY check, and this is not one (residual risk 6)
 - [x] 5. Fail-closed guards reused, not reinvented (ambiguous input → ask/abort;
       tamper re-hash → adopt-or-stop; /qa:loop Step 0.1.5 Working-Tree Safety
       Gate + `--allow-dirty`)
