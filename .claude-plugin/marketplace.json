@@ -61,6 +61,13 @@
       "category": "testing"
     },
     {
+      "name": "superutils",
+      "source": "./plugins/superutils",
+      "description": "Companion utilities for the superpowers workflow — loop-engineered verification of design specs.",
+      "version": "1.0.2",
+      "category": "planning"
+    },
+    {
       "name": "sequentialthinking",
       "description": "An MCP server implementation that provides a tool for dynamic and reflective problem-solving through a structured thinking process.",
       "source": "./external_plugins/sequentialthinking",
