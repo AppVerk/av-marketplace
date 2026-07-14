@@ -89,7 +89,7 @@ Hash the spec: `shasum -a 256 "$spec_path"`. Then, if the sidecar exists:
 |---|---|
 | terminal status ∧ hash == `last_written_hash` | Print the prior report summary and exit — no dispatches |
 | `in-progress` | **Resume:** counters continue (never reset), recorded decisions replay without re-asking, snapshot is NOT retaken. Hash ≠ `last_written_hash` → tamper flow (0.5) first |
-| terminal status ∧ hash ≠ `last_written_hash` | **New run:** archive sidecar `rounds[]` + report to `.bak` under an incremented `run`; retake the snapshot; SR ids continue at max+1; carry `decisions` forward keyed by registry identity, revalidating each (its heading slug must still exist — stale ones dropped with a report note) and replaying without re-asking |
+| terminal status ∧ hash ≠ `last_written_hash` | **New run:** archive sidecar `rounds[]` + report to `.bak` under an incremented `run`; retake the snapshot; SR ids continue at max+1; carry the **whole registry** forward — entries with their `unlanded` / `unconfirmed` / `fix_failures` state (a new run does not forgive unfinished work) — plus `decisions` keyed by registry identity, revalidating each (its heading slug must still exist — stale ones dropped **with a report note naming any unfinished work discarded**) and replaying without re-asking |
 
 No sidecar → fresh run: `mkdir -p docs/superpowers/specs/reviews`, write the
 initial sidecar (schema: `superutils:spec-report-format` skill), pin
