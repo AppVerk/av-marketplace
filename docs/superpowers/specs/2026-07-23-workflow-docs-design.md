@@ -23,8 +23,8 @@ ID → commit). This design adds documentation that teaches that cycle.
 ## Non-Goals
 
 - No changes to any plugin (no version bumps, no `marketplace.json` changes).
-- No changes to `docs/plugins/*.md` — command details, flags, and edge cases
-  stay there; the new document links to them instead of duplicating.
+- No changes to `docs/plugins/*.md` — flags, option tables, and edge-case
+  details stay there; the new document links to them instead of duplicating.
 - No change to the plugin count badge or the Available Plugins table.
 
 ## Design
@@ -58,9 +58,11 @@ A narrative end-to-end guide. Each stage follows the same schema:
   the closed review loop; report and sidecar land in
   `docs/superpowers/specs/reviews/`; terminal statuses `CONVERGED` /
   `STOPPED(...)`.
-- **Stage 3 — Plan & implement**: superpowers writing-plans / TDD flow,
-  **or** the stack-specific `/develop` command (frontend-developer,
-  php-developer, python-developer) which enforces coding standards and TDD.
+- **Stage 3 — Plan & implement**: the stack-specific `/develop` command
+  (frontend-developer, php-developer, python-developer), which enforces
+  coding standards and TDD, is the recommended path when a matching
+  developer plugin is installed; the superpowers writing-plans / TDD flow
+  covers stacks without one, or a plan-first, language-agnostic flow.
 - **Stage 4 — QA** *(qa)*: **`/qa:loop` is the recommended first choice** —
   it generates a plan for the branch when none exists, runs it, auto-fixes
   failures, and re-tests until green or budget exhausted. The manual
@@ -73,8 +75,9 @@ A narrative end-to-end guide. Each stage follows the same schema:
   `/fix <ID>`, `/fix-report` (auto-merges review and QA reports), or
   `/fix-all` (skips `needs-decision`).
 - **Stage 6 — Commit & PR** *(commit)*: `/commit` generates Conventional
-  Commits messages; push guards apply. PR feedback handled with
-  `/analyze-feedback`.
+  Commits messages; push guards apply. PR feedback is handled with the
+  code-review plugin's `/analyze-feedback` (linked to
+  `docs/plugins/code-review.md`, which documents it).
 - **Cheat sheet**: table `stage → plugin → command → artifact`, with
   `/qa:loop` listed as the QA entry point.
 - **Outside the cycle**: web-auditor (`/audit`), security-pipeline
@@ -95,8 +98,12 @@ Repository artifacts in English, matching the existing docs style
 
 ## Success criteria
 
-- A reader who has just run `/plugin marketplace add AppVerk/av-marketplace`
-  can follow README → workflow.md and run a full feature cycle without
-  opening a plugin guide, opening them only for flags and edge cases.
-- No content duplicated from `docs/plugins/*.md` beyond command names and
-  artifact paths.
+- `docs/workflow.md` documents every stage (1–6) with, for each: its
+  purpose, the exact command, the artifact path produced, and what the next
+  stage consumes. Each stage is followable from `workflow.md` alone,
+  referencing `docs/plugins/*.md` only for flags and edge cases, and the
+  superpowers-absent path (start at Stage 3) is covered.
+- `workflow.md` reproduces no flag tables, option lists, or edge-case
+  descriptions from `docs/plugins/*.md`, verbatim or near-verbatim;
+  per-stage text is limited to purpose, command names, artifact paths,
+  one-line behavioral summaries, and cross-stage hand-offs.
