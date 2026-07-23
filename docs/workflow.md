@@ -58,26 +58,31 @@ challengers → approve-gated fix batches) until it converges or stops.
 (`CONVERGED (low-confidence)` when a review lens failed to return) or
 `STOPPED(...)` — a stop is never success.
 **Next stage consumes:** the reviewed spec, now the contract for the plan —
-passed by you: unlike the other hand-offs, Stage 3's `/develop` does not
-discover it on its own.
+passed by you: unlike the other hand-offs, Stage 3 does not discover it on
+its own; reference the spec in the task or plan you hand to it.
 
 ### Stage 3 — Plan & implement
 
 **Purpose:** build the feature test-first against the reviewed spec.
 
+**Recommended:** point Claude at the right specialist in the project's
+`CLAUDE.md` (or in the spec itself) — e.g. "Implementation work in this
+repo uses the python-developer plugin: dispatch its `developer` agent and
+its skills." A standing note like this makes whichever flow drives the
+implementation — the superpowers plan flow or a direct request — pick the
+matching developer agent (frontend-developer, php-developer,
+python-developer) instead of a general-purpose one.
+
 ```
 /develop <task>
 ```
 
-The stack-specific `/develop` command (frontend-developer, php-developer,
-python-developer) is the recommended path when a matching developer plugin
-is installed — it enforces coding standards and TDD for its stack. For
-stacks without one, or for a plan-first language-agnostic flow, use the
-superpowers writing-plans / TDD skills instead.
-
-Include the reviewed spec path in `<task>` — e.g.
+The stack-specific `/develop` command is the explicit alternative — it
+enforces the same coding standards and TDD for its stack. If you use it,
+include the reviewed spec path in `<task>` — e.g.
 `/develop Implement docs/superpowers/specs/2026-07-23-foo-design.md` —
-`/develop` reads only the task text you give it.
+`/develop` reads only the task text you give it. For stacks without a
+developer plugin, use the superpowers writing-plans / TDD skills.
 
 **Artifact:** implemented, tested code on the feature branch.
 **Next stage consumes:** the branch diff — QA generates its test plan
@@ -145,7 +150,7 @@ with pushes guarded by the plugin; feedback analysis persisted by
 |---|---|---|---|
 | 1. Idea → Spec | superpowers *(external)* | brainstorm with Claude | `docs/superpowers/specs/*.md` |
 | 2. Spec review | superutils | `/superutils:spec-review` | `docs/superpowers/specs/reviews/*` |
-| 3. Plan & implement | frontend/php/python-developer (or superpowers) | `/develop <task>` | code on the branch |
+| 3. Plan & implement | frontend/php/python-developer (or superpowers) | `CLAUDE.md` note → `developer` agent (or `/develop <task>`) | code on the branch |
 | 4. QA | qa | `/qa:loop` | `docs/testing/plans/*`, `docs/testing/reports/*` |
 | 5. Code review | code-review | `/review`, then `/fix` · `/fix-report` · `/fix-all` | `docs/reviews/*` |
 | 6. Commit & PR | commit | `/commit` | commits (PR opened manually) |
