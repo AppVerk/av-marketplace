@@ -3,7 +3,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Plugins](https://img.shields.io/badge/plugins-10-green.svg)](#available-plugins)
 
-Plugins for Claude Code that enhance code quality, security, and development workflows.
+Claude Code plugins that compose into one development harness — from idea and spec, through TDD implementation and QA, to code review and commit — with each stage's artifact feeding the next.
 
 ## Installation
 
@@ -12,6 +12,22 @@ Plugins for Claude Code that enhance code quality, security, and development wor
 ```
 
 After installation, verify with `/help` — you should see the new commands listed.
+
+## Workflow
+
+The plugins are designed to work together as a full development cycle:
+
+```mermaid
+flowchart LR
+    A[Idea] --> B[Spec]
+    B --> C[Spec review]
+    C --> D[Implement]
+    D --> E[QA]
+    E --> F[Code review]
+    F --> G[Commit / PR]
+```
+
+Each stage leaves an artifact the next stage consumes: the brainstormed spec is reviewed by `/superutils:spec-review`, the implementation is exercised by `/qa:loop`, and QA and review reports share one issue-ID scheme, so `/fix SEC-001` and `/fix QA-001` work the same way. See the [Recommended Workflow](docs/workflow.md) guide for the full cycle, stage by stage.
 
 ## Available Plugins
 
@@ -30,6 +46,7 @@ After installation, verify with `/help` — you should see the new commands list
 
 ## Documentation
 
+- [Recommended Workflow](docs/workflow.md)
 - [Installation & Optional Tools](docs/installation.md)
 - [Plugin Guides](docs/plugins/)
 - [Contributing](docs/contributing.md)
