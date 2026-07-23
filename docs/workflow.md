@@ -2,16 +2,18 @@
 
 How the AppVerk marketplace plugins compose into one development harness —
 the lifecycle of a feature from idea to merged PR. Each stage produces an
-artifact the next stage consumes; nothing is handed over by memory.
+artifact the next stage consumes; nothing is handed over by memory. Most
+hand-offs are automatic — where one needs your input, the stage says so.
 
 ## Prerequisites
 
 - This marketplace installed: `/plugin marketplace add AppVerk/av-marketplace`
 - **Strongly recommended:** the `superpowers` plugin from the official
-  Claude Code plugin marketplace — it drives Stages 1–2 (brainstorming a
-  spec) and provides the plan-first implementation flow in Stage 3. Without
-  it the cycle degrades gracefully: start at Stage 3; Stages 1–2 are
-  skipped.
+  Claude Code plugin marketplace — install with
+  `/plugin install superpowers@claude-plugins-official`. It drives Stage 1
+  (brainstorming the spec that Stage 2 reviews) and provides the plan-first
+  implementation flow in Stage 3. Without it the cycle degrades gracefully:
+  start at Stage 3; Stages 1–2 are skipped.
 
 See [Installation & Optional Tools](installation.md) for the optional
 scanners and linters the plugins auto-detect.
@@ -52,9 +54,12 @@ Runs a closed review loop on the newest spec (lens panel → adversarial
 challengers → approve-gated fix batches) until it converges or stops.
 
 **Artifact:** report and state sidecar in
-`docs/superpowers/specs/reviews/`; terminal status `CONVERGED` or
+`docs/superpowers/specs/reviews/`; terminal status `CONVERGED`
+(`CONVERGED (low-confidence)` when a review lens failed to return) or
 `STOPPED(...)` — a stop is never success.
-**Next stage consumes:** the reviewed spec, now the contract for the plan.
+**Next stage consumes:** the reviewed spec, now the contract for the plan —
+passed by you: unlike the other hand-offs, Stage 3's `/develop` does not
+discover it on its own.
 
 ### Stage 3 — Plan & implement
 
@@ -69,6 +74,10 @@ python-developer) is the recommended path when a matching developer plugin
 is installed — it enforces coding standards and TDD for its stack. For
 stacks without one, or for a plan-first language-agnostic flow, use the
 superpowers writing-plans / TDD skills instead.
+
+Include the reviewed spec path in `<task>` — e.g.
+`/develop Implement docs/superpowers/specs/2026-07-23-foo-design.md` —
+`/develop` reads only the task text you give it.
 
 **Artifact:** implemented, tested code on the feature branch.
 **Next stage consumes:** the branch diff — QA generates its test plan
@@ -108,9 +117,10 @@ work through reports as a checklist with `/fix-report` (auto-merges
 review and QA reports), or fix everything except `needs-decision` issues
 with `/fix-all`.
 
-**Artifact:** review report in `docs/reviews/`.
-**Next stage consumes:** a clean working tree — every accepted fix
-applied.
+**Artifact:** review report in `docs/reviews/` — answer Yes at the save
+prompt; `/fix <ID>` and `/fix-report` resolve issues from the saved file.
+**Next stage consumes:** the working tree with every accepted fix applied —
+still uncommitted; `/commit` picks the changes up.
 
 ### Stage 6 — Commit & PR *(commit)*
 
@@ -125,7 +135,8 @@ Generates a Conventional Commits message; push guards protect
 handle reviewer feedback with the code-review plugin's
 `/analyze-feedback`.
 
-**Artifact:** commits and a PR; feedback analysis persisted by
+**Artifact:** commits — pushing and opening the PR remain manual steps,
+with pushes guarded by the plugin; feedback analysis persisted by
 `/analyze-feedback`.
 
 ## Cheat sheet
@@ -137,7 +148,7 @@ handle reviewer feedback with the code-review plugin's
 | 3. Plan & implement | frontend/php/python-developer (or superpowers) | `/develop <task>` | code on the branch |
 | 4. QA | qa | `/qa:loop` | `docs/testing/plans/*`, `docs/testing/reports/*` |
 | 5. Code review | code-review | `/review`, then `/fix` · `/fix-report` · `/fix-all` | `docs/reviews/*` |
-| 6. Commit & PR | commit | `/commit` | commits, PR |
+| 6. Commit & PR | commit | `/commit` | commits (PR opened manually) |
 
 ## Outside the cycle
 
