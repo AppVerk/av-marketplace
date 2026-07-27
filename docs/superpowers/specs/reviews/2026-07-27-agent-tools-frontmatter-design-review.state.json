@@ -1,0 +1,137 @@
+{
+  "spec_path": "docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md",
+  "last_written_hash": "90d5df1fc76e9f445c8a5cc48ae31144896e4337bce1a376393d48ee2f650cf5",
+  "status": "CONVERGED",
+  "run": 2,
+  "iterations_used": 10,
+  "dispatches_used": 72,
+  "active_seconds": 7200,
+  "run_1_terminal_status": "STOPPED(budget)",
+  "convergence_evidence": {
+    "round": 10,
+    "panel": ["internal-consistency", "ambiguity-testability", "completeness", "feasibility", "doctrine-compliance"],
+    "criticals": 0,
+    "majors": 0,
+    "lenses_returning_zero_findings": ["completeness", "doctrine-compliance"],
+    "condition_a_zero_significant": true,
+    "condition_b_zero_unlanded": true,
+    "condition_c_zero_unconfirmed": true,
+    "note": "Significant = major+ surviving refutation. Round 10 surfaced no major or critical in any of the five lenses, so the significant set is empty with nothing left to challenge. The three run-1 `unconfirmed` majors (SR-023/024/025) were re-dispatched at the start of run 2, all three upheld, and all three fixed."
+  },
+  "decisions": {
+    "SR-004": {
+      "decision": "accepted",
+      "edit": {
+        "old": "### Conditional narrowing (whole subsection, Check V1 and decision rule)",
+        "new": "(deleted; narrowing deferred to a follow-up that must first design an availability test)"
+      }
+    }
+  },
+  "registry": [
+    {"sr_id": "SR-001", "slug": "evidence", "phrase": "registry publishes pre-filter grant not received tools", "key": "sha256(evidence|registry-publishes-pre-filter-grant)", "severity": "major", "lenses": ["internal-consistency"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-002", "slug": "verification", "phrase": "glob star-agent wrongly includes infrastructure-agent", "key": "sha256(verification|glob-includes-infrastructure-agent)", "severity": "major", "lenses": ["internal-consistency", "ambiguity-testability"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-003", "slug": "repairs", "phrase": "fix-auto row contradicts conditional narrowing scope", "key": "sha256(repairs|fix-auto-row-contradicts-narrowing)", "severity": "major", "lenses": ["internal-consistency", "ambiguity-testability"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-004", "slug": "repairs", "phrase": "conditional narrowing lacks concrete target values", "key": "sha256(repairs|narrowing-lacks-target-values)", "severity": "major", "lenses": ["ambiguity-testability", "completeness"], "needs_decision": true, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-005", "slug": "repairs", "phrase": "check V1 underspecified tests wrong observable", "key": "sha256(repairs|check-v1-wrong-observable)", "severity": "major", "lenses": ["ambiguity-testability", "feasibility"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-006", "slug": "validator", "phrase": "ignored-key tier has no validator verdict", "key": "sha256(validator|ignored-key-tier-undefined)", "severity": "minor", "lenses": ["ambiguity-testability", "completeness"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-007", "slug": "repairs", "phrase": "fix-auto target omits Skill its body invokes", "key": "sha256(repairs|fix-auto-target-omits-skill)", "severity": "critical", "lenses": ["feasibility"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-008", "slug": "repairs", "phrase": "MCP grant form inconsistent and unverified", "key": "sha256(repairs|mcp-grant-form-unverified)", "severity": "major", "lenses": ["feasibility"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-009", "slug": "delivery", "phrase": "version bump omits docs plugins version header", "key": "sha256(delivery|version-bump-omits-doc-header)", "severity": "major", "lenses": ["feasibility"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-010", "slug": "repairs", "phrase": "no oracle proves target list sufficiency", "key": "sha256(repairs|no-oracle-proves-sufficiency)", "severity": "critical", "lenses": ["doctrine-compliance"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-011", "slug": "verification", "phrase": "live layer has no verdict or failure disposition", "key": "sha256(verification|live-layer-no-verdict)", "severity": "major", "lenses": ["doctrine-compliance"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-012", "slug": "validator", "phrase": "stale constant errors flip build red", "key": "sha256(validator|stale-constant-flips-build-red)", "severity": "major", "lenses": ["doctrine-compliance"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-013", "slug": "validator", "phrase": "validator can pass green having scanned nothing", "key": "sha256(validator|green-pass-scanned-nothing)", "severity": "minor", "lenses": ["doctrine-compliance"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0},
+    {"sr_id": "SR-014", "slug": "repairs", "phrase": "web-auditor body TaskOutput sites left unrepaired", "key": "sha256(repairs|web-auditor-taskoutput-sites)", "severity": "major", "lenses": ["orchestrator"], "needs_decision": false, "unlanded": false, "unconfirmed": false, "fix_failures": 0}
+  ],
+  "rounds": [
+    {
+      "round": 1,
+      "panel": ["internal-consistency", "ambiguity-testability", "completeness", "feasibility", "doctrine-compliance"],
+      "panel_rationale": "Both core lenses always on. completeness because the spec has 9 sections. feasibility and doctrine-compliance triggered by agent/marketplace-plugin design content; feasibility is the highest-value lens here because the spec restates an external platform contract and then builds a validator enforcing that restatement.",
+      "units": ["Purpose", "Evidence", "Scope", "The contract", "Repairs", "Validator", "Verification", "Delivery", "Residual risks"],
+      "findings": [
+        {"sr_id": "SR-001", "severity": "major", "lenses": ["internal-consistency"], "outcome": "applied"},
+        {"sr_id": "SR-002", "severity": "major", "lenses": ["internal-consistency", "ambiguity-testability"], "outcome": "applied"},
+        {"sr_id": "SR-003", "severity": "major", "lenses": ["internal-consistency", "ambiguity-testability"], "outcome": "applied"},
+        {"sr_id": "SR-004", "severity": "major", "lenses": ["ambiguity-testability", "completeness"], "outcome": "applied"},
+        {"sr_id": "SR-005", "severity": "major", "lenses": ["ambiguity-testability", "feasibility"], "outcome": "applied"},
+        {"sr_id": "SR-006", "severity": "minor", "lenses": ["ambiguity-testability", "completeness"], "outcome": "applied"},
+        {"sr_id": "SR-007", "severity": "critical", "lenses": ["feasibility"], "outcome": "applied"},
+        {"sr_id": "SR-008", "severity": "major", "lenses": ["feasibility"], "outcome": "applied"},
+        {"sr_id": "SR-009", "severity": "major", "lenses": ["feasibility"], "outcome": "applied"},
+        {"sr_id": "SR-010", "severity": "critical", "lenses": ["doctrine-compliance"], "outcome": "applied"},
+        {"sr_id": "SR-011", "severity": "major", "lenses": ["doctrine-compliance"], "outcome": "applied"},
+        {"sr_id": "SR-012", "severity": "major", "lenses": ["doctrine-compliance"], "outcome": "applied"},
+        {"sr_id": "SR-013", "severity": "minor", "lenses": ["doctrine-compliance"], "outcome": "applied"},
+        {"sr_id": "SR-014", "severity": "major", "lenses": ["orchestrator"], "outcome": "applied"}
+      ],
+      "challenger_verdicts": {
+        "SR-001": ["uphold"], "SR-002": ["uphold"], "SR-003": ["uphold"], "SR-004": ["uphold"],
+        "SR-005": ["uphold"], "SR-007": ["uphold", "uphold"], "SR-008": ["uphold"], "SR-009": ["uphold"],
+        "SR-010": ["uphold", "uphold"], "SR-011": ["uphold"], "SR-012": ["uphold"]
+      },
+      "rejected": [
+        {"lens": "internal-consistency", "candidate": "Purpose's 'Fifteen agent definitions' vs the 15-row table excluding the already-repaired fe-tester — present-tense 'declare' makes fifteen the post-fe-tester count."},
+        {"lens": "internal-consistency", "candidate": "'The contract' omits hooks/mcpServers/permissionMode from Permitted yet calls them silently ignored — a coherent three-way taxonomy, not a contradiction."},
+        {"lens": "internal-consistency", "candidate": "'Bash specifier form' says the question is avoided while Check V1 says to repeat with the colon form — the Resolution constrains what is written, not what is observed."},
+        {"lens": "internal-consistency", "candidate": "Delivery's PATCH rationale vs fix-auto shrinking from all-tools — 'altering it' refers to the intent, not the tool count."},
+        {"lens": "internal-consistency", "candidate": "Verification's expected-entry list omits four agents while instructing agent-by-agent comparison — the list is labelled expectations, not an exhaustive checklist."},
+        {"lens": "internal-consistency", "candidate": "Site counts across sections (9/1, ~10/~8, 'roughly eighteen') — all consistent."},
+        {"lens": "ambiguity-testability", "candidate": "Rows marked 'unchanged' could read as 'do not touch the file' while allowed-tools must still be deleted — the preceding sentence scopes 'unchanged' to the tools column."},
+        {"lens": "ambiguity-testability", "candidate": "Validator has no stated rule for mcp__ or ToolName(specifier) entries — 'Tool grants' forces acceptance of both forms."},
+        {"lens": "ambiguity-testability", "candidate": "be-tester uses bare mcp__postgres while web-auditor uses wildcards — 'Tool grants' sanctions both forms explicitly."},
+        {"lens": "ambiguity-testability", "candidate": "'exits zero on the repaired tree' may conflict with warnings the repaired tree still emits — warnings are defined as non-failing."},
+        {"lens": "completeness", "candidate": "The canonical tool-name list is not enumerated — explicitly delegated to tools-reference as a dated constant."},
+        {"lens": "completeness", "candidate": "TaskCreate/TaskUpdate/TaskList never resolve in background runs and the spec leaves them declared — explicitly decided and disclosed."},
+        {"lens": "completeness", "candidate": "Whether the new workflow is a required merge check is unstated — branch-protection policy is ops, not spec design."},
+        {"lens": "completeness", "candidate": "Frontmatter parsing shape for tools: is unspecified — implementation-plan detail, delegated to the existing script's structure."},
+        {"lens": "feasibility", "candidate": "be-tester and web-auditor agents declare skills: but no Skill tool — the repo's superutils agents demonstrate skills are preloaded without the Skill tool; fix-auto differs because it has no skills: key."},
+        {"lens": "feasibility", "candidate": "Agent may be unavailable to the web-auditor coordinator, itself a subagent — nesting defaults to three layers, nothing in the repo contradicts it."},
+        {"lens": "feasibility", "candidate": "feedback-analyzer carries a live colon-form Bash(git:*) the spec never repairs — its body never invokes Bash, and the validator's colon-form warning surfaces it anyway."},
+        {"lens": "feasibility", "candidate": "Trailing whitespace in 'model: opus ' would break hand-rolled parsing — implementation detail of the script, not a spec-level claim."},
+        {"lens": "doctrine-compliance", "candidate": "Item 4 (human gate / fail-closed TTY probe) — trigger absent: no headless autonomous mode is designed."},
+        {"lens": "doctrine-compliance", "candidate": "Item 6 (iteration/dispatch/time budgets) — met for what is designed; the repairs are one-off, not iterative."},
+        {"lens": "doctrine-compliance", "candidate": "Item 9 (provenance guard) — trigger absent: nothing in this spec auto-corrects."},
+        {"lens": "doctrine-compliance", "candidate": "Item 10 (durable sidecar) — trigger absent: no loop-critical state persists between validator runs."},
+        {"lens": "doctrine-compliance", "candidate": "Item 11 (scoped recoverable writes) — trigger fires and is met: one branch, one PR, explicit file list, nothing committed to master."},
+        {"lens": "doctrine-compliance", "candidate": "'No tools: field at all' warning is fail-open — the spec reasons the case explicitly and still surfaces it."}
+      ],
+      "equivalence_log": [
+        {"a": "SR-002", "b": "ambiguity-testability glob finding", "match": true},
+        {"a": "SR-003", "b": "ambiguity-testability fix-auto conditionality", "match": true},
+        {"a": "SR-004", "b": "completeness narrowing-content finding", "match": true},
+        {"a": "SR-005", "b": "feasibility check-V1 finding", "match": true},
+        {"a": "SR-006", "b": "completeness ignored-tier finding", "match": true},
+        {"a": "SR-007", "b": "SR-010", "match": false, "note": "SR-007 is the concrete under-declaration instance; SR-010 is the systemic oracle gap plus the missing residual risk. SR-010 survives SR-007's cell fix, so they are not merged."}
+      ],
+      "orchestrator_notes": "SR-014 was surfaced by the SR-010(b) challenger during adjudication rather than by a panel lens, then confirmed by direct orchestrator evidence (grep of web-auditor.md lines 378/381/382/404). It is recorded as a finding rather than discarded on the formal ground that challengers return verdicts, not findings; silently dropping a verified defect is the exact behaviour the self-falsification rule forbids. Its lens is recorded as 'orchestrator' to keep panel attribution honest. Two knock-on edits flagged in the fixer's notes (the aged-constant residual risk still saying 'false errors' after SR-012 moved unrecognised names to warnings, and the Scope bullet not covering the four TaskOutput sites added by SR-014) were applied as orchestrator edits in the same batch, since both are direct consequences of approved fixes rather than new findings."
+    },
+    {
+      "round": 2,
+      "panel": ["internal-consistency", "ambiguity-testability", "completeness", "feasibility", "doctrine-compliance"],
+      "panel_rationale": "Same lens set as round 1, fresh agent instances, reviewing the revised text with no knowledge of what round 1 changed. Withholding the change list is deliberate: telling the panel what was fixed would hand the verifier the exact target it grades.",
+      "units": ["Purpose", "Evidence", "Scope", "The contract", "Repairs", "Validator", "Verification", "Delivery", "Residual risks"],
+      "findings": [
+        {"sr_id": "SR-015", "severity": "major", "lenses": ["internal-consistency", "feasibility", "doctrine-compliance"], "outcome": "applied"},
+        {"sr_id": "SR-016", "severity": "major", "lenses": ["internal-consistency"], "outcome": "applied"},
+        {"sr_id": "SR-017", "severity": "minor", "lenses": ["internal-consistency", "ambiguity-testability"], "outcome": "applied"},
+        {"sr_id": "SR-018", "severity": "major", "lenses": ["feasibility"], "outcome": "applied"},
+        {"sr_id": "SR-019", "severity": "major", "lenses": ["feasibility"], "outcome": "refuted"},
+        {"sr_id": "SR-020", "severity": "major", "lenses": ["feasibility"], "outcome": "applied"},
+        {"sr_id": "SR-021", "severity": "major", "lenses": ["feasibility"], "outcome": "applied"},
+        {"sr_id": "SR-022", "severity": "major", "lenses": ["feasibility"], "outcome": "applied"},
+        {"sr_id": "SR-023", "severity": "major", "lenses": ["doctrine-compliance"], "outcome": "unconfirmed"},
+        {"sr_id": "SR-024", "severity": "major", "lenses": ["doctrine-compliance"], "outcome": "unconfirmed"},
+        {"sr_id": "SR-025", "severity": "major", "lenses": ["doctrine-compliance"], "outcome": "unconfirmed"},
+        {"sr_id": "SR-026", "severity": "minor", "lenses": ["internal-consistency"], "outcome": "reported-only"},
+        {"sr_id": "SR-027", "severity": "minor", "lenses": ["internal-consistency"], "outcome": "reported-only"},
+        {"sr_id": "SR-028", "severity": "minor", "lenses": ["ambiguity-testability"], "outcome": "reported-only"},
+        {"sr_id": "SR-029", "severity": "minor", "lenses": ["completeness"], "outcome": "reported-only"},
+        {"sr_id": "SR-030", "severity": "minor", "lenses": ["ambiguity-testability"], "outcome": "applied"},
+        {"sr_id": "SR-031", "severity": "minor", "lenses": ["ambiguity-testability"], "outcome": "applied"}
+      ],
+      "challenger_verdicts": {},
+      "orchestrator_notes": "No round-2 finding from round 1 reappeared: all fourteen round-1 fixes held. The round-2 challenger quorum was SKIPPED by explicit user decision at the budget gate, trading adversarial confirmation for fix time. The nine applied round-2 fixes therefore rest on orchestrator evidence plus the user's batch approval, not on challenger survival — recorded here and in the report's Coverage section as the run's largest confidence gap. Four were confirmed by direct repository evidence before any edit: SR-020 (.gitignore:3 excludes CLAUDE.local.md and no tracked CLAUDE.md exists), SR-022 (ten run_in_background: true instructions survive a bare Task->Agent substitution), SR-018 (agent bodies hold exactly one mcp__ occurrence each, the allowed-tools line being deleted; the real references live in eight SKILL.md files), SR-021 (fe-tester ships wildcard-only). SR-019 was refuted on orchestrator evidence: the subagent docs state skills: injects listed skill content at startup and the Skill tool is needed only for skills not preloaded, demonstrated in-session by spec-reviewer agents that declare no Skill tool yet correctly applied lens-catalog. SR-023 through SR-029 were never dispatched to a challenger; the three majors are recorded unconfirmed rather than refuted, and block any claim of convergence. No round 3 ran, so the round-2 fixes were never re-reviewed by a fresh panel — the exact check that caught round 1's second-order defects."
+    }
+  ]
+}
