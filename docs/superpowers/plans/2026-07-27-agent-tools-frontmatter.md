@@ -410,7 +410,13 @@ class TestErrors(unittest.TestCase):
         self.assertTrue(any("Task" in e for e in self._errors(text)))
 
     def test_malformed_frontmatter_is_error(self):
-        self.assertTrue(self._errors("no frontmatter here\n"))
+        # The parse-error short-circuit must return before any other check runs.
+        # Asserting only that errors is non-empty would pass even with the
+        # short-circuit deleted, because the missing name/description would
+        # produce errors anyway; the empty warnings list is what pins it.
+        errors, warnings = check_file(PurePath("plugins/x/agents/a.md"), "no frontmatter here\n")
+        self.assertEqual(warnings, [])
+        self.assertTrue(any("frontmatter" in e for e in errors))
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
