@@ -24,6 +24,57 @@ FLOW_SEQ_RE = re.compile(r"^\[(?P<inner>.*)\]$")
 BLOCK_ITEM_RE = re.compile(r"^\s*-\s+(?P<item>.+?)\s*$")
 KEY_VALUE_RE = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_-]*):(?P<rest>.*)$")
 
+# Source: https://code.claude.com/docs/en/tools-reference
+# Verified against Claude Code v2.1.220 on 2026-07-27.
+CANONICAL_TOOLS = frozenset({
+    "Agent", "Artifact", "AskUserQuestion", "Bash", "CronCreate", "CronDelete",
+    "CronList", "Edit", "EndConversation", "EnterPlanMode", "EnterWorktree",
+    "ExitPlanMode", "ExitWorktree", "Glob", "Grep", "ListMcpResourcesTool",
+    "LSP", "Monitor", "NotebookEdit", "PowerShell", "PushNotification", "Read",
+    "ReadMcpResourceTool", "RemoteTrigger", "ReportFindings", "ScheduleWakeup",
+    "SendMessage", "SendUserFile", "ShareOnboardingGuide", "Skill",
+    "TaskCreate", "TaskGet", "TaskList", "TaskOutput", "TaskStop", "TaskUpdate",
+    "TodoWrite", "ToolSearch", "WaitForMcpServers", "WebFetch", "WebSearch",
+    "Workflow", "Write",
+})
+
+# Source: https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields
+# Verified against Claude Code v2.1.220 on 2026-07-27.
+# Fail-closed by choice: a field added after v2.1.220 fails the build until
+# this constant is updated. That is the price of catching the next
+# `allowed-tools`. See docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md
+PERMITTED_KEYS = frozenset({
+    "name", "description", "tools", "disallowedTools", "model", "skills",
+    "maxTurns", "initialPrompt", "memory", "effort", "background",
+    "isolation", "color",
+})
+
+# Source: https://code.claude.com/docs/en/sub-agents#available-tools
+# Verified against Claude Code v2.1.220 on 2026-07-27.
+ALWAYS_STRIPPED = frozenset({
+    "AskUserQuestion", "EndConversation", "EnterPlanMode", "ExitPlanMode",
+    "ScheduleWakeup", "TaskOutput", "WaitForMcpServers", "Workflow",
+})
+
+# Source: https://code.claude.com/docs/en/sub-agents#available-tools
+# Verified against Claude Code v2.1.220 on 2026-07-27.
+BACKGROUND_KEPT = frozenset({
+    "Read", "Grep", "Glob", "Bash", "PowerShell", "Edit", "Write",
+    "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite", "Skill", "ToolSearch",
+    "EnterWorktree", "ExitWorktree", "Monitor", "TaskStop", "SendMessage",
+    "Artifact", "Agent",
+})
+
+# Names that are not tools in any Claude Code version, so this gates as an
+# error with no staleness risk in the red direction.
+# Verified against Claude Code v2.1.220 on 2026-07-27.
+KNOWN_BAD_TOOLS = frozenset({"Task"})
+
+BACKGROUND_LOST = CANONICAL_TOOLS - BACKGROUND_KEPT - ALWAYS_STRIPPED
+
+REQUIRED_KEYS = ("name", "description")
+TOOL_KEYS = ("tools", "disallowedTools")
+
 
 def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
     """Parse a frontmatter block into {key: str | list[str]} plus errors.
@@ -154,3 +205,76 @@ def split_entries(value: object) -> tuple[list[str], str | None]:
 
     cleaned = [_strip_quotes(entry) for entry in entries]
     return [entry for entry in cleaned if entry], None
+
+
+def _base_name(entry: str) -> str:
+    """Return the ToolName part of a `ToolName(specifier)` entry."""
+    return entry.split("(", 1)[0].strip()
+
+
+def _is_server_grant(entry: str) -> bool:
+    """True for `mcp__<server>` and `mcp__<server>__*`, false for per-tool."""
+    if not entry.startswith("mcp__"):
+        return False
+    remainder = entry[len("mcp__"):]
+    if "__" not in remainder:
+        return True
+    return remainder.rsplit("__", 1)[1] == "*"
+
+
+def check_file(path, text: str) -> tuple[list[str], list[str]]:
+    """Return (errors, warnings) for one agent file."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    fields, parse_errors = parse_frontmatter(text)
+    if parse_errors:
+        return [f"{path}: {message}" for message in parse_errors], []
+
+    for key in sorted(fields):
+        if key not in PERMITTED_KEYS:
+            errors.append(f"{path}: unknown frontmatter key {key!r}")
+
+    for key in REQUIRED_KEYS:
+        if key not in fields or not fields[key]:
+            errors.append(f"{path}: missing required key {key!r}")
+
+    if "tools" not in fields:
+        warnings.append(f"{path}: no 'tools:' key — this agent inherits every tool")
+
+    for key in TOOL_KEYS:
+        if key not in fields:
+            continue
+        entries, split_error = split_entries(fields[key])
+        if split_error:
+            errors.append(f"{path}: {key}: {split_error}")
+            continue
+        for entry in entries:
+            base = _base_name(entry)
+            if base in KNOWN_BAD_TOOLS:
+                errors.append(
+                    f"{path}: {key}: {base!r} is not a tool name in any Claude Code version"
+                )
+                continue
+            if key == "tools" and base in ALWAYS_STRIPPED:
+                errors.append(
+                    f"{path}: tools: {base!r} is stripped from every subagent"
+                )
+                continue
+            if _is_server_grant(base):
+                continue
+            if base not in CANONICAL_TOOLS:
+                warnings.append(
+                    f"{path}: {key}: {base!r} is not in the v2.1.220 tool list"
+                )
+                continue
+            if key == "tools" and base in BACKGROUND_LOST:
+                warnings.append(
+                    f"{path}: tools: {base!r} is unavailable to background subagents"
+                )
+            if base == "Bash" and ":" in entry and "(" in entry:
+                warnings.append(
+                    f"{path}: tools: {entry!r} uses the undocumented colon specifier form"
+                )
+
+    return errors, warnings

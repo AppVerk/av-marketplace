@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import sys
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from check_agent_frontmatter import parse_frontmatter, split_entries
+from check_agent_frontmatter import parse_frontmatter, split_entries, check_file
 
 
 class TestParseFrontmatter(unittest.TestCase):
@@ -97,6 +97,57 @@ class TestSplitEntries(unittest.TestCase):
     def test_folded_scalar_is_error(self):
         entries, error = split_entries(">")
         self.assertIsNotNone(error)
+
+
+def _agent(**fields) -> str:
+    body = "\n".join(f"{key}: {value}" for key, value in fields.items())
+    return f"---\n{body}\n---\n\nBody.\n"
+
+
+class TestErrors(unittest.TestCase):
+    def _errors(self, text: str) -> list[str]:
+        errors, _ = check_file(PurePath("plugins/x/agents/a.md"), text)
+        return errors
+
+    def test_clean_agent_has_no_errors(self):
+        text = _agent(name="a", description="d", tools="Read, Grep")
+        self.assertEqual(self._errors(text), [])
+
+    def test_allowed_tools_key_is_error(self):
+        text = _agent(name="a", description="d", tools="Read")
+        text = text.replace("tools: Read", "tools: Read\nallowed-tools: Bash(git *)")
+        self.assertTrue(any("allowed-tools" in e for e in self._errors(text)))
+
+    def test_hooks_key_is_error(self):
+        text = _agent(name="a", description="d", hooks="something")
+        self.assertTrue(any("hooks" in e for e in self._errors(text)))
+
+    def test_missing_name_is_error(self):
+        text = _agent(description="d", tools="Read")
+        self.assertTrue(any("name" in e for e in self._errors(text)))
+
+    def test_missing_description_is_error(self):
+        text = _agent(name="a", tools="Read")
+        self.assertTrue(any("description" in e for e in self._errors(text)))
+
+    def test_always_stripped_tool_in_tools_is_error(self):
+        text = _agent(name="a", description="d", tools="Read, TaskOutput")
+        self.assertTrue(any("TaskOutput" in e for e in self._errors(text)))
+
+    def test_always_stripped_tool_in_disallowed_is_not_error(self):
+        text = _agent(name="a", description="d", tools="Read", disallowedTools="TaskOutput")
+        self.assertEqual(self._errors(text), [])
+
+    def test_known_bad_tool_is_error(self):
+        text = _agent(name="a", description="d", tools="Read, Task")
+        self.assertTrue(any("Task" in e for e in self._errors(text)))
+
+    def test_known_bad_tool_with_specifier_is_error(self):
+        text = _agent(name="a", description="d", tools="Read, Task(x)")
+        self.assertTrue(any("Task" in e for e in self._errors(text)))
+
+    def test_malformed_frontmatter_is_error(self):
+        self.assertTrue(self._errors("no frontmatter here\n"))
 
 
 if __name__ == "__main__":
