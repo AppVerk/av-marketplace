@@ -88,9 +88,11 @@ class TestSplitEntries(unittest.TestCase):
         self.assertEqual(entries, ["Read", "Grep"])
 
     def test_bash_specifier_with_comma_is_kept_whole(self):
-        entries, error = split_entries("Read, Bash(git commit -m *)")
+        # The comma inside the parens is what exercises the depth guard in
+        # split_entries; without it this test passes even with the guard removed.
+        entries, error = split_entries("Read, Bash(git commit -m a,b)")
         self.assertIsNone(error)
-        self.assertEqual(entries, ["Read", "Bash(git commit -m *)"])
+        self.assertEqual(entries, ["Read", "Bash(git commit -m a,b)"])
 
     def test_folded_scalar_is_error(self):
         entries, error = split_entries(">")
