@@ -709,7 +709,7 @@ AV_COMMIT_SKILL=1 git commit -m "feat(scripts): add warnings, discovery guard an
 This is the negative control the spec requires: a validator that passes before the fix is not testing anything. It runs in a throwaway detached worktree so nothing writes to the working tree.
 
 **Files:**
-- Create: `docs/superpowers/plans/red-before-output.txt` (scratch evidence, deleted in Task 13)
+- Create: `.superpowers/sdd/2026-07-27-agent-tools-frontmatter/red-before-output.txt` (git-ignored scratch; never committed)
 
 **Interfaces:**
 - Consumes: `scripts/check_agent_frontmatter.py` from Task 3.
@@ -722,8 +722,8 @@ test ! -e ../av-pre-change || { echo 'path in use — abort'; exit 1; }
 git worktree add --detach ../av-pre-change origin/master
 cp scripts/check_agent_frontmatter.py ../av-pre-change/scripts/
 (cd ../av-pre-change && python3 scripts/check_agent_frontmatter.py) \
-  > docs/superpowers/plans/red-before-output.txt 2>&1
-echo "exit=$?" >> docs/superpowers/plans/red-before-output.txt
+  > .superpowers/sdd/2026-07-27-agent-tools-frontmatter/red-before-output.txt 2>&1
+echo "exit=$?" >> .superpowers/sdd/2026-07-27-agent-tools-frontmatter/red-before-output.txt
 git worktree remove --force ../av-pre-change
 ```
 
@@ -731,17 +731,12 @@ git worktree remove --force ../av-pre-change
 
 - [ ] **Step 2: Verify the output shows the expected failures**
 
-Run: `cat docs/superpowers/plans/red-before-output.txt`
+Run: `cat .superpowers/sdd/2026-07-27-agent-tools-frontmatter/red-before-output.txt`
 Expected: `Agent frontmatter check FAILED:` followed by fifteen `unknown frontmatter key 'allowed-tools'` lines, two `missing required key` lines for `code-review/agents/fix-auto.md`, one `'Task' is not a tool name` line and one `'TaskOutput' is stripped` line for `web-auditor/agents/web-auditor.md`, and `exit=1`.
 
 If the exit code is 0, stop: the validator is not discriminating and Tasks 1–3 need revisiting before any repair is made.
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add docs/superpowers/plans/red-before-output.txt
-AV_COMMIT_SKILL=1 git commit -m "test(scripts): record the pre-repair validator failure as a negative control"
-```
+The file is git-ignored scratch and is never committed. It moves into the pull request body in Task 13.
 
 ---
 
@@ -1155,7 +1150,7 @@ AV_COMMIT_SKILL=1 git commit -m "fix(developers): grant Bash so the TDD workflow
 The post-write run of the only check that can catch an under-declared list. It greps each written file against **its own `tools:` line**, not against the spec's table, so a transcription slip is caught. Its raw output goes into the pull request body; the author's verdict is advisory and the gate is a reviewer re-running these commands against the branch's checked-out files.
 
 **Files:**
-- Create: `docs/superpowers/plans/body-reconciliation-output.txt` (scratch evidence, deleted in Task 13)
+- Create: `.superpowers/sdd/2026-07-27-agent-tools-frontmatter/body-reconciliation-output.txt` (scratch evidence, deleted in Task 13)
 
 **Interfaces:**
 - Consumes: every repair from Tasks 6–10.
@@ -1177,8 +1172,8 @@ The surface is each agent body plus every `SKILL.md` named in its `skills:` fron
     grep -nE 'mcp__|browser_[a-z_]*|Playwright|Postgres|Supabase|Neon|MySQL|MongoDB|Redis' "$f" \
       | grep -v '^4:allowed-tools:'
   done
-} > docs/superpowers/plans/body-reconciliation-output.txt 2>&1
-wc -l docs/superpowers/plans/body-reconciliation-output.txt
+} > .superpowers/sdd/2026-07-27-agent-tools-frontmatter/body-reconciliation-output.txt 2>&1
+wc -l .superpowers/sdd/2026-07-27-agent-tools-frontmatter/body-reconciliation-output.txt
 ```
 
 - [ ] **Step 2: Check every hit against that file's own tools line**
@@ -1192,12 +1187,7 @@ Two classes produce no usable hits and are known blind spots, not failures:
 
 Expected: no referenced tool is missing from its agent's `tools:` line. If one is, add it to that agent's `tools:` line and re-run — the body governs.
 
-- [ ] **Step 3: Commit the evidence**
-
-```bash
-git add docs/superpowers/plans/body-reconciliation-output.txt
-AV_COMMIT_SKILL=1 git commit -m "test(agents): record body reconciliation output for the pull request"
-```
+The file is git-ignored scratch and is never committed. It moves into the pull request body in Task 13.
 
 ---
 
@@ -1303,8 +1293,7 @@ AV_COMMIT_SKILL=1 git commit -m "chore(release): bump six plugins across all fou
 **Files:**
 - Create: `CLAUDE.md`
 - Create: `docs/agent-tools-verification.md`
-- Delete: `docs/superpowers/plans/red-before-output.txt`
-- Delete: `docs/superpowers/plans/body-reconciliation-output.txt`
+- Read (do not commit): the two git-ignored evidence files from Tasks 4 and 11
 
 **Interfaces:**
 - Consumes: the raw outputs from Tasks 4 and 11, which move into the pull request body before deletion.
@@ -1385,13 +1374,9 @@ list, so it cannot confirm that any entry resolves to a callable tool.
 | `php-developer:developer` | not installed | absent from `~/.claude/settings.json`; statically checked only |
 ```
 
-- [ ] **Step 3: Move the scratch evidence into the pull request body and delete it**
+- [ ] **Step 3: Carry the scratch evidence into the pull request body**
 
-Copy the contents of `docs/superpowers/plans/red-before-output.txt` and `docs/superpowers/plans/body-reconciliation-output.txt` into the pull request description under headings "Red-before evidence" and "Body reconciliation", together with the commands that produced them, then:
-
-```bash
-git rm docs/superpowers/plans/red-before-output.txt docs/superpowers/plans/body-reconciliation-output.txt
-```
+Copy the contents of the two git-ignored evidence files into the pull request description under headings "Red-before evidence" and "Body reconciliation", together with the commands that produced them. Nothing is deleted — the files live in the git-ignored workspace and disappear with it.
 
 - [ ] **Step 4: Run both validators one final time**
 
