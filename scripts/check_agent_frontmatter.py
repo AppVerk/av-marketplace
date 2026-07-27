@@ -75,6 +75,11 @@ BACKGROUND_LOST = CANONICAL_TOOLS - BACKGROUND_KEPT - ALWAYS_STRIPPED
 REQUIRED_KEYS = ("name", "description")
 TOOL_KEYS = ("tools", "disallowedTools")
 
+# Agent files under plugins/*/agents/*.md at the time of the 2026-07-27 audit.
+# A lower count warns; it never errors, so a legitimately shrinking tree
+# cannot flip the build red.
+EXPECTED_AGENT_FILES = 25
+
 
 def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
     """Parse a frontmatter block into {key: str | list[str]} plus errors.
@@ -278,3 +283,54 @@ def check_file(path, text: str) -> tuple[list[str], list[str]]:
                 )
 
     return errors, warnings
+
+
+def main(argv: list[str] | None = None) -> int:
+    del argv  # no options; kept for symmetry with check_plugin_versions.py
+
+    paths = sorted(PLUGINS_DIR.glob(AGENT_GLOB))
+    if not paths:
+        print(
+            f"error: no agent files discovered under {PLUGINS_DIR}/{AGENT_GLOB}",
+            file=sys.stderr,
+        )
+        return 1
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    for path in paths:
+        file_errors, file_warnings = check_file(
+            path.relative_to(REPO_ROOT), path.read_text(encoding="utf-8")
+        )
+        errors.extend(file_errors)
+        warnings.extend(file_warnings)
+
+    if len(paths) < EXPECTED_AGENT_FILES:
+        warnings.append(
+            f"scanned {len(paths)} agent file(s), expected at least "
+            f"{EXPECTED_AGENT_FILES} — a shrinking glob is a false pass"
+        )
+
+    for line in warnings:
+        print(f"  warning: {line}")
+
+    if errors:
+        print("\nAgent frontmatter check FAILED:\n", file=sys.stderr)
+        for line in errors:
+            print(f"  - {line}", file=sys.stderr)
+        print(
+            "\nAgent capability is declared in 'tools:'. 'allowed-tools' belongs "
+            "to skills and commands only. See CLAUDE.md.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        f"\nAgent frontmatter OK: {len(paths)} file(s) scanned, "
+        f"{len(warnings)} warning(s)."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

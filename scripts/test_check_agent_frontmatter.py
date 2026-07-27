@@ -12,7 +12,7 @@ from pathlib import Path, PurePath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from check_agent_frontmatter import parse_frontmatter, split_entries, check_file
+from check_agent_frontmatter import parse_frontmatter, split_entries, check_file, EXPECTED_AGENT_FILES
 
 
 class TestParseFrontmatter(unittest.TestCase):
@@ -154,6 +154,47 @@ class TestErrors(unittest.TestCase):
         errors, warnings = check_file(PurePath("plugins/x/agents/a.md"), "no frontmatter here\n")
         self.assertEqual(warnings, [])
         self.assertTrue(any("frontmatter" in e for e in errors))
+
+
+class TestWarnings(unittest.TestCase):
+    def _warnings(self, text: str) -> list[str]:
+        _, warnings = check_file(PurePath("plugins/x/agents/a.md"), text)
+        return warnings
+
+    def test_unknown_tool_name_warns(self):
+        text = _agent(name="a", description="d", tools="Read, Sparkle")
+        self.assertTrue(any("Sparkle" in w for w in self._warnings(text)))
+
+    def test_server_grant_does_not_warn(self):
+        text = _agent(
+            name="a",
+            description="d",
+            tools="Read, mcp__playwright, mcp__plugin_playwright_playwright__*",
+        )
+        self.assertEqual(self._warnings(text), [])
+
+    def test_per_tool_mcp_entry_warns(self):
+        text = _agent(name="a", description="d", tools="Read, mcp__playwright__browser_navigate")
+        self.assertTrue(any("browser_navigate" in w for w in self._warnings(text)))
+
+    def test_background_lost_builtin_warns(self):
+        text = _agent(name="a", description="d", tools="Read, TaskCreate")
+        self.assertTrue(any("background" in w for w in self._warnings(text)))
+
+    def test_colon_form_bash_specifier_warns(self):
+        text = _agent(name="a", description="d", tools="Read, Bash(git:*)")
+        self.assertTrue(any("colon" in w for w in self._warnings(text)))
+
+    def test_space_form_bash_specifier_does_not_warn(self):
+        text = _agent(name="a", description="d", tools="Read, Bash(git *)")
+        self.assertEqual(self._warnings(text), [])
+
+    def test_missing_tools_key_warns(self):
+        text = _agent(name="a", description="d")
+        self.assertTrue(any("inherits every tool" in w for w in self._warnings(text)))
+
+    def test_expected_file_count_constant(self):
+        self.assertEqual(EXPECTED_AGENT_FILES, 25)
 
 
 if __name__ == "__main__":
