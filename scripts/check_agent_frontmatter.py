@@ -156,51 +156,82 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
     return fields, errors
 
 
-def _parens_are_balanced(value: str) -> bool:
-    """True when every '(' outside quotes has a matching ')' after it."""
+def _scan(value: str) -> tuple[list[tuple[int, bool]], str | None]:
+    """Per-character (paren depth, inside-a-quote) marks, plus an imbalance reason.
+
+    This is the module's one balance rule. Round 1 shipped two — this
+    quote-aware one, and a quote-blind copy inside `split_entries` that
+    rejected `Bash(grep "foo(" src)` as unbalanced and failed the build on it.
+    Every caller now reads this scan, so one value can never be balanced for
+    one check and unbalanced for another.
+
+    Quotes suspend paren accounting: a '(' inside "..." or '...' is literal
+    text, not a nesting level. `reason` is None when the parens balance; when
+    it is not, the marks stop at the offending ')' and must not be indexed.
+    """
+    marks: list[tuple[int, bool]] = []
     depth = 0
     quote: str | None = None
     for char in value:
-        if quote:
+        if quote is not None:
+            marks.append((depth, True))
             if char == quote:
                 quote = None
             continue
         if char in "\"'":
             quote = char
-        elif char == "(":
+            marks.append((depth, True))
+            continue
+        if char == "(":
             depth += 1
         elif char == ")":
             depth -= 1
             if depth < 0:
-                return False
-    return depth == 0
+                return marks, "unbalanced ')'"
+        marks.append((depth, False))
+    if depth != 0:
+        return marks, "unbalanced '('"
+    return marks, None
+
+
+def _parens_are_balanced(value: str) -> bool:
+    """True when every '(' outside quotes has a matching ')' after it."""
+    return _scan(value)[1] is None
 
 
 def _has_inline_comment(value: str) -> bool:
-    """True when a '#' starts a comment outside quotes and parentheses.
+    """True when a '#' starts a YAML comment in this value.
 
     A '#' at the very start counts: YAML reads `description: #x` as null, so
     the key is absent at runtime however much text follows it here.
 
+    A quote quotes only when the value *opens* with one — that is the sole
+    shape YAML reads as a quoted scalar. In a plain scalar an apostrophe is an
+    apostrophe: honouring the one in "the plugin's tools # TODO" as an opening
+    quote swallowed the rest of the line and let the comment through.
+
     Parentheses only mask a '#' when they balance. An unbalanced '(' is a typo,
     not a specifier, and must not suppress detection for the rest of the line.
     """
-    masking = _parens_are_balanced(value)
-    depth = 0
-    quote: str | None = None
-    for index, char in enumerate(value):
-        if quote:
-            if char == quote:
-                quote = None
+    marks, imbalance = _scan(value)
+    masking = imbalance is None
+
+    start = 0
+    if value[:1] in ('"', "'"):
+        closing = value.find(value[0], 1)
+        # Only text past the closing quote can be a comment. An unterminated
+        # quoted scalar is malformed YAML either way, so scan it whole rather
+        # than let the dangling quote hide anything.
+        start = closing + 1 if closing != -1 else 0
+
+    for index in range(start, len(value)):
+        if value[index] != "#":
             continue
-        if char in "\"'":
-            quote = char
-        elif masking and char == "(":
-            depth += 1
-        elif masking and char == ")":
-            depth -= 1
-        elif char == "#" and depth == 0 and (index == 0 or value[index - 1].isspace()):
-            return True
+        if index and not value[index - 1].isspace():
+            continue
+        if masking and marks[index][0] != 0:
+            continue
+        return True
     return False
 
 
@@ -221,8 +252,16 @@ def split_entries(value: object) -> tuple[list[str], str | None]:
     balance. An unbalanced one is rejected rather than absorbed: swallowing it
     would pin the depth above zero and silently glue every later entry onto the
     tail, hiding exactly the typos this check exists to catch.
+
+    Block-list items get the same balance check as the comma form. They are one
+    entry per line, so a stray paren cannot swallow its neighbours, but leaving
+    the branch unchecked made one spelling of a value an error and the
+    byte-identical other spelling a pass.
     """
     if isinstance(value, list):
+        for item in value:
+            if not _parens_are_balanced(item):
+                return [], f"unbalanced parentheses in item {item!r}"
         return [_strip_quotes(item) for item in value if _strip_quotes(item)], None
 
     if not isinstance(value, str):
@@ -237,23 +276,18 @@ def split_entries(value: object) -> tuple[list[str], str | None]:
     if flow:
         text = flow.group("inner")
 
+    marks, imbalance = _scan(text)
+    if imbalance:
+        return [], f"{imbalance} in value {original!r}"
+
     entries: list[str] = []
-    depth = 0
     buffer: list[str] = []
-    for char in text:
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            if depth == 0:
-                return [], f"unbalanced ')' in value {original!r}"
-            depth -= 1
-        if char == "," and depth == 0:
+    for char, (depth, quoted) in zip(text, marks):
+        if char == "," and depth == 0 and not quoted:
             entries.append("".join(buffer))
             buffer = []
         else:
             buffer.append(char)
-    if depth != 0:
-        return [], f"unbalanced '(' in value {original!r}"
     entries.append("".join(buffer))
 
     cleaned = [_strip_quotes(entry) for entry in entries]

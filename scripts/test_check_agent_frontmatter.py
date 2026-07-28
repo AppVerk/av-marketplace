@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path, PurePath
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -19,6 +20,7 @@ from check_agent_frontmatter import (
     AGENT_GLOB,
     EXPECTED_AGENT_FILES,
     PLUGINS_DIR,
+    _parens_are_balanced,
     check_file,
     main,
     parse_frontmatter,
@@ -112,6 +114,23 @@ class TestParseFrontmatter(unittest.TestCase):
         fields, errors = parse_frontmatter(text)
         self.assertTrue(errors)
 
+    def test_apostrophe_does_not_hide_a_comment(self):
+        # A quote quotes only when the value opens with one. Treating the
+        # apostrophe in a possessive as an opening quote swallowed the rest of
+        # the line, and YAML applies no such rule to a plain scalar — it
+        # truncates at the '#'. 'the finder's severity' is live in this repo.
+        text = "---\nname: a\ndescription: Reviews the plugin's tools # TODO\n---\n"
+        fields, errors = parse_frontmatter(text)
+        self.assertTrue(any("'#'" in e for e in errors))
+
+    def test_hash_inside_a_quoted_scalar_is_not_a_comment(self):
+        # The other half of the same rule: a value that *does* open with a
+        # quote is a YAML quoted scalar, and a '#' before its closing quote is
+        # scalar text, not a comment.
+        text = '---\nname: a\ndescription: "does # things"\n---\n'
+        fields, errors = parse_frontmatter(text)
+        self.assertEqual(errors, [])
+
 
 class TestSplitEntries(unittest.TestCase):
     def test_comma_list(self):
@@ -156,6 +175,51 @@ class TestSplitEntries(unittest.TestCase):
         entries, error = split_entries("Read, Bash npm), Task")
         self.assertIsNotNone(error)
         self.assertEqual(entries, [])
+
+    def test_open_paren_inside_quotes_is_literal_text(self):
+        # A quoted '(' is an argument, not a nesting level. The quote-blind
+        # copy of the balance rule failed the build on this shape.
+        entries, error = split_entries('Read, Bash(grep -rn "foo(" src), Grep')
+        self.assertIsNone(error)
+        self.assertEqual(entries, ["Read", 'Bash(grep -rn "foo(" src)', "Grep"])
+
+    def test_close_paren_inside_quotes_is_literal_text(self):
+        entries, error = split_entries('Read, Bash(echo ")"), Grep')
+        self.assertIsNone(error)
+        self.assertEqual(entries, ["Read", 'Bash(echo ")")', "Grep"])
+
+    def test_split_never_disagrees_with_the_balance_check(self):
+        # One balance rule, one verdict. Two rules coexisted after round 1 and
+        # the stricter, quote-blind one was the one wired to a build-failing
+        # error; this pins the split's verdict to _parens_are_balanced's on the
+        # exact values that diverged, plus the two that must stay rejected.
+        values = (
+            'Read, Bash(grep -rn "foo(" src), Grep',
+            'Read, Bash(echo ")"), Grep',
+            "Read, Bash(npm run build, Task, AskUserQuestion",
+            "Read, Bash npm), Task",
+        )
+        for value in values:
+            with self.subTest(value=value):
+                _, error = split_entries(value)
+                self.assertEqual(_parens_are_balanced(value), error is None)
+
+    def test_unbalanced_paren_in_a_block_item_is_error(self):
+        # The comma form of this value is a hard error, so its block-list
+        # spelling must be one too.
+        entries, error = split_entries(["Read", "Bash(npm run build"])
+        self.assertIsNotNone(error)
+        self.assertEqual(entries, [])
+
+
+class TestParensAreBalanced(unittest.TestCase):
+    def test_close_before_open_is_unbalanced(self):
+        # The depth < 0 early return: without it the two cancel out and this
+        # reads as balanced.
+        self.assertFalse(_parens_are_balanced(") ("))
+
+    def test_paren_inside_quotes_does_not_count(self):
+        self.assertTrue(_parens_are_balanced('Bash(echo ")")'))
 
 
 def _agent(**fields) -> str:
@@ -214,6 +278,15 @@ class TestErrors(unittest.TestCase):
             tools="Read, Bash(npm run build, Task, AskUserQuestion",
         )
         self.assertTrue(any("unbalanced" in e for e in self._errors(text)))
+
+    def test_empty_specifier_is_not_a_crash(self):
+        # `Bash()` leaves the colon-form check with no tokens to look at; the
+        # guard is what turns that into a clean pass instead of an IndexError.
+        errors, warnings = check_file(
+            PurePath("plugins/x/agents/a.md"),
+            _agent(name="a", description="d", tools="Read, Bash()"),
+        )
+        self.assertEqual((errors, warnings), ([], []))
 
     def test_malformed_frontmatter_is_error(self):
         # The parse-error short-circuit must return before any other check runs.
@@ -289,28 +362,38 @@ class TestWarnings(unittest.TestCase):
         text = "---\nname: a\ndescription: d\ntools:\n---\n\nBody.\n"
         self.assertTrue(any("inherits every tool" in w for w in self._warnings(text)))
 
-    def test_expected_file_count_matches_the_tree(self):
-        # Compare the constant against the tree it describes. Restating its own
-        # literal would go green when the tree grows past it and red when a
-        # maintainer correctly bumps it — the wrong way round on both counts.
+    def test_expected_file_count_is_a_floor_the_tree_still_meets(self):
+        # Compare the constant against the tree it describes; restating its own
+        # literal would assert nothing. A floor, not an equality, because the
+        # constant documents one: main() guards with `<` and says "expected at
+        # least", so a 26th agent file is legitimate and warning-free and must
+        # not turn this step red before the validator even runs.
         actual = len(list(PLUGINS_DIR.glob(AGENT_GLOB)))
-        self.assertEqual(
+        self.assertGreaterEqual(
             actual,
             EXPECTED_AGENT_FILES,
             f"EXPECTED_AGENT_FILES is {EXPECTED_AGENT_FILES} but "
-            f"{PLUGINS_DIR}/{AGENT_GLOB} matches {actual} file(s); update the "
-            "constant in check_agent_frontmatter.py",
+            f"{PLUGINS_DIR}/{AGENT_GLOB} matches {actual} file(s); the tree "
+            "shrank below the floor, or the constant needs lowering in "
+            "check_agent_frontmatter.py",
         )
+
+
+_NO_ARGV = object()
 
 
 class TestMain(unittest.TestCase):
     """main() drives the exit code CI reads, so every branch of it is pinned."""
 
-    def _run(self, files, argv=None) -> tuple[int, str]:
+    def _run(self, files, argv=_NO_ARGV) -> tuple[int, str]:
         """Build a plugins/ tree in a temp dir, run main, return (code, output).
 
         `files` maps a path under plugins/ to its content; bytes are written
         verbatim so encoding cases can be exercised.
+
+        A sentinel default, not None: None is a value main() gives a distinct
+        meaning to, and the old default quietly rewrote it to [], which is why
+        the production argv path had no coverage at all.
         """
         with tempfile.TemporaryDirectory() as tmp:
             plugins = Path(tmp) / "plugins"
@@ -323,7 +406,7 @@ class TestMain(unittest.TestCase):
                     target.write_text(content, encoding="utf-8")
             stream = io.StringIO()
             with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-                code = main(argv if argv is not None else [], plugins_dir=plugins)
+                code = main([] if argv is _NO_ARGV else argv, plugins_dir=plugins)
             return code, stream.getvalue()
 
     def test_no_agent_files_fails(self):
@@ -363,13 +446,27 @@ class TestMain(unittest.TestCase):
 
     def test_extra_arguments_are_rejected(self):
         # Ignoring them made `... check_agent_frontmatter.py plugins/qa` scan
-        # the whole tree and report success.
+        # the whole tree and report success. The code is 2, not 1: a usage
+        # error is not a failed check, and only the exact value pins that.
         code, output = self._run(
             {"x/agents/a.md": _agent(name="a", description="d", tools="Read")},
             argv=["plugins/qa"],
         )
-        self.assertNotEqual(code, 0)
+        self.assertEqual(code, 2)
         self.assertIn("takes no arguments", output)
+
+    def test_arguments_are_read_from_sys_argv_when_argv_is_none(self):
+        # The production path. `__main__` calls main() with no argv and CI
+        # takes no other branch, so every other test here exercises a branch
+        # that only tests use; dropping sys.argv[1:] restores the ignored-
+        # arguments bug with the suite still green.
+        with mock.patch.object(sys, "argv", ["check_agent_frontmatter.py", "plugins/qa"]):
+            code, output = self._run(
+                {"x/agents/a.md": _agent(name="a", description="d", tools="Read")},
+                argv=None,
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("plugins/qa", output)
 
     def test_byte_order_mark_is_not_a_missing_delimiter(self):
         text = _agent(name="a", description="d", tools="Read")
