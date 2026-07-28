@@ -85,9 +85,13 @@ change — see Scope.
   `allowed-tools`) and the corrected versioning rule naming all four parity
   surfaces. `CLAUDE.local.md` is gitignored and is not a deliverable of this
   change; it may mirror the tracked copy locally.
-- Pre-existing parity drift: `docs/plugins/qa.md` still reads 2.5.0 while qa
-  shipped 2.5.1, so `check_plugin_versions.py` fails on `master` right now. This
-  change carries that file to 2.5.2 with the rest of the qa bump.
+- Parity drift introduced by this branch: `cecaa92`, this branch's first commit,
+  bumped `plugin.json`, `marketplace.json`, and the README row to 2.5.1 but left
+  `docs/plugins/qa.md` behind at 2.5.0, so `check_plugin_versions.py` fails on
+  this branch right now. `origin/master` is unaffected — all four surfaces there
+  still read 2.5.0 and the parity check exits 0. This change carries
+  `docs/plugins/qa.md` to 2.5.2 with the rest of the qa bump, repairing the
+  drift this branch introduced.
 
 **Out of scope**
 
