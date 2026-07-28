@@ -1093,8 +1093,20 @@ Delete line 5 from `plugins/code-review/agents/security-auditor.md` and line 5 f
 
 - [ ] **Step 4: Run the validator**
 
-Run: `python3 scripts/check_agent_frontmatter.py 2>&1 | grep 'code-review/agents'`
-Expected: no output
+Run: `python3 scripts/check_agent_frontmatter.py 2>/dev/null 1>/dev/null; python3 scripts/check_agent_frontmatter.py 2>&1 1>/dev/null | grep 'code-review/agents'`
+
+Simpler and unambiguous — redirect the two streams to files and read the error one:
+
+```bash
+python3 scripts/check_agent_frontmatter.py >/tmp/warn.txt 2>/tmp/err.txt
+grep 'code-review/agents' /tmp/err.txt || echo "no errors — correct"
+```
+
+Expected: no *error* lines for `code-review/agents`. Warnings are a different stream and
+three are expected and correct: `fix-auto` declares `TaskCreate`, `TaskUpdate` and
+`TaskList`, which background subagents lose. The contract records that as left-as-is with
+a validator warning. A `grep` over combined output would match those warnings and look
+like a failure.
 
 - [ ] **Step 5: Verify fix-auto is no longer anonymous**
 
