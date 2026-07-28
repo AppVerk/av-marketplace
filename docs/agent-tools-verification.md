@@ -2,7 +2,10 @@
 
 Records the live layer of the repair in
 `docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md`: comparing
-each agent's harness-resolved tool list against its target.
+each agent's harness-resolved tool list against its target. The target is that
+spec's Repairs-table target column, kept in sync with the agent's shipped `tools:`
+line; where the two disagree, the shipped file governs and the spec row is the
+thing to repair, not the agent.
 
 A row reads `matched — <version>` only when its Resolved list column carries the
 harness's resolved list verbatim. A row reverts to `pending` when its recorded
@@ -13,14 +16,15 @@ A match is *declaration-confirmed*, not verified: the registry echoes the declar
 list, so it cannot confirm that any entry resolves to a callable tool.
 
 **This record is not a census of the repository's agents.** `plugins/*/agents/*.md`
-matches twenty-five files; the sixteen tracked below are the ones this change
-touches, plus one deliberate exception. The nine untracked agents already conform
-and gain no `tools:` edit here, so there is nothing about them for a live comparison
-to confirm. The exception is `code-review:feedback-analyzer`, listed last: this
-change does not touch it either, but its `Bash(git:*)` grant is the one live
-availability question the spec's Residual risks leaves open — if the colon
-specifier form is inert inside `tools:`, that agent has no `Bash` at all — and it
-was tracked nowhere.
+matches twenty-five files; seventeen are tracked below — the sixteen this change
+touches, plus one deliberate exception. Nine files fall outside the repair. Eight
+of those are untracked here: they already conform and gain no `tools:` edit, so
+there is nothing about them for a live comparison to confirm. The ninth is the
+exception, `code-review:feedback-analyzer`, listed last: this change does not touch
+it either, but its `Bash(git:*)` grant is one of the live availability questions the
+spec's Residual risks leaves open — and the only one attached to an agent this
+change does not repair. If the colon specifier form is inert inside `tools:`, that
+agent has no `Bash` at all, and it was tracked nowhere.
 
 Permitted cell values, and the evidence each requires:
 

@@ -82,7 +82,8 @@ change — see Scope.
   seventeen rows: sixteen seeded `pending`, `php-developer:developer` seeded
   `not installed`. Sixteen of the rows are the agents this change touches; the
   seventeenth is `code-review:feedback-analyzer`, untouched here and carried only
-  because its colon-form `Bash(git:*)` is the open availability question below
+  because its colon-form `Bash(git:*)` is the one open availability question below
+  that attaches to an agent this change does not repair
 - Version bumps on all four surfaces the parity check covers — `plugin.json`,
   `.claude-plugin/marketplace.json`, the README table row, and the `**Version:**`
   header in `docs/plugins/<name>.md`
@@ -215,9 +216,9 @@ Every agent below also has its `allowed-tools:` line deleted.
 | web-auditor | supply-chain-agent | `Read, Bash, Grep, Glob, WebSearch` | `Read, Bash, Grep, Glob, WebSearch, mcp__plugin_playwright_playwright, mcp__plugin_playwright_playwright__*, mcp__playwright, mcp__playwright__*` |
 | web-auditor | infrastructure-agent | `Read, Bash, Grep, Glob, WebFetch` | unchanged |
 | web-auditor | web-auditor | `Read, Write, Bash, Grep, Glob, Task, TaskOutput, WebFetch, WebSearch` | `Read, Write, Bash, Grep, Glob, Agent, WebFetch, WebSearch, mcp__plugin_playwright_playwright, mcp__plugin_playwright_playwright__*, mcp__playwright, mcp__playwright__*` |
-| code-review | fix-auto | *(absent)* | `Read, Edit, Write, Glob, Grep, Bash, Skill, TaskCreate, TaskUpdate, TaskList` |
+| code-review | fix-auto | *(absent)* | `Read, Edit, Write, Glob, Grep, Bash, Skill, TaskCreate, TaskUpdate` |
 | code-review | security-auditor | `Read, Bash, Grep, Glob` | unchanged |
-| code-review | code-quality-auditor | `Read, Bash, Grep, Glob` | unchanged |
+| code-review | code-quality-auditor | `Read, Bash, Grep, Glob` | `Read, Bash, Grep, Glob, Skill` |
 | frontend-developer | developer | `Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList` | same list `+ Bash` |
 | python-developer | developer | `Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList` | same list `+ Bash` |
 | php-developer | developer | `Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList` | same list `+ Bash` |
@@ -331,10 +332,18 @@ instruction, gains "in a single turn", and drops the `run_in_background`
 parenthetical entirely — which is why the post-write count of
 `run_in_background: false` is nine, one per dispatch site, and not ten.
 
-The coordinator's own dispatch mode is unchanged. `commands/audit.md:75` passes no
-`run_in_background` argument today and gains none, so the coordinator continues to
-run under the documented background default — the condition the parallelism
+The coordinator's own dispatch mode is not changed here. `commands/audit.md:75`
+passes no `run_in_background` argument and gains none, so the coordinator continues
+to run under the documented background default — the condition the parallelism
 discussion above assumes. Only the tool name and the line-72 lead-in change in that file.
+
+That last paragraph describes the design, and the design was wrong. `c804315`, a
+post-implementation review fix, added `run_in_background: false` to that dispatch
+and replaced "Wait for the agent to complete" with an instruction to read the
+returned report: this change had removed every collection primitive from the tree,
+so a backgrounded coordinator left the entry point waiting for a result it had no
+way to obtain. The shipped `commands/audit.md` therefore runs the coordinator in
+the foreground, and the background-default premise above no longer describes it.
 
 Those two also carry a background instruction outside every set counted so far:
 the step labels `**2. Spawn Cross-Verifier (background)**` (line 336) and
@@ -608,7 +617,10 @@ forms; six of the seven web-auditor scanning agents — both prefixes in both fo
 with `infrastructure-agent` unchanged and receiving neither; `code-review:fix-auto` — an
 explicit list, no longer "All tools", with a real description; the three
 `developer` agents — include `Bash`. The target column is normative; this list is a
-reading aid.
+reading aid. Normative means the live comparison reads that column and no other
+document — so it is kept in sync with the shipped `tools:` lines, and two rows were
+corrected after implementation for exactly that reason (see Delivery). Where a row
+and the file it describes disagree, the file governs and the row is the defect.
 
 *Status record.* A tracked file, `docs/agent-tools-verification.md`, committed on
 this branch with seventeen rows — the fifteen repairs-table agents, `qa:fe-tester`,
@@ -616,8 +628,8 @@ and `code-review:feedback-analyzer` — with columns `Agent | Status | Resolved 
 The file states plainly that it tracks the agents this change touches rather than
 all twenty-five the glob matches, and names `feedback-analyzer` as the one
 deliberate exception: it is not repaired here, but its colon-form `Bash(git:*)` is
-the single live availability question Residual risks leaves open, and it was
-recorded nowhere. Sixteen rows are
+one of the live availability questions Residual risks leaves open — the only one
+attached to an agent this change does not repair — and it was recorded nowhere. Sixteen rows are
 seeded `pending`; `php-developer:developer` is seeded `not installed`, since
 Residual risks already establishes it can never be compared in this maintainer's
 session. Rows are updated in place by later commits
@@ -681,11 +693,22 @@ request:
 | Plugin | From | To |
 | --- | --- | --- |
 | qa | 2.5.1 | 2.5.2 |
-| web-auditor | 2.1.1 | 2.1.2 |
-| code-review | 1.17.0 | 1.17.1 |
+| web-auditor | 2.1.1 | 2.1.3 |
+| code-review | 1.17.0 | 1.17.2 |
 | frontend-developer | 1.2.0 | 1.2.1 |
 | python-developer | 3.0.3 | 3.0.4 |
 | php-developer | 1.0.2 | 1.0.3 |
+
+`web-auditor` and `code-review` reach their `To` values in two steps. The repair
+itself bumped them to 2.1.2 and 1.17.1; `c804315`, a post-implementation review fix
+on the same branch, bumped them again across all four surfaces. That commit also
+moved two Repairs-table targets, which are updated in place above rather than left
+to drift: `code-quality-auditor` is no longer `unchanged` — its body instructs it to
+invoke the developer-plugin skills it neither preloads nor could reach, so it gains
+`Skill` — and `fix-auto`'s list was narrowed to what its surface references. The
+target column is the spec's record of what ships; a row that disagrees with the
+shipped `tools:` line is a defect here, to be corrected before the live comparison
+runs, and never a `mismatch` verdict against the agent.
 
 The authoring rule ships in a **tracked** file: agent capability is declared in
 `tools:`; `allowed-tools` belongs to skills and commands only. It cannot live in

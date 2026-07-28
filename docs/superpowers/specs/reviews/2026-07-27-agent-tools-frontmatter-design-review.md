@@ -42,10 +42,12 @@ Convergence condition above and is re-derivable.
 ### What this verdict does not mean
 
 Round 1's fourteen findings passed a full challenger quorum, 13 for 13 upheld.
-Rounds 3 through 9 did not: at the run-1 budget gate the maintainer chose to spend
+Rounds 2 through 9 did not: at the run-1 budget gate the maintainer chose to spend
 the remaining time on fixes rather than on adversarial confirmation, and that
 choice carried forward. Findings in those rounds were fixed on panel argument plus
-orchestrator evidence, not on challenger survival.
+orchestrator evidence, not on challenger survival — the sole exception being
+SR-023, SR-024 and SR-025, re-dispatched to challengers at the start of run 2 and
+upheld there, as Coverage records.
 
 The final state is nonetheless validated independently of that path: a fresh
 five-lens panel, told nothing about what had changed, found no major defect. That
@@ -198,7 +200,8 @@ earlier rounds of this loop and caught by later ones.
 
 ## Reported-only (round 10, not fixed)
 
-Convergence terminates before the fix phase, so these stand:
+Convergence terminates before the fix phase, so none of these was fixed inside the
+loop:
 
 - `fix-auto`'s target list carries `Write` and `Grep` with no body evidence, and
   `web-auditor`'s `WebFetch`/`WebSearch` are evidenced only in a preloaded skill
@@ -215,6 +218,25 @@ Convergence terminates before the fix phase, so these stand:
 - Verification miscites Delivery on which two narrowings are named.
 - Minor factual slips: `be-tester`'s existing list uses bare prefixes, not the
   plugin form; `TaskOutput` is pre-approved in three command files, not seven.
+
+Three of the findings condensed into these bullets — one bullet in whole, and part
+of each of two others — were closed after the loop terminated, by the
+implementation branch's post-implementation review rather than by an eleventh
+panel. They are recorded here for the same reason SR-026 through SR-029 are: the
+fix exists, under no finding id. `931f042` rewrote the Phase 3 collect step to refer to the
+***in-scope*** scanner results, "not to seven always, since dispatch is scope-gated"
+(spec lines 508–510), and corrected the `TaskOutput` file list to "three of those
+same seven" (spec line 112). `c804315` took the `Write` half of the first bullet
+into the plugins, dropping `Write` and `TaskList` from `fix-auto`'s shipped list as
+referenced nowhere on its surface; `Write` was then restored together with the body
+instruction in `plugins/code-review/agents/fix-auto.md` that now evidences it, which
+closes that half by supplying the missing evidence rather than by removing the
+entry.
+
+The other four bullets stand, as do the untouched parts of the two above:
+`fix-auto` still declares `Grep` with no body reference, nothing since has touched
+`web-auditor`'s `WebFetch`/`WebSearch`, and the `be-tester` half of the last bullet
+is unaddressed.
 
 ## Coverage
 
@@ -293,9 +315,13 @@ feature that produced them.
 
 **The open set is round 10's eleven minors and nits**, condensed into the seven
 bullets under "Reported-only (round 10, not fixed)". None is major-or-above.
-Convergence terminates before the fix phase by design, so they stand unfixed and,
-being the last round, un-re-reviewed. They are the only findings this loop leaves
-open.
+Convergence terminates before the fix phase by design, so the loop left all seven
+unfixed and, being the last round, un-re-reviewed. They are the only findings *this
+loop* leaves open — but three of them have since been closed outside it, by
+`931f042` and `c804315` on the implementation branch: one bullet in whole, and part
+of each of two others. The closing note under "Reported-only" records which, and
+against which spec lines. Four bullets stand untouched, and so do the unclosed
+parts of the other two.
 
 Everything raised in rounds 1 through 9 was resolved: applied, or refuted (SR-019),
 or — for the three run-1 majors SR-023, SR-024 and SR-025 that the budget stop left

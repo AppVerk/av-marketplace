@@ -5,8 +5,16 @@
 > **Status: executed, then amended.** All thirteen tasks ran on branch
 > `fix/agent-tools-frontmatter`. A post-implementation review pass then changed the
 > validator (an unbalanced parenthesis made it fail open; `main()` had no test
-> coverage; an empty `tools:` value passed silently) and the web-auditor coordinator
-> prose. Per-task code blocks and per-task expected counts below record what each
+> coverage; an empty `tools:` value passed silently), the web-auditor coordinator
+> prose and its `commands/audit.md` entry point, and two code-review agent `tools:`
+> lines: `code-quality-auditor` gained `Skill`, and `fix-auto` lost `TaskList`.
+> Task 9 is stale on both counts — its Step 2 write block still carries `TaskList`,
+> its Step 3 still asserts that `code-quality-auditor` keeps `Read, Bash, Grep,
+> Glob`, and its Step 4 still expects three background-lost warnings for `fix-auto`
+> where the shipped list produces two (`TaskCreate`, `TaskUpdate`). Those fixes
+> carried their own version bumps, so Task 12's table is one release behind for
+> `web-auditor` and `code-review`.
+> Per-task code blocks and per-task expected counts below record what each
 > task produced **at the time it ran** — Task 3's "`OK` with 33 tests" was correct
 > then, and the suite is larger now. Where this plan and the shipped files disagree,
 > the shipped files govern; re-executing a task verbatim would reintroduce the
@@ -1388,14 +1396,17 @@ A new plugin is registered in `.claude-plugin/marketplace.json` with `name`,
 
 - [ ] **Step 2: Create the live-layer status record**
 
-Create `docs/agent-tools-verification.md`. Seventeen rows: sixteen seeded `pending`, `php-developer:developer` seeded `not installed`. The seventeenth row is `code-review:feedback-analyzer`, which this change does not repair — it is carried because its colon-form `Bash(git:*)` is the open live availability question in the spec's Residual risks.
+Create `docs/agent-tools-verification.md`. Seventeen rows: sixteen seeded `pending`, `php-developer:developer` seeded `not installed`. The seventeenth row is `code-review:feedback-analyzer`, which this change does not repair — it is carried because its colon-form `Bash(git:*)` is one of the live availability questions in the spec's Residual risks, and the only one attached to an agent this change does not repair.
 
 ```markdown
 # Agent tool verification status
 
 Records the live layer of the repair in
 `docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md`: comparing
-each agent's harness-resolved tool list against its target.
+each agent's harness-resolved tool list against its target. The target is that
+spec's Repairs-table target column, kept in sync with the agent's shipped `tools:`
+line; where the two disagree, the shipped file governs and the spec row is the
+thing to repair, not the agent.
 
 A row reads `matched — <version>` only when its Resolved list column carries the
 harness's resolved list verbatim. A row reverts to `pending` when its recorded
@@ -1406,14 +1417,15 @@ A match is *declaration-confirmed*, not verified: the registry echoes the declar
 list, so it cannot confirm that any entry resolves to a callable tool.
 
 **This record is not a census of the repository's agents.** `plugins/*/agents/*.md`
-matches twenty-five files; the sixteen tracked below are the ones this change
-touches, plus one deliberate exception. The nine untracked agents already conform
-and gain no `tools:` edit here, so there is nothing about them for a live comparison
-to confirm. The exception is `code-review:feedback-analyzer`, listed last: this
-change does not touch it either, but its `Bash(git:*)` grant is the one live
-availability question the spec's Residual risks leaves open — if the colon
-specifier form is inert inside `tools:`, that agent has no `Bash` at all — and it
-was tracked nowhere.
+matches twenty-five files; seventeen are tracked below — the sixteen this change
+touches, plus one deliberate exception. Nine files fall outside the repair. Eight
+of those are untracked here: they already conform and gain no `tools:` edit, so
+there is nothing about them for a live comparison to confirm. The ninth is the
+exception, `code-review:feedback-analyzer`, listed last: this change does not touch
+it either, but its `Bash(git:*)` grant is one of the live availability questions the
+spec's Residual risks leaves open — and the only one attached to an agent this
+change does not repair. If the colon specifier form is inert inside `tools:`, that
+agent has no `Bash` at all, and it was tracked nowhere.
 
 Permitted cell values, and the evidence each requires:
 
