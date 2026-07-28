@@ -20,10 +20,13 @@ SKIP with reason "Playwright MCP unavailable" on a machine where Playwright MCP 
 installed and healthy.
 
 `qa:fe-tester` was repaired ahead of this spec, as the reported symptom that led to
-the audit, and shipped in qa 2.5.1. It is the reference implementation for the
-`tools:` pattern applied here and is therefore absent from the repairs table; its
-one remaining change — the dual-form MCP grant — is specified under "Two dual
-prefixes for Playwright".
+the audit, in `cecaa92` — this branch's own first commit, which bumped qa to 2.5.1.
+That version has never been released: `origin/master` still reads 2.5.0 on all four
+parity surfaces, and 2.5.1 and 2.5.2 merge together in this pull request, so no
+release boundary separates the `fe-tester` repair from the rest of this change. It
+is the reference implementation for the `tools:` pattern applied here and is
+therefore absent from the repairs table; its one remaining change — the dual-form
+MCP grant — is specified under "Two dual prefixes for Playwright".
 
 This spec repairs every remaining affected definition and adds a validator so the
 class of defect cannot silently return.
@@ -73,11 +76,13 @@ change — see Scope.
   labels at lines 336 and 359) that would otherwise leave the rewritten calls
   returning nothing. An agent's frontmatter and body must agree.
 - `qa/agents/fe-tester.md` carried onto the dual-form MCP grant — the one row
-  brought forward from 2.5.1
+  brought forward from `cecaa92`
 - `scripts/check_agent_frontmatter.py` and `.github/workflows/agent-frontmatter.yml`
 - `docs/agent-tools-verification.md` — the live-layer status record, created with
-  sixteen rows: fifteen seeded `pending`, `php-developer:developer` seeded
-  `not installed`
+  seventeen rows: sixteen seeded `pending`, `php-developer:developer` seeded
+  `not installed`. Sixteen of the rows are the agents this change touches; the
+  seventeenth is `code-review:feedback-analyzer`, untouched here and carried only
+  because its colon-form `Bash(git:*)` is the open availability question below
 - Version bumps on all four surfaces the parity check covers — `plugin.json`,
   `.claude-plugin/marketplace.json`, the README table row, and the `**Version:**`
   header in `docs/plugins/<name>.md`
@@ -101,11 +106,14 @@ change — see Scope.
   separate change to keep this diff reviewable.
 - `allowed-tools` **values** in `SKILL.md` and command frontmatter. The key is
   valid in both surfaces, but fifteen of those files pre-approve the same drifted
-  names this change removes from agents: `Task` and `TaskOutput` in
+  names this change removes from agents. `Task` appears in seven:
   `qa/commands/{run,loop}.md`, `code-review/commands/{review,fix-all,fix-report,analyze-feedback}.md`
-  and `superutils/commands/spec-review.md`; `browser_run_code` in
-  `qa/skills/fe-testing/SKILL.md`, the six `web-auditor/skills/*-checklist/SKILL.md`
-  files and `web-auditor/commands/audit.md`. A stale pre-approval costs only a
+  and `superutils/commands/spec-review.md`. `TaskOutput` appears in three of those
+  same seven — `qa/commands/{run,loop}.md` and `superutils/commands/spec-review.md`
+  — and in no other file. `browser_run_code` appears in eight more, disjoint from
+  the seven: `qa/skills/fe-testing/SKILL.md`, the six
+  `web-auditor/skills/*-checklist/SKILL.md` files and `web-auditor/commands/audit.md`.
+  Seven plus eight is where fifteen comes from. A stale pre-approval costs only a
   permission prompt, so this is deferred to the same follow-up as the `Task(`
   prose. The validator scans `plugins/*/agents/*.md` and does not cover it.
 - The `sequentialthinking` null version in `marketplace.json` — unrelated.
@@ -264,10 +272,11 @@ between them needs a call-time probe — invoking one MCP tool from inside a rep
 subagent that declares a single form — which is deferred alongside the
 Bash-specifier availability test.
 
-`qa:fe-tester`, shipped in 2.5.1, declares the wildcard form only. If the bare form
-turns out to be the honoured one, every agent repaired here works and `fe-tester`
-alone stays broken — the originating symptom. It is therefore brought onto the
-dual-form pattern in this change, as the one row carried over from 2.5.1:
+`qa:fe-tester`, as `cecaa92` left it, declares the wildcard form only. If the bare
+form turns out to be the honoured one, every agent repaired here works and
+`fe-tester` alone stays broken — the originating symptom. It is therefore brought
+onto the dual-form pattern in this change, as the one row carried forward from that
+commit:
 `Read, Write, Bash, Grep, Glob, mcp__plugin_playwright_playwright,
 mcp__plugin_playwright_playwright__*, mcp__playwright, mcp__playwright__*`.
 
@@ -337,7 +346,7 @@ defect surviving its own repair. Parallelism is *intended* to be preserved by
 issuing all seven scanner `Agent` calls in a single turn; whether same-turn
 foreground `Agent` calls from inside a background subagent actually run
 concurrently is unverified, and if they serialise the audit still completes and
-only loses parallelism. The shape appears at `superutils/commands/spec-review.md:129`
+only loses parallelism. The shape is the one `superutils/commands/spec-review.md:129`
 uses for its reviewer panel, though that file dispatches from a command (one
 nesting layer) and still names the dispatch tool `Task`, so it is a shape
 precedent only, not evidence that same-turn foreground `Agent` calls from inside a
@@ -487,8 +496,10 @@ collecting nothing. So the same run asserts presence: `web-auditor.md` carries n
 occurrence of the token `run_in_background` anywhere in the file; three rewritten
 Phase 2.5 collection sites — the lead-in and its two calls — each naming the single
 dispatch whose inline result it reads; the Phase 3 collect step present in
-re-worded form, referring to the seven scanner results already returned inline in
-Phase 2 rather than to a single dispatch; a Phase 2 lead-in still present at
+re-worded form, referring to the ***in-scope*** scanner results already returned
+inline in Phase 2 rather than to a single dispatch — not to seven always, since
+dispatch is scope-gated and a narrowed scope issues fewer than seven; a Phase 2
+lead-in still present at
 the head of the Phase 2 block, instructing that the in-scope agents launch in
 parallel **in a single turn**; and the two Phase 2.5 step labels still present
 without their qualifier. `commands/audit.md` carries one `Agent(` call and a
@@ -556,9 +567,14 @@ under `plugins/` too. The pull request body carries the command above and its ra
 non-zero output naming each failing file and the check it trips. "It fails today"
 from the author is advisory; the gate is a reviewer re-running it.
 
-The glob matches twenty-five files. The fifteen tabled agents are the complete set
-failing an error check today; `qa/agents/fe-tester.md` was brought into conformance
-in 2.5.1 and fails none, so its only change here is the dual-form MCP grant. The
+The glob matches twenty-five files. On `origin/master` — the tree the recipe above
+checks out, and the only tree the red-before result describes — **sixteen** of them
+fail an error check: the fifteen tabled agents plus `qa/agents/fe-tester.md`, each
+carrying an `allowed-tools:` key the permitted-key rule rejects. `cecaa92`, this
+branch's own first commit, repaired `fe-tester` ahead of this spec, so the branch
+tree shows fifteen and `fe-tester` fails nothing here; its only remaining change is
+the dual-form MCP grant. Sixteen, not fifteen, is what the pinned recipe must be
+expected to print — it reads `origin/master`, where that repair does not exist. The
 nine files this change does not touch — `web-auditor/agents/{challenger,cross-verifier}.md`,
 `code-review/agents/{challenger,cross-verifier,documentation-auditor,feedback-analyzer}.md`,
 and `superutils/agents/{spec-challenger,spec-fixer,spec-reviewer}.md` — use only
@@ -595,8 +611,13 @@ explicit list, no longer "All tools", with a real description; the three
 reading aid.
 
 *Status record.* A tracked file, `docs/agent-tools-verification.md`, committed on
-this branch with sixteen rows — the fifteen repairs-table agents plus
-`qa:fe-tester` — with columns `Agent | Status | Resolved list`. Fifteen rows are
+this branch with seventeen rows — the fifteen repairs-table agents, `qa:fe-tester`,
+and `code-review:feedback-analyzer` — with columns `Agent | Status | Resolved list`.
+The file states plainly that it tracks the agents this change touches rather than
+all twenty-five the glob matches, and names `feedback-analyzer` as the one
+deliberate exception: it is not repaired here, but its colon-form `Bash(git:*)` is
+the single live availability question Residual risks leaves open, and it was
+recorded nowhere. Sixteen rows are
 seeded `pending`; `php-developer:developer` is seeded `not installed`, since
 Residual risks already establishes it can never be compared in this maintainer's
 session. Rows are updated in place by later commits
@@ -621,7 +642,8 @@ shipped version, **or** when the list in its **Resolved list** column no longer
 matches that agent's current `tools:` value entry for entry — the recorded list is a
 content pin on the definition that was confirmed, and it is the half that catches
 an edit shipped without a bump. `qa:fe-tester` starts at `pending`, carried over
-from 2.5.1. A green
+from `cecaa92`. `code-review:feedback-analyzer` starts at `pending` too, on the same
+evidence rule as every other row. A green
 CI run is conformance to rules this change itself authored, and is never reported
 as verification.
 
@@ -769,5 +791,6 @@ definition is what ships.
 merges on CI plus a reviewer's re-run greps, and the status table is updated only
 if someone remembers to run the registry comparison after the next plugin update.
 The table makes an unrun confirmation *visible*, not *noticed* — `qa:fe-tester`'s
-row is the 2.5.1 confirmation still pending one release later, now carried a second
-time.
+row is the confirmation owed since `cecaa92` and still unrun, now carried a second
+time. No release boundary has passed in between: 2.5.1 was never shipped, and it
+merges together with 2.5.2 in this pull request.

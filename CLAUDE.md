@@ -16,7 +16,10 @@ per-tool enumeration (e.g. `mcp__playwright__browser_navigate`) is correct and
 is the entire point of a permission pre-approval — it must not be "fixed" to a
 server-level grant, since that would silently broaden the pre-approval.
 
-`scripts/check_agent_frontmatter.py` enforces this on every pull request.
+`scripts/check_agent_frontmatter.py` runs on every pull request against `master`.
+It fails the build on `allowed-tools:`, and on any other frontmatter key outside
+the permitted list. A per-tool MCP entry only warns — it prints as an unrecognised
+tool name and does not fail the build, so that half rests on author and reviewer.
 
 ## Plugin versioning
 

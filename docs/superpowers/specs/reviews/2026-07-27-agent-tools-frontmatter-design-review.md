@@ -27,8 +27,17 @@ findings list outright. All three contract conditions hold:
   start of run 2 — the contract requires this whether or not a fresh panel re-finds
   them — and all three were upheld and then fixed.
 
-**Trajectory of major-and-above findings per round:** 11 → 6 → 7 → 6 → 5 → 1 → 4 →
+**Trajectory of major-and-above findings per round** — counting every critical and
+major row the round raised, whatever its outcome: 12 → 10 → 7 → 6 → 5 → 1 → 4 →
 3 → 1 → **0**.
+
+The first two values were previously recorded as 11 and 6; both are corrected here
+by counting the round tables in this report. Round 1 is 2 critical + 10 major, round
+2 is 0 critical + 10 major (6 applied, 1 refuted, 3 `unconfirmed`). No single rule
+produced the old pair. Rounds 3 through 9 have no table here — their counts came
+from the state sidecar, which `f804c02` deleted, so they are no longer re-derivable
+from this repository and are carried forward as recorded. Round 10's zero is the
+Convergence condition above and is re-derivable.
 
 ### What this verdict does not mean
 
@@ -77,11 +86,20 @@ double-challenged and upheld twice.
 | SR-013 | minor | doctrine-compliance | applied |
 
 Two findings were confirmed against the repository rather than by argument alone.
-`python3 scripts/check_plugin_versions.py` exits 1 on `master` today because
-`docs/plugins/qa.md` still reads 2.5.0 against a 2.5.1 plugin (SR-009), and
-`plugins/code-review/agents/fix-auto.md:105` invokes the `Skill` tool while
-declaring no `skills:` key, so the spec's target list would have removed a
-capability the agent uses (SR-007).
+`python3 scripts/check_plugin_versions.py` exited 1 on **this branch** because
+`docs/plugins/qa.md` still read 2.5.0 against the 2.5.1 that `cecaa92`, the
+branch's own first commit, had written into `plugin.json`, `marketplace.json` and
+the README row (SR-009). And `plugins/code-review/agents/fix-auto.md:105` invokes
+the `Skill` tool while declaring no `skills:` key, so the spec's target list would
+have removed a capability the agent uses (SR-007).
+
+SR-009 was recorded here as failing on `master`. It never did, and this line is a
+correction of the report's own text: measured on `origin/master` (`0f01cd6`) by
+extracting the tree with `git archive` and running the script in it, all four qa
+surfaces read 2.5.0 and the check exits 0. The drift was introduced by this branch
+and lived only on it — `cecaa92` reproduces it (`EXIT=1`), and `c3943a6`, which
+carried all four surfaces to 2.5.2, repaired it. Naming the wrong tree is the same
+error the spec made and `11c2a44` corrected there.
 
 SR-014 was surfaced by a challenger during SR-010's adjudication rather than by a
 panel lens, then confirmed by direct grep: `web-auditor.md` calls `TaskOutput` at
@@ -98,8 +116,11 @@ knowledge of what round 1 changed.
 
 **None of the fourteen round-1 findings reappeared.** Every applied fix held.
 
-The panel returned 16 new findings, most of them second-order: defects in the
-verification apparatus that round 1 had itself introduced.
+The panel returned 17 new findings, most of them second-order: defects in the
+verification apparatus that round 1 had itself introduced. (This sentence read
+"16" until the post-implementation review counted the table below: SR-015 through
+SR-031 is seventeen ids, with none skipped. The sidecar that would have settled it
+independently was deleted in `f804c02`, so the table is the surviving record.)
 
 | SR | severity | lenses | outcome |
 | --- | --- | --- | --- |
@@ -200,16 +221,22 @@ Convergence terminates before the fix phase, so these stand:
 - **Catalog lenses not selected in any round:** `ux` (no UI surface), `contracts` (the
   frontmatter contract is covered by internal-consistency and feasibility, which
   read it against the platform docs and the repository).
-- **Not returned:** none. All five lenses returned in both rounds; no reviewer or
-  challenger failed or needed a retry.
-- **Round 2 challenger quorum was skipped by user decision** at the budget gate, in
-  favour of spending the remaining time on fixes. The nine round-2 fixes therefore
-  rest on orchestrator evidence and the user's approval, **not** on adversarial
-  confirmation. Round 1's fourteen were fully challenged; round 2's were not. This
-  is the single largest confidence gap in the run.
-- **No round 3.** Fixes applied in round 2 were never re-reviewed by a fresh panel,
-  so the loop cannot say whether they introduced third-order defects — which is
-  exactly what round 2 found round 1 had done.
+- **Not returned:** none. The same five-lens panel returned in every one of the ten
+  rounds; no reviewer or challenger failed or needed a retry.
+- **Challenger quorum ran in round 1 only.** At the run-1 budget gate the maintainer
+  chose to spend the remaining time on fixes rather than on adversarial
+  confirmation, and that choice carried forward through round 9. Round 1's fourteen
+  findings were fully challenged, 13 for 13 upheld. Round 2's nine applied fixes and
+  every fix in rounds 3 through 9 rest on panel argument, orchestrator evidence and
+  the user's approval, **not** on adversarial confirmation. The sole exception is
+  SR-023, SR-024 and SR-025, re-dispatched to challengers at the start of run 2 and
+  upheld there. This is the single largest confidence gap in the run.
+- **Ten rounds, each re-reviewed by the next.** Rounds 1 through 9 were each
+  followed by a fresh panel reading the revised text with no knowledge of what had
+  changed — which is how round 2 caught round 1's second-order defects, and how R7
+  and R8 caught two defects this loop had introduced itself. **Round 10 is the
+  exception:** convergence terminates before its fix phase, so its minors are
+  unfixed and no eleventh panel ever read them.
 - **Standing oracle blind spots:** user intent, external facts, unstated
   requirements.
 
@@ -264,47 +291,57 @@ feature that produced them.
 
 ## Residual risks
 
-**Seven findings remain open.** Three majors are `unconfirmed` — never challenged,
-never refuted, and not fixed:
+**The open set is round 10's eleven minors and nits**, condensed into the seven
+bullets under "Reported-only (round 10, not fixed)". None is major-or-above.
+Convergence terminates before the fix phase by design, so they stand unfixed and,
+being the last round, un-re-reviewed. They are the only findings this loop leaves
+open.
 
-- **SR-023** — the permitted-field list is the same v2.1.220 snapshot as the
-  tool-name constant, but gates as an Error while the tool list only warns. A
-  frontmatter field added after v2.1.220 would turn a correct agent definition red
-  and block every plugin pull request.
-- **SR-024** — body reconciliation is authored and graded by the same actor, runs
-  before any file is written (so it grades the plan, not the artifact), and leaves
-  no raw artifact a reviewer could re-run.
-- **SR-025** — the live comparison's per-agent verdicts have no durable location,
-  so they cannot survive the session boundary the check itself requires. The spec's
-  own history demonstrates the failure: `fe-tester`'s confirmation has been carried
-  in prose since 2.5.1.
+Everything raised in rounds 1 through 9 was resolved: applied, or refuted (SR-019),
+or — for the three run-1 majors SR-023, SR-024 and SR-025 that the budget stop left
+`unconfirmed` — re-dispatched to challengers at the start of run 2, upheld in R3,
+and fixed there. The four run-1 `reported-only` minors were never re-batched under
+their own ids, but later rounds' edits overtook all four, and the spec now carries
+each: the coordinator's Playwright grant is in the repairs table (SR-026); the Error
+criterion reads "wrong regardless of which platform version reads the file, **or a
+deliberate fail-closed choice named as such**" (SR-027); the expected-registry
+bullet says twelve `mcp__*` entries for `be-tester` (SR-028); and server-level
+`mcp__` entries are stated exempt from the unrecognised-name warning (SR-029).
 
-Four minors are `reported-only`: SR-026 (three-way disagreement on whether the
-`web-auditor` coordinator receives Playwright), SR-027 (the unparseable-frontmatter
-Error contradicts the stated "wrong regardless of platform version" criterion),
-SR-028 (expected-registry bullets understate the target column — `be-tester` is
-described as six MCP servers where the column carries twelve entries), SR-029
-(whether `mcp__*` entries trip the unrecognised-name warning is unstated, which
-would make the repaired tree the noisiest the checker has ever produced).
+This section previously listed those seven as still open, three of them as
+`unconfirmed`. That was run-1 text left behind when run 2 closed them, and it
+contradicted both the Convergence section above and the R3 line under Rounds 3–10.
 
 **Loop-level residuals:** verifier gaming; stochasticity across rounds; lens drift;
 no token ceiling, only dispatch and time budgets; registry matching is a soft
-orchestrator judgment; headless detection is best-effort. Round 2's fixes carry the
-additional gap named under Coverage — applied without adversarial confirmation.
+orchestrator judgment; headless detection is best-effort. Every fix from round 2
+through round 9 carries the additional gap named under Coverage — applied without
+adversarial confirmation.
 
 ## Recovery
 
 Loop-touched files:
 
 - `docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md` — revised
-- `docs/superpowers/specs/reviews/2026-07-27-agent-tools-frontmatter-design-review.state.json`
 - `docs/superpowers/specs/reviews/2026-07-27-agent-tools-frontmatter-design-review.md`
 
-Pre-loop snapshot:
-`docs/superpowers/specs/reviews/2026-07-27-agent-tools-frontmatter-design.pre-loop.bak`
+**This section's original advice is now inverted and must not be followed.** It said
+nothing was committed, told the reader to copy a `.pre-loop.bak` snapshot over the
+spec, and warned against `git restore`. All three are wrong today. The loop's work
+*was* committed, in `c22cbbd`, together with the report, the `.state.json` sidecar
+and the `...design.pre-loop.bak` snapshot; `f804c02` then deleted both scratch
+artifacts. `ls docs/superpowers/specs/reviews/` now shows the report `.md` and
+nothing else, so there is no snapshot on disk to copy.
 
-To restore, copy the snapshot over the spec. Do **not** use `git restore` on the
-spec — the snapshot is the loop's own record and the spec was committed before the
-loop ran, so a git restore would silently discard both rounds of work rather than
-the intended subset. Nothing was committed by the loop; all changes are
-uncommitted.
+Git is the recovery path instead. `026284a` is the 286-line pre-loop spec the loop
+read; `c22cbbd` is the 769-line state it produced. To recover the pre-loop text:
+
+```
+git show 026284a:docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md
+```
+
+The deleted sidecar and snapshot are readable the same way from `f804c02^`. Note
+that commits after `c22cbbd` have edited the spec further — `11c2a44` among them —
+so restoring `026284a` wholesale discards those as well as the loop's own work,
+which is the reason the original warning existed even though its mechanism was
+wrong.

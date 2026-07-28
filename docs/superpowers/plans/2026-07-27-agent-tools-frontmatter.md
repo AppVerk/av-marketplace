@@ -2,6 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status: executed, then amended.** All thirteen tasks ran on branch
+> `fix/agent-tools-frontmatter`. A post-implementation review pass then changed the
+> validator (an unbalanced parenthesis made it fail open; `main()` had no test
+> coverage; an empty `tools:` value passed silently) and the web-auditor coordinator
+> prose. Per-task code blocks and per-task expected counts below record what each
+> task produced **at the time it ran** — Task 3's "`OK` with 33 tests" was correct
+> then, and the suite is larger now. Where this plan and the shipped files disagree,
+> the shipped files govern; re-executing a task verbatim would reintroduce the
+> defects that review removed.
+
 **Goal:** Repair fifteen agent definitions whose tool access is declared under the inert `allowed-tools:` key, and add a validator plus CI check so the defect cannot silently return.
 
 **Architecture:** Validator first, repairs second. `scripts/check_agent_frontmatter.py` is written before any agent file is touched, so its non-zero exit on today's tree is the failing test the repairs turn green. Each repair task ends by re-running the validator. The web-auditor coordinator additionally needs a body rewrite, because its frontmatter and body must agree.
@@ -31,7 +41,7 @@
 | `scripts/check_agent_frontmatter.py` | Parse and validate agent frontmatter. One module: constants, parser, per-file checks, CLI. |
 | `scripts/test_check_agent_frontmatter.py` | stdlib `unittest` suite for the parser and each check. |
 | `.github/workflows/agent-frontmatter.yml` | Run the validator on push and PR against `master`. |
-| `docs/agent-tools-verification.md` | Live-layer status record: sixteen rows, `Agent \| Status \| Resolved list`. |
+| `docs/agent-tools-verification.md` | Live-layer status record: seventeen rows, `Agent \| Status \| Resolved list`, plus the permitted-cell-value table. |
 | `CLAUDE.md` | Tracked authoring rules. Replaces the gitignored `CLAUDE.local.md` as the authoritative copy. |
 
 **Modified — agent frontmatter (15 files):**
@@ -1038,12 +1048,15 @@ echo "audit.md presence (1):"
 grep -c 'Agent(' plugins/web-auditor/commands/audit.md
 ```
 
-Expected: five zeros, then `11` and `9`, then two zeros, then `1`.
+Expected: five zeros, then `9` and `9`, then two zeros, then `1`.
 
-`Agent(` is 11, not 9: the nine dispatch sites plus two literal occurrences inside the
-replacement prose Step 6 mandates ("the Cross-Verifier `Agent(` call in step 2" and its
-Challenger twin). Do not reword that prose to force the count down — the load-bearing
-number is the nine `run_in_background: false`, one per dispatch site.
+As first executed this step expected `11`, not `9`: the nine dispatch sites plus two
+literal occurrences inside the replacement prose Step 6 mandated ("the Cross-Verifier
+`Agent(` call in step 2" and its Challenger twin). The post-implementation review
+replaced that fenced pseudo-assignment with plain prose, since a code fence containing
+an unterminated `Agent(` reads as a call site and made every mechanical dispatch count
+over-report by two. The counts now coincide at nine, one `run_in_background: false` per
+dispatch site — which was always the load-bearing number.
 
 Absence alone is not the pass condition — deleting the text would satisfy every absence check while leaving the coordinator collecting nothing. The presence counts are what distinguish a rewrite from a deletion.
 
@@ -1341,10 +1354,19 @@ Agent capability is declared in `tools:`. Claude Code does not support
 grant. `allowed-tools` is valid in `SKILL.md` and command frontmatter, where it
 pre-approves permission prompts without affecting availability.
 
-MCP servers are granted with `mcp__<server>` or `mcp__<server>__*`. Never
-enumerate individual MCP tools: those lists drift.
+In an agent's `tools:`, MCP servers are granted with `mcp__<server>` or
+`mcp__<server>__*`. Never enumerate individual MCP tools there: those lists
+drift.
 
-`scripts/check_agent_frontmatter.py` enforces this on every pull request.
+This does not apply to a `SKILL.md`'s or a command's `allowed-tools:`. There,
+per-tool enumeration (e.g. `mcp__playwright__browser_navigate`) is correct and
+is the entire point of a permission pre-approval — it must not be "fixed" to a
+server-level grant, since that would silently broaden the pre-approval.
+
+`scripts/check_agent_frontmatter.py` runs on every pull request against `master`.
+It fails the build on `allowed-tools:`, and on any other frontmatter key outside
+the permitted list. A per-tool MCP entry only warns — it prints as an unrecognised
+tool name and does not fail the build, so that half rests on author and reviewer.
 
 ## Plugin versioning
 
@@ -1366,7 +1388,7 @@ A new plugin is registered in `.claude-plugin/marketplace.json` with `name`,
 
 - [ ] **Step 2: Create the live-layer status record**
 
-Create `docs/agent-tools-verification.md`. Sixteen rows: fifteen seeded `pending`, `php-developer:developer` seeded `not installed`.
+Create `docs/agent-tools-verification.md`. Seventeen rows: sixteen seeded `pending`, `php-developer:developer` seeded `not installed`. The seventeenth row is `code-review:feedback-analyzer`, which this change does not repair — it is carried because its colon-form `Bash(git:*)` is the open live availability question in the spec's Residual risks.
 
 ```markdown
 # Agent tool verification status
@@ -1382,6 +1404,27 @@ matches that agent's current `tools:` value entry for entry.
 
 A match is *declaration-confirmed*, not verified: the registry echoes the declared
 list, so it cannot confirm that any entry resolves to a callable tool.
+
+**This record is not a census of the repository's agents.** `plugins/*/agents/*.md`
+matches twenty-five files; the sixteen tracked below are the ones this change
+touches, plus one deliberate exception. The nine untracked agents already conform
+and gain no `tools:` edit here, so there is nothing about them for a live comparison
+to confirm. The exception is `code-review:feedback-analyzer`, listed last: this
+change does not touch it either, but its `Bash(git:*)` grant is the one live
+availability question the spec's Residual risks leaves open — if the colon
+specifier form is inert inside `tools:`, that agent has no `Bash` at all — and it
+was tracked nowhere.
+
+Permitted cell values, and the evidence each requires:
+
+| Value | Meaning |
+| --- | --- |
+| `pending` | never checked |
+| `matched — <version>` | the row's **Resolved list** column carries the harness's resolved tool list for that agent **verbatim**; `<version>` is the plugin version it was read at |
+| `mismatch — <what differed>` | opens a follow-up repair |
+| `not installed` | cannot be compared in a session where the plugin is absent; statically checked only. A contributor who has it installed may promote the row under the same evidence rule |
+
+A row asserting a match without the pasted resolved list stays `pending`.
 
 | Agent | Status | Resolved list |
 | --- | --- | --- |
@@ -1401,6 +1444,7 @@ list, so it cannot confirm that any entry resolves to a callable tool.
 | `frontend-developer:developer` | pending | |
 | `python-developer:developer` | pending | |
 | `php-developer:developer` | not installed | absent from `~/.claude/settings.json`; statically checked only |
+| `code-review:feedback-analyzer` | pending | not repaired by this change; tracked because its `tools: Read, Glob, Grep, Bash(git:*)` is the repository's only colon-form specifier inside a `tools:` allowlist. A match confirms the declaration parsed, not that `Bash` resolves |
 ```
 
 - [ ] **Step 3: Carry the scratch evidence into the pull request body**
