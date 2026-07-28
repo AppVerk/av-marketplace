@@ -279,7 +279,7 @@ def check_file(path, text: str) -> tuple[list[str], list[str]]:
                 )
             if base == "Bash" and ":" in entry and "(" in entry:
                 warnings.append(
-                    f"{path}: tools: {entry!r} uses the undocumented colon specifier form"
+                    f"{path}: {key}: {entry!r} uses the undocumented colon specifier form"
                 )
 
     return errors, warnings
