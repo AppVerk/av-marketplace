@@ -1,7 +1,7 @@
 ---
 name: fe-tester
 description: Frontend testing agent that executes FE test scenarios from a QA test plan using Playwright MCP. Navigates pages, interacts with UI elements, verifies states, and takes screenshots on failure.
-tools: Read, Write, Bash, Grep, Glob, mcp__plugin_playwright_playwright__*, mcp__playwright__*
+tools: Read, Write, Bash, Grep, Glob, mcp__plugin_playwright_playwright, mcp__plugin_playwright_playwright__*, mcp__playwright, mcp__playwright__*
 model: opus
 skills: fe-testing
 ---

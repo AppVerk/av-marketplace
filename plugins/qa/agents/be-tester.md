@@ -1,8 +1,7 @@
 ---
 name: be-tester
 description: Backend testing agent that executes BE test scenarios from a QA test plan. Tests API endpoints, verifies response codes and bodies, checks database state, and handles error scenarios.
-tools: Read, Write, Bash, Grep, Glob
-allowed-tools: Bash(curl:*), Bash(httpie:*), Bash(http:*), Bash(wget:*), Bash(psql:*), Bash(sqlite3:*), Bash(mysql:*), Bash(mongosh:*), Bash(redis-cli:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(grep:*), Bash(cat:*), Bash(head:*), Bash(tail:*), Bash(mkdir:*), mcp__postgres, mcp__supabase, mcp__neon, mcp__mysql, mcp__mongodb, mcp__redis
+tools: Read, Write, Bash, Grep, Glob, mcp__postgres, mcp__postgres__*, mcp__supabase, mcp__supabase__*, mcp__neon, mcp__neon__*, mcp__mysql, mcp__mysql__*, mcp__mongodb, mcp__mongodb__*, mcp__redis, mcp__redis__*
 model: opus
 skills: be-testing
 ---
