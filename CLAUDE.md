@@ -7,8 +7,14 @@ Agent capability is declared in `tools:`. Claude Code does not support
 grant. `allowed-tools` is valid in `SKILL.md` and command frontmatter, where it
 pre-approves permission prompts without affecting availability.
 
-MCP servers are granted with `mcp__<server>` or `mcp__<server>__*`. Never
-enumerate individual MCP tools: those lists drift.
+In an agent's `tools:`, MCP servers are granted with `mcp__<server>` or
+`mcp__<server>__*`. Never enumerate individual MCP tools there: those lists
+drift.
+
+This does not apply to a `SKILL.md`'s or a command's `allowed-tools:`. There,
+per-tool enumeration (e.g. `mcp__playwright__browser_navigate`) is correct and
+is the entire point of a permission pre-approval — it must not be "fixed" to a
+server-level grant, since that would silently broaden the pre-approval.
 
 `scripts/check_agent_frontmatter.py` enforces this on every pull request.
 
