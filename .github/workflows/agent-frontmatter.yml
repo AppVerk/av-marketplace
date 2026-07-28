@@ -27,6 +27,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Test-time only. The validator itself stays stdlib-only, and the
+      # differential test skips when PyYAML is absent — which is every bare
+      # interpreter, including this runner's. Without this step the oracle that
+      # guards the hand-written comment expectations never actually runs.
+      - name: Install the PyYAML oracle
+        run: python3 -m pip install --disable-pip-version-check pyyaml==6.0.3
+
       - name: Run validator unit tests
         run: python3 scripts/test_check_agent_frontmatter.py
 

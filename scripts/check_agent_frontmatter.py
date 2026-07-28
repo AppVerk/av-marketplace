@@ -85,6 +85,20 @@ COLON_SPECIFIER_TOOLS = frozenset({"Bash", "PowerShell"})
 EXPECTED_AGENT_FILES = 25
 
 
+def _comment_error(key: str) -> str:
+    """The one wording for a '#' comment in a value, shared by both spellings.
+
+    `tools: Read # x` and its block-list twin are the same defect, so they get
+    the same error. Only the `key: value` branch ever ran the check, which let
+    `- Bash(gh issue view #123)` — PyYAML reads it as 'Bash(gh issue view' —
+    pass while the byte-identical comma form failed the build.
+    """
+    return (
+        f"'#' comment in the value on key {key!r} — YAML drops "
+        "everything from the '#' onward"
+    )
+
+
 def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
     """Parse a frontmatter block into {key: str | list[str]} plus errors.
 
@@ -122,7 +136,13 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
             if current_list_key is None:
                 errors.append(f"list item with no empty-valued key above it: {stripped!r}")
                 continue
-            entry = _strip_quotes(item_match.group("item"))
+            item = item_match.group("item")
+            # On the raw item and before _strip_quotes, exactly as the
+            # `key: value` branch checks its raw value: YAML truncates a block
+            # item at the ' #' just as it truncates a scalar on a key line.
+            if _has_inline_comment(item):
+                errors.append(_comment_error(current_list_key))
+            entry = _strip_quotes(item)
             existing = fields[current_list_key]
             if not isinstance(existing, list):
                 # Unreachable: current_list_key is only ever assigned right
@@ -143,10 +163,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
         value = kv_match.group("rest").strip()
         if value:
             if _has_inline_comment(value):
-                errors.append(
-                    f"'#' comment in the value on key {key!r} — YAML drops "
-                    "everything from the '#' onward"
-                )
+                errors.append(_comment_error(key))
             fields[key] = value
             current_list_key = None
         else:
@@ -313,6 +330,27 @@ def split_entries(value: object) -> tuple[list[str], str | None, list[str]]:
     well by splitting anyway, and a genuinely malformed entry then surfaces
     through the ordinary name checks on its own merits.
 
+    Two limits of that design, recorded here so a later round does not
+    rediscover them as new criticals and re-open the oscillation:
+
+    The fail-open is closed for an *unbalanced* paren only. A moved one still
+    hides an entry:
+    `Bash(npm run build, Task, Grep)` — the value meant to read
+    `Bash(npm run build), Task, Grep` — scans clean, so the split keeps it
+    whole, the fused entry's base name is `Bash`, and `Task` goes unreported
+    while the `Grep` grant is silently dropped. Any paren-aware splitter has
+    this blind spot: nothing distinguishes that value from a legitimate
+    specifier that happens to contain commas.
+
+    And a value YAML parses verbatim can still fail the build, in one narrow
+    shape: an odd quote sends a paren-balanced value down the paren-blind
+    fallback, which then reads a comma token *inside* a specifier as a
+    top-level entry. `Read, Bash(git log --author=O'Brien, Workflow, x)` errors
+    on `Workflow`; remove the apostrophe and it is clean. It takes an odd quote
+    *and* an exact ALWAYS_STRIPPED or KNOWN_BAD_TOOLS name as a comma token in
+    the same specifier. Teaching the fallback to avoid it is precisely what
+    rounds 1-5 oscillated over, so it stays documented rather than fixed.
+
     Block-list items get the same scan. They are one entry per line, so a stray
     paren cannot swallow its neighbours, but leaving the branch unchecked made
     one spelling of a value report a defect and the byte-identical other
@@ -367,8 +405,14 @@ def split_entries(value: object) -> tuple[list[str], str | None, list[str]]:
 
 
 def _base_name(entry: str) -> str:
-    """Return the ToolName part of a `ToolName(specifier)` entry."""
-    return entry.split("(", 1)[0].strip()
+    """Return the ToolName part of a `ToolName(specifier)` entry.
+
+    A leading '(' is dropped first. Only a malformed value can produce one — a
+    legal entry names its tool before the specifier — and keeping it made
+    `Read, (Task` split into an entry whose base was '', so KNOWN_BAD_TOOLS
+    never matched and the name check reported '' instead of Task.
+    """
+    return entry.lstrip("(").split("(", 1)[0].strip()
 
 
 def _is_server_grant(entry: str) -> bool:
@@ -433,7 +477,10 @@ def check_file(path: PurePath, text: str) -> tuple[list[str], list[str]]:
         for message in split_warnings:
             warnings.append(f"{path}: {key}: {message}")
         for entry in entries:
-            base = _base_name(entry)
+            # An entry that is nothing but punctuation has no base name to
+            # report; falling back to the entry keeps the offending text in the
+            # warning instead of printing ''.
+            base = _base_name(entry) or entry
             if base in KNOWN_BAD_TOOLS:
                 errors.append(
                     f"{path}: {key}: {base!r} is not a tool name in any Claude Code version"

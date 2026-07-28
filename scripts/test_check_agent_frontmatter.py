@@ -114,6 +114,38 @@ class TestParseFrontmatter(unittest.TestCase):
         fields, errors = parse_frontmatter(text)
         self.assertTrue(any("'#'" in e for e in errors))
 
+    def test_hash_in_a_block_item_is_error(self):
+        # The comma spelling of both values is a hard error and PyYAML
+        # truncates the block-list spelling identically — the first item parses
+        # to 'Bash(gh issue view', tail dropped and specifier malformed — so
+        # only the `key: value` branch ran the check, one spelling of a defect
+        # failed the build and the byte-identical other passed. The second
+        # value used to surface as the misleading warning "'Read # x' is not in
+        # the v2.1.220 tool list", which names everything except the comment.
+        for key, item in (
+            ("tools", "Bash(gh issue view #123)"),
+            ("tools", "Read # x"),
+            ("skills", "review # x"),
+        ):
+            with self.subTest(key=key, item=item):
+                text = f"---\nname: a\ndescription: d\n{key}:\n  - {item}\n---\n"
+                fields, errors = parse_frontmatter(text)
+                # The key comes from current_list_key, so the error names the
+                # list the item belongs to and not a hard-coded 'tools'.
+                self.assertTrue(any("'#'" in e and repr(key) in e for e in errors))
+                # Still recorded, exactly as the `key: value` branch keeps a
+                # commented value: the entry goes on to the name checks too.
+                self.assertEqual(len(fields[key]), 1)
+
+    def test_hash_inside_a_quoted_block_item_is_not_a_comment(self):
+        # The check runs on the raw item, before _strip_quotes. PyYAML reads
+        # `- 'Read # x'` as "Read # x" — the '#' is scalar text — so checking
+        # the stripped entry instead would fail the build on a legal item.
+        text = "---\nname: a\ndescription: d\ntools:\n  - 'Read # x'\n---\n"
+        fields, errors = parse_frontmatter(text)
+        self.assertEqual(errors, [])
+        self.assertEqual(fields["tools"], ["Read # x"])
+
     def test_hash_right_after_a_closing_quote_is_a_comment(self):
         # PyYAML: {'description': 'Does things'}. The whitespace-before-'#'
         # rule is right for a plain scalar, but the character straight after a
@@ -282,7 +314,41 @@ class TestSplitEntries(unittest.TestCase):
         # "'Read', 'Grep'" opens and ends with a quote without being one
         # scalar; unwrapping it would hand the checks a single entry spelled
         # "Read', 'Grep".
+        #
+        # No agent file can carry this exact value: PyYAML refuses the
+        # document, because a quoted scalar may not be followed by more text on
+        # the same line. There is no legal equivalent to swap in either — the
+        # flow-sequence form `[Read, Grep]` reaches the split with its brackets
+        # already stripped, never passing through _unwrap_quoted_value. The
+        # shape is reachable only because this parser is laxer than YAML, and
+        # that is what the guard is for: on the lax path, refuse to invent a
+        # fused name.
         entries, error, warnings = split_entries("'Read', 'Grep'")
+        self.assertEqual((error, warnings), (None, []))
+        self.assertEqual(entries, ["Read", "Grep"])
+
+    def test_imbalance_warning_quotes_the_value_as_authored(self):
+        # The warning has to name the text the reader will go looking for in
+        # the file. Quoting the post-unwrap form reports 'Read, Bash(npm run
+        # build' for a line that reads `tools: "Read, Bash(npm run build"` — a
+        # string the file does not contain.
+        entries, error, warnings = split_entries('"Read, Bash(npm run build"')
+        self.assertIsNone(error)
+        self.assertEqual(entries, ["Read", "Bash(npm run build"])
+        self.assertEqual(
+            warnings,
+            ["""unbalanced '(' in value '"Read, Bash(npm run build"'"""],
+        )
+
+    def test_empty_entries_are_dropped(self):
+        # `Read,, Grep` is a typo, not a third tool. Keeping the empty entry
+        # made the name check report that '' is not in the v2.1.220 tool list,
+        # which names nothing the author can act on.
+        entries, error, warnings = split_entries("Read,, Grep")
+        self.assertEqual((error, warnings), (None, []))
+        self.assertEqual(entries, ["Read", "Grep"])
+        # The block-list branch filters separately: `- ""` strips to nothing.
+        entries, error, warnings = split_entries(["Read", '""', "Grep"])
         self.assertEqual((error, warnings), (None, []))
         self.assertEqual(entries, ["Read", "Grep"])
 
@@ -456,7 +522,7 @@ class TestErrors(unittest.TestCase):
         self.assertTrue(any("'AskUserQuestion'" in e for e in errors))
         self.assertTrue(any("unbalanced '('" in w for w in warnings))
 
-    def test_quotes_in_a_specifier_never_fail_the_build(self):
+    def test_quotes_in_a_specifier_warn_rather_than_fail_the_build(self):
         # Invariant (b). PyYAML parses all four of these to exactly the string
         # the author typed, so none of them is a defect in the file — yet an
         # odd quote count suspends paren accounting and the balance gate read
@@ -476,6 +542,49 @@ class TestErrors(unittest.TestCase):
                 )
                 self.assertEqual(errors, [])
                 self.assertTrue(any("unterminated" in w for w in warnings))
+
+        # "rather than", not "never" — the residual, pinned so a later round
+        # meets it as documented behaviour instead of rediscovering it as a
+        # critical. The apostrophe routes a paren-*balanced* value into the
+        # paren-blind fallback, which then reads `Workflow` — a comma token
+        # inside the specifier — as a top-level entry. PyYAML parses the line
+        # verbatim, so nothing in the file is malformed. It takes both an odd
+        # quote and an exact bad name in the same specifier; teaching the
+        # fallback to avoid it is what rounds 1-5 oscillated over.
+        errors, _ = check_file(
+            PurePath("plugins/x/agents/a.md"),
+            _agent(
+                name="a",
+                description="d",
+                tools="Read, Bash(git log --author=O'Brien, Workflow, x)",
+            ),
+        )
+        self.assertEqual(
+            errors,
+            ["plugins/x/agents/a.md: tools: 'Workflow' is stripped from every subagent"],
+        )
+        # The apostrophe alone is the difference: without it the same value
+        # scans clean, `Workflow` stays inside the specifier, and it passes.
+        errors, _ = check_file(
+            PurePath("plugins/x/agents/a.md"),
+            _agent(
+                name="a",
+                description="d",
+                tools="Read, Bash(git log --author=OBrien, Workflow, x)",
+            ),
+        )
+        self.assertEqual(errors, [])
+
+    def test_an_entry_starting_with_a_paren_still_names_its_tool(self):
+        # `_base_name('(Task')` was '', so KNOWN_BAD_TOOLS never matched and
+        # the run passed with a warning about '' — the one string an author
+        # cannot search the file for. The stray paren is the typo; the name
+        # behind it still has to be checked.
+        errors, _ = check_file(
+            PurePath("plugins/x/agents/a.md"),
+            _agent(name="a", description="d", tools="Read, (Task"),
+        )
+        self.assertTrue(any("'Task'" in e for e in errors))
 
     def test_empty_specifier_is_not_a_crash(self):
         # `Bash()` leaves the colon-form check with no tokens to look at; the
@@ -516,6 +625,14 @@ class TestWarnings(unittest.TestCase):
     def test_per_tool_mcp_entry_warns(self):
         text = _agent(name="a", description="d", tools="Read, mcp__playwright__browser_navigate")
         self.assertTrue(any("browser_navigate" in w for w in self._warnings(text)))
+
+    def test_entry_with_no_name_at_all_is_reported_verbatim(self):
+        # An entry that is nothing but punctuation still has no base name after
+        # the leading paren is dropped. Reporting '' points at nothing; the
+        # entry as authored at least appears in the file.
+        warnings = self._warnings(_agent(name="a", description="d", tools="Read, ("))
+        self.assertTrue(any("'(' is not in" in w for w in warnings))
+        self.assertFalse(any("'' is not in" in w for w in warnings))
 
     def test_background_lost_builtin_warns(self):
         text = _agent(name="a", description="d", tools="Read, TaskCreate")
