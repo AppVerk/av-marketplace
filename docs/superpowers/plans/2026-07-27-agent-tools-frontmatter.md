@@ -936,7 +936,9 @@ grep -c 'Task(' $F; grep -c 'run_in_background: true' $F; grep -c 'TaskOutput' $
 grep -c 'Task(\|Task tool' plugins/web-auditor/commands/audit.md
 ```
 
-Expected: `9`, `9`, `4`, `2`, and `2`.
+Expected: `9`, `10`, `5`, `2`, and `2`. The greps read the whole file, frontmatter
+included, so `run_in_background: true` is 10 (nine dispatch sites plus the Phase 2
+lead-in at line 186) and `TaskOutput` is 5 (four body sites plus the `tools:` line).
 
 - [ ] **Step 2: Replace the frontmatter tools line**
 
@@ -1036,7 +1038,12 @@ echo "audit.md presence (1):"
 grep -c 'Agent(' plugins/web-auditor/commands/audit.md
 ```
 
-Expected: five zeros, then `9` and `9`, then two zeros, then `1`.
+Expected: five zeros, then `11` and `9`, then two zeros, then `1`.
+
+`Agent(` is 11, not 9: the nine dispatch sites plus two literal occurrences inside the
+replacement prose Step 6 mandates ("the Cross-Verifier `Agent(` call in step 2" and its
+Challenger twin). Do not reword that prose to force the count down — the load-bearing
+number is the nine `run_in_background: false`, one per dispatch site.
 
 Absence alone is not the pass condition — deleting the text would satisfy every absence check while leaving the coordinator collecting nothing. The presence counts are what distinguish a rewrite from a deletion.
 
