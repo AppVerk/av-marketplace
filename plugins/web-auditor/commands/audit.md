@@ -99,6 +99,7 @@ Verification:
   False positives removed: {n}
   Severity adjustments: {n}
   Cross-domain findings: {n}
+{Copy each metric exactly as the report's Verification Summary renders it — where the report shows `n/a` or a "(challenger only)" / "(cross-verifier only)" qualifier, reproduce it verbatim rather than substituting 0.}
 
 Findings by severity:
   Critical: {n}
@@ -115,6 +116,10 @@ SEO: {n} findings
 Performance: {n} findings
 {If scope includes compliance:}
 Compliance: {n} findings
+{For any scope whose Limitations bullet in the report reads "{scope}: scan failed, not assessed", print "{Scope}: not assessed (scan failed)" in place of that scope's count line above — a substitution, not an extra line. Never print a count of 0 for a scope that was not assessed.}
+{If the report records "security ({agent}): scan failed, not assessed" bullets for some but not all four security scanners, print "Security: {n} findings ({agents not assessed} not assessed)" in place of the plain Security line.}
+{If the report's severity counts carry the "These counts exclude ..." qualifier, print it as a line directly under "Info:".}
+{If the report's Limitations section contains any "scan failed, not assessed" or "verification pass incomplete" bullets, print a blank line, then a "Limitations:" heading, then those bullets one per line. When there are none, emit nothing here — no heading, no blank line — so a clean run's summary is unchanged.}
 
 Top 3 findings:
 1. [{SEVERITY}] {finding title}
@@ -130,4 +135,4 @@ Full report: {output_dir}/audit-{domain}-{scope|full}-{date}.md
 - If the target URL is unreachable, report the error and stop
 - If Playwright is not available, note that JS rendering checks will be limited
 - If nmap is not available, note that port scanning will use curl fallback
-- If any scanning agent fails, continue with remaining agents and note the failure
+- If any scanning agent fails, continue with remaining agents and note the failure — the coordinator records it in the report's Limitations, and the Results Display rules above surface it in the terminal summary as "not assessed" rather than a zero count

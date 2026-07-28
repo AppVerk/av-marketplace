@@ -1,5 +1,5 @@
 {
   "name": "web-auditor",
   "description": "Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance. Optional verification phase for cross-domain correlation and adversarial review.",
-  "version": "2.1.3"
+  "version": "2.1.4"
 }

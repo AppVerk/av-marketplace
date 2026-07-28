@@ -389,9 +389,10 @@ Apply the merge algorithm:
    - Remove findings marked as false-positive
    - Adjust severity for downgraded findings
    - Tag confirmed findings as `[verified]`
-3. Add Cross-Verifier composite findings
-4. Add coverage gaps as a report section
-5. Add cross-domain correlations as a report section
+3. Apply Cross-Verifier severity adjustments — for each `[ADJUST-N]` entry, set the named finding to the proposed severity. Skip any `[ADJUST-N]` naming a finding the Challenger removed as a false positive in step 2. Where an `[ADJUST-N]` contradicts a Challenger decision on the same finding, the Challenger's severity stands — it challenged that finding directly — and the superseded proposal is not counted in the Verification Summary's "Severity adjustments" metric.
+4. Add Cross-Verifier composite findings
+5. Add coverage gaps as a report section
+6. Add cross-domain correlations as a report section
 
 **6. Proceed to Phase 3 with enhanced findings**
 
@@ -409,7 +410,10 @@ After all dispatched agents complete:
 
 ## Report Template
 
-Write the report using this structure. **Include only sections relevant to the active scope(s).** For any scope or individual scanner recorded as not assessed in Phase 3 step 1, replace the body of its results subsection with `_Not assessed — scan failed._` instead of a findings list.
+Write the report using this structure. **Include only sections relevant to the active scope(s).** For any scope or individual scanner recorded as not assessed in Phase 3 step 1, render `_Not assessed — scan failed._` in place of its findings. Which body that literal replaces depends on how the scope was dispatched:
+
+- A failed **security** scanner maps one-to-one onto a single subsection of `## Results — Security`: web-security to "Web Application Security", api-security to "API Security", infrastructure to "Infrastructure", supply-chain to "Supply Chain". Replace the body of that one subsection only; the other three keep their headings and render their findings normally.
+- A failed **seo**, **performance** or **compliance** scope was dispatched as one agent covering that whole section, so no single subsection corresponds to it. Keep the `## Results — {scope}` heading, omit its subsection headings entirely, and put the literal directly under the section heading — once, not repeated per subsection.
 
 ```markdown
 # Web Audit Report: {domain}
@@ -427,7 +431,7 @@ Write the report using this structure. **Include only sections relevant to the a
 
 {2-3 sentences per active scope describing the overall posture. Cover key strengths and weaknesses. End with the risk level justification.}
 
-**Risk Level:** {Critical / High / Medium / Low} — based on the most severe finding
+**Risk Level:** {Critical / High / Medium / Low} — based on the most severe finding{If Phase 3 step 1 recorded any scope or scanner as not assessed, append to this line: " among the scopes assessed; {not-assessed scopes and scanners} were not assessed and may hold more severe findings."}
 
 | Severity | Count |
 |----------|-------|
@@ -436,6 +440,8 @@ Write the report using this structure. **Include only sections relevant to the a
 | Medium | {n} |
 | Low | {n} |
 | Info | {n} |
+
+{If Phase 3 step 1 recorded any scope or scanner as not assessed, add this line under the table: "These counts exclude {not-assessed scopes and scanners}, which were not assessed." This rule applies at every scope, including single-scope runs where the per-scope table below is not rendered. If nothing was recorded as not assessed, omit the line entirely.}
 
 {If scope = all, show findings per scope:}
 
@@ -446,7 +452,7 @@ Write the report using this structure. **Include only sections relevant to the a
 | Performance | {n} | {n} | {n} | {n} | {n} |
 | Compliance | {n} | {n} | {n} | {n} | {n} |
 
-{For a scope recorded as not assessed in Phase 3 step 1, render every cell of its row as `n/a`, never `0`.}
+{For a scope recorded as not assessed in Phase 3 step 1, keep the scope name in the row's first cell and render every count cell of that row as `n/a`, never `0`.}
 
 {The Security row aggregates four separately dispatched scanners. If some but not all of them returned results, keep the counts for the ones that did and add this line under the table: "Security counts cover {scanners that returned results} only; {scanners not assessed} did not return results."}
 
@@ -457,7 +463,9 @@ Write the report using this structure. **Include only sections relevant to the a
 - **[Critical] {Finding title}** — {1-sentence description}. *Recommendation: {specific fix}.*
 - **[High] {Finding title}** — {1-sentence description}. *Recommendation: {specific fix}.*
 
-{If none: "No critical or high severity findings were identified."}
+{If none and Phase 3 step 1 recorded nothing as not assessed: "No critical or high severity findings were identified."}
+
+{If none but Phase 3 step 1 recorded any scope or scanner as not assessed, use this instead — the unqualified sentence above must not fire when something went unscanned: "No critical or high severity findings were identified in the scopes assessed. {not-assessed scopes and scanners} were not assessed."}
 
 ---
 
@@ -475,7 +483,9 @@ Write the report using this structure. **Include only sections relevant to the a
 | New cross-domain findings | {n} |
 | Coverage gaps identified | {n} |
 
-{If a verification dispatch returned nothing in Phase 2.5 step 4, render the metrics it would have produced as `n/a`, never `0` — Challenger supplies "Findings verified", "False positives removed" and "Severity adjustments"; Cross-Verifier supplies "New cross-domain findings" and "Coverage gaps identified". The matching Limitations bullet is required alongside.}
+{"Severity adjustments" counts the adjustments actually applied by the Phase 2.5 step 5 merge, from both agents: the Challenger's downgrades and severity corrections applied in step 2, plus the Cross-Verifier's `[ADJUST-N]` entries applied in step 3. Proposals skipped or superseded there are not counted.}
+
+{If a verification dispatch returned nothing in Phase 2.5 step 4, render the metrics it would have produced as `n/a`, never `0` — Challenger supplies "Findings verified" and "False positives removed"; Cross-Verifier supplies "New cross-domain findings" and "Coverage gaps identified". "Severity adjustments" draws on both, so render it `n/a` only when neither agent returned; when exactly one returned, render its count followed by "(challenger only)" or "(cross-verifier only)". The matching Limitations bullet is required alongside.}
 
 ---
 

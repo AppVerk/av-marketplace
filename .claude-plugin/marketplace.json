@@ -8,7 +8,7 @@
       "name": "code-review",
       "source": "./plugins/code-review",
       "description": "Perform comprehensive code review for security, performance, and architecture. Save reviews to file, fix issues via /fix-report (paginated) or /fix-all (bulk, skips needs-decision, optional severity floor). Persist PR review feedback via /analyze-feedback. Optional verification phase for cross-analysis and adversarial review.",
-      "version": "1.17.2",
+      "version": "1.17.3",
       "category": "development"
     },
     {
@@ -43,7 +43,7 @@
       "name": "web-auditor",
       "source": "./plugins/web-auditor",
       "description": "Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance. Optional verification phase for cross-domain correlation and adversarial review.",
-      "version": "2.1.3",
+      "version": "2.1.4",
       "category": "security"
     },
     {
