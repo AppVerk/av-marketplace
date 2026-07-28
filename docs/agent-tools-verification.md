@@ -1,15 +1,15 @@
 # Agent tool verification status
 
-Records the live layer of the repair in
-`docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md`: comparing
-each agent's harness-resolved tool list against its target. Targets come from three
-sources, not one. For the fifteen rows the spec's Repairs table covers, the target is
-that table's target column, kept in sync with the agent's shipped `tools:` line;
-where the two disagree, the shipped file governs and the spec row is the thing to
-repair, not the agent. The two remaining rows have no Repairs-table row at all:
-`qa:fe-tester`, whose target is the list the spec gives under "Two dual prefixes
-for Playwright", and `code-review:feedback-analyzer`, which this change does not
-repair and whose target is therefore its own shipped `tools:` line.
+Records the live layer of the agent frontmatter repair: comparing each agent's
+harness-resolved tool list against its target.
+
+**The target of every row is that agent's shipped `tools:` line**, read from the
+file at the plugin version the row names. There is no second source. An earlier
+draft of this record derived targets from a design document's repairs table, which
+made the target a claim that could itself go stale; the file is the only thing the
+harness actually reads, so the file is the target. A row whose resolved list does
+not match its `tools:` line is a finding about the harness or about the grant
+form — never about a document.
 
 A row reads `matched — <version>` only when its Resolved list column carries the
 harness's resolved list verbatim. A row reverts to `pending` when its recorded

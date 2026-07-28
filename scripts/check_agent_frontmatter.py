@@ -42,7 +42,7 @@ CANONICAL_TOOLS = frozenset({
 # Verified against Claude Code v2.1.220 on 2026-07-27.
 # Fail-closed by choice: a field added after v2.1.220 fails the build until
 # this constant is updated. That is the price of catching the next
-# `allowed-tools`. See docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md
+# `allowed-tools`. See CLAUDE.md for the authoring rules this enforces.
 PERMITTED_KEYS = frozenset({
     "name", "description", "tools", "disallowedTools", "model", "skills",
     "maxTurns", "initialPrompt", "memory", "effort", "background",
