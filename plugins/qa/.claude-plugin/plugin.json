@@ -1,5 +1,5 @@
 {
   "name": "qa",
   "description": "Automated QA testing plugin — analyzes code changes, generates test plans, executes FE and BE tests, and self-drives a test→fix→retest loop (`/qa:loop` generates a plan when none exists). Reports compatible with code-review.",
-  "version": "2.5.1"
+  "version": "2.5.2"
 }
