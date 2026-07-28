@@ -740,7 +740,9 @@ git worktree remove --force ../av-pre-change
 - [ ] **Step 2: Verify the output shows the expected failures**
 
 Run: `cat .superpowers/sdd/2026-07-27-agent-tools-frontmatter/red-before-output.txt`
-Expected: `Agent frontmatter check FAILED:` followed by fifteen `unknown frontmatter key 'allowed-tools'` lines, two `missing required key` lines for `code-review/agents/fix-auto.md`, one `'Task' is not a tool name` line and one `'TaskOutput' is stripped` line for `web-auditor/agents/web-auditor.md`, and `exit=1`.
+Expected: `Agent frontmatter check FAILED:` followed by **sixteen** `unknown frontmatter key 'allowed-tools'` lines, two `missing required key` lines for `code-review/agents/fix-auto.md`, one `'Task' is not a tool name` line and one `'TaskOutput' is stripped` line for `web-auditor/agents/web-auditor.md` — twenty errors in total — and `exit=1`.
+
+Sixteen, not fifteen: this command reads `origin/master`, where `qa/agents/fe-tester.md` still carries the key. That file was repaired on this branch in `cecaa92`, ahead of the plan, so the branch tree shows fifteen. The baseline is the honest count for a negative control.
 
 If the exit code is 0, stop: the validator is not discriminating and Tasks 1–3 need revisiting before any repair is made.
 
