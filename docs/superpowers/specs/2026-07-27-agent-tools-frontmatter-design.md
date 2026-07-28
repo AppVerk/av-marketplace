@@ -21,10 +21,11 @@ installed and healthy.
 
 `qa:fe-tester` was repaired ahead of this spec, as the reported symptom that led to
 the audit, in `cecaa92` — this branch's own first commit, which bumped qa to 2.5.1.
-That version has never been released: `origin/master` still reads 2.5.0 on all four
-parity surfaces, and 2.5.1 and 2.5.2 merge together in this pull request, so no
-release boundary separates the `fe-tester` repair from the rest of this change. It
-is the reference implementation for the `tools:` pattern applied here and is
+That version has never been released: `origin/master`, measured at `0f01cd6`, reads
+2.5.0 on all four parity surfaces, and 2.5.1 and 2.5.2 merge together in this pull
+request, so no release boundary separates the `fe-tester` repair from the rest of
+this change. It is the reference implementation for the `tools:` pattern applied
+here and is
 therefore absent from the repairs table; its one remaining change — the dual-form
 MCP grant — is specified under "Two dual prefixes for Playwright".
 
@@ -93,11 +94,12 @@ change — see Scope.
   change; it may mirror the tracked copy locally.
 - Parity drift introduced by this branch: `cecaa92`, this branch's first commit,
   bumped `plugin.json`, `marketplace.json`, and the README row to 2.5.1 but left
-  `docs/plugins/qa.md` behind at 2.5.0, so `check_plugin_versions.py` fails on
-  this branch right now. `origin/master` is unaffected — all four surfaces there
-  still read 2.5.0 and the parity check exits 0. This change carries
-  `docs/plugins/qa.md` to 2.5.2 with the rest of the qa bump, repairing the
-  drift this branch introduced.
+  `docs/plugins/qa.md` behind at 2.5.0, so `check_plugin_versions.py` exited 1 on
+  every commit from `cecaa92` through `b5084f8`. `origin/master` was never affected
+  — measured at `0f01cd6`, all four surfaces there read 2.5.0 and the parity check
+  exits 0. This change carries `docs/plugins/qa.md` to 2.5.2 with the rest of the
+  qa bump, repairing the drift this branch introduced; `c3943a6` landed that bump,
+  and the check has exited 0 on every commit from `c3943a6` through `01b3c67`.
 
 **Out of scope**
 
@@ -169,9 +171,11 @@ inside that limit.
 
 Consequence for this repository: `TaskCreate`, `TaskUpdate`, and `TaskList` in the
 three `developer` agents, and `TaskCreate` and `TaskUpdate` in `fix-auto`, resolve
-only in foreground runs. `fix-auto` no longer carries `TaskList` — `c804315`
-dropped it as referenced nowhere on that agent's surface — so the shipped tree
-draws eleven of these warnings, three per `developer` agent and two for `fix-auto`.
+only in foreground runs. `fix-auto` carries `TaskList` no longer — `c804315`
+dropped it as referenced nowhere on that agent's surface — so the tree at `01b3c67`
+draws eleven of these warnings, three per `developer` agent and two for `fix-auto`,
+measured by extracting that commit with `git archive` and running
+`scripts/check_agent_frontmatter.py` inside it.
 This is left as-is and reported by the validator as a warning, not an error.
 
 ### Bash specifier form
@@ -230,10 +234,20 @@ Target lists are derived from what the agent's body actually does, not from its
 former `allowed-tools:` value. Three qualifications, because the plain version of
 that sentence is false:
 
-- **Built-in tools named in the body** — `Skill` in `fix-auto`, `WebFetch` and
-  `WebSearch` in `web-auditor` — are directly evidenced. `Write` in `fix-auto`
-  joined them after implementation: `f2e96fb` added the body sentence bounding its
-  use, which is what evidences the entry.
+- **Built-in tools named in the body.** `Skill` in `fix-auto` is directly evidenced.
+  `Write` in `fix-auto` joined it after implementation: `f2e96fb` added the body
+  sentence bounding its use, which is what evidences the entry. Earlier revisions of
+  this bullet also claimed `WebFetch` and `WebSearch` in `web-auditor`, and that half
+  was false. Measured at `01b3c67`, `plugins/web-auditor/agents/web-auditor.md`
+  contains the string `WebFetch` exactly once — on the `tools:` line itself, which
+  Verification excludes from the hit set — and `WebSearch` once besides that line, at
+  line 503, inside the report template's "Tools Used" list rather than at a call site
+  or an instruction to call. Neither meets the *Reference* rule under Verification,
+  so neither is body-evidenced. Both entries are nevertheless retained, under
+  Verification's closing rule that an entry present before this change with no
+  reference is not a failure, since no existing grant is narrowed here. This is the
+  standing `reported-only` finding the review report records as still open; it is not
+  closed by this correction, only stated accurately.
 - **`Bash`** is evidenced only *implicitly*. In the three `developer` agents and
   `fix-auto`, the literal string `Bash` appears solely on the `allowed-tools:` line
   being deleted; their bodies invoke the shell by naming commands (`pytest`,
@@ -305,7 +319,7 @@ name: fix-auto
 description: Applies a fix for a single code review issue end to end — analysis, implementation, verification, and reporting. Invoked as a subagent by the review, fix-report, and fix-all commands.
 ```
 
-### `web-auditor` cannot currently dispatch
+### `web-auditor` could not dispatch before this change
 
 `web-auditor/agents/web-auditor.md` declares `Task`, which is not a tool name in
 any Claude Code version; the subagent-spawning tool is `Agent`. The coordinator
@@ -349,8 +363,9 @@ post-implementation review fix, added `run_in_background: false` to that dispatc
 and replaced "Wait for the agent to complete" with an instruction to read the
 returned report: this change had removed every collection primitive from the tree,
 so a backgrounded coordinator left the entry point waiting for a result it had no
-way to obtain. The shipped `commands/audit.md` therefore runs the coordinator in
-the foreground, and the background-default premise above no longer describes it.
+way to obtain. `commands/audit.md` has therefore run the coordinator in the
+foreground from `c804315` onwards — still so at `01b3c67` — and the
+background-default premise above stopped describing the tree at that commit.
 
 Three further restatements of that premise stand in this spec, and none of the three
 describes the shipped tree. The design-time text is left intact — the record of what
@@ -575,11 +590,12 @@ registry against the target column that produced it. Neither can see what the bo
 needs.
 
 **Static.** `check_agent_frontmatter.py` exits zero on the repaired tree and
-non-zero on the tree as it stands today. The second half matters: a validator that
-passes before the fix is not testing anything.
+non-zero on the pre-change tree — `origin/master`, at `0f01cd6`. The second half
+matters: a validator that passes before the fix is not testing anything.
 
 CI can only ever observe the green half — the workflow runs on the branch, and the
-script does not exist on `master` to be run there — so the red-before result gets
+script is absent from `origin/master` at `0f01cd6`, so there is nothing to run
+there — so the red-before result gets
 the same evidence rule as the greps. It is produced in a throwaway checkout that
 never writes to anyone's working tree:
 
@@ -602,12 +618,12 @@ The in-place alternative — checking `master` out over `plugins/` — is not us
 a path checkout writes the index, so running it with any repair uncommitted
 destroys all fifteen irrecoverably, and it would clobber a reviewer's own edits
 under `plugins/` too. The pull request body carries the command above and its raw
-non-zero output naming each failing file and the check it trips. "It fails today"
-from the author is advisory; the gate is a reviewer re-running it.
+non-zero output naming each failing file and the check it trips. "It fails on
+`origin/master`" from the author is advisory; the gate is a reviewer re-running it.
 
-The glob matches twenty-five files. On `origin/master` — the tree the recipe above
-checks out, and the only tree the red-before result describes — **sixteen** of them
-fail an error check: the fifteen tabled agents plus `qa/agents/fe-tester.md`, each
+The glob matches twenty-five files. On `origin/master` at `0f01cd6` — the tree the
+recipe above checks out, and the only tree the red-before result describes —
+**sixteen** of them fail an error check: the fifteen tabled agents plus `qa/agents/fe-tester.md`, each
 carrying an `allowed-tools:` key the permitted-key rule rejects. `cecaa92`, this
 branch's own first commit, repaired `fe-tester` ahead of this spec, so the branch
 tree shows fifteen and `fe-tester` fails nothing here; its only remaining change is
@@ -647,12 +663,16 @@ with `infrastructure-agent` unchanged and receiving neither; `code-review:fix-au
 explicit list, no longer "All tools", with a real description; the three
 `developer` agents — include `Bash`. The target column is normative; this list is a
 reading aid. Normative means that for the fifteen agents the table covers, the live
-comparison reads that column and no other document — the one exception is
-`qa:fe-tester`, noted above, which has no row and whose target is the list under
-"Two dual prefixes for Playwright". The column is therefore kept in sync with the
-shipped `tools:` lines, and two rows were corrected after implementation for
-exactly that reason (see Delivery). Where a row and the file it describes disagree,
-the file governs and the row is the defect.
+comparison reads that column and no other document. Across the status record's
+seventeen rows the targets come from **three** sources, not one, which is what
+`docs/agent-tools-verification.md` states: the repairs table's target column for
+those fifteen; the list under "Two dual prefixes for Playwright" for `qa:fe-tester`,
+which has no row; and its own shipped `tools:` line for
+`code-review:feedback-analyzer`, the seventeenth row, which this change does not
+repair. The column is therefore kept in sync with the shipped `tools:` lines, and
+two rows were corrected after implementation for exactly that reason (see Delivery).
+Where a row and the file it describes disagree, the file governs and the row is the
+defect.
 
 *Status record.* A tracked file, `docs/agent-tools-verification.md`, committed on
 this branch with seventeen rows — the fifteen repairs-table agents, `qa:fe-tester`,
@@ -731,15 +751,36 @@ request:
 | python-developer | 3.0.3 | 3.0.4 |
 | php-developer | 1.0.2 | 1.0.3 |
 
-`web-auditor` and `code-review` reach their `To` values in three steps. The repair
-itself bumped them to 2.1.2 and 1.17.1. `c804315`, the first post-implementation
-review fix on the same branch, bumped them to 2.1.3 and 1.17.2 across all four
-surfaces. `f2e96fb`, the second, changed three plugin files — it restored `Write` to
-`fix-auto` with the body sentence that now evidences it, and gave the coordinator's
+`web-auditor` and `code-review` reach their `To` values in three steps, spread over
+the four post-implementation commits that touched `plugins/` between the last
+implementation commit (`6547403`) and `01b3c67` — `eb49f30`, `c804315`, `f2e96fb`
+and `b4c1b10`, measured with
+`git log 6547403..01b3c67 --oneline --reverse -- plugins/`. The repair itself bumped
+them to 2.1.2 and 1.17.1. `eb49f30`, the earliest of the four, gave the
+coordinator's Phase 2.5 the single-turn lead-in Phase 2 already had; it changed
+prose only and bumped nothing. `c804315` bumped both plugins to 2.1.3 and 1.17.2
+across all four surfaces. `f2e96fb` changed three plugin files — it restored `Write`
+to `fix-auto` with the body sentence that evidences it, and gave the coordinator's
 not-assessed instruction somewhere to render — and landed with **no** bump on any of
-the four surfaces; the correction pass that followed carries both plugins to 2.1.4
-and 1.17.3, again across all four. Only `code-review` needed the `Write` half; the
-`web-auditor` bump covers the coordinator half of the same commit.
+the four surfaces. `b4c1b10` carried both plugins to 2.1.4 and 1.17.3, again across
+all four. That last commit is not a docs pass rescuing an unbumped change: it is
+itself a further `web-auditor` behaviour change this spec does not otherwise
+specify — the Phase 2.5 merge gained a step applying the Cross-Verifier's
+`[ADJUST-N]` severity proposals, with the Challenger winning a direct conflict, and
+the not-assessed rendering rules gained per-scanner granularity, a qualified Risk
+Level line and a count-table caveat that fires at every scope. Its bump therefore
+covers its own change as well as `f2e96fb`'s. Only `code-review` needed the `Write`
+half; the `web-auditor` half covers the coordinator changes in `f2e96fb` and
+`b4c1b10` alike. After `f2e96fb`, nothing under `plugins/code-review/` changed
+except that plugin's `plugin.json` version line.
+
+The `To` column and the three steps above are bounded at `01b3c67` and are not a
+standing claim about the branch. When this paragraph was last measured the working
+tree additionally carried an uncommitted fifth `web-auditor` pass at 2.1.5,
+requiring the coordinator to return its complete report body inline. It has no
+commit to bind to, so the table is not restated to include it; re-derive both from
+`git log 6547403..<tip> --oneline --reverse -- plugins/` and the shipped
+`plugin.json` files before relying on either.
 
 `c804315` also moved two Repairs-table targets, which are updated in place above
 rather than left to drift: `code-quality-auditor` is no longer `unchanged` — its
@@ -854,6 +895,7 @@ definition is what ships.
 merges on CI plus a reviewer's re-run greps, and the status table is updated only
 if someone remembers to run the registry comparison after the next plugin update.
 The table makes an unrun confirmation *visible*, not *noticed* — `qa:fe-tester`'s
-row is the confirmation owed since `cecaa92` and still unrun, now carried a second
-time. No release boundary has passed in between: 2.5.1 was never shipped, and it
-merges together with 2.5.2 in this pull request.
+row is the confirmation owed since `cecaa92`, unrun at every commit from `cecaa92`
+through `01b3c67`, where the row still reads `pending`, and carried a second time by
+this change. No release boundary has passed in between: 2.5.1 was never shipped, and
+it merges together with 2.5.2 in this pull request.

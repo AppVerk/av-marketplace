@@ -25,7 +25,12 @@ findings list outright. All three contract conditions hold:
 - **(c) zero `unconfirmed` entries.** The three run-1 majors left unadjudicated at
   the budget stop (SR-023, SR-024, SR-025) were re-dispatched to challengers at the
   start of run 2 — the contract requires this whether or not a fresh panel re-finds
-  them — and all three were upheld and then fixed.
+  them — and all three were upheld and then fixed. One qualification, since this
+  condition is only as good as the recorded outcomes: round 1's SR-014 is a major
+  that never received a challenger dispatch, and under the protocol an unadjudicated
+  major-or-above is `unconfirmed`. It was recorded `applied`. Condition (c)
+  therefore holds against the recorded state, not against the state the protocol
+  prescribes — see "What this verdict does not mean".
 
 **Trajectory of major-and-above findings per round** — counting every critical and
 major row the round raised, whatever its outcome: 12 → 10 → 7 → 6 → 5 → 1 → 4 →
@@ -41,12 +46,24 @@ Convergence condition above and is re-derivable.
 
 ### What this verdict does not mean
 
-Round 1 ran the challenger quorum in full — 13 dispatches, 13 upheld, 0 refuted,
-every entry the protocol dispatches. That covers **eleven of its fourteen
-findings**: the protocol never dispatches minors, so round 1's two are outside the
-quorum, and SR-014 was surfaced by a challenger during another finding's
-adjudication rather than adjudicated by one. Those three rows rest on panel and
-orchestrator evidence, like every round after.
+Round 1's challenger quorum ran 13 dispatches, 13 upheld, 0 refuted — **one short of
+the fourteen the protocol requires.** `plugins/superutils/commands/spec-review.md`
+dispatches two challengers per critical and one per remaining major-or-above entry,
+skipping only significance waivers (`keep-as-is`, `declined`) and unlanded fixes,
+and round 1 recorded none of those; so its two criticals and ten majors owe
+2 × 2 + 10 = 14 dispatches.
+
+The thirteen cover **eleven of round 1's fourteen findings**: the protocol never
+dispatches minors, so round 1's two are outside the quorum, and SR-014, a major, was
+applied without a challenger ever being dispatched for it. Earlier revisions of this
+report justified that as a carve-out — SR-014 being a challenger's own discovery
+rather than an entry sent out for adjudication. The protocol contains no such
+carve-out, and its actual rule runs the other way: a major-or-above entry whose
+challenger returned no verdict is recorded `unconfirmed`, blocks convergence, and is
+re-dispatched at the start of every following round until a verdict arrives. SR-014
+is recorded `applied` and never reappears. This is a deviation from the protocol that
+went uncaught for the length of the run, and it is disclosed here as one. Those three
+rows rest on panel and orchestrator evidence, like every round after.
 
 Rounds 2 through 9 got no quorum at all: at the run-1 budget gate the maintainer
 chose to spend the remaining time on fixes rather than on adversarial
@@ -74,12 +91,18 @@ enforces the restatement, so a misread contract would have been self-confirming.
 **Units:** Purpose · Evidence · Scope · The contract · Repairs · Validator ·
 Verification · Delivery · Residual risks
 
-Challenger quorum: 13 dispatches, **13 upheld, 0 refuted**. The protocol dispatches
-one challenger per major and two per critical, and never dispatches minors, so the
-thirteen decompose as the two criticals twice each — both upheld twice — plus nine
-single dispatches. Nine and not ten, because SR-014 was a challenger's own discovery
-rather than an entry sent out for adjudication. **Eleven of the fourteen rows below
-therefore carry a challenger verdict**: the two minors and SR-014 do not.
+Challenger quorum: 13 dispatches, **13 upheld, 0 refuted** — one short of the
+fourteen owed. The protocol dispatches one challenger per remaining major-or-above
+entry and two per critical, and never dispatches minors, so two criticals and ten
+majors come to 2 × 2 + 10 = 14. The thirteen actually issued decompose as the two
+criticals twice each — both upheld twice — plus nine single dispatches. Nine and not
+ten because SR-014 never went out: it was a challenger's own discovery during
+SR-010's adjudication, and it was applied without adversarial confirmation. Origin
+buys no exemption under the protocol, which would have held a major with no returned
+verdict `unconfirmed` and re-dispatched it every round until one arrived; SR-014 was
+neither. **Eleven of the fourteen rows below therefore carry a challenger verdict**:
+the two minors, which the protocol never dispatches, and SR-014, which it should
+have.
 
 | SR | severity | lenses | outcome |
 | --- | --- | --- | --- |
@@ -120,7 +143,9 @@ four sites while `TaskOutput` is stripped from every subagent. It is recorded as
 finding rather than discarded on the formal ground that challengers return verdicts
 and not findings — silently dropping a verified defect is the behaviour the
 self-falsification rule exists to prevent. Its lens is recorded as `orchestrator`
-to keep panel attribution honest.
+to keep panel attribution honest. Having been recorded as a major finding, it owed a
+challenger dispatch of its own and never got one; that is the round-1 quorum's
+missing fourteenth, disclosed above.
 
 ## Round 2 — panel, units
 
@@ -244,10 +269,12 @@ instruction in `plugins/code-review/agents/fix-auto.md` that now evidences it, w
 closes that half by supplying the missing evidence rather than by removing the
 entry.
 
-The other four bullets stand, as do the untouched parts of the two above:
-`fix-auto` still declares `Grep` with no body reference, nothing since has touched
-`web-auditor`'s `WebFetch`/`WebSearch`, and the `be-tester` half of the last bullet
-is unaddressed.
+The other four bullets stand, as do the untouched parts of the two above. Measured at
+`01b3c67`: `fix-auto` declares `Grep` with no body reference; no commit after the
+repair has changed `web-auditor`'s `WebFetch`/`WebSearch` entries or added a body
+reference for either — `WebFetch` occurs only on that file's `tools:` line and
+`WebSearch` only in the report template's "Tools Used" list, which the spec's Repairs
+qualification states; and the `be-tester` half of the last bullet is unaddressed.
 
 ## Coverage
 
@@ -259,9 +286,11 @@ is unaddressed.
 - **Challenger quorum ran in round 1 only.** At the run-1 budget gate the maintainer
   chose to spend the remaining time on fixes rather than on adversarial
   confirmation, and that choice carried forward through round 9. Round 1's quorum
-  was complete for what the protocol dispatches — 13 dispatches, 13 upheld, 0
+  was one dispatch short of the protocol's fourteen — 13 dispatches, 13 upheld, 0
   refuted — which is eleven of its fourteen findings; its two minors are never
-  dispatched, and SR-014 came from a challenger rather than going to one. Round 2's
+  dispatched, and SR-014, a major, was applied without ever being sent to a
+  challenger, contrary to the protocol's rule that an unadjudicated major-or-above
+  is `unconfirmed` and re-dispatched until a verdict returns. Round 2's
   nine applied fixes and
   every fix in rounds 3 through 9 rest on panel argument, orchestrator evidence and
   the user's approval, **not** on adversarial confirmation. The sole exception is
@@ -320,9 +349,10 @@ None. The one batch gate reached was approved in full.
 narrowing branch had no concrete target values (SR-004), that its gating check
 measured permission-prompt suppression rather than tool availability (SR-005), and
 that the `fix-auto` row contradicted it (SR-003). Rather than specify the missing
-allowlists, the whole branch was deleted: every agent keeps the `Bash` grant it has
-today, and least-privilege narrowing is deferred to a follow-up that must first
-design an availability test. Three findings were resolved by removing the optional
+allowlists, the whole branch was deleted: every agent keeps the `Bash` grant it
+carried before this change, and least-privilege narrowing is deferred to a follow-up
+that must first design an availability test. Three findings were resolved by removing
+the optional
 feature that produced them.
 
 ## Residual risks
@@ -332,10 +362,12 @@ bullets under "Reported-only (round 10, not fixed)". None is major-or-above.
 Convergence terminates before the fix phase by design, so the loop left all seven
 unfixed and, being the last round, un-re-reviewed. They are the only findings *this
 loop* leaves open — but three of them have since been closed outside it, by
-`931f042` and `c804315` on the implementation branch: one bullet in whole, and part
-of each of two others. The closing note under "Reported-only" records which, and
-against which spec lines. Four bullets stand untouched, and so do the unclosed
-parts of the other two.
+`931f042`, `c804315` and `f2e96fb` on the implementation branch: one bullet in
+whole, and part of each of two others. `f2e96fb` belongs in that list because
+`c804315` closed the `Write` half only by *removing* the entry; what actually closed
+it was `f2e96fb` restoring `Write` together with the body sentence that evidences
+it. The closing note under "Reported-only" records which, and against which spec
+lines. Four bullets stand untouched, and so do the unclosed parts of the other two.
 
 Everything raised in rounds 1 through 9 was resolved: applied, or refuted (SR-019),
 or — for the three run-1 majors SR-023, SR-024 and SR-025 that the budget stop left
@@ -365,13 +397,14 @@ Loop-touched files:
 - `docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md` — revised
 - `docs/superpowers/specs/reviews/2026-07-27-agent-tools-frontmatter-design-review.md`
 
-**This section's original advice is now inverted and must not be followed.** It said
-nothing was committed, told the reader to copy a `.pre-loop.bak` snapshot over the
-spec, and warned against `git restore`. All three are wrong today. The loop's work
-*was* committed, in `c22cbbd`, together with the report, the `.state.json` sidecar
-and the `...design.pre-loop.bak` snapshot; `f804c02` then deleted both scratch
-artifacts. `ls docs/superpowers/specs/reviews/` now shows the report `.md` and
-nothing else, so there is no snapshot on disk to copy.
+**This section's original advice was inverted by `c22cbbd` and `f804c02` and must
+not be followed.** It said nothing was committed, told the reader to copy a
+`.pre-loop.bak` snapshot over the spec, and warned against `git restore`. All three
+were wrong from `c22cbbd` onwards. The loop's work *was* committed, in `c22cbbd`,
+together with the report, the `.state.json` sidecar and the `...design.pre-loop.bak`
+snapshot; `f804c02` then deleted both scratch artifacts. From `f804c02` through
+`01b3c67`, `ls docs/superpowers/specs/reviews/` shows the report `.md` and nothing
+else, so there is no snapshot on disk to copy.
 
 Git is the recovery path instead. `026284a` is the 286-line pre-loop spec the loop
 read; `c22cbbd` is the 769-line state it produced. To recover the pre-loop text:

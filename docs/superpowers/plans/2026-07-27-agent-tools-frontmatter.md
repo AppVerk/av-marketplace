@@ -28,30 +28,78 @@
 > shipped tree emits eleven background-lost warnings, not twelve. **Task 8 Step 7**
 > records that line 75 of `commands/audit.md` "passes no `run_in_background`
 > argument today and gains none" — correct when the task ran, and not a description
-> of the shipped file. **Task 1's Interfaces block** gives
+> of the file as `c804315` left it. **Task 1's Interfaces block** gives
 > `split_entries(value: object) -> tuple[list[str], str | None]`, and the test
-> blocks below it unpack two values; the shipped signature returns a third element,
-> a warnings list. That grew out of the review's own oscillation: a hard error on an
-> unbalanced parenthesis kept rejecting legitimate specifiers, so an imbalance now
-> warns and the entries are split anyway, which keeps every entry under inspection
+> blocks below it unpack two values; `c0693e4` gave it a third element, a warnings
+> list. That grew out of the review's own oscillation: a hard error on an
+> unbalanced parenthesis kept rejecting legitimate specifiers, so an imbalance warns
+> instead and the entries are split anyway, which keeps every entry under inspection
 > without failing the build on a value YAML accepts.
 >
-> Both plugin-touching passes — `c804315` and `f2e96fb` — are reflected in the
-> version history, though not identically: `c804315` bumped `web-auditor` and
-> `code-review` across all four parity surfaces itself, while `f2e96fb` landed with
-> no bump on any of the four and is carried by the correction pass that also wrote
-> this note. Task 12's table is therefore two releases behind for both plugins — it
-> records the 2.1.2 and 1.17.1 it produced, against the 2.1.4 and 1.17.3 that ship.
+> **Every post-implementation commit that touched `plugins/`, in order.** Four
+> landed between the last plan task (`6547403`) and `01b3c67`, measured with
+> `git log 6547403..01b3c67 --oneline --reverse -- plugins/`. This banner named two
+> of them until the sixth correction pass, so two divergences between the plan and
+> the shipped tree went unrecorded:
 >
-> Per-task code blocks and per-task expected counts below record what each
-> task produced **at the time it ran** — Task 3's "`OK` with 33 tests" was correct
-> then, and the suite is larger now. Where this plan and the shipped files disagree,
-> the shipped files govern; re-executing a task verbatim would reintroduce the
-> defects that review removed.
+> 1. `eb49f30` — gave Phase 2.5 of the coordinator the single-turn lead-in Phase 2
+>    already had, so the Cross-Verifier and Challenger dispatches parallelise rather
+>    than serialise. Prose only; no parity surface touched, and no bump.
+> 2. `c804315` — granted `Skill` to `code-quality-auditor`, dropped `Write` and
+>    `TaskList` from `fix-auto`, and made `commands/audit.md` dispatch the
+>    coordinator with `run_in_background: false` and read the report it returns.
+>    Bumped `web-auditor` 2.1.2 → 2.1.3 and `code-review` 1.17.1 → 1.17.2 across all
+>    four parity surfaces.
+> 3. `f2e96fb` — restored `Write` to `fix-auto` with the body sentence that
+>    evidences it, and gave the coordinator's not-assessed instruction somewhere to
+>    render. No parity surface touched, and no bump.
+> 4. `b4c1b10` — a further web-auditor behaviour change that neither this plan nor
+>    the spec specifies. The Phase 2.5 merge gained a step applying the
+>    Cross-Verifier's `[ADJUST-N]` severity proposals, with the Challenger winning a
+>    direct conflict and superseded proposals excluded from the "Severity
+>    adjustments" metric. The not-assessed rendering rules gained per-scanner
+>    granularity, a qualified Risk Level line, a count-table caveat that fires at
+>    every scope rather than only at `--scope all`, and a guard stopping "No critical
+>    or high severity findings were identified" from firing while something went
+>    unscanned. `commands/audit.md`'s terminal summary was told to reproduce `n/a`
+>    and the "(challenger only)" / "(cross-verifier only)" qualifiers verbatim
+>    instead of substituting 0. It also carried the bumps `f2e96fb` had skipped:
+>    `web-auditor` 2.1.3 → 2.1.4 and `code-review` 1.17.2 → 1.17.3, all four
+>    surfaces each.
+>
+> Task 12's table is therefore two releases behind for both plugins: it records the
+> 2.1.2 and 1.17.1 it produced, against the 2.1.4 and 1.17.3 `b4c1b10` left in the
+> tree at `01b3c67`.
+>
+> **That enumeration is bounded at `01b3c67` and is not a standing claim about the
+> branch.** Re-run the command above before relying on it. When this note was
+> written the working tree additionally carried an uncommitted fifth web-auditor
+> pass — `plugin.json` at 2.1.5 against the 2.1.4 at `01b3c67`, with matching edits
+> to `.claude-plugin/marketplace.json`, `README.md` and `docs/plugins/web-auditor.md`
+> — adding a Phase 3 step 7 that requires the coordinator to return the complete
+> report body inline (the entry point reads only the returned text and never opens
+> the file), a title-based rule for matching Challenger and Cross-Verifier entries to
+> findings, and a "merge step N" naming convention for the Phase 2.5 merge. Having no
+> commit, it has nothing to bind to; it is recorded here as unbounded and must be
+> re-measured rather than carried forward as fact.
+>
+> Per-task **Interfaces** blocks, per-task code blocks and per-task expected counts
+> below record what each task specified or produced **at the time it ran**, and none
+> of them tracks a later edit: Task 3's "`OK` with 33 tests" was correct then, and
+> the suite has grown since. Two further Interfaces lines have drifted the way Task
+> 1's `split_entries` did, and are named here for the same reason — an Interfaces
+> line is what a re-executing worker writes from, so a blanket disclaimer about code
+> blocks does not reach it. `44a8985` changed both: Task 2's
+> `check_file(path: Path, …)` is `check_file(path: PurePath, …)` in the shipped
+> module, and Task 3's `main(argv: list[str] | None = None) -> int` gained a second
+> parameter, `plugins_dir: Path = PLUGINS_DIR`, so the production argv path could be
+> pinned under test. Where this plan and the shipped files disagree, the shipped
+> files govern; re-executing a task verbatim would reintroduce the defects that
+> review removed.
 
 **Goal:** Repair fifteen agent definitions whose tool access is declared under the inert `allowed-tools:` key, and add a validator plus CI check so the defect cannot silently return.
 
-**Architecture:** Validator first, repairs second. `scripts/check_agent_frontmatter.py` is written before any agent file is touched, so its non-zero exit on today's tree is the failing test the repairs turn green. Each repair task ends by re-running the validator. The web-auditor coordinator additionally needs a body rewrite, because its frontmatter and body must agree.
+**Architecture:** Validator first, repairs second. `scripts/check_agent_frontmatter.py` is written before any agent file is touched, so its non-zero exit on the pre-change tree — `origin/master`, at `0f01cd6` — is the failing test the repairs turn green. Each repair task ends by re-running the validator. The web-auditor coordinator additionally needs a body rewrite, because its frontmatter and body must agree.
 
 **Tech Stack:** Python 3.12+ standard library only (no third-party dependencies, no pytest — this repository has no test framework and `scripts/check_plugin_versions.py` is the pattern to follow). Tests use stdlib `unittest`. GitHub Actions for CI.
 
@@ -789,7 +837,7 @@ git worktree remove --force ../av-pre-change
 Run: `cat .superpowers/sdd/2026-07-27-agent-tools-frontmatter/red-before-output.txt`
 Expected: `Agent frontmatter check FAILED:` followed by **sixteen** `unknown frontmatter key 'allowed-tools'` lines, two `missing required key` lines for `code-review/agents/fix-auto.md`, one `'Task' is not a tool name` line and one `'TaskOutput' is stripped` line for `web-auditor/agents/web-auditor.md` — twenty errors in total — and `exit=1`.
 
-Sixteen, not fifteen: this command reads `origin/master`, where `qa/agents/fe-tester.md` still carries the key. That file was repaired on this branch in `cecaa92`, ahead of the plan, so the branch tree shows fifteen. The baseline is the honest count for a negative control.
+Sixteen, not fifteen: this command reads `origin/master`, where — at `0f01cd6` — `qa/agents/fe-tester.md` carries the key. That file was repaired on this branch in `cecaa92`, ahead of the plan, so the branch tree shows fifteen. The baseline is the honest count for a negative control.
 
 If the exit code is 0, stop: the validator is not discriminating and Tasks 1–3 need revisiting before any repair is made.
 
@@ -1274,7 +1322,7 @@ The file is git-ignored scratch and is never committed. It moves into the pull r
 
 Six plugins bump by PATCH. Every change repairs a declaration that never granted a tool, and none adds or removes a plugin-level feature. Two carry a deliberate behaviour change inside that repair — `fix-auto` narrows from full inheritance to an explicit list, and the `web-auditor` dispatches move to the foreground.
 
-`docs/plugins/qa.md` is additionally carried from 2.5.0 to 2.5.2: `cecaa92`, this branch's own first commit, bumped `plugin.json`, `marketplace.json` and the README row to 2.5.1 and left this fourth surface behind, which is why `check_plugin_versions.py` fails on **this branch**. `origin/master` is unaffected — all four qa surfaces there still read 2.5.0 and the check exits 0. The drift this task repairs is the drift this branch introduced.
+`docs/plugins/qa.md` is additionally carried from 2.5.0 to 2.5.2: `cecaa92`, this branch's own first commit, bumped `plugin.json`, `marketplace.json` and the README row to 2.5.1 and left this fourth surface behind, which is why `check_plugin_versions.py` **exited 1 on every commit from `cecaa92` through `b5084f8`** — the commit before this task's own. This task's commit, `c3943a6`, carried all four qa surfaces to 2.5.2 and repaired it; the check has exited 0 on every commit from `c3943a6` through `01b3c67`, each measured by extracting the tree with `git archive` and running the script in it. `origin/master` was never affected — measured at `0f01cd6`, all four qa surfaces there read 2.5.0 and the check exits 0. The drift this task repairs is the drift this branch introduced, and it did not outlive this task.
 
 **Files:**
 - Modify: `plugins/{qa,web-auditor,code-review,frontend-developer,python-developer,php-developer}/.claude-plugin/plugin.json`
@@ -1517,7 +1565,7 @@ AV_COMMIT_SKILL=1 git commit -m "docs: track the agent authoring rules and the l
 
 ## After the plan
 
-The branch is ready for a pull request. Do not push without the maintainer asking.
+With Task 13 committed the plan is complete and the branch is ready for a pull request — a statement about the plan's end condition, not about any later state of the branch. Do not push without the maintainer asking.
 
 The pull request body must carry, per the spec's verification contract:
 
