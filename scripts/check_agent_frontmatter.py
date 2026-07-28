@@ -157,17 +157,23 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
 
 
 def _scan(value: str) -> tuple[list[tuple[int, bool]], str | None]:
-    """Per-character (paren depth, inside-a-quote) marks, plus an imbalance reason.
+    """Per-character (paren depth, inside-a-quote) marks, plus a defect reason.
 
     This is the module's one balance rule. Round 1 shipped two — this
     quote-aware one, and a quote-blind copy inside `split_entries` that
-    rejected `Bash(grep "foo(" src)` as unbalanced and failed the build on it.
-    Every caller now reads this scan, so one value can never be balanced for
-    one check and unbalanced for another.
+    rejected `Bash(grep "foo(" src)` as unbalanced. Every caller now reads this
+    scan, so one value can never be balanced for one check and unbalanced for
+    another.
 
     Quotes suspend paren accounting: a '(' inside "..." or '...' is literal
-    text, not a nesting level. `reason` is None when the parens balance; when
-    it is not, the marks stop at the offending ')' and must not be indexed.
+    text, not a nesting level. `reason` is None when the value scans cleanly;
+    when it is not, the marks are unreliable from the defect onward and callers
+    must not index them.
+
+    An odd number of quote characters leaves a quote open, which suspends paren
+    accounting to end of string and swallows the closing ')'. Reporting that as
+    "unbalanced '('" sent round 4 hunting a parenthesis that was there all
+    along, so the open quote is named first and in its own words.
     """
     marks: list[tuple[int, bool]] = []
     depth = 0
@@ -189,14 +195,40 @@ def _scan(value: str) -> tuple[list[tuple[int, bool]], str | None]:
             if depth < 0:
                 return marks, "unbalanced ')'"
         marks.append((depth, False))
+    if quote is not None:
+        kind = "single" if quote == "'" else "double"
+        return marks, f"unterminated {kind} quote"
     if depth != 0:
         return marks, "unbalanced '('"
     return marks, None
 
 
-def _parens_are_balanced(value: str) -> bool:
-    """True when every '(' outside quotes has a matching ')' after it."""
-    return _scan(value)[1] is None
+def _imbalance(value: str) -> str | None:
+    """The scan's defect reason for `value`, or None when it scans cleanly."""
+    return _scan(value)[1]
+
+
+def _closing_quote(value: str) -> int:
+    """Index of the quote closing a value that opens with one, or -1.
+
+    In a single-quoted YAML scalar `''` is an escaped apostrophe, not the end
+    of the scalar: PyYAML reads `'it''s # x'` as "it's # x". Stopping at the
+    first half of the pair put the closing quote before the '#' and reported a
+    comment inside the scalar.
+    """
+    if not value:
+        return -1
+    quote = value[0]
+    index = 1
+    while index < len(value):
+        if value[index] != quote:
+            index += 1
+            continue
+        if quote == "'" and value[index + 1 : index + 2] == "'":
+            index += 2
+            continue
+        return index
+    return -1
 
 
 def _has_inline_comment(value: str) -> bool:
@@ -210,15 +242,15 @@ def _has_inline_comment(value: str) -> bool:
     apostrophe: honouring the one in "the plugin's tools # TODO" as an opening
     quote swallowed the rest of the line and let the comment through.
 
-    Parentheses only mask a '#' when they balance. An unbalanced '(' is a typo,
-    not a specifier, and must not suppress detection for the rest of the line.
+    Parentheses mask nothing. YAML applies no paren rule to a plain scalar, it
+    truncates at the ' #' regardless of nesting: PyYAML reads
+    `tools: Read, Bash(gh issue view #123), Grep` as 'Read, Bash(gh issue view'
+    — Grep is gone from the grant and the surviving specifier is malformed. The
+    paren mask that used to stand here reported neither.
     """
-    marks, imbalance = _scan(value)
-    masking = imbalance is None
-
     start = 0
     if value[:1] in ('"', "'"):
-        closing = value.find(value[0], 1)
+        closing = _closing_quote(value)
         # Only text past the closing quote can be a comment. An unterminated
         # quoted scalar is malformed YAML either way, so scan it whole rather
         # than let the dangling quote hide anything.
@@ -227,9 +259,12 @@ def _has_inline_comment(value: str) -> bool:
     for index in range(start, len(value)):
         if value[index] != "#":
             continue
-        if index and not value[index - 1].isspace():
-            continue
-        if masking and marks[index][0] != 0:
+        # A '#' needs whitespace in front of it to open a comment, or
+        # `description: Reviews PR#123 now` would read as truncated. The one
+        # exception is the character right after a quoted scalar's closing
+        # quote: that position is already outside the scalar, and PyYAML reads
+        # `description: "Does things"#TODO` as 'Does things'.
+        if index and index != start and not value[index - 1].isspace():
             continue
         return True
     return False
@@ -242,56 +277,93 @@ def _strip_quotes(entry: str) -> str:
     return entry
 
 
-def split_entries(value: object) -> tuple[list[str], str | None]:
-    """Normalise a tools:/disallowedTools: value into a list of entries.
+def _unwrap_quoted_value(text: str) -> str:
+    """Unwrap a value that is one whole quoted scalar: `tools: "Read, Grep"`.
+
+    Only when the opening quote's match is the last character. `"Read", 'Grep'`
+    also opens and ends with a quote, and unwrapping that would fuse two
+    entries into one malformed name. Stripping this before the split is what
+    makes the quoted spellings of a list agree with the bare one, instead of
+    warning that 'Read, Grep' is not a tool.
+    """
+    if text[:1] not in ('"', "'"):
+        return text
+    if _closing_quote(text) != len(text) - 1:
+        return text
+    return text[1:-1].strip()
+
+
+def split_entries(value: object) -> tuple[list[str], str | None, list[str]]:
+    """Normalise a tools:/disallowedTools: value into (entries, error, warnings).
 
     Accepts exactly three forms: a single-line comma-separated list, a YAML
     block list (already a list here), and a flow sequence [a, b].
 
-    Parentheses hide the commas inside a `Bash(a,b)` specifier, so they must
-    balance. An unbalanced one is rejected rather than absorbed: swallowing it
-    would pin the depth above zero and silently glue every later entry onto the
-    tail, hiding exactly the typos this check exists to catch.
+    Parens and quotes both hide the commas inside a `Bash(a,b)` specifier, so
+    the scan tracks both. When the scan reports a defect the value is *not*
+    rejected: it is re-split quote-blind and paren-blind, so every entry still
+    reaches the caller's name checks, and the defect is reported as a warning.
 
-    Block-list items get the same balance check as the comma form. They are one
-    entry per line, so a stray paren cannot swallow its neighbours, but leaving
-    the branch unchecked made one spelling of a value an error and the
-    byte-identical other spelling a pass.
+    That fallback is the design. Wiring the verdict to a build-failing error
+    made every imprecision in this hand-rolled YAML emulator a false build
+    failure, and three review rounds traded one class for the next —
+    `Bash(grep "foo(" src)` in round 2, `Bash(echo don't)` in round 4. The
+    fail-open the error was meant to close (a stray '(' pinning the depth above
+    zero, gluing `Task` onto its neighbour and hiding it) is closed just as
+    well by splitting anyway, and a genuinely malformed entry then surfaces
+    through the ordinary name checks on its own merits.
+
+    Block-list items get the same scan. They are one entry per line, so a stray
+    paren cannot swallow its neighbours, but leaving the branch unchecked made
+    one spelling of a value report a defect and the byte-identical other
+    spelling stay silent.
     """
     if isinstance(value, list):
+        warnings: list[str] = []
         for item in value:
-            if not _parens_are_balanced(item):
-                return [], f"unbalanced parentheses in item {item!r}"
-        return [_strip_quotes(item) for item in value if _strip_quotes(item)], None
+            reason = _imbalance(item)
+            if reason:
+                warnings.append(f"{reason} in item {item!r}")
+        entries = [_strip_quotes(item) for item in value]
+        return [entry for entry in entries if entry], None, warnings
 
     if not isinstance(value, str):
-        return [], f"unsupported value type {type(value).__name__}"
+        return [], f"unsupported value type {type(value).__name__}", []
 
     text = value.strip()
     if text in {">", "|", ">-", "|-"} or text.startswith(("&", "*", "{")):
-        return [], f"unsupported value form {text!r} (folded/literal scalar, anchor, alias or map)"
+        return (
+            [],
+            f"unsupported value form {text!r} (folded/literal scalar, anchor, alias or map)",
+            [],
+        )
 
     original = text
+    text = _unwrap_quoted_value(text)
     flow = FLOW_SEQ_RE.match(text)
     if flow:
         text = flow.group("inner")
 
     marks, imbalance = _scan(text)
+    warnings = []
     if imbalance:
-        return [], f"{imbalance} in value {original!r}"
-
-    entries: list[str] = []
-    buffer: list[str] = []
-    for char, (depth, quoted) in zip(text, marks):
-        if char == "," and depth == 0 and not quoted:
-            entries.append("".join(buffer))
-            buffer = []
-        else:
-            buffer.append(char)
-    entries.append("".join(buffer))
+        warnings.append(f"{imbalance} in value {original!r}")
+        # Quote-blind and paren-blind on purpose: the marks cannot be trusted
+        # past the defect, and every entry still has to reach the name checks.
+        entries = text.split(",")
+    else:
+        entries = []
+        buffer: list[str] = []
+        for char, (depth, quoted) in zip(text, marks):
+            if char == "," and depth == 0 and not quoted:
+                entries.append("".join(buffer))
+                buffer = []
+            else:
+                buffer.append(char)
+        entries.append("".join(buffer))
 
     cleaned = [_strip_quotes(entry) for entry in entries]
-    return [entry for entry in cleaned if entry], None
+    return [entry for entry in cleaned if entry], None, warnings
 
 
 def _base_name(entry: str) -> str:
@@ -354,10 +426,12 @@ def check_file(path: PurePath, text: str) -> tuple[list[str], list[str]]:
     for key in TOOL_KEYS:
         if key not in fields:
             continue
-        entries, split_error = split_entries(fields[key])
+        entries, split_error, split_warnings = split_entries(fields[key])
         if split_error:
             errors.append(f"{path}: {key}: {split_error}")
             continue
+        for message in split_warnings:
+            warnings.append(f"{path}: {key}: {message}")
         for entry in entries:
             base = _base_name(entry)
             if base in KNOWN_BAD_TOOLS:

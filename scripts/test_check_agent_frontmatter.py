@@ -20,12 +20,18 @@ from check_agent_frontmatter import (
     AGENT_GLOB,
     EXPECTED_AGENT_FILES,
     PLUGINS_DIR,
-    _parens_are_balanced,
+    _has_inline_comment,
+    _imbalance,
     check_file,
     main,
     parse_frontmatter,
     split_entries,
 )
+
+try:  # Test-time oracle only. The checker itself stays stdlib-only.
+    import yaml
+except ImportError:  # pragma: no cover - exercised by the skip below
+    yaml = None
 
 
 class TestParseFrontmatter(unittest.TestCase):
@@ -91,8 +97,50 @@ class TestParseFrontmatter(unittest.TestCase):
         fields, errors = parse_frontmatter(text)
         self.assertTrue(any("'#'" in e for e in errors))
 
-    def test_hash_inside_balanced_parens_is_not_a_comment(self):
+    def test_hash_inside_balanced_parens_is_still_a_comment(self):
+        # The opposite of what this test asserted for three rounds. YAML has no
+        # paren rule for a plain scalar; it truncates at the ' #' whatever the
+        # nesting. PyYAML on this exact line yields {'tools': 'Bash(grep'}, so
+        # the mask that used to make this pass was a fail-open, not a nicety.
         text = "---\nname: a\ndescription: d\ntools: Bash(grep # x)\n---\n"
+        fields, errors = parse_frontmatter(text)
+        self.assertTrue(any("'#'" in e for e in errors))
+
+    def test_hash_in_a_specifier_does_not_hide_the_dropped_tail(self):
+        # PyYAML: {'tools': 'Read, Bash(gh issue view'}. Grep is gone from the
+        # grant and the surviving specifier is malformed; the paren mask
+        # reported neither.
+        text = "---\nname: a\ndescription: d\ntools: Read, Bash(gh issue view #123), Grep\n---\n"
+        fields, errors = parse_frontmatter(text)
+        self.assertTrue(any("'#'" in e for e in errors))
+
+    def test_hash_right_after_a_closing_quote_is_a_comment(self):
+        # PyYAML: {'description': 'Does things'}. The whitespace-before-'#'
+        # rule is right for a plain scalar, but the character straight after a
+        # quoted scalar's closing quote is already outside the scalar.
+        text = '---\nname: a\ndescription: "Does things"#TODO\n---\n'
+        fields, errors = parse_frontmatter(text)
+        self.assertTrue(any("'#'" in e for e in errors))
+
+    def test_hash_glued_inside_a_plain_scalar_is_not_a_comment(self):
+        # The other direction of the same rule, and the reason it cannot just
+        # be deleted: PyYAML reads this line whole, as 'Reviews PR#123 now'.
+        text = "---\nname: a\ndescription: Reviews PR#123 now\n---\n"
+        fields, errors = parse_frontmatter(text)
+        self.assertEqual(errors, [])
+
+    def test_unterminated_quote_does_not_hide_a_comment(self):
+        # The dangling quote must not switch detection off for the rest of the
+        # line. Starting the scan past it instead of at 0 would report this
+        # line clean; PyYAML refuses the document outright.
+        text = '---\nname: a\ndescription: "does things # TODO\n---\n'
+        fields, errors = parse_frontmatter(text)
+        self.assertTrue(any("'#'" in e for e in errors))
+
+    def test_doubled_apostrophe_does_not_end_a_quoted_scalar(self):
+        # PyYAML: {'description': "it's # x"}. Stopping at the first half of
+        # the '' pair put the closing quote before the '#'.
+        text = "---\nname: a\ndescription: 'it''s # x'\n---\n"
         fields, errors = parse_frontmatter(text)
         self.assertEqual(errors, [])
 
@@ -131,95 +179,219 @@ class TestParseFrontmatter(unittest.TestCase):
         fields, errors = parse_frontmatter(text)
         self.assertEqual(errors, [])
 
+    def test_hash_inside_a_single_quoted_scalar_is_not_a_comment(self):
+        # Single quotes open a YAML quoted scalar exactly as double quotes do;
+        # restricting the rule to '"' would silently re-break this half.
+        text = "---\nname: a\ndescription: 'does # things'\n---\n"
+        fields, errors = parse_frontmatter(text)
+        self.assertEqual(errors, [])
+
+
+@unittest.skipUnless(yaml is not None, "PyYAML is not installed")
+class TestInlineCommentAgainstPyYAML(unittest.TestCase):
+    """Differential test: _has_inline_comment vs. what PyYAML actually parses.
+
+    Every expectation in TestParseFrontmatter is hand-written, and three review
+    rounds showed hand-written expectations encoding the emulator's own bugs.
+    This class asks the real parser instead. It skips when PyYAML is absent so
+    the suite still runs on a bare interpreter, and the checker never imports
+    it.
+    """
+
+    #: (key, authored value) — the shapes the review rounds argued about.
+    CASES = (
+        ("tools", "Bash(grep # x)"),
+        ("tools", "Read, Bash(gh issue view #123), Grep"),
+        ("tools", "Read, Bash(a,b), Grep"),
+        ("tools", '"Read, Grep"'),
+        ("description", '"Does things"#TODO'),
+        ("description", "'Does things'#TODO"),
+        ("description", "Reviews PR#123 now"),
+        ("description", "a#b # c"),
+        ("description", "'it''s # x'"),
+        ("description", '"does # things"'),
+        ("description", "'does # things'"),
+        ("description", "Reviews the plugin's tools # TODO"),
+        ("description", "does ( things # note"),
+        ("description", "plain value"),
+        ("model", "opus # fast"),
+    )
+
+    @staticmethod
+    def _yaml_truncates(line: str) -> bool:
+        """True when PyYAML's value scalar ends before the line does.
+
+        Comparing parsed text to authored text would fail on quoting alone
+        ("does # things" loses its quotes, 'it''s' loses a quote character).
+        The scan's end mark is the unambiguous question: did YAML consume the
+        whole line, or stop early and throw the rest away?
+        """
+        document = line + "\n"
+        scalars = [
+            token
+            for token in yaml.scan(document)
+            if isinstance(token, yaml.tokens.ScalarToken)
+        ]
+        # Only the key survived: `description: #TODO` parses to null.
+        if len(scalars) < 2:
+            return True
+        return bool(document[scalars[-1].end_mark.index :].strip())
+
+    def test_matches_pyyaml_on_every_case(self):
+        for key, value in self.CASES:
+            with self.subTest(value=value):
+                self.assertEqual(
+                    _has_inline_comment(value),
+                    self._yaml_truncates(f"{key}: {value}"),
+                )
+
 
 class TestSplitEntries(unittest.TestCase):
     def test_comma_list(self):
-        entries, error = split_entries("Read, Grep, Glob")
-        self.assertIsNone(error)
+        entries, error, warnings = split_entries("Read, Grep, Glob")
+        self.assertEqual((error, warnings), (None, []))
         self.assertEqual(entries, ["Read", "Grep", "Glob"])
 
     def test_flow_sequence(self):
-        entries, error = split_entries("[Read, Grep]")
-        self.assertIsNone(error)
+        entries, error, warnings = split_entries("[Read, Grep]")
+        self.assertEqual((error, warnings), (None, []))
         self.assertEqual(entries, ["Read", "Grep"])
 
     def test_block_list_passthrough(self):
-        entries, error = split_entries(["Read", "Grep"])
-        self.assertIsNone(error)
+        entries, error, warnings = split_entries(["Read", "Grep"])
+        self.assertEqual((error, warnings), (None, []))
         self.assertEqual(entries, ["Read", "Grep"])
 
     def test_quotes_stripped(self):
-        entries, error = split_entries('"Read", \'Grep\'')
-        self.assertIsNone(error)
+        entries, error, warnings = split_entries('"Read", \'Grep\'')
+        self.assertEqual((error, warnings), (None, []))
+        self.assertEqual(entries, ["Read", "Grep"])
+
+    def test_whole_value_quoted_list_is_still_split(self):
+        # PyYAML reads all three of these as the same scalar, 'Read, Grep', so
+        # they must reach the name checks as the same two entries. Stripping
+        # the quotes only after the split left the quoted spellings warning
+        # that 'Read, Grep' is not a tool while the bare one passed.
+        for value in ('"Read, Grep"', "'Read, Grep'", "Read, Grep"):
+            with self.subTest(value=value):
+                entries, error, warnings = split_entries(value)
+                self.assertEqual((error, warnings), (None, []))
+                self.assertEqual(entries, ["Read", "Grep"])
+
+    def test_quoted_entries_are_not_unwrapped_as_one_scalar(self):
+        # "'Read', 'Grep'" opens and ends with a quote without being one
+        # scalar; unwrapping it would hand the checks a single entry spelled
+        # "Read', 'Grep".
+        entries, error, warnings = split_entries("'Read', 'Grep'")
+        self.assertEqual((error, warnings), (None, []))
         self.assertEqual(entries, ["Read", "Grep"])
 
     def test_bash_specifier_with_comma_is_kept_whole(self):
         # The comma inside the parens is what exercises the depth guard in
         # split_entries; without it this test passes even with the guard removed.
-        entries, error = split_entries("Read, Bash(git commit -m a,b)")
-        self.assertIsNone(error)
+        entries, error, warnings = split_entries("Read, Bash(git commit -m a,b)")
+        self.assertEqual((error, warnings), (None, []))
         self.assertEqual(entries, ["Read", "Bash(git commit -m a,b)"])
 
+    def test_comma_inside_quotes_does_not_separate(self):
+        # The quote half of the split guard, isolated from the depth half: this
+        # comma sits at depth 0, so only `not quoted` keeps the entry whole.
+        entries, error, warnings = split_entries('Read, "Grep, Glob", Write')
+        self.assertEqual((error, warnings), (None, []))
+        self.assertEqual(entries, ["Read", "Grep, Glob", "Write"])
+
     def test_folded_scalar_is_error(self):
-        entries, error = split_entries(">")
+        entries, error, warnings = split_entries(">")
         self.assertIsNotNone(error)
 
-    def test_unbalanced_open_paren_is_error(self):
-        # Absorbing the stray '(' would pin depth above zero, glue the whole
-        # tail into one entry named 'Read' and hide every later tool.
-        entries, error = split_entries("Read, Bash(npm run build, Task, AskUserQuestion")
-        self.assertIsNotNone(error)
-        self.assertEqual(entries, [])
+    def test_unbalanced_open_paren_warns_and_still_splits(self):
+        # The round-1 critical, closed without a build-failing error: absorbing
+        # the stray '(' would pin depth above zero and glue the whole tail into
+        # one entry named 'Read', hiding Task and AskUserQuestion. Rejecting the
+        # value outright hid them just as thoroughly. Splitting comma-blind
+        # hands all four to the name checks.
+        entries, error, warnings = split_entries(
+            "Read, Bash(npm run build, Task, AskUserQuestion"
+        )
+        self.assertIsNone(error)
+        self.assertEqual(
+            entries, ["Read", "Bash(npm run build", "Task", "AskUserQuestion"]
+        )
+        self.assertTrue(any("unbalanced '('" in w for w in warnings))
 
-    def test_unbalanced_close_paren_is_error(self):
-        entries, error = split_entries("Read, Bash npm), Task")
-        self.assertIsNotNone(error)
-        self.assertEqual(entries, [])
+    def test_unbalanced_close_paren_warns_and_still_splits(self):
+        entries, error, warnings = split_entries("Read, Bash npm), Task")
+        self.assertIsNone(error)
+        self.assertEqual(entries, ["Read", "Bash npm)", "Task"])
+        self.assertTrue(any("unbalanced ')'" in w for w in warnings))
 
     def test_open_paren_inside_quotes_is_literal_text(self):
         # A quoted '(' is an argument, not a nesting level. The quote-blind
         # copy of the balance rule failed the build on this shape.
-        entries, error = split_entries('Read, Bash(grep -rn "foo(" src), Grep')
-        self.assertIsNone(error)
+        entries, error, warnings = split_entries('Read, Bash(grep -rn "foo(" src), Grep')
+        self.assertEqual((error, warnings), (None, []))
         self.assertEqual(entries, ["Read", 'Bash(grep -rn "foo(" src)', "Grep"])
 
+    def test_open_paren_inside_single_quotes_is_literal_text(self):
+        # The single-quote twin. Nothing else in the suite opens a quote with
+        # "'", so narrowing the scan to '"' alone reintroduced round 2's
+        # regression for half the values with CI green.
+        entries, error, warnings = split_entries("Read, Bash(grep -rn 'foo(' src), Grep")
+        self.assertEqual((error, warnings), (None, []))
+        self.assertEqual(entries, ["Read", "Bash(grep -rn 'foo(' src)", "Grep"])
+
     def test_close_paren_inside_quotes_is_literal_text(self):
-        entries, error = split_entries('Read, Bash(echo ")"), Grep')
-        self.assertIsNone(error)
+        entries, error, warnings = split_entries('Read, Bash(echo ")"), Grep')
+        self.assertEqual((error, warnings), (None, []))
         self.assertEqual(entries, ["Read", 'Bash(echo ")")', "Grep"])
 
-    def test_split_never_disagrees_with_the_balance_check(self):
-        # One balance rule, one verdict. Two rules coexisted after round 1 and
-        # the stricter, quote-blind one was the one wired to a build-failing
-        # error; this pins the split's verdict to _parens_are_balanced's on the
-        # exact values that diverged, plus the two that must stay rejected.
+    def test_split_never_disagrees_with_the_scan(self):
+        # One scan, one verdict. Two rules coexisted after round 1 and the
+        # stricter, quote-blind one was the one wired to a build-failing error;
+        # this pins the split's warning to _imbalance's verdict on the exact
+        # values that diverged, plus the two defects that must stay reported.
         values = (
             'Read, Bash(grep -rn "foo(" src), Grep',
             'Read, Bash(echo ")"), Grep',
             "Read, Bash(npm run build, Task, AskUserQuestion",
             "Read, Bash npm), Task",
+            "Read, Bash(echo don't), Grep",
         )
         for value in values:
             with self.subTest(value=value):
-                _, error = split_entries(value)
-                self.assertEqual(_parens_are_balanced(value), error is None)
+                _, error, warnings = split_entries(value)
+                self.assertIsNone(error)
+                self.assertEqual(_imbalance(value) is None, warnings == [])
 
-    def test_unbalanced_paren_in_a_block_item_is_error(self):
-        # The comma form of this value is a hard error, so its block-list
-        # spelling must be one too.
-        entries, error = split_entries(["Read", "Bash(npm run build"])
-        self.assertIsNotNone(error)
-        self.assertEqual(entries, [])
+    def test_unbalanced_paren_in_a_block_item_warns(self):
+        # The comma form of this value warns, so its block-list spelling must
+        # warn too — and the item still reaches the name checks.
+        entries, error, warnings = split_entries(["Read", "Bash(npm run build"])
+        self.assertIsNone(error)
+        self.assertEqual(entries, ["Read", "Bash(npm run build"])
+        self.assertTrue(any("unbalanced '('" in w for w in warnings))
 
 
-class TestParensAreBalanced(unittest.TestCase):
+class TestImbalance(unittest.TestCase):
     def test_close_before_open_is_unbalanced(self):
         # The depth < 0 early return: without it the two cancel out and this
-        # reads as balanced.
-        self.assertFalse(_parens_are_balanced(") ("))
+        # reads as clean.
+        self.assertEqual(_imbalance(") ("), "unbalanced ')'")
 
     def test_paren_inside_quotes_does_not_count(self):
-        self.assertTrue(_parens_are_balanced('Bash(echo ")")'))
+        self.assertIsNone(_imbalance('Bash(echo ")")'))
+
+    def test_unterminated_quote_is_reported_as_a_quote(self):
+        # An odd number of quote characters suspends paren accounting to end of
+        # string, so the closing ')' is swallowed and the naive reading is
+        # "unbalanced '('". Round 4 lost a review cycle to that wording; the
+        # parenthesis is right there in the value.
+        for value, kind in (
+            ("Bash(echo don't)", "single"),
+            ('Bash(awk "{print})', "double"),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(_imbalance(value), f"unterminated {kind} quote")
 
 
 def _agent(**fields) -> str:
@@ -269,15 +441,41 @@ class TestErrors(unittest.TestCase):
         text = _agent(name="a", description="d", tools="Read, Task(x)")
         self.assertTrue(any("Task" in e for e in self._errors(text)))
 
-    def test_unbalanced_paren_in_tools_is_error(self):
-        # check_file must surface a split failure as an error, not a warning:
-        # a value it cannot split is a value it has not checked.
+    def test_a_stray_paren_cannot_hide_a_bad_tool(self):
+        # Invariant (a). The round-1 critical: a typo must not let entries
+        # behind it go unchecked. It stays closed without the value being
+        # rejected — the fallback split hands Task and AskUserQuestion to the
+        # name checks, and the paren itself is reported as a warning.
         text = _agent(
             name="a",
             description="d",
             tools="Read, Bash(npm run build, Task, AskUserQuestion",
         )
-        self.assertTrue(any("unbalanced" in e for e in self._errors(text)))
+        errors, warnings = check_file(PurePath("plugins/x/agents/a.md"), text)
+        self.assertTrue(any("'Task'" in e for e in errors))
+        self.assertTrue(any("'AskUserQuestion'" in e for e in errors))
+        self.assertTrue(any("unbalanced '('" in w for w in warnings))
+
+    def test_quotes_in_a_specifier_never_fail_the_build(self):
+        # Invariant (b). PyYAML parses all four of these to exactly the string
+        # the author typed, so none of them is a defect in the file — yet an
+        # odd quote count suspends paren accounting and the balance gate read
+        # every one as an unbalanced '('. Three rounds of over-rejection ended
+        # here: they warn, they do not error.
+        values = (
+            "Read, Bash(echo don't), Grep",
+            "Read, Bash(echo the user's file), Grep",
+            'Read, Bash(awk "{print}), Grep',
+            "Read, PowerShell(Write-Host 'hi), Grep",
+        )
+        for value in values:
+            with self.subTest(value=value):
+                errors, warnings = check_file(
+                    PurePath("plugins/x/agents/a.md"),
+                    _agent(name="a", description="d", tools=value),
+                )
+                self.assertEqual(errors, [])
+                self.assertTrue(any("unterminated" in w for w in warnings))
 
     def test_empty_specifier_is_not_a_crash(self):
         # `Bash()` leaves the colon-form check with no tokens to look at; the
@@ -443,6 +641,21 @@ class TestMain(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertIn("shrinking glob is a false pass", output)
+
+    def test_growing_tree_does_not_warn(self):
+        # The floor is a floor. main() guards with `<` and says "expected at
+        # least", so a tree one file larger than the constant is legitimate and
+        # must stay silent — nothing else pinned that, and `<` mutated to `!=`
+        # survived the whole suite while making every added agent file warn.
+        clean = _agent(name="a", description="d", tools="Read")
+        code, output = self._run(
+            {
+                f"x/agents/a{index}.md": clean
+                for index in range(EXPECTED_AGENT_FILES + 1)
+            }
+        )
+        self.assertEqual(code, 0)
+        self.assertNotIn("shrinking glob is a false pass", output)
 
     def test_extra_arguments_are_rejected(self):
         # Ignoring them made `... check_agent_frontmatter.py plugins/qa` scan
