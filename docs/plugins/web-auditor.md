@@ -2,7 +2,7 @@
 
 Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance.
 
-**Version:** 2.1.4
+**Version:** 2.1.5
 
 ## Commands
 
@@ -82,6 +82,25 @@ All checks are **passive, legal, and non-invasive**:
 - Passive port scanning only (nmap top ports, polite timing)
 - Public resources only
 
+## When a Scanner Fails
+
+A scanner that errors, returns nothing, or returns nothing parseable is reported as **not assessed** — never as zero findings. A scope that failed to scan is otherwise indistinguishable from a clean one once it renders as an all-zero row.
+
+In the report:
+
+- The Limitations section gains a bullet naming what failed — `seo: scan failed, not assessed`, or `security (api-security): scan failed, not assessed` when only some of the four security scanners failed.
+- The matching Results section or subsection renders `_Not assessed — scan failed._` in place of its findings.
+- The per-scope table renders that scope's counts as `n/a`, not `0`, and the severity table is annotated with what its counts exclude.
+- The Risk Level is qualified as covering only the scopes that were assessed.
+
+In the terminal summary:
+
+- `SEO: not assessed (scan failed)` replaces that scope's count line — a substitution, not an extra line.
+- A partly failed security scope prints as `Security: {n} findings ({agents} not assessed)`.
+- The Limitations bullets are repeated under a `Limitations:` heading.
+
+A run in which every scanner returned normally shows none of this: no `not assessed`, no `n/a`, and no Limitations beyond the three fixed bullets.
+
 ## Verification Mode
 
 Add `--verify` to enable cross-domain correlation and adversarial review of findings.
@@ -97,15 +116,19 @@ Add `--verify` to enable cross-domain correlation and adversarial review of find
 
 After the standard scanning phase, two verification subagents analyze the findings in parallel:
 
-- **Cross-Verifier**: identifies correlations between scanning domains (e.g., an open port found by infrastructure + missing auth found by API security), coverage gaps, and composite findings
+- **Cross-Verifier**: identifies correlations between scanning domains (e.g., an open port found by infrastructure + missing auth found by API security), coverage gaps, and composite findings — and proposes cross-domain severity adjustments, which the coordinator applies to the merged findings rather than merely reporting
 - **Challenger**: challenges every Critical/High finding for false positives, validates severity levels, and calibrates severity across domains
+
+Where the two disagree about the same finding, an explicit Challenger downgrade or severity correction wins and the Cross-Verifier's proposal is dropped. A Challenger *confirmation* is not a severity decision and does not block a cross-domain adjustment — the Challenger reviews findings in isolation and never sees the correlated evidence the adjustment rests on.
 
 ### Additional Report Sections
 
 Reports generated with `--verify` include a Verification Summary showing:
-- Number of findings verified, removed, and adjusted
+- Number of findings verified, removed, and adjusted (the adjustment count is of adjustments actually applied — skipped, unmatched or superseded proposals are not counted)
 - Cross-domain correlations discovered
 - Coverage gaps identified
+
+If one of the two verification subagents returns nothing, the metrics it would have supplied render as `n/a` rather than `0`, and the report's Limitations section records the incomplete pass.
 
 ### Cost Considerations
 

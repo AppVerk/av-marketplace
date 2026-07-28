@@ -382,14 +382,16 @@ If either dispatch fails or returns nothing, proceed to step 5 with only the res
 
 **5. Merge enhanced findings**
 
-Apply the merge algorithm:
+Apply the merge algorithm below. Its six sub-steps are **merge step 1** through **merge step 6**, and every reference to them names them that way. An unqualified "step N" within Phase 2.5 always means one of the Phase 2.5 steps 1–6 above, never a merge sub-step.
+
+**Matching rule — how a verification entry names a finding.** No scanning agent emits a finding identifier: each finding is a `### [SEVERITY] Problem title` block, so the `[FINDING-ID]` and `{finding ID}` slots in the Challenger's and Cross-Verifier's output formats are filled with the finding's **problem title**. Match an entry to a finding by that title, within the domain the entry's source finding came from, ignoring case, surrounding punctuation and severity prefixes. If a title matches no finding, or matches more than one, do not guess: skip the entry and record it in the report's Limitations section as "verification entry `{entry text}` could not be matched to a finding". Do not invent identifiers for findings that do not carry them.
 
 1. Start with original findings from Phase 2
-2. Apply Challenger decisions:
-   - Remove findings marked as false-positive
-   - Adjust severity for downgraded findings
-   - Tag confirmed findings as `[verified]`
-3. Apply Cross-Verifier severity adjustments — for each `[ADJUST-N]` entry, set the named finding to the proposed severity. Skip any `[ADJUST-N]` naming a finding the Challenger removed as a false positive in step 2. Where an `[ADJUST-N]` contradicts a Challenger decision on the same finding, the Challenger's severity stands — it challenged that finding directly — and the superseded proposal is not counted in the Verification Summary's "Severity adjustments" metric.
+2. Apply Challenger decisions, matching each `[FINDING-ID]` to a finding by problem title per the matching rule above. Exactly three of its output sections are severity decisions — **False Positives**, **Downgraded** and **Severity Corrections**:
+   - **False Positives** — remove the finding
+   - **Downgraded** and **Severity Corrections** — set the finding to the new severity
+   - **Confirmed** is *not* a severity decision. It endorses the severity the Challenger was shown, so it changes nothing: tag the finding `[verified]` and leave its severity as-is.
+3. Apply Cross-Verifier severity adjustments — for each `[ADJUST-N]` entry, match its `{finding ID}` to a finding by problem title per the matching rule above and set that finding to the proposed severity. Skip any `[ADJUST-N]` naming a finding removed as a false positive in merge step 2. Where an `[ADJUST-N]` names a finding the Challenger placed under **Downgraded** or **Severity Corrections**, the Challenger's severity stands — it ruled on that finding's severity directly — and the superseded proposal is not counted in the Verification Summary's "Severity adjustments" metric. A **Confirmed** entry never blocks an `[ADJUST-N]`: the Challenger reviews findings in isolation and never saw the cross-domain evidence the adjustment rests on, so apply the adjustment and count it.
 4. Add Cross-Verifier composite findings
 5. Add coverage gaps as a report section
 6. Add cross-domain correlations as a report section
@@ -407,13 +409,14 @@ After all dispatched agents complete:
 4. **Count findings** — Tally per severity level and per scope
 5. **Generate the final report** using the template below
 6. **Write report to file** — `{output_dir}/audit-{domain}-{scope|full}-{YYYY-MM-DD}.md`
+7. **Return the report inline** — your final message MUST be the complete report body, byte-for-byte what you wrote to the file, followed by one last line: `Report file: {output_dir}/audit-{domain}-{scope|full}-{YYYY-MM-DD}.md`. Do not summarise, truncate, abridge or paraphrase it, and do not return the file path alone. The command that dispatched you reads only this returned text — it never opens the file — and derives every number and qualifier in its terminal summary from it, including the Limitations bullets and every `not assessed` / `n/a` marker. Returning a summary instead of the body silently turns those back into zero counts.
 
 ## Report Template
 
 Write the report using this structure. **Include only sections relevant to the active scope(s).** For any scope or individual scanner recorded as not assessed in Phase 3 step 1, render `_Not assessed — scan failed._` in place of its findings. Which body that literal replaces depends on how the scope was dispatched:
 
 - A failed **security** scanner maps one-to-one onto a single subsection of `## Results — Security`: web-security to "Web Application Security", api-security to "API Security", infrastructure to "Infrastructure", supply-chain to "Supply Chain". Replace the body of that one subsection only; the other three keep their headings and render their findings normally.
-- A failed **seo**, **performance** or **compliance** scope was dispatched as one agent covering that whole section, so no single subsection corresponds to it. Keep the `## Results — {scope}` heading, omit its subsection headings entirely, and put the literal directly under the section heading — once, not repeated per subsection.
+- A failed **seo**, **performance** or **compliance** scope was dispatched as one agent covering that whole section, so no single subsection corresponds to it. Keep that scope's section heading exactly as the template spells it — seo to `## Results — Technical SEO`, performance to `## Results — Performance`, compliance to `## Results — Compliance & Privacy` — omit its subsection headings entirely, and put the literal directly under the section heading — once, not repeated per subsection.
 
 ```markdown
 # Web Audit Report: {domain}
@@ -483,7 +486,7 @@ Write the report using this structure. **Include only sections relevant to the a
 | New cross-domain findings | {n} |
 | Coverage gaps identified | {n} |
 
-{"Severity adjustments" counts the adjustments actually applied by the Phase 2.5 step 5 merge, from both agents: the Challenger's downgrades and severity corrections applied in step 2, plus the Cross-Verifier's `[ADJUST-N]` entries applied in step 3. Proposals skipped or superseded there are not counted.}
+{"Severity adjustments" counts the adjustments actually applied by the Phase 2.5 step 5 merge, from both agents: the Challenger's downgrades and severity corrections applied in merge step 2, plus the Cross-Verifier's `[ADJUST-N]` entries applied in merge step 3. Proposals skipped, unmatched or superseded there are not counted, and Challenger "Confirmed" entries are not severity decisions and are never counted.}
 
 {If a verification dispatch returned nothing in Phase 2.5 step 4, render the metrics it would have produced as `n/a`, never `0` — Challenger supplies "Findings verified" and "False positives removed"; Cross-Verifier supplies "New cross-domain findings" and "Coverage gaps identified". "Severity adjustments" draws on both, so render it `n/a` only when neither agent returned; when exactly one returned, render its count followed by "(challenger only)" or "(cross-verifier only)". The matching Limitations bullet is required alongside.}
 
@@ -711,8 +714,9 @@ Before completing, verify:
 - [ ] Phase 1 metadata, performance, and compliance data collected
 - [ ] All scope-appropriate scanning agents launched and results collected
 - [ ] If --verify: Cross-Verifier and Challenger subagents spawned and results collected
-- [ ] If --verify: Challenger decisions applied (false positives removed, severity adjusted)
-- [ ] If --verify: Cross-Verifier correlations and composite findings integrated
+- [ ] If --verify: Challenger decisions applied in merge step 2 (false positives removed, downgrades and severity corrections applied, confirmed findings tagged and left at their severity)
+- [ ] If --verify: every Cross-Verifier `[ADJUST-N]` entry resolved in merge step 3 — applied, or skipped as false-positive-removed, superseded by a Challenger downgrade/correction, or unmatched (unmatched entries recorded in Limitations)
+- [ ] If --verify: Cross-Verifier correlations and composite findings integrated (merge steps 4–6)
 - [ ] Every failed or empty dispatch recorded in Limitations and rendered as not assessed / `n/a`, never `0`
 - [ ] Findings deduplicated across scopes and severity-sorted
 - [ ] Executive Summary written with per-scope assessment
@@ -723,4 +727,5 @@ Before completing, verify:
 - [ ] Performance Scorecard filled (if scope includes performance)
 - [ ] Quick Wins identified across all active scopes
 - [ ] Report written to file
-- [ ] Report file path communicated back
+- [ ] Complete report body returned inline as the final message (Phase 3 step 7), not summarised
+- [ ] Report file path given as the last line of that final message
