@@ -73,7 +73,7 @@ Launch the web-auditor coordinator agent using the Agent tool:
 
 ```
 Agent(
-  subagent_type: "web-auditor",
+  subagent_type: "web-auditor:web-auditor",
   run_in_background: false,
   description: "Web audit of {domain} ({scope})",
   prompt: "Perform a comprehensive passive web audit of {URL}. Scope: {scope}. Crawl depth: {depth}. Output directory: {output_dir}. Verify: {true|false}. Follow the complete workflow: Phase 1 (shared recon), Phase 2 (parallel scanning agents for the requested scope), {if verify: Phase 2.5 (Verification — cross-domain correlation and adversarial review),} Phase 3 (consolidation and report generation)."

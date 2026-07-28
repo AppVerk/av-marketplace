@@ -399,7 +399,7 @@ Apply the merge algorithm:
 
 After all dispatched agents complete:
 
-1. **Collect results** — the in-scope scanning agents returned their results inline in Phase 2; read them directly. Check every in-scope dispatch: if an agent errored, returned nothing, or returned no parseable findings, its scope was **not assessed**. Do not fold it into the counts as zero findings — a scope that failed to scan is indistinguishable from a clean scope once it renders as an all-zero row. For each such scope, record it in the report's Limitations section as "{scope}: scan failed, not assessed", mark its section and per-scope count in the report as `not assessed` rather than `0`, and exclude it from the "Overall Assessment" verdict. Continue consolidating the scopes that did return results.
+1. **Collect results** — the in-scope scanning agents returned their results inline in Phase 2; read them directly. Check every in-scope dispatch: if an agent errored, returned nothing, or returned no parseable findings, its scope was **not assessed**. Do not fold it into the counts as zero findings — a scope that failed to scan is indistinguishable from a clean scope once it renders as an all-zero row. For each such dispatch, record a Limitations bullet: `{scope}: scan failed, not assessed` when the whole scope failed, or `{scope} ({agent}): scan failed, not assessed` when a scope is dispatched as several agents and only some of them failed — the `security` scope is dispatched as four separate agents (web-security, api-security, infrastructure, supply-chain), so a single failed scanner is recorded by name. Mark the matching results subsection and per-scope row as not assessed rather than `0` — the rendering rules under the Report Template say how — and exclude what was not assessed from the "Overall Assessment" verdict. Continue consolidating the scopes that did return results.
 1b. **If --verify was used** — use enhanced findings from Phase 2.5 instead of raw results
 2. **Deduplicate** — Same issue found by multiple agents → keep the most detailed version, tag with all relevant scopes
 3. **Sort by severity** — Critical > High > Medium > Low > Info
@@ -409,7 +409,7 @@ After all dispatched agents complete:
 
 ## Report Template
 
-Write the report using this structure. **Include only sections relevant to the active scope(s).**
+Write the report using this structure. **Include only sections relevant to the active scope(s).** For any scope or individual scanner recorded as not assessed in Phase 3 step 1, replace the body of its results subsection with `_Not assessed — scan failed._` instead of a findings list.
 
 ```markdown
 # Web Audit Report: {domain}
@@ -446,6 +446,10 @@ Write the report using this structure. **Include only sections relevant to the a
 | Performance | {n} | {n} | {n} | {n} | {n} |
 | Compliance | {n} | {n} | {n} | {n} | {n} |
 
+{For a scope recorded as not assessed in Phase 3 step 1, render every cell of its row as `n/a`, never `0`.}
+
+{The Security row aggregates four separately dispatched scanners. If some but not all of them returned results, keep the counts for the ones that did and add this line under the table: "Security counts cover {scanners that returned results} only; {scanners not assessed} did not return results."}
+
 ### Critical & High Findings
 
 {For each Critical and High finding, list in severity order:}
@@ -471,6 +475,8 @@ Write the report using this structure. **Include only sections relevant to the a
 | New cross-domain findings | {n} |
 | Coverage gaps identified | {n} |
 
+{If a verification dispatch returned nothing in Phase 2.5 step 4, render the metrics it would have produced as `n/a`, never `0` — Challenger supplies "Findings verified", "False positives removed" and "Severity adjustments"; Cross-Verifier supplies "New cross-domain findings" and "Coverage gaps identified". The matching Limitations bullet is required alongside.}
+
 ---
 
 ## Scope & Methodology
@@ -490,6 +496,9 @@ Write the report using this structure. **Include only sections relevant to the a
 - Passive scanning only — no active exploitation
 - No authenticated testing
 - External perspective only
+{One further bullet per Limitations entry recorded in Phase 3 step 1: "- {scope}: scan failed, not assessed" — or "- {scope} ({agent}): scan failed, not assessed" when only some of a scope's scanners failed.}
+{If --verify was used and a verification dispatch returned nothing, one further bullet per entry recorded in Phase 2.5 step 4: "- verification pass incomplete — {cross-verification|adversarial review} did not return results".}
+{If neither applies, the three fixed bullets stand alone.}
 
 ---
 
@@ -694,6 +703,7 @@ Before completing, verify:
 - [ ] If --verify: Cross-Verifier and Challenger subagents spawned and results collected
 - [ ] If --verify: Challenger decisions applied (false positives removed, severity adjusted)
 - [ ] If --verify: Cross-Verifier correlations and composite findings integrated
+- [ ] Every failed or empty dispatch recorded in Limitations and rendered as not assessed / `n/a`, never `0`
 - [ ] Findings deduplicated across scopes and severity-sorted
 - [ ] Executive Summary written with per-scope assessment
 - [ ] If --verify: Verification Summary section included in report
