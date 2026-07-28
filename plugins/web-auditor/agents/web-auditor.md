@@ -314,6 +314,8 @@ Agent(
 
 If verify is true:
 
+Launch Cross-Verifier and Challenger in parallel, in a single turn, and read each result inline.
+
 **1. Build findings bundle**
 
 Collect all results from Phase 2 agents into a structured bundle:
