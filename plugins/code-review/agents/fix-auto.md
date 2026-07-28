@@ -1,5 +1,8 @@
 ---
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList
+name: fix-auto
+description: Applies a fix for a single code review issue end to end — analysis, implementation, verification, and reporting. Invoked as a subagent by the review, fix-report, and fix-all commands.
+tools: Read, Edit, Write, Glob, Grep, Bash, Skill, TaskCreate, TaskUpdate
+model: opus
 ---
 
 # Auto-Fix Code Review Issue
@@ -123,6 +126,8 @@ Use the Edit tool to make targeted changes:
 - Use exact `old_string` matching for precision
 - Preserve surrounding code and formatting
 - Make minimal changes - only what's needed
+
+Use the Write tool only to create a file the Remediation or a `User decision` explicitly calls for — restoring a dead reference's referent, authoring a missing doc page. Every other change uses Edit.
 
 **Step 3.1b: Apply developer patterns (if available)**
 

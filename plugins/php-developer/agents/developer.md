@@ -1,8 +1,7 @@
 ---
 name: developer
 description: Expert PHP developer agent for implementing features, fixing issues, and refactoring code. Enforces PHP coding standards (strict types, type hints, PSR-12), TDD workflow (tests before code, fakes over mocks, 80%+ coverage), and stack-specific patterns (Symfony, Doctrine ORM, DDD). Use this agent instead of general-purpose agents when working on PHP projects.
-tools: Read, Edit, Write, Glob, Grep, Skill, TaskCreate, TaskUpdate, TaskList
-allowed-tools: Bash(php:*), Bash(composer:*), Bash(vendor/bin/*), Bash(bin/*), Bash(make:*), Bash(git:*)
+tools: Read, Edit, Write, Glob, Grep, Skill, Bash, TaskCreate, TaskUpdate, TaskList
 model: opus 
 skills: coding-standards, tdd-workflow, symfony-patterns, doctrine-orm-patterns, ddd-patterns, composer
 ---

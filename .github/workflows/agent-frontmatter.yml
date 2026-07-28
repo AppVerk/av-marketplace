@@ -1,0 +1,41 @@
+name: Agent Frontmatter
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-frontmatter-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-agent-frontmatter:
+    name: Check agent frontmatter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.12"
+
+      # Test-time only. The validator itself stays stdlib-only, and the
+      # differential test skips when PyYAML is absent — which is every bare
+      # interpreter, including this runner's. Without this step the oracle that
+      # guards the hand-written comment expectations never actually runs.
+      - name: Install the PyYAML oracle
+        run: python3 -m pip install --disable-pip-version-check pyyaml==6.0.3
+
+      - name: Run validator unit tests
+        run: python3 scripts/test_check_agent_frontmatter.py
+
+      - name: Check agent frontmatter
+        run: python3 scripts/check_agent_frontmatter.py

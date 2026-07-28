@@ -69,21 +69,24 @@ Starting scan...
 
 ## Execution
 
-Launch the web-auditor coordinator agent using the Task tool:
+Launch the web-auditor coordinator agent using the Agent tool:
 
 ```
-Task(
-  subagent_type: "web-auditor",
+Agent(
+  subagent_type: "web-auditor:web-auditor",
+  run_in_background: false,
   description: "Web audit of {domain} ({scope})",
-  prompt: "Perform a comprehensive passive web audit of {URL}. Scope: {scope}. Crawl depth: {depth}. Output directory: {output_dir}. Verify: {true|false}. Follow the complete workflow: Phase 1 (shared recon), Phase 2 (parallel scanning agents for the requested scope), {if verify: Phase 2.5 (Verification — cross-domain correlation and adversarial review),} Phase 3 (consolidation and report generation)."
+  prompt: "Perform a comprehensive passive web audit of {URL}. Scope: {scope}. Crawl depth: {depth}. Output directory: {output_dir}. Verify: {true|false}. Follow the complete workflow: Phase 1 (shared recon), Phase 2 (parallel scanning agents for the requested scope), {if verify: Phase 2.5 (Verification — cross-domain correlation and adversarial review),} Phase 3 (consolidation and report generation). As required by Phase 3 step 7, your final message must be the complete report body exactly as written to the file, followed by a last line naming the report file path, prefixed 'Report file:'. Do not summarise it and do not return the path alone — I read only what you return, never the file."
 )
 ```
 
-Wait for the agent to complete.
+The dispatch returns the coordinator's final message: the complete report body, followed by a last line giving the report file path. Read that returned report body directly — it is the source for every value in the summary below.
+
+If the dispatch instead returns only a path, or a summary in place of the report body, do not fill the display in from guesswork. Print the target, scope, file path, and one line stating that the coordinator did not return the report body, so the counts below are unavailable. Never substitute `0` for a number you could not read.
 
 ## Results Display
 
-After the agent completes, display a summary based on the scope:
+Using the coordinator's returned report, display a summary based on the scope:
 
 ```
 AUDIT COMPLETE
@@ -98,6 +101,7 @@ Verification:
   False positives removed: {n}
   Severity adjustments: {n}
   Cross-domain findings: {n}
+{Copy each metric exactly as the report's Verification Summary renders it — where the report shows `n/a` or a "(challenger only)" / "(cross-verifier only)" qualifier, reproduce it verbatim rather than substituting 0.}
 
 Findings by severity:
   Critical: {n}
@@ -114,6 +118,10 @@ SEO: {n} findings
 Performance: {n} findings
 {If scope includes compliance:}
 Compliance: {n} findings
+{For any scope whose Limitations bullet in the report reads "{scope}: scan failed, not assessed", print "{Scope}: not assessed (scan failed)" in place of that scope's count line above — a substitution, not an extra line. Never print a count of 0 for a scope that was not assessed.}
+{If the report records "security ({agent}): scan failed, not assessed" bullets for some but not all four security scanners, print "Security: {n} findings ({agents not assessed} not assessed)" in place of the plain Security line.}
+{If the report's severity counts carry the "These counts exclude ..." qualifier, print it as a line directly under "Info:".}
+{If the report's Limitations section contains any "scan failed, not assessed" or "verification pass incomplete" bullets, print a blank line, then a "Limitations:" heading, then those bullets one per line. When there are none, emit nothing here — no heading, no blank line — so a clean run's summary is unchanged.}
 
 Top 3 findings:
 1. [{SEVERITY}] {finding title}
@@ -129,4 +137,4 @@ Full report: {output_dir}/audit-{domain}-{scope|full}-{date}.md
 - If the target URL is unreachable, report the error and stop
 - If Playwright is not available, note that JS rendering checks will be limited
 - If nmap is not available, note that port scanning will use curl fallback
-- If any scanning agent fails, continue with remaining agents and note the failure
+- If any scanning agent fails, continue with remaining agents and note the failure — the coordinator records it in the report's Limitations, and the Results Display rules above surface it in the terminal summary as "not assessed" rather than a zero count

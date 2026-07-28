@@ -1,8 +1,7 @@
 ---
 name: web-auditor
 description: Coordinator agent for comprehensive passive web auditing. Crawls target URL, dispatches up to 7 parallel scanning agents (security, SEO, performance, compliance), and consolidates findings into a Markdown report.
-tools: Read, Write, Bash, Grep, Glob, Task, TaskOutput, WebFetch, WebSearch
-allowed-tools: Bash(curl:*), Bash(dig:*), Bash(nmap:*), Bash(python:*), Bash(python3:*), Bash(openssl:*), Bash(timeout:*), Bash(base64:*), Bash(echo:*), Bash(jq:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(sort:*), Bash(wc:*), Bash(cat:*), Bash(date:*), Bash(mkdir:*), mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_tabs
+tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, WebSearch, mcp__plugin_playwright_playwright, mcp__plugin_playwright_playwright__*, mcp__playwright, mcp__playwright__*
 model: opus
 skills: web-security-checklist, api-security-checklist, infrastructure-checklist, supply-chain-checklist, seo-checklist, performance-checklist, compliance-checklist
 ---
@@ -183,7 +182,7 @@ curl -sI "URL" | grep -i "set-cookie"
 
 ### Phase 2: Parallel Scanning
 
-Launch agents in parallel (all with `run_in_background: true`) based on the requested scope.
+Launch the in-scope agents in parallel, in a single turn, and read each result inline.
 
 Pass each agent the relevant data from Phase 1.
 
@@ -192,9 +191,9 @@ Pass each agent the relevant data from Phase 1.
 **Agent 1: WebAppSecurityAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:web-security-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Web app security scan of {domain}",
   prompt: "Perform a passive web application security assessment of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -207,9 +206,9 @@ Task(
 **Agent 2: APISecurityAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:api-security-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "API security scan of {domain}",
   prompt: "Perform a passive API security assessment of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -223,9 +222,9 @@ Task(
 **Agent 3: InfrastructureAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:infrastructure-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Infrastructure security scan of {domain}",
   prompt: "Perform a passive infrastructure security assessment of {domain}.
     Here are the collected headers: {headers}.
@@ -237,9 +236,9 @@ Task(
 **Agent 4: SupplyChainAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:supply-chain-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Supply chain security scan of {domain}",
   prompt: "Perform a passive supply chain security assessment of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -254,9 +253,9 @@ Task(
 **Agent 5: SEOAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:seo-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "SEO audit of {domain}",
   prompt: "Perform a passive technical SEO audit of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -275,9 +274,9 @@ Task(
 **Agent 6: PerformanceAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:performance-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Performance audit of {domain}",
   prompt: "Perform a passive performance audit of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -295,9 +294,9 @@ Task(
 **Agent 7: ComplianceAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:compliance-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Compliance audit of {domain}",
   prompt: "Perform a passive compliance and privacy audit of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -333,12 +332,14 @@ findings_bundle = {
 
 Only include domains that were in scope.
 
-**2. Spawn Cross-Verifier (background)**
+Once `{findings_bundle}` is built, launch Cross-Verifier and Challenger in parallel, in a single turn — both prompts below interpolate it — and read each result inline.
+
+**2. Spawn Cross-Verifier**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:cross-verifier",
-  run_in_background: true,
+  run_in_background: false,
   description: "Cross-domain verification of {domain} audit",
   prompt: "Analyze the following findings bundle from a web audit of {domain}.
 
@@ -356,12 +357,12 @@ Follow your output format exactly."
 )
 ```
 
-**3. Spawn Challenger (background)**
+**3. Spawn Challenger**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:challenger",
-  run_in_background: true,
+  run_in_background: false,
   description: "Adversarial review of {domain} audit",
   prompt: "Review the following findings bundle from a web audit of {domain}.
 
@@ -375,25 +376,25 @@ Follow your output format exactly."
 
 **4. Collect verification results**
 
-Use TaskOutput with `block: true` for both agents:
+Both dispatches above return their result inline; read them directly. Treat the value returned by the Cross-Verifier dispatch in step 2 as the cross-verifier results, and the value returned by the Challenger dispatch in step 3 as the challenger results.
 
-```
-cross_verifier_results = TaskOutput(cross_verifier_id, block: true)
-challenger_results = TaskOutput(challenger_id, block: true)
-```
+If either dispatch fails or returns nothing, proceed to step 5 with only the results you actually received, and record the missing one in the report's Limitations section as "verification pass incomplete — {cross-verification|adversarial review} did not return results". Never treat a missing verification result as "no changes required".
 
 **5. Merge enhanced findings**
 
-Apply the merge algorithm:
+Apply the merge algorithm below. Its six sub-steps are **merge step 1** through **merge step 6**, and every reference to them names them that way. An unqualified "step N" within Phase 2.5 always means one of the Phase 2.5 steps 1–6 above, never a merge sub-step.
+
+**Matching rule — how a verification entry names a finding.** No scanning agent emits a finding identifier: each finding is a `### [SEVERITY] Problem title` block, so the `[FINDING-ID]` and `{finding ID}` slots in the Challenger's and Cross-Verifier's output formats are filled with the finding's **problem title**. Match an entry to a finding by that title, within the domain the entry's source finding came from, ignoring case, surrounding punctuation and severity prefixes. If a title matches no finding, or matches more than one, do not guess: skip the entry and record it in the report's Limitations section as "verification entry `{entry text}` could not be matched to a finding". Do not invent identifiers for findings that do not carry them.
 
 1. Start with original findings from Phase 2
-2. Apply Challenger decisions:
-   - Remove findings marked as false-positive
-   - Adjust severity for downgraded findings
-   - Tag confirmed findings as `[verified]`
-3. Add Cross-Verifier composite findings
-4. Add coverage gaps as a report section
-5. Add cross-domain correlations as a report section
+2. Apply Challenger decisions, matching each `[FINDING-ID]` to a finding by problem title per the matching rule above. Exactly three of its output sections are severity decisions — **False Positives**, **Downgraded** and **Severity Corrections**:
+   - **False Positives** — remove the finding
+   - **Downgraded** and **Severity Corrections** — set the finding to the new severity
+   - **Confirmed** is *not* a severity decision. It endorses the severity the Challenger was shown, so it changes nothing: tag the finding `[verified]` and leave its severity as-is.
+3. Apply Cross-Verifier severity adjustments — for each `[ADJUST-N]` entry, match its `{finding ID}` to a finding by problem title per the matching rule above and set that finding to the proposed severity. Skip any `[ADJUST-N]` naming a finding removed as a false positive in merge step 2. Where an `[ADJUST-N]` names a finding the Challenger placed under **Downgraded** or **Severity Corrections**, the Challenger's severity stands — it ruled on that finding's severity directly — and the superseded proposal is not counted in the Verification Summary's "Severity adjustments" metric. A **Confirmed** entry never blocks an `[ADJUST-N]`: the Challenger reviews findings in isolation and never saw the cross-domain evidence the adjustment rests on, so apply the adjustment and count it.
+4. Add Cross-Verifier composite findings
+5. Add coverage gaps as a report section
+6. Add cross-domain correlations as a report section
 
 **6. Proceed to Phase 3 with enhanced findings**
 
@@ -401,17 +402,21 @@ Apply the merge algorithm:
 
 After all dispatched agents complete:
 
-1. **Collect results** — Use TaskOutput with `block: true` for each agent
+1. **Collect results** — the in-scope scanning agents returned their results inline in Phase 2; read them directly. Check every in-scope dispatch: if an agent errored, returned nothing, or returned no parseable findings, its scope was **not assessed**. Do not fold it into the counts as zero findings — a scope that failed to scan is indistinguishable from a clean scope once it renders as an all-zero row. For each such dispatch, record a Limitations bullet: `{scope}: scan failed, not assessed` when the whole scope failed, or `{scope} ({agent}): scan failed, not assessed` when a scope is dispatched as several agents and only some of them failed — the `security` scope is dispatched as four separate agents (web-security, api-security, infrastructure, supply-chain), so a single failed scanner is recorded by name. Mark the matching results subsection and per-scope row as not assessed rather than `0` — the rendering rules under the Report Template say how — and exclude what was not assessed from the "Overall Assessment" verdict. Continue consolidating the scopes that did return results.
 1b. **If --verify was used** — use enhanced findings from Phase 2.5 instead of raw results
 2. **Deduplicate** — Same issue found by multiple agents → keep the most detailed version, tag with all relevant scopes
 3. **Sort by severity** — Critical > High > Medium > Low > Info
 4. **Count findings** — Tally per severity level and per scope
 5. **Generate the final report** using the template below
 6. **Write report to file** — `{output_dir}/audit-{domain}-{scope|full}-{YYYY-MM-DD}.md`
+7. **Return the report inline** — your final message MUST be the complete report body, byte-for-byte what you wrote to the file, followed by one last line: `Report file: {output_dir}/audit-{domain}-{scope|full}-{YYYY-MM-DD}.md`. Do not summarise, truncate, abridge or paraphrase it, and do not return the file path alone. The command that dispatched you reads only this returned text — it never opens the file — and derives every number and qualifier in its terminal summary from it, including the Limitations bullets and every `not assessed` / `n/a` marker. Returning a summary instead of the body silently turns those back into zero counts.
 
 ## Report Template
 
-Write the report using this structure. **Include only sections relevant to the active scope(s).**
+Write the report using this structure. **Include only sections relevant to the active scope(s).** For any scope or individual scanner recorded as not assessed in Phase 3 step 1, render `_Not assessed — scan failed._` in place of its findings. Which body that literal replaces depends on how the scope was dispatched:
+
+- A failed **security** scanner maps one-to-one onto a single subsection of `## Results — Security`: web-security to "Web Application Security", api-security to "API Security", infrastructure to "Infrastructure", supply-chain to "Supply Chain". Replace the body of that one subsection only; the other three keep their headings and render their findings normally.
+- A failed **seo**, **performance** or **compliance** scope was dispatched as one agent covering that whole section, so no single subsection corresponds to it. Keep that scope's section heading exactly as the template spells it — seo to `## Results — Technical SEO`, performance to `## Results — Performance`, compliance to `## Results — Compliance & Privacy` — omit its subsection headings entirely, and put the literal directly under the section heading — once, not repeated per subsection.
 
 ```markdown
 # Web Audit Report: {domain}
@@ -429,7 +434,7 @@ Write the report using this structure. **Include only sections relevant to the a
 
 {2-3 sentences per active scope describing the overall posture. Cover key strengths and weaknesses. End with the risk level justification.}
 
-**Risk Level:** {Critical / High / Medium / Low} — based on the most severe finding
+**Risk Level:** {Critical / High / Medium / Low} — based on the most severe finding{If Phase 3 step 1 recorded any scope or scanner as not assessed, append to this line: " among the scopes assessed; {not-assessed scopes and scanners} were not assessed and may hold more severe findings."}
 
 | Severity | Count |
 |----------|-------|
@@ -438,6 +443,8 @@ Write the report using this structure. **Include only sections relevant to the a
 | Medium | {n} |
 | Low | {n} |
 | Info | {n} |
+
+{If Phase 3 step 1 recorded any scope or scanner as not assessed, add this line under the table: "These counts exclude {not-assessed scopes and scanners}, which were not assessed." This rule applies at every scope, including single-scope runs where the per-scope table below is not rendered. If nothing was recorded as not assessed, omit the line entirely.}
 
 {If scope = all, show findings per scope:}
 
@@ -448,6 +455,10 @@ Write the report using this structure. **Include only sections relevant to the a
 | Performance | {n} | {n} | {n} | {n} | {n} |
 | Compliance | {n} | {n} | {n} | {n} | {n} |
 
+{For a scope recorded as not assessed in Phase 3 step 1, keep the scope name in the row's first cell and render every count cell of that row as `n/a`, never `0`.}
+
+{The Security row aggregates four separately dispatched scanners. If some but not all of them returned results, keep the counts for the ones that did and add this line under the table: "Security counts cover {scanners that returned results} only; {scanners not assessed} did not return results."}
+
 ### Critical & High Findings
 
 {For each Critical and High finding, list in severity order:}
@@ -455,7 +466,9 @@ Write the report using this structure. **Include only sections relevant to the a
 - **[Critical] {Finding title}** — {1-sentence description}. *Recommendation: {specific fix}.*
 - **[High] {Finding title}** — {1-sentence description}. *Recommendation: {specific fix}.*
 
-{If none: "No critical or high severity findings were identified."}
+{If none and Phase 3 step 1 recorded nothing as not assessed: "No critical or high severity findings were identified."}
+
+{If none but Phase 3 step 1 recorded any scope or scanner as not assessed, use this instead — the unqualified sentence above must not fire when something went unscanned: "No critical or high severity findings were identified in the scopes assessed. {not-assessed scopes and scanners} were not assessed."}
 
 ---
 
@@ -472,6 +485,10 @@ Write the report using this structure. **Include only sections relevant to the a
 | Severity adjustments | {n} |
 | New cross-domain findings | {n} |
 | Coverage gaps identified | {n} |
+
+{"Severity adjustments" counts the adjustments actually applied by the Phase 2.5 step 5 merge, from both agents: the Challenger's downgrades and severity corrections applied in merge step 2, plus the Cross-Verifier's `[ADJUST-N]` entries applied in merge step 3. Proposals skipped, unmatched or superseded there are not counted, and Challenger "Confirmed" entries are not severity decisions and are never counted.}
+
+{If a verification dispatch returned nothing in Phase 2.5 step 4, render the metrics it would have produced as `n/a`, never `0` — Challenger supplies "Findings verified" and "False positives removed"; Cross-Verifier supplies "New cross-domain findings" and "Coverage gaps identified". "Severity adjustments" draws on both, so render it `n/a` only when neither agent returned; when exactly one returned, render its count followed by "(challenger only)" or "(cross-verifier only)". The matching Limitations bullet is required alongside.}
 
 ---
 
@@ -492,6 +509,9 @@ Write the report using this structure. **Include only sections relevant to the a
 - Passive scanning only — no active exploitation
 - No authenticated testing
 - External perspective only
+{One further bullet per Limitations entry recorded in Phase 3 step 1: "- {scope}: scan failed, not assessed" — or "- {scope} ({agent}): scan failed, not assessed" when only some of a scope's scanners failed.}
+{If --verify was used and a verification dispatch returned nothing, one further bullet per entry recorded in Phase 2.5 step 4: "- verification pass incomplete — {cross-verification|adversarial review} did not return results".}
+{If neither applies, the three fixed bullets stand alone.}
 
 ---
 
@@ -694,8 +714,10 @@ Before completing, verify:
 - [ ] Phase 1 metadata, performance, and compliance data collected
 - [ ] All scope-appropriate scanning agents launched and results collected
 - [ ] If --verify: Cross-Verifier and Challenger subagents spawned and results collected
-- [ ] If --verify: Challenger decisions applied (false positives removed, severity adjusted)
-- [ ] If --verify: Cross-Verifier correlations and composite findings integrated
+- [ ] If --verify: Challenger decisions applied in merge step 2 (false positives removed, downgrades and severity corrections applied, confirmed findings tagged and left at their severity)
+- [ ] If --verify: every Cross-Verifier `[ADJUST-N]` entry resolved in merge step 3 — applied, or skipped as false-positive-removed, superseded by a Challenger downgrade/correction, or unmatched (unmatched entries recorded in Limitations)
+- [ ] If --verify: Cross-Verifier correlations and composite findings integrated (merge steps 4–6)
+- [ ] Every failed or empty dispatch recorded in Limitations and rendered as not assessed / `n/a`, never `0`
 - [ ] Findings deduplicated across scopes and severity-sorted
 - [ ] Executive Summary written with per-scope assessment
 - [ ] If --verify: Verification Summary section included in report
@@ -705,4 +727,5 @@ Before completing, verify:
 - [ ] Performance Scorecard filled (if scope includes performance)
 - [ ] Quick Wins identified across all active scopes
 - [ ] Report written to file
-- [ ] Report file path communicated back
+- [ ] Complete report body returned inline as the final message (Phase 3 step 7), not summarised
+- [ ] Report file path given as the last line of that final message

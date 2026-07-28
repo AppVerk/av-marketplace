@@ -1,8 +1,7 @@
 ---
 name: supply-chain-agent
 description: Supply chain security scanner for passive assessment. Covers JavaScript library identification, known CVEs, SRI, source maps, exposed dependency files, and framework detection.
-tools: Read, Bash, Grep, Glob, WebSearch
-allowed-tools: Bash(curl:*), Bash(python:*), Bash(python3:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(echo:*), Bash(cat:*), Bash(jq:*), WebSearch, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_run_code, mcp__plugin_playwright_playwright__browser_close
+tools: Read, Bash, Grep, Glob, WebSearch, mcp__plugin_playwright_playwright, mcp__plugin_playwright_playwright__*, mcp__playwright, mcp__playwright__*
 model: opus
 skills: supply-chain-checklist
 ---
