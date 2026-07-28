@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PLUGINS_DIR = REPO_ROOT / "plugins"
@@ -75,6 +75,10 @@ BACKGROUND_LOST = CANONICAL_TOOLS - BACKGROUND_KEPT - ALWAYS_STRIPPED
 REQUIRED_KEYS = ("name", "description")
 TOOL_KEYS = ("tools", "disallowedTools")
 
+# Tools whose grants take a `Tool(specifier)` form, so the undocumented
+# `Tool(cmd:*)` spelling is a plausible mistake worth warning about.
+COLON_SPECIFIER_TOOLS = frozenset({"Bash", "PowerShell"})
+
 # Agent files under plugins/*/agents/*.md at the time of the 2026-07-27 audit.
 # A lower count warns; it never errors, so a legitimately shrinking tree
 # cannot flip the build red.
@@ -119,11 +123,14 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
                 errors.append(f"list item with no empty-valued key above it: {stripped!r}")
                 continue
             entry = _strip_quotes(item_match.group("item"))
-            existing = fields.get(current_list_key)
-            if isinstance(existing, list):
-                existing.append(entry)
-            else:
-                fields[current_list_key] = [entry]
+            existing = fields[current_list_key]
+            if not isinstance(existing, list):
+                # Unreachable: current_list_key is only ever assigned right
+                # after `fields[key] = []`, and every other branch clears it.
+                raise AssertionError(
+                    f"list key {current_list_key!r} holds a non-list value"
+                )
+            existing.append(entry)
             continue
 
         kv_match = KEY_VALUE_RE.match(raw)
@@ -136,7 +143,10 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
         value = kv_match.group("rest").strip()
         if value:
             if _has_inline_comment(value):
-                errors.append(f"inline '#' comment after a value on key {key!r}")
+                errors.append(
+                    f"'#' comment in the value on key {key!r} — YAML drops "
+                    "everything from the '#' onward"
+                )
             fields[key] = value
             current_list_key = None
         else:
@@ -146,11 +156,11 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], list[str]]:
     return fields, errors
 
 
-def _has_inline_comment(value: str) -> bool:
-    """True when a '#' follows whitespace outside quotes and parentheses."""
+def _parens_are_balanced(value: str) -> bool:
+    """True when every '(' outside quotes has a matching ')' after it."""
     depth = 0
     quote: str | None = None
-    for index, char in enumerate(value):
+    for char in value:
         if quote:
             if char == quote:
                 quote = None
@@ -160,8 +170,36 @@ def _has_inline_comment(value: str) -> bool:
         elif char == "(":
             depth += 1
         elif char == ")":
-            depth = max(0, depth - 1)
-        elif char == "#" and depth == 0 and index > 0 and value[index - 1].isspace():
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
+def _has_inline_comment(value: str) -> bool:
+    """True when a '#' starts a comment outside quotes and parentheses.
+
+    A '#' at the very start counts: YAML reads `description: #x` as null, so
+    the key is absent at runtime however much text follows it here.
+
+    Parentheses only mask a '#' when they balance. An unbalanced '(' is a typo,
+    not a specifier, and must not suppress detection for the rest of the line.
+    """
+    masking = _parens_are_balanced(value)
+    depth = 0
+    quote: str | None = None
+    for index, char in enumerate(value):
+        if quote:
+            if char == quote:
+                quote = None
+            continue
+        if char in "\"'":
+            quote = char
+        elif masking and char == "(":
+            depth += 1
+        elif masking and char == ")":
+            depth -= 1
+        elif char == "#" and depth == 0 and (index == 0 or value[index - 1].isspace()):
             return True
     return False
 
@@ -178,6 +216,11 @@ def split_entries(value: object) -> tuple[list[str], str | None]:
 
     Accepts exactly three forms: a single-line comma-separated list, a YAML
     block list (already a list here), and a flow sequence [a, b].
+
+    Parentheses hide the commas inside a `Bash(a,b)` specifier, so they must
+    balance. An unbalanced one is rejected rather than absorbed: swallowing it
+    would pin the depth above zero and silently glue every later entry onto the
+    tail, hiding exactly the typos this check exists to catch.
     """
     if isinstance(value, list):
         return [_strip_quotes(item) for item in value if _strip_quotes(item)], None
@@ -189,6 +232,7 @@ def split_entries(value: object) -> tuple[list[str], str | None]:
     if text in {">", "|", ">-", "|-"} or text.startswith(("&", "*", "{")):
         return [], f"unsupported value form {text!r} (folded/literal scalar, anchor, alias or map)"
 
+    original = text
     flow = FLOW_SEQ_RE.match(text)
     if flow:
         text = flow.group("inner")
@@ -200,12 +244,16 @@ def split_entries(value: object) -> tuple[list[str], str | None]:
         if char == "(":
             depth += 1
         elif char == ")":
-            depth = max(0, depth - 1)
+            if depth == 0:
+                return [], f"unbalanced ')' in value {original!r}"
+            depth -= 1
         if char == "," and depth == 0:
             entries.append("".join(buffer))
             buffer = []
         else:
             buffer.append(char)
+    if depth != 0:
+        return [], f"unbalanced '(' in value {original!r}"
     entries.append("".join(buffer))
 
     cleaned = [_strip_quotes(entry) for entry in entries]
@@ -218,16 +266,34 @@ def _base_name(entry: str) -> str:
 
 
 def _is_server_grant(entry: str) -> bool:
-    """True for `mcp__<server>` and `mcp__<server>__*`, false for per-tool."""
+    """True for `mcp__<server>` and `mcp__<server>__*`, false for per-tool.
+
+    The server segment must be non-empty and must not itself contain `__`:
+    `mcp__` names no server, and `mcp__a__b__*` is a per-tool prefix wearing a
+    star, not a whole-server grant.
+    """
     if not entry.startswith("mcp__"):
         return False
-    remainder = entry[len("mcp__"):]
-    if "__" not in remainder:
-        return True
-    return remainder.rsplit("__", 1)[1] == "*"
+    server = entry[len("mcp__"):]
+    if server.endswith("__*"):
+        server = server[: -len("__*")]
+    return bool(server) and "__" not in server and server != "*"
 
 
-def check_file(path, text: str) -> tuple[list[str], list[str]]:
+def _uses_colon_specifier(entry: str) -> bool:
+    """True for the undocumented `Tool(cmd:*)` form.
+
+    Anchored to the head of the specifier, because a colon further along is
+    ordinary argument text: `Bash(docker run -p 8080:80)` is a port mapping.
+    """
+    _, sep, rest = entry.partition("(")
+    if not sep:
+        return False
+    tokens = rest.rsplit(")", 1)[0].strip().split(maxsplit=1)
+    return bool(tokens) and ":" in tokens[0]
+
+
+def check_file(path: PurePath, text: str) -> tuple[list[str], list[str]]:
     """Return (errors, warnings) for one agent file."""
     errors: list[str] = []
     warnings: list[str] = []
@@ -244,8 +310,12 @@ def check_file(path, text: str) -> tuple[list[str], list[str]]:
         if key not in fields or not fields[key]:
             errors.append(f"{path}: missing required key {key!r}")
 
-    if "tools" not in fields:
-        warnings.append(f"{path}: no 'tools:' key — this agent inherits every tool")
+    # Truthiness, not membership: a bare `tools:` stores an empty list here and
+    # reads as null at runtime, which inherits everything just like no key.
+    if not fields.get("tools"):
+        warnings.append(
+            f"{path}: 'tools:' is missing or empty — this agent inherits every tool"
+        )
 
     for key in TOOL_KEYS:
         if key not in fields:
@@ -277,7 +347,7 @@ def check_file(path, text: str) -> tuple[list[str], list[str]]:
                 warnings.append(
                     f"{path}: tools: {base!r} is unavailable to background subagents"
                 )
-            if base == "Bash" and ":" in entry and "(" in entry:
+            if base in COLON_SPECIFIER_TOOLS and _uses_colon_specifier(entry):
                 warnings.append(
                     f"{path}: {key}: {entry!r} uses the undocumented colon specifier form"
                 )
@@ -285,13 +355,23 @@ def check_file(path, text: str) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
-def main(argv: list[str] | None = None) -> int:
-    del argv  # no options; kept for symmetry with check_plugin_versions.py
+def main(argv: list[str] | None = None, plugins_dir: Path = PLUGINS_DIR) -> int:
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args:
+        # Silently ignoring arguments made `... check_agent_frontmatter.py
+        # plugins/qa` scan the whole tree and report success.
+        print(
+            f"error: this check takes no arguments, got {' '.join(args)!r}",
+            file=sys.stderr,
+        )
+        print(f"usage: python3 {Path(__file__).name}", file=sys.stderr)
+        return 2
 
-    paths = sorted(PLUGINS_DIR.glob(AGENT_GLOB))
+    root = plugins_dir.parent
+    paths = sorted(plugins_dir.glob(AGENT_GLOB))
     if not paths:
         print(
-            f"error: no agent files discovered under {PLUGINS_DIR}/{AGENT_GLOB}",
+            f"error: no agent files discovered under {plugins_dir}/{AGENT_GLOB}",
             file=sys.stderr,
         )
         return 1
@@ -299,9 +379,16 @@ def main(argv: list[str] | None = None) -> int:
     errors: list[str] = []
     warnings: list[str] = []
     for path in paths:
-        file_errors, file_warnings = check_file(
-            path.relative_to(REPO_ROOT), path.read_text(encoding="utf-8")
-        )
+        relative = path.relative_to(root)
+        try:
+            # utf-8-sig so a byte-order mark does not masquerade as a missing
+            # opening '---'; the except turns an undecodable file into a
+            # diagnostic instead of a traceback.
+            text = path.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeDecodeError) as exc:
+            errors.append(f"{relative}: cannot be read as UTF-8 text: {exc}")
+            continue
+        file_errors, file_warnings = check_file(relative, text)
         errors.extend(file_errors)
         warnings.extend(file_warnings)
 
