@@ -168,8 +168,11 @@ layers below the main conversation. Command → coordinator → scanner is two l
 inside that limit.
 
 Consequence for this repository: `TaskCreate`, `TaskUpdate`, and `TaskList` in the
-three `developer` agents and in `fix-auto` resolve only in foreground runs. This is
-left as-is and reported by the validator as a warning, not an error.
+three `developer` agents, and `TaskCreate` and `TaskUpdate` in `fix-auto`, resolve
+only in foreground runs. `fix-auto` no longer carries `TaskList` — `c804315`
+dropped it as referenced nowhere on that agent's surface — so the shipped tree
+draws eleven of these warnings, three per `developer` agent and two for `fix-auto`.
+This is left as-is and reported by the validator as a warning, not an error.
 
 ### Bash specifier form
 
@@ -228,13 +231,17 @@ former `allowed-tools:` value. Three qualifications, because the plain version o
 that sentence is false:
 
 - **Built-in tools named in the body** — `Skill` in `fix-auto`, `WebFetch` and
-  `WebSearch` in `web-auditor` — are directly evidenced.
+  `WebSearch` in `web-auditor` — are directly evidenced. `Write` in `fix-auto`
+  joined them after implementation: `f2e96fb` added the body sentence bounding its
+  use, which is what evidences the entry.
 - **`Bash`** is evidenced only *implicitly*. In the three `developer` agents and
   `fix-auto`, the literal string `Bash` appears solely on the `allowed-tools:` line
   being deleted; their bodies invoke the shell by naming commands (`pytest`,
   `ruff`, `tsc`, `composer`, `git`). The grant follows from those commands, and it
   coincides with the deleted pre-approvals because those enumerated the same
-  commands. `TaskCreate`/`TaskUpdate`/`TaskList` sit in the same position.
+  commands. `TaskCreate` and `TaskUpdate` sit in the same position, as does
+  `TaskList` in the three `developer` agents — `fix-auto`'s shipped list no longer
+  carries it.
 - **MCP server names** are carried over from the deleted `allowed-tools:` lists,
   with the drifted per-tool suffixes replaced by the two server-level forms. Only
   `qa/skills/be-testing/SKILL.md:36-39` names its six servers independently.
@@ -344,6 +351,28 @@ returned report: this change had removed every collection primitive from the tre
 so a backgrounded coordinator left the entry point waiting for a result it had no
 way to obtain. The shipped `commands/audit.md` therefore runs the coordinator in
 the foreground, and the background-default premise above no longer describes it.
+
+Three further restatements of that premise stand in this spec, and none of the three
+describes the shipped tree. The design-time text is left intact — the record of what
+was designed is the point of the document — so each is corrected here instead:
+
+1. The paragraph immediately below frames the open parallelism risk as "whether
+   same-turn foreground `Agent` calls from inside a **background** subagent
+   actually run concurrently is unverified". Read *foreground* subagent.
+2. That paragraph's closing clause, on the `spec-review.md` shape precedent, says
+   the precedent is "not evidence that same-turn foreground `Agent` calls from
+   inside a **background** subagent run concurrently". Read *foreground* subagent
+   there too.
+3. Later, under Verification, the pass conditions for `commands/audit.md` assert
+   zero `Task(` and zero `Task tool` "only, since its own dispatch mode is
+   unchanged". Its dispatch mode *did* change; only the rationale is stale. The
+   assertions still hold as written, and those two absences are still the whole set
+   asserted for that file, because the post-write run makes no assertion about
+   `run_in_background` there.
+
+Substituting "foreground" for "background" in (1) and (2) leaves the risk itself
+untouched: nothing in this change measures whether same-turn foreground `Agent`
+calls run concurrently, from a parent of either kind.
 
 Those two also carry a background instruction outside every set counted so far:
 the step labels `**2. Spawn Cross-Verifier (background)**` (line 336) and
@@ -617,10 +646,13 @@ forms; six of the seven web-auditor scanning agents — both prefixes in both fo
 with `infrastructure-agent` unchanged and receiving neither; `code-review:fix-auto` — an
 explicit list, no longer "All tools", with a real description; the three
 `developer` agents — include `Bash`. The target column is normative; this list is a
-reading aid. Normative means the live comparison reads that column and no other
-document — so it is kept in sync with the shipped `tools:` lines, and two rows were
-corrected after implementation for exactly that reason (see Delivery). Where a row
-and the file it describes disagree, the file governs and the row is the defect.
+reading aid. Normative means that for the fifteen agents the table covers, the live
+comparison reads that column and no other document — the one exception is
+`qa:fe-tester`, noted above, which has no row and whose target is the list under
+"Two dual prefixes for Playwright". The column is therefore kept in sync with the
+shipped `tools:` lines, and two rows were corrected after implementation for
+exactly that reason (see Delivery). Where a row and the file it describes disagree,
+the file governs and the row is the defect.
 
 *Status record.* A tracked file, `docs/agent-tools-verification.md`, committed on
 this branch with seventeen rows — the fifteen repairs-table agents, `qa:fe-tester`,
@@ -693,19 +725,27 @@ request:
 | Plugin | From | To |
 | --- | --- | --- |
 | qa | 2.5.1 | 2.5.2 |
-| web-auditor | 2.1.1 | 2.1.3 |
-| code-review | 1.17.0 | 1.17.2 |
+| web-auditor | 2.1.1 | 2.1.4 |
+| code-review | 1.17.0 | 1.17.3 |
 | frontend-developer | 1.2.0 | 1.2.1 |
 | python-developer | 3.0.3 | 3.0.4 |
 | php-developer | 1.0.2 | 1.0.3 |
 
-`web-auditor` and `code-review` reach their `To` values in two steps. The repair
-itself bumped them to 2.1.2 and 1.17.1; `c804315`, a post-implementation review fix
-on the same branch, bumped them again across all four surfaces. That commit also
-moved two Repairs-table targets, which are updated in place above rather than left
-to drift: `code-quality-auditor` is no longer `unchanged` — its body instructs it to
-invoke the developer-plugin skills it neither preloads nor could reach, so it gains
-`Skill` — and `fix-auto`'s list was narrowed to what its surface references. The
+`web-auditor` and `code-review` reach their `To` values in three steps. The repair
+itself bumped them to 2.1.2 and 1.17.1. `c804315`, the first post-implementation
+review fix on the same branch, bumped them to 2.1.3 and 1.17.2 across all four
+surfaces. `f2e96fb`, the second, changed three plugin files — it restored `Write` to
+`fix-auto` with the body sentence that now evidences it, and gave the coordinator's
+not-assessed instruction somewhere to render — and landed with **no** bump on any of
+the four surfaces; the correction pass that followed carries both plugins to 2.1.4
+and 1.17.3, again across all four. Only `code-review` needed the `Write` half; the
+`web-auditor` bump covers the coordinator half of the same commit.
+
+`c804315` also moved two Repairs-table targets, which are updated in place above
+rather than left to drift: `code-quality-auditor` is no longer `unchanged` — its
+body instructs it to invoke the developer-plugin skills it neither preloads nor
+could reach, so it gains `Skill` — and `fix-auto`'s list was narrowed to what its
+surface references, less `TaskList` and, for one commit, less `Write`. The
 target column is the spec's record of what ships; a row that disagrees with the
 shipped `tools:` line is a defect here, to be corrected before the live comparison
 runs, and never a `mismatch` verdict against the agent.

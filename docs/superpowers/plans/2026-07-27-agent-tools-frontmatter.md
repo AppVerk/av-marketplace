@@ -3,17 +3,46 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 > **Status: executed, then amended.** All thirteen tasks ran on branch
-> `fix/agent-tools-frontmatter`. A post-implementation review pass then changed the
+> `fix/agent-tools-frontmatter`. Post-implementation review passes then changed the
 > validator (an unbalanced parenthesis made it fail open; `main()` had no test
 > coverage; an empty `tools:` value passed silently), the web-auditor coordinator
-> prose and its `commands/audit.md` entry point, and two code-review agent `tools:`
-> lines: `code-quality-auditor` gained `Skill`, and `fix-auto` lost `TaskList`.
-> Task 9 is stale on both counts — its Step 2 write block still carries `TaskList`,
-> its Step 3 still asserts that `code-quality-auditor` keeps `Read, Bash, Grep,
-> Glob`, and its Step 4 still expects three background-lost warnings for `fix-auto`
-> where the shipped list produces two (`TaskCreate`, `TaskUpdate`). Those fixes
-> carried their own version bumps, so Task 12's table is one release behind for
-> `web-auditor` and `code-review`.
+> prose, its `commands/audit.md` entry point, and two code-review agent `tools:`
+> lines.
+>
+> What changed in `commands/audit.md`: the coordinator dispatch at line 75 gained
+> `run_in_background: false`, and "Wait for the agent to complete" became an
+> instruction to read the report the call returns inline. This change had removed
+> every result-collection primitive from the tree, so a backgrounded coordinator
+> would have left the entry point waiting for a result it had no way to obtain. In
+> `code-review`, `code-quality-auditor` gained `Skill`, and `fix-auto` lost
+> `TaskList` — and briefly `Write`, which `f2e96fb` restored together with the body
+> sentence that now evidences it.
+>
+> Three tasks below are stale as a result. **Task 9** on three counts: its Step 2
+> write block still carries `TaskList`, its Step 3 still asserts that
+> `code-quality-auditor` keeps `Read, Bash, Grep, Glob`, and its Step 4 still
+> expects three background-lost warnings for `fix-auto` where the shipped list
+> produces two (`TaskCreate`, `TaskUpdate`). **Task 10 Step 4** carries the same
+> `TaskList` staleness: it expects `TaskCreate`/`TaskUpdate`/`TaskList` warnings on
+> four agents, where only the three `developer` agents still declare all three. The
+> shipped tree emits eleven background-lost warnings, not twelve. **Task 8 Step 7**
+> records that line 75 of `commands/audit.md` "passes no `run_in_background`
+> argument today and gains none" — correct when the task ran, and not a description
+> of the shipped file. **Task 1's Interfaces block** gives
+> `split_entries(value: object) -> tuple[list[str], str | None]`, and the test
+> blocks below it unpack two values; the shipped signature returns a third element,
+> a warnings list. That grew out of the review's own oscillation: a hard error on an
+> unbalanced parenthesis kept rejecting legitimate specifiers, so an imbalance now
+> warns and the entries are split anyway, which keeps every entry under inspection
+> without failing the build on a value YAML accepts.
+>
+> Both plugin-touching passes — `c804315` and `f2e96fb` — are reflected in the
+> version history, though not identically: `c804315` bumped `web-auditor` and
+> `code-review` across all four parity surfaces itself, while `f2e96fb` landed with
+> no bump on any of the four and is carried by the correction pass that also wrote
+> this note. Task 12's table is therefore two releases behind for both plugins — it
+> records the 2.1.2 and 1.17.1 it produced, against the 2.1.4 and 1.17.3 that ship.
+>
 > Per-task code blocks and per-task expected counts below record what each
 > task produced **at the time it ran** — Task 3's "`OK` with 33 tests" was correct
 > then, and the suite is larger now. Where this plan and the shipped files disagree,
@@ -1245,7 +1274,7 @@ The file is git-ignored scratch and is never committed. It moves into the pull r
 
 Six plugins bump by PATCH. Every change repairs a declaration that never granted a tool, and none adds or removes a plugin-level feature. Two carry a deliberate behaviour change inside that repair — `fix-auto` narrows from full inheritance to an explicit list, and the `web-auditor` dispatches move to the foreground.
 
-`docs/plugins/qa.md` is additionally carried from 2.5.0 to 2.5.2: it was left behind by the 2.5.1 bump, which is why `check_plugin_versions.py` fails on `master` today.
+`docs/plugins/qa.md` is additionally carried from 2.5.0 to 2.5.2: `cecaa92`, this branch's own first commit, bumped `plugin.json`, `marketplace.json` and the README row to 2.5.1 and left this fourth surface behind, which is why `check_plugin_versions.py` fails on **this branch**. `origin/master` is unaffected — all four qa surfaces there still read 2.5.0 and the check exits 0. The drift this task repairs is the drift this branch introduced.
 
 **Files:**
 - Modify: `plugins/{qa,web-auditor,code-review,frontend-developer,python-developer,php-developer}/.claude-plugin/plugin.json`
@@ -1403,10 +1432,14 @@ Create `docs/agent-tools-verification.md`. Seventeen rows: sixteen seeded `pendi
 
 Records the live layer of the repair in
 `docs/superpowers/specs/2026-07-27-agent-tools-frontmatter-design.md`: comparing
-each agent's harness-resolved tool list against its target. The target is that
-spec's Repairs-table target column, kept in sync with the agent's shipped `tools:`
-line; where the two disagree, the shipped file governs and the spec row is the
-thing to repair, not the agent.
+each agent's harness-resolved tool list against its target. Targets come from three
+sources, not one. For the fifteen rows the spec's Repairs table covers, the target is
+that table's target column, kept in sync with the agent's shipped `tools:` line;
+where the two disagree, the shipped file governs and the spec row is the thing to
+repair, not the agent. The two remaining rows have no Repairs-table row at all:
+`qa:fe-tester`, whose target is the list the spec gives under "Two dual prefixes
+for Playwright", and `code-review:feedback-analyzer`, which this change does not
+repair and whose target is therefore its own shipped `tools:` line.
 
 A row reads `matched — <version>` only when its Resolved list column carries the
 harness's resolved list verbatim. A row reverts to `pending` when its recorded

@@ -41,9 +41,16 @@ Convergence condition above and is re-derivable.
 
 ### What this verdict does not mean
 
-Round 1's fourteen findings passed a full challenger quorum, 13 for 13 upheld.
-Rounds 2 through 9 did not: at the run-1 budget gate the maintainer chose to spend
-the remaining time on fixes rather than on adversarial confirmation, and that
+Round 1 ran the challenger quorum in full — 13 dispatches, 13 upheld, 0 refuted,
+every entry the protocol dispatches. That covers **eleven of its fourteen
+findings**: the protocol never dispatches minors, so round 1's two are outside the
+quorum, and SR-014 was surfaced by a challenger during another finding's
+adjudication rather than adjudicated by one. Those three rows rest on panel and
+orchestrator evidence, like every round after.
+
+Rounds 2 through 9 got no quorum at all: at the run-1 budget gate the maintainer
+chose to spend the remaining time on fixes rather than on adversarial
+confirmation, and that
 choice carried forward. Findings in those rounds were fixed on panel argument plus
 orchestrator evidence, not on challenger survival — the sole exception being
 SR-023, SR-024 and SR-025, re-dispatched to challengers at the start of run 2 and
@@ -67,8 +74,12 @@ enforces the restatement, so a misread contract would have been self-confirming.
 **Units:** Purpose · Evidence · Scope · The contract · Repairs · Validator ·
 Verification · Delivery · Residual risks
 
-Challenger quorum: 13 dispatches, **13 upheld, 0 refuted**. Both criticals were
-double-challenged and upheld twice.
+Challenger quorum: 13 dispatches, **13 upheld, 0 refuted**. The protocol dispatches
+one challenger per major and two per critical, and never dispatches minors, so the
+thirteen decompose as the two criticals twice each — both upheld twice — plus nine
+single dispatches. Nine and not ten, because SR-014 was a challenger's own discovery
+rather than an entry sent out for adjudication. **Eleven of the fourteen rows below
+therefore carry a challenger verdict**: the two minors and SR-014 do not.
 
 | SR | severity | lenses | outcome |
 | --- | --- | --- | --- |
@@ -247,8 +258,11 @@ is unaddressed.
   rounds; no reviewer or challenger failed or needed a retry.
 - **Challenger quorum ran in round 1 only.** At the run-1 budget gate the maintainer
   chose to spend the remaining time on fixes rather than on adversarial
-  confirmation, and that choice carried forward through round 9. Round 1's fourteen
-  findings were fully challenged, 13 for 13 upheld. Round 2's nine applied fixes and
+  confirmation, and that choice carried forward through round 9. Round 1's quorum
+  was complete for what the protocol dispatches — 13 dispatches, 13 upheld, 0
+  refuted — which is eleven of its fourteen findings; its two minors are never
+  dispatched, and SR-014 came from a challenger rather than going to one. Round 2's
+  nine applied fixes and
   every fix in rounds 3 through 9 rest on panel argument, orchestrator evidence and
   the user's approval, **not** on adversarial confirmation. The sole exception is
   SR-023, SR-024 and SR-025, re-dispatched to challengers at the start of run 2 and
