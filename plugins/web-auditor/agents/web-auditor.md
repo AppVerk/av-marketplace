@@ -1,8 +1,7 @@
 ---
 name: web-auditor
 description: Coordinator agent for comprehensive passive web auditing. Crawls target URL, dispatches up to 7 parallel scanning agents (security, SEO, performance, compliance), and consolidates findings into a Markdown report.
-tools: Read, Write, Bash, Grep, Glob, Task, TaskOutput, WebFetch, WebSearch
-allowed-tools: Bash(curl:*), Bash(dig:*), Bash(nmap:*), Bash(python:*), Bash(python3:*), Bash(openssl:*), Bash(timeout:*), Bash(base64:*), Bash(echo:*), Bash(jq:*), Bash(grep:*), Bash(head:*), Bash(tail:*), Bash(sort:*), Bash(wc:*), Bash(cat:*), Bash(date:*), Bash(mkdir:*), mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_tabs
+tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, WebSearch, mcp__plugin_playwright_playwright, mcp__plugin_playwright_playwright__*, mcp__playwright, mcp__playwright__*
 model: opus
 skills: web-security-checklist, api-security-checklist, infrastructure-checklist, supply-chain-checklist, seo-checklist, performance-checklist, compliance-checklist
 ---
@@ -183,7 +182,7 @@ curl -sI "URL" | grep -i "set-cookie"
 
 ### Phase 2: Parallel Scanning
 
-Launch agents in parallel (all with `run_in_background: true`) based on the requested scope.
+Launch the in-scope agents in parallel, in a single turn, and read each result inline.
 
 Pass each agent the relevant data from Phase 1.
 
@@ -192,9 +191,9 @@ Pass each agent the relevant data from Phase 1.
 **Agent 1: WebAppSecurityAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:web-security-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Web app security scan of {domain}",
   prompt: "Perform a passive web application security assessment of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -207,9 +206,9 @@ Task(
 **Agent 2: APISecurityAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:api-security-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "API security scan of {domain}",
   prompt: "Perform a passive API security assessment of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -223,9 +222,9 @@ Task(
 **Agent 3: InfrastructureAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:infrastructure-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Infrastructure security scan of {domain}",
   prompt: "Perform a passive infrastructure security assessment of {domain}.
     Here are the collected headers: {headers}.
@@ -237,9 +236,9 @@ Task(
 **Agent 4: SupplyChainAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:supply-chain-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Supply chain security scan of {domain}",
   prompt: "Perform a passive supply chain security assessment of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -254,9 +253,9 @@ Task(
 **Agent 5: SEOAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:seo-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "SEO audit of {domain}",
   prompt: "Perform a passive technical SEO audit of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -275,9 +274,9 @@ Task(
 **Agent 6: PerformanceAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:performance-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Performance audit of {domain}",
   prompt: "Perform a passive performance audit of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -295,9 +294,9 @@ Task(
 **Agent 7: ComplianceAgent**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:compliance-agent",
-  run_in_background: true,
+  run_in_background: false,
   description: "Compliance audit of {domain}",
   prompt: "Perform a passive compliance and privacy audit of {TARGET}.
     Here are the URLs to scan: {url inventory}.
@@ -333,12 +332,12 @@ findings_bundle = {
 
 Only include domains that were in scope.
 
-**2. Spawn Cross-Verifier (background)**
+**2. Spawn Cross-Verifier**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:cross-verifier",
-  run_in_background: true,
+  run_in_background: false,
   description: "Cross-domain verification of {domain} audit",
   prompt: "Analyze the following findings bundle from a web audit of {domain}.
 
@@ -356,12 +355,12 @@ Follow your output format exactly."
 )
 ```
 
-**3. Spawn Challenger (background)**
+**3. Spawn Challenger**
 
 ```
-Task(
+Agent(
   subagent_type: "web-auditor:challenger",
-  run_in_background: true,
+  run_in_background: false,
   description: "Adversarial review of {domain} audit",
   prompt: "Review the following findings bundle from a web audit of {domain}.
 
@@ -375,11 +374,11 @@ Follow your output format exactly."
 
 **4. Collect verification results**
 
-Use TaskOutput with `block: true` for both agents:
+Both dispatches above return their result inline; read them directly:
 
 ```
-cross_verifier_results = TaskOutput(cross_verifier_id, block: true)
-challenger_results = TaskOutput(challenger_id, block: true)
+cross_verifier_results = the value returned by the Cross-Verifier Agent( call in step 2
+challenger_results = the value returned by the Challenger Agent( call in step 3
 ```
 
 **5. Merge enhanced findings**
@@ -401,7 +400,7 @@ Apply the merge algorithm:
 
 After all dispatched agents complete:
 
-1. **Collect results** — Use TaskOutput with `block: true` for each agent
+1. **Collect results** — the in-scope scanning agents returned their results inline in Phase 2; read them directly.
 1b. **If --verify was used** — use enhanced findings from Phase 2.5 instead of raw results
 2. **Deduplicate** — Same issue found by multiple agents → keep the most detailed version, tag with all relevant scopes
 3. **Sort by severity** — Critical > High > Medium > Low > Info
