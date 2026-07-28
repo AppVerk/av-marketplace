@@ -2,7 +2,6 @@
 name: security-auditor
 description: Expert security auditor for comprehensive code security analysis. Use PROACTIVELY for ALL security-related code reviews, vulnerability assessment, secret scanning, SAST analysis, dependency scanning, and OWASP compliance checks.
 tools: Read, Bash, Grep, Glob
-allowed-tools: Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(grep:*), Bash(cat:*)
 model: opus
 skills: secret-scanning, sast-analysis, dependency-scanning, finding-falsification
 ---
