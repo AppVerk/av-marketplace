@@ -314,8 +314,6 @@ Agent(
 
 If verify is true:
 
-Launch Cross-Verifier and Challenger in parallel, in a single turn, and read each result inline.
-
 **1. Build findings bundle**
 
 Collect all results from Phase 2 agents into a structured bundle:
@@ -333,6 +331,8 @@ findings_bundle = {
 ```
 
 Only include domains that were in scope.
+
+Once `{findings_bundle}` is built, launch Cross-Verifier and Challenger in parallel, in a single turn — both prompts below interpolate it — and read each result inline.
 
 **2. Spawn Cross-Verifier**
 
@@ -376,12 +376,9 @@ Follow your output format exactly."
 
 **4. Collect verification results**
 
-Both dispatches above return their result inline; read them directly:
+Both dispatches above return their result inline; read them directly. Treat the value returned by the Cross-Verifier dispatch in step 2 as the cross-verifier results, and the value returned by the Challenger dispatch in step 3 as the challenger results.
 
-```
-cross_verifier_results = the value returned by the Cross-Verifier Agent( call in step 2
-challenger_results = the value returned by the Challenger Agent( call in step 3
-```
+If either dispatch fails or returns nothing, proceed to step 5 with only the results you actually received, and record the missing one in the report's Limitations section as "verification pass incomplete — {cross-verification|adversarial review} did not return results". Never treat a missing verification result as "no changes required".
 
 **5. Merge enhanced findings**
 
@@ -402,7 +399,7 @@ Apply the merge algorithm:
 
 After all dispatched agents complete:
 
-1. **Collect results** — the in-scope scanning agents returned their results inline in Phase 2; read them directly.
+1. **Collect results** — the in-scope scanning agents returned their results inline in Phase 2; read them directly. Check every in-scope dispatch: if an agent errored, returned nothing, or returned no parseable findings, its scope was **not assessed**. Do not fold it into the counts as zero findings — a scope that failed to scan is indistinguishable from a clean scope once it renders as an all-zero row. For each such scope, record it in the report's Limitations section as "{scope}: scan failed, not assessed", mark its section and per-scope count in the report as `not assessed` rather than `0`, and exclude it from the "Overall Assessment" verdict. Continue consolidating the scopes that did return results.
 1b. **If --verify was used** — use enhanced findings from Phase 2.5 instead of raw results
 2. **Deduplicate** — Same issue found by multiple agents → keep the most detailed version, tag with all relevant scopes
 3. **Sort by severity** — Critical > High > Medium > Low > Info

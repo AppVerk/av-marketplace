@@ -1,7 +1,7 @@
 ---
 name: fix-auto
 description: Applies a fix for a single code review issue end to end — analysis, implementation, verification, and reporting. Invoked as a subagent by the review, fix-report, and fix-all commands.
-tools: Read, Edit, Write, Glob, Grep, Bash, Skill, TaskCreate, TaskUpdate, TaskList
+tools: Read, Edit, Glob, Grep, Bash, Skill, TaskCreate, TaskUpdate
 model: opus
 ---
 

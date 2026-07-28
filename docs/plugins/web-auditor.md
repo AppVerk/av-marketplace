@@ -2,7 +2,7 @@
 
 Comprehensive web audit with multi-agent architecture covering security, SEO, performance, and compliance.
 
-**Version:** 2.1.2
+**Version:** 2.1.3
 
 ## Commands
 
