@@ -72,16 +72,15 @@
 > tree at `01b3c67`.
 >
 > **That enumeration is bounded at `01b3c67` and is not a standing claim about the
-> branch.** Re-run the command above before relying on it. When this note was
-> written the working tree additionally carried an uncommitted fifth web-auditor
-> pass — `plugin.json` at 2.1.5 against the 2.1.4 at `01b3c67`, with matching edits
-> to `.claude-plugin/marketplace.json`, `README.md` and `docs/plugins/web-auditor.md`
-> — adding a Phase 3 step 7 that requires the coordinator to return the complete
-> report body inline (the entry point reads only the returned text and never opens
-> the file), a title-based rule for matching Challenger and Cross-Verifier entries to
-> findings, and a "merge step N" naming convention for the Phase 2.5 merge. Having no
-> commit, it has nothing to bind to; it is recorded here as unbounded and must be
-> re-measured rather than carried forward as fact.
+> branch.** Re-run the command above before relying on it. A fifth web-auditor
+> pass has since landed as `9c6fc76`, carrying `plugin.json` to 2.1.5 against the
+> 2.1.4 at `01b3c67`, with matching edits to `.claude-plugin/marketplace.json`,
+> `README.md` and `docs/plugins/web-auditor.md`. It adds a Phase 3 step 7 requiring
+> the coordinator to return the complete report body inline — the entry point reads
+> only the returned text and never opens the file — a title-based rule for matching
+> Challenger and Cross-Verifier entries to findings, and a "merge step N" naming
+> convention for the Phase 2.5 merge. So the enumeration above is five commits, not
+> four, and is bounded at `9c6fc76`.
 >
 > Per-task **Interfaces** blocks, per-task code blocks and per-task expected counts
 > below record what each task specified or produced **at the time it ran**, and none

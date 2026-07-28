@@ -774,13 +774,13 @@ half; the `web-auditor` half covers the coordinator changes in `f2e96fb` and
 `b4c1b10` alike. After `f2e96fb`, nothing under `plugins/code-review/` changed
 except that plugin's `plugin.json` version line.
 
-The `To` column and the three steps above are bounded at `01b3c67` and are not a
-standing claim about the branch. When this paragraph was last measured the working
-tree additionally carried an uncommitted fifth `web-auditor` pass at 2.1.5,
-requiring the coordinator to return its complete report body inline. It has no
-commit to bind to, so the table is not restated to include it; re-derive both from
-`git log 6547403..<tip> --oneline --reverse -- plugins/` and the shipped
-`plugin.json` files before relying on either.
+The `To` column and the three steps above are bounded at `9c6fc76` and are not a
+standing claim about the branch. A fifth `web-auditor` pass landed there, carrying
+that plugin to **2.1.5** across all four surfaces — it requires the coordinator to
+return its complete report body inline, because the entry point reads only the
+returned text and never opens the written file. `code-review` stands at 1.17.3.
+Re-derive both from `git log 6547403..<tip> --oneline --reverse -- plugins/` and
+the shipped `plugin.json` files before relying on either.
 
 `c804315` also moved two Repairs-table targets, which are updated in place above
 rather than left to drift: `code-quality-auditor` is no longer `unchanged` — its
