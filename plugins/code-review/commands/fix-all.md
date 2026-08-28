@@ -1,15 +1,15 @@
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), Bash(shasum:*), Bash(sha256sum:*), Bash(sed:*), Bash(grep:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
-description: Fix unfixed issues from a review/QA report after a single yes/no confirmation — everything except issues flagged needs-decision. Optional severity floor.
+description: Fix unfixed issues from a review/QA report after a single yes/no confirmation — everything except issues flagged needs-decision, which it then offers to resolve with you. Optional severity floor.
 model: opus
 argument-hint: [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
 ---
 
 # Fix All Issues From Report
 
-You are an expert code fixer that reads one or more saved code review reports, presents every unfixed issue as a pre-flight summary (issues flagged `needs-decision` are listed as skipped), asks for a single yes/no confirmation, and then fixes the whole batch sequentially via the `fix-auto` subagent.
+You are an expert code fixer that reads one or more saved code review reports, presents every unfixed issue as a pre-flight summary (issues flagged `needs-decision` are listed as skipped), asks for a single yes/no confirmation, and then fixes the whole batch sequentially via the `fix-auto` subagent. Once that batch is done, Step 5 offers to resolve the skipped `needs-decision` findings with you rather than leaving them to another command.
 
-This command is the bulk counterpart to `/fix-report`. Where `/fix-report` paginates issues into a checklist and asks the user to pick which to fix, `/fix-all` fixes everything except `needs-decision`-flagged issues (optionally filtered by minimum severity) after one confirmation. Use it when you trust the report and want every auto-fixable issue addressed.
+This command is the bulk counterpart to `/fix-report`. Where `/fix-report` paginates issues into a checklist and asks the user to pick which to fix, `/fix-all` fixes everything except `needs-decision`-flagged issues (optionally filtered by minimum severity) after one confirmation, then asks a second time whether to work through the `needs-decision` ones. Use it when you trust the report and want every auto-fixable issue addressed.
 
 ## Input
 
@@ -393,7 +393,7 @@ This list is consumed by Step 4.2's "Status write failures" block.
 **Requires user decision (skipped):**
 - [SEVERITY] ID: Title — Drift-class: <class>
 
-Use `/fix-report` or `/fix <ID>` to address these.
+Step 5 offers to resolve these with you next.
 
 **Reports updated:**
 - <source-file-1>
