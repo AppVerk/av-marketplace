@@ -541,6 +541,19 @@ Count failures at or above `--severity` (default: all):
 
 Before writing, extract any existing `**Status:**` lines from the prior report. **Match each Status line to its issue strictly by the `QA-NNN` token, not the full `### [SEVERITY] … Title` heading** — severity and title may be re-derived differently between runs. When rendering the new report, re-insert each preserved Status line immediately after its `QA-NNN` heading, **exactly once** (never add a second Status line to an issue that already has one). Alternatively, use the Edit tool to make surgical updates to the existing report (merge new issues, keep old Status lines intact).
 
+**Carry the decision record over as well.** The same extract-and-re-insert — matched by the same `QA-NNN` token, re-inserted exactly once — applies to every loop-written field of the finding block the `qa` and `code-review` plugins share:
+
+- `**Decision:**`
+- `**Decision-retired:**`
+- `**Verification-plan:**`
+- `**Decision-pin:**`
+- `**Dispatch:**`
+- `**Verification:**`
+
+It applies equally to the rewritten `**Location:**` line, **carried over verbatim with its `(was: …)` parenthetical intact** — the preserved line wins over whatever Location this run re-derived for that issue, because it is the corrected address. Each of these fields occupies exactly one physical line with no continuation, so each is extracted and re-inserted as a single line. `**Status:**` stays the first non-blank line under the `QA-NNN` heading; the six fields are re-inserted below it, preserving the relative order they had in the prior report.
+
+Without this carry-over a re-render drops the decision record and the corrected address the replay path depends on, and the user is re-asked decisions they have already made.
+
 **For fresh mode (Case 3 mismatch / Case 4 none):**
 
 Write a clean report using the Write tool (full overwrite).
@@ -608,10 +621,13 @@ From the sidecar `current` and `scenario_issues`:
 2. For each failing scenario, extract its QA-XXX issues.
 3. Filter by `--severity` (keep issues at or above the floor).
 4. Pre-filter: drop any issue with:
-   - **Location field is `unknown:0`** or missing entirely
+   - **A `**Status:**` line whose value begins `🚫 Rejected`** — the status is terminal, so a rejected issue never enters `fix_candidates` on this or any later run. Match the status value **by prefix, never by whole-line equality** — a rejected line carries a ` — <reason>` tail that is not this loop's to control.
+   - **A location-less `**Location:**` field** — read the field by the two-clause rule below; a value of `—`, `unknown:0`, missing entirely, or anything that does not parse as `path:line` or `path:line-range` is location-less
    - **Missing fix-auto-required fields** (Location, Problem, Remediation)
-   
-   For dropped issues, record: `needs manual location` or `incomplete fields`. Never dispatch them.
+
+   **`**Location:**` read rule, two clauses.** Take the **first backticked token** on the line as the location and **ignore any trailing parenthetical** — this is the form the decision-gate loop always writes when it corrects a location, and its `(was: …)` tail preserves the *original* value, `unknown:0` included. Where the line carries no backticked token at all — a legacy `**Location:** src/foo.ts:12`, which this loop never writes but still meets — take the first whitespace-delimited token after the field name instead. **Never test the whole line:** a whole-line test reads a repaired finding as location-less because of the `unknown:0` preserved in its tail, and silently drops an issue that is fixable.
+
+   For dropped issues, record: `rejected by user`, `needs manual location` or `incomplete fields`. Never dispatch them.
 
 Call this list `fix_candidates`.
 
@@ -674,6 +690,21 @@ Pre-check: If `dispatch_count >= --max-dispatches`, skip the entire fix phase an
 
 For each issue in `fix_candidates`, **sequentially**:
 
+**Dispatch-copy rule.** `/qa:loop` is itself a dispatcher of the finding block the `qa` and `code-review` plugins share, so what `fix-auto` receives is the **dispatch copy** of the block, not the raw block. It carries the reviewer-authored fields plus the rewritten `**Location:**` line, which travels in full — corrected value, `(was: …)` parenthetical and all. Every other line on the closed list is handled exactly as `code-review`'s `decision-gate` skill defines it at stage 3:
+
+| Line | In the dispatched copy |
+|---|---|
+| `**Location:**` | **travels**, rewritten form and all |
+| `**Verification-plan:**` | stripped |
+| `**Decision-pin:**` | stripped |
+| `**Dispatch:**` | stripped |
+| `**Verification:**` | stripped |
+| `**Decision-retired:**` | stripped |
+| `**Decision:**` | reduced to its trailing `User decision: <resolution>` |
+| `**Status:**` | **travels unchanged** — every Status line the block carries here pre-dates this run (this loop writes none before Step 4.1), and `fix-auto`'s own abort on `🚫 Rejected` reads exactly it |
+
+All of the stripped lines **stay in the source report** — that is what the replay path and the decision-gate's verification read. A fixer holding unrestricted `Edit`, `Write` and `Bash`, told to iterate until its fix verifies, must not be handed the checks it will be graded by; without this rule a decided-but-unfixed finding arrives carrying them.
+
 ```
 dispatch_count++
 
@@ -681,14 +712,14 @@ Task(
   subagent_type: "code-review:fix-auto",
   run_in_background: false,
   description: "Auto-fix: [<SEVERITY>] <Issue-ID>: <Title>",
-  prompt: "<full issue block from the report, including all fields>
+  prompt: "<the issue block from the report, rendered as the dispatch-copy rule above defines it>
 
 INJECTED CONSTRAINTS FOR THIS FIX:
 
 1. Source-only fix: do not modify the test plan, plan-referenced test files, or test scenarios.
 2. Fix only the source code under test.
 3. Keep the working tree clean (uncommitted changes only, no staging).
-4. If a location-less issue arrives (Location: unknown:0 or missing), return Failed — do not prompt."
+4. If a location-less issue arrives, return Failed — do not prompt. Read the Location field by its two-clause rule: take the first backticked token, ignoring any trailing parenthetical; where the line carries no backticked token, take the first whitespace-delimited token after the field name. Under either clause a value of —, unknown:0, or anything that does not parse as path:line or path:line-range is location-less. Never test the whole line: a corrected Location preserves the original unknown:0 inside its (was: ...) tail, and a whole-line test would fail a fix that is perfectly dispatchable."
 )
 ```
 
@@ -911,6 +942,8 @@ For each scenario that **PASSES** in the final run:
 ```
 
 Use today's date in YYYY-MM-DD format.
+
+**A `🚫 Rejected` line is left exactly as found.** Before updating any existing Status line in place, read its value and match **by prefix, never by whole-line equality** — a rejected line carries a ` — <reason>` tail. Where the value begins `🚫 Rejected`, write nothing for that issue: do not update the line in place, and do not add a second `**Status:**` line beside it. The status is terminal, and the reason is the entire record of why the rejection happened. This guard is load-bearing because the sidecar binds scenario → [QA-IDs]: a *sibling* issue passing on the same scenario is enough to reach a rejected issue's heading here, and the in-place update would destroy both the rejection and its reason.
 
 **Still-failing scenarios:** leave their issues unmarked (no `**Status:**` line; they remain retryable by a future run).
 
