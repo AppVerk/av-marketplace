@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), Bash(shasum:*), Bash(sha256sum:*), Bash(sed:*), Bash(grep:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
 description: Fix unfixed issues from a review/QA report after a single yes/no confirmation — everything except issues flagged needs-decision. Optional severity floor.
 model: opus
 argument-hint: [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
@@ -27,6 +27,7 @@ Use TaskCreate for each of the following:
 | 2 | Filter and pre-flight | Building pre-flight summary... |
 | 3 | Fix all issues | Fixing all issues... |
 | 4 | Update reports and summarize | Updating reports and summarizing... |
+| 5 | Resolve needs-decision findings | Resolving needs-decision findings... |
 
 **After creating all tasks:** Mark task 1 as `in_progress` using TaskUpdate.
 
@@ -150,12 +151,13 @@ Aggregate all tagged issues across all files into a single list before applying 
 
 ### Step 1.3: Filter out already-fixed issues
 
-For each extracted issue, check if the block contains any of these status lines:
+For each extracted issue, check if the block contains a `**Status:**` line whose value **starts with** any of these (match by prefix, not whole-line equality — a `🚫 Rejected` line carries a ` — <reason>` tail that a whole-line comparison would fail on):
 
 - `**Status:** ✅ Fixed`
 - `**Status:** ⚠️ Partially Fixed`
+- `**Status:** 🚫 Rejected`
 
-If present, **skip this issue** — it has already been handled.
+If a status line is present, **skip this issue** — it has already been handled. A `🚫 Rejected` status is terminal: the finding never re-enters the fix set, on this run or any later one.
 
 Collect only unfixed issues into the working list.
 
@@ -173,9 +175,11 @@ For each extracted issue, check whether the block contains a `**Source:** @<hand
 
 Follow the [Abort helper](#abort-helper) procedure.
 
-**If all issues have a `**Status:**` field (all fixed/partially fixed):**
+**If all issues have a `**Status:**` field (all fixed/partially fixed/rejected):**
 
-> All issues in the report(s) have been resolved. Nothing to do.
+With `🚫 Rejected` in the vocabulary, a `**Status:**` field no longer implies the finding was fixed — count fixed/partially-fixed issues and rejected issues separately and name both counts:
+
+> N fixed, M rejected. Nothing to do.
 
 Follow the [Abort helper](#abort-helper) procedure.
 
@@ -218,13 +222,18 @@ Partition the current list on each issue block's `**Fix-policy:**` field:
 - `**Fix-policy:** auto`, or **no Fix-policy field at all** → keep in the fix list. **Absent field ⇒ `auto`** — all pre-existing review/QA reports behave exactly as before this filter existed.
 - Any other (malformed/unrecognized) `**Fix-policy:**` value → treat as `needs-decision` (fail safe — never auto-fix on a policy you cannot parse).
 
-There is no override flag (Rule 8: flag-like tokens classify as paths). To fix a skipped issue, use `/fix <ID>` or `/fix-report`.
+There is no override flag (Rule 8: flag-like tokens classify as paths). A skipped issue is offered back to you at [Step 5](#step-5) once the auto batch is done; outside this run, use `/fix <ID>` or `/fix-report`.
 
-**Edge case — zero issues after filter:** if the fix list is now empty and `needs_decision` is non-empty, output:
+**Edge case — zero issues after filter (the zero-auto path):** if the fix list is now empty and `needs_decision` is non-empty, **do not abort**. There is nothing to fix, but there is still something to decide: skip the rest of Step 2 and the whole of Steps 3–4, and go straight to Step 5's offer.
 
-> All remaining issues are flagged `needs-decision` and require your decision. Use `/fix-report` to select them interactively, or `/fix <ID>` for a single issue.
+Two things Step 5 normally relies on did not happen on this path, and Step 5's own zero-auto clause compensates for both:
 
-Follow the [Abort helper](#abort-helper) procedure.
+1. **Step 4.2 never printed the "Requires user decision" list.** Step 5 prints it itself before asking, so the offer is not a question about findings you were never shown. Its summary block follows nothing rather than following a fix summary.
+2. **Steps 3–4 never ran, so their progress rows are still open.** Until this change the [Abort helper](#abort-helper) was the only thing closing them here; Step 5 closes rows 3 and 4 as well as its own.
+
+**Task Update:** Mark task 2 as `completed` and task 5 as `in_progress` using TaskUpdate. Leave tasks 3 and 4 `pending` — Step 5 closes them.
+
+(When the fix list **and** `needs_decision` are both empty there is nothing to fix and nothing to decide, and this path is never reached: Step 1.5 or Step 2.2's severity-floor edge case has already aborted the run.)
 
 ### Step 2.3: Sort issues
 
@@ -410,5 +419,103 @@ Re-run `/fix-all` to retry, or manually add the `**Status:**` line below each he
 Where `<reason>` is the value recorded in Step 4.1.5 (`edit-errored`, `status-line-missing`, or `status-line-wrong-text`). The code change itself already landed for these issues — only the report annotation is missing, which is why the re-run-or-manual-edit guidance is non-destructive. Omit this block entirely if `status_write_failures` is empty.
 
 **Task Update:** Mark task 4 as `completed` using TaskUpdate.
+
+**Changes remain uncommitted for your control.**
+
+---
+
+<a id="step-5"></a>
+
+## Step 5: Resolve needs-decision findings
+
+Step 4 finished everything the report said could be fixed without you. This step offers the rest: the findings Step 2.2.5 moved into the `needs_decision` list, skipped from the auto batch precisely because the fix direction is a judgment call the fixer must not make alone.
+
+### Step 5.1: Nothing to decide
+
+**If the `needs_decision` list from Step 2.2.5 is empty:** mark task 5 as `completed` using TaskUpdate and stop. Ask nothing, print nothing — no extra click when there is nothing to decide. Closing the row is bookkeeping, not output.
+
+### Step 5.2: The offer
+
+**On the zero-auto path only** — the fix list was empty and Step 2.2.5 routed here directly, with tasks 3 and 4 left `pending` and task 5 already `in_progress` — do two things before asking:
+
+1. Mark tasks 3 and 4 as `completed` using TaskUpdate. They never ran, and no abort helper closed them; on this path Step 5 owns their rows as well as its own. Doing it here rather than at the end means no row dangles even if the answer is "no".
+2. Print the "Requires user decision" list yourself, in the rendering Step 4.2 gives it — `- [SEVERITY] ID: Title — Drift-class: <class>`, with `—` where the `**Drift-class:**` field is missing. Step 4.2 never ran on this path, so without this the offer would be a question about findings you were never shown.
+
+**On the normal path** both are already done — Step 4.2 printed that list and closed task 4 — so only mark task 5 as `in_progress` using TaskUpdate.
+
+Then ask, with AskUserQuestion, one question. `N` is the length of `needs_decision`; `B` is `⌈N / 8⌉`, the batch shape stage 1 of the gate will fan out in:
+
+```
+question: "Resolve <N> findings requiring your decision now? <N> findings to analyse, in <B> batch(es) of at most 8."
+options:
+  - label: "Yes — resolve <N>"
+    description: "One question per finding, then fix each decision and verify it."
+  - label: "No — leave them"
+    description: "Stop here. They stay unresolved and return on the next run."
+```
+
+The count and the batch shape are named **before** anything is dispatched, and deliberately: the decision stage carries no dispatch, wall-clock or token budget, and one question per finding is asked however many findings there are. Stating the size here bounds nothing — it only makes what you are agreeing to visible before you agree to it.
+
+### Step 5.3: On "no"
+
+> Left <N> findings for later. Use `/fix-report` or `/fix <ID>` when you want to work through them.
+
+Do not repeat the list — it was printed moments ago, by Step 4.2 or by Step 5.2 above. Mark task 5 as `completed` using TaskUpdate and stop. (On the zero-auto path Step 5.2 already closed tasks 3 and 4, so no row is left open on either path.)
+
+### Step 5.4: On "yes" — run the decision gate
+
+Load `code-review:decision-gate` (Skill tool) and run it over every finding in the `needs_decision` list.
+
+**In this slot the skill runs stages 0 through 3.5** — the location pre-check, the analyst fan-out, the decision sweep with its five outcomes, the batch dispatch, and the orchestrator-run verification. This is the fuller of the two runs: `/fix-report` invokes the same skill for stages 0–2 only and hands the decided findings back to its own Step 3, whereas here the gate dispatches its own batch and verifies it.
+
+That skill is the single source of truth for the decision stage — how a missing location is asked for, how the analysts fan out, how each decision is elicited, what is dispatched, how it is verified, and what is persisted into the source report. Do not restate its rules here; two authorities on one gate is how they drift.
+
+### Step 5.5: Write back and verify
+
+Re-run the **Step 4.1 / 4.1.5** write-and-verify procedure over the decision batch — the same insert-after-heading `Edit` recipe and the same positional re-read, unchanged. Steps 4.1 / 4.1.5 have already run and closed task 4 by the time this step is reached, so **Step 5 owns the write-back for its own findings**: no later step will make it.
+
+Which findings of the batch that covers is `code-review:decision-gate`'s to state, not this step's. Stage 4's status write-back is command-owned, but the outcomes that reach it — and the ones for which the gate has already written a status itself — are defined there.
+
+Collect `status_write_failures` exactly as Step 4.1.5 does. If the list is non-empty, render it with Step 4.2's **Status write failures** block over Step 5's own list, below the summary block of Step 5.6. Step 4.2 itself is unchanged; this reuses its template rather than editing it.
+
+### Step 5.6: Decision-stage summary
+
+Print the block below after the write-and-verify pass. On the normal path it follows the Fix Summary Step 4.2 printed; on the zero-auto path it follows nothing but the list Step 5.2 printed.
+
+Its rows are the eight disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty.
+
+```markdown
+## Decision Stage
+
+**Decided:** N | **Skipped:** N | **Rejected:** N
+
+**Failed — no target supplied:**
+- [SEVERITY] ID: Title
+
+**Unverified rejections:**
+- [SEVERITY] ID: Title — <reason>
+
+**Advisory verification:**
+- [SEVERITY] ID: Title — <checks run>
+
+**verification: unavailable:**
+- [SEVERITY] ID: Title
+
+**Partial verification coverage:**
+- [SEVERITY] ID: Title — <N> not run: <check text>
+
+**Out-of-scope writes:**
+- [SEVERITY] ID: Title — <path>
+
+**Unpinned decisions — not replayed on a later run:**
+- [SEVERITY] ID: Title
+
+**stalled — no progress:**
+- [SEVERITY] ID: Title — <first retired resolution> / <second retired resolution>
+```
+
+This is the same block `/fix-report`'s Step 4.2 prints — one shape for the disclosures, whichever entry point ran the gate.
+
+**Task Update:** Mark task 5 as `completed` using TaskUpdate.
 
 **Changes remain uncommitted for your control.**
