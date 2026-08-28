@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-27
 **Status:** Approved design, pre-implementation
-**Affected plugins:** `code-review` 1.17.3 → 1.18.0, `qa` 2.5.2 → 2.6.0
+**Affected plugins:** `code-review` 1.17.3 → 2.0.0, `qa` 2.5.2 → 2.6.0
 
 ## Purpose
 
@@ -98,6 +98,11 @@ is present in this repository, so an end-to-end run requires a synthetic report.
 - New finding outcome `🚫 Rejected`, propagated to both plugins.
 - The extended `**Location:**` written form ``**Location:** `path:line` (was:
   `original`)``, with the one-line read rule every consumer of the field adopts.
+- Repository-root containment as a conjunct of stage 0's usability rule, beside
+  parse and existence, since `**Location:**` is an untrusted-origin field.
+- The nonce-bound untrusted-data framing a feedback-origin block is dispatched
+  to the analyst under, reusing the protocol `agents/feedback-analyzer.md`
+  already defines, and the `**Source:**` row stage 2's render carries.
 - Registration of the loop-written finding-block fields — `**Decision:**`,
   `**Decision-retired:**`, `**Verification-plan:**`, `**Decision-pin:**`,
   `**Dispatch:**` and `**Verification:**` — with both plugins' documented
@@ -140,12 +145,20 @@ input          /fix-report: findings selected on the needs-decision page
            findings that still lack a decision.
                   │
  stage 0   Location pre-check
-           A location is usable iff its first backticked token parses
-           as path:line or path:line-range and that path exists; any
-           trailing "(was: …)" parenthetical is ignored, per the read
-           rule under Status vocabulary extension. Anything else — "—",
-           "unknown:0", an unparseable string, a path no longer in the
-           tree — is location-less.
+           A location is usable iff it parses as path:line or
+           path:line-range, and the path is contained in the
+           repository tree, and it exists there. The value is read by
+           the two-clause read rule under Status vocabulary extension:
+           first backticked token, any trailing "(was: …)"
+           parenthetical ignored; first whitespace-delimited token
+           after the field name where the line carries no backticked
+           token. Anything else — "—", "unknown:0", an unparseable
+           string, a path no longer in the tree — is location-less,
+           and so is a path that parses and exists but fails the
+           containment test stated below the diagram: such a path is
+           location-less and never merely non-existent, so it is
+           never reported as a missing file, never offered for
+           creation and never dispatched.
            → ask for the missing path:line values now, before fan-out,
              in as few AskUserQuestion calls as the four-question
              ceiling allows — batches of at most 4, one question per
@@ -169,16 +182,31 @@ input          /fix-report: findings selected on the needs-decision page
              rewrite over a line stage 0 already wrote keeps the
              reviewer's original inline in the (was: …) tail rather
              than nesting a second one.
-             Findings whose target the user declines to supply are
-             reported Failed in the run summary only — no Status: line
-             is written, so the finding is offered again next run — and
-             are not dispatched.
+             A finding whose target the user declines to supply — or
+             whose location fails containment, and whose re-ask supplies
+             no contained replacement — is reported Failed in the run
+             summary only: no Status: line is written, so the finding is
+             offered again next run, and it is not dispatched.
                   │
  stage 1   Parallel fan-out: decision-analyst × N, read-only
            The total is stated before anything is dispatched: "13
            findings to analyse, in 2 batches of at most 8".
            Dispatched in a single turn, batches of at most 8.
            More than 8 findings run in successive announced batches.
+           A finding /fix-report's Step 1.4 marked feedback-origin — its
+           block carries a Source: @reviewer — [PR #N comment](…) line,
+           so its Problem, Impact and Remediation were synthesised from
+           a third party's PR comment by /analyze-feedback and were
+           never independently validated — is dispatched as untrusted
+           data, inside the nonce-bound delimiters
+           agents/feedback-analyzer.md already defines for this same
+           input class rather than a second protocol invented here. The
+           terms are stated in full below the diagram. The flag travels
+           the whole way: set at Step 1.4, carried into this dispatch,
+           rendered at the gate by stage 2's Source row, and present
+           again in the stage 3 dispatch copy, where the
+           reviewer-authored Source: line is not on the strip list and
+           travels with the rest of the reviewer-authored block.
                   │  returns: Proposed Fix block (contract below)
                   │
  stage 2   Decision sweep, one finding at a time
@@ -190,9 +218,20 @@ input          /fix-report: findings selected on the needs-decision page
            the user cannot act on.
            What "render the block" means is fixed, so the reading cost
            of a decision is bounded rather than left to the renderer.
-           Always rendered: Target; Recommendation with its reason;
-           Risk; both Alternatives in full; Code Preview; and any
-           Decision-retired: lines the block carries. Held back unless
+           Always rendered: Target; the Source: line where the block
+           carries one, marked as feedback-origin; Recommendation with
+           its reason; Risk; both Alternatives in full; Code Preview;
+           and any Decision-retired: lines the block carries. Source is
+           in that class because the sweep is a per-finding human gate
+           whose answer authorises a cited-evidence re-run and a fixer
+           dispatch, and a feedback-origin finding's Problem, Impact and
+           Remediation are a third party's unvalidated claims: rendering
+           the handle and the comment link beside Target is what lets
+           the user weigh the proposal as one. /fix-all's recorded
+           no-provenance stance is about its bulk auto checklist, which
+           lists the handle in a column of its own and does not reach
+           this gate; both entry points render this row because both run
+           this sweep. Held back unless
            the user asks for it: the verbatim command and tool output
            backing Findings — the claims themselves are always
            rendered — and both Verification Plans. Always rendered and
@@ -385,12 +424,28 @@ input          /fix-report: findings selected on the needs-decision page
            have already run and closed their progress task — except on
            the zero-auto path, where Steps 3-4 never ran and Step 5
            owns both the write-back and their progress rows).
+           Step 4.1.5 verifies three write kinds, not one, over every
+           finding the batch wrote back for: the Status: line, by its
+           positional check; the attempt entry appended to the live
+           Decision: line, recorded as attempt-entry-missing when it did
+           not land; and the Verification: line, located by its key
+           wherever in the block it sits and recorded as
+           verification-line-missing. Both write cases carry the
+           Verification: line, so that check runs over the whole decided
+           batch rather than over one group of it. A rejected finding is
+           outside all three: reject never dispatches, so it carries no
+           Verification: line at all and its absence is not a failure.
            Whether the fixer edited is read from the tree, never from
            its narration: immediately before and immediately after each
            dispatch the orchestrator takes two observations and logs
            both. (a) A git hash-object content hash of every path the
-           Decision-pin: line names, recorded as absent where the path
-           does not exist; this is the set the status is decided on,
+           Decision-pin: line names, except its unpinnable entries,
+           recorded as absent where the path does not exist; an
+           unpinnable entry is skipped because Sanitisation rejected its
+           token and no command is constructed for a rejected token —
+           recording absent for it would manufacture exactly the false
+           absent → present flip that state exists to prevent. This is
+           the observation the status is decided on,
            and it does not depend on git reporting the path at all — an
            ignored path, or one marked skip-worktree or
            assume-unchanged, is hashed here even though porcelain never
@@ -407,7 +462,13 @@ input          /fix-report: findings selected on the needs-decision page
            The expected set is the pinned entries marked :edit, the
            paths the resolution says it changes, and never the :ref
            entries, which are pinned as referents nobody undertook to
-           edit: an observable change inside the expected set decides
+           edit, and never the unpinnable entries, even when marked
+           :edit. The two exclusions are distinct: a :ref entry is one
+           nobody undertook to edit, an unpinnable entry is one for
+           which no observation was taken, so a dispatch whose every
+           :edit entry is unpinnable has nothing to grade and falls to
+           the "observation cannot be taken at all" case below. An
+           observable change inside the expected set decides
            the status below, while an observable change outside it is
            logged and named in the run summary as an out-of-scope write
            — fix-auto can edit beyond the pinned set (several
@@ -419,7 +480,13 @@ input          /fix-report: findings selected on the needs-decision page
            resolution text the decision line carries: an unpinned
            finding is graded exactly as a pinned one, only the
            pre-dispatch pin comparison is skipped, and the run summary
-           names it as unpinned. Where an observation cannot be taken
+           names it as unpinned. That membership rule is syntactic and
+           tests nothing, so every re-derived path passes the same
+           Sanitisation allow-list before any command is constructed
+           from it: a token that fails is rejected, never escaped, and
+           is unpinnable here too — excluded from the paths hashed and
+           from the expected set exactly as above — rather than reaching
+           the shell. Where an observation cannot be taken
            at all, the dispatch is not graded as no edit: no Status:
            line, "attempt N: dispatched, unverified" per the fourth
            case below, and the run summary names the finding as
@@ -462,6 +529,69 @@ input          /fix-report: findings selected on the needs-decision page
 
 The parallelism the user asked for lives in stage 1. Stage 3 stays sequential
 for the write-conflict reason recorded under Evidence.
+
+**Containment, not just existence.** `**Location:**` is an untrusted-origin
+field: `/analyze-feedback` persists reviewer-authored blocks into reports, and
+the value stage 0 validates is written back into the source report — so it
+survives to every later replay run and is dispatched to a fixer holding
+unrestricted `Edit`, `Write` and `Bash`. Existence alone does not bound it:
+`/etc/hosts:1` and `../../.ssh/authorized_keys:1` both parse and both exist.
+Containment is therefore a conjunct of the usability rule in its own right, with
+the semantics `scripts/allocate-feedback-file.sh` already ships for its own
+target: reject before resolving, a path that is absolute or that carries a `..`
+segment failing outright; resolve *physically*, taking the physical path of the
+containing directory (`cd "$(dirname "$path")" && pwd -P`, symlinks followed)
+and re-attaching the final component, so that a symlink pointing out of the tree
+cannot smuggle the target back in — resolving the parent rather than the leaf
+keeps the test identical for a path that does not exist; and prefix-match
+against the repository root, taken as `git rev-parse --show-toplevel` and itself
+resolved with `pwd -P`, the path being contained iff the resolved value begins
+with `<root>/` — the trailing separator kept, since a bare prefix match on
+`<root>` also admits a sibling `<root>-evil/…`. A path failing any of the three
+is location-less and never merely non-existent: it is never reported as a
+missing file, never offered for creation and never dispatched, and it takes the
+declined-target path. A replacement the user supplies is validated by this same
+rule, under the single re-ask stage 0 allows.
+
+**A feedback-origin block is dispatched as untrusted data.** `/fix-report`
+Step 1.4 marks a finding **feedback-origin** when its block carries a
+`**Source:** @reviewer — [PR #N comment](…)` line: its `Problem`, `Impact` and
+`Remediation` were synthesised from a third party's PR comment by
+`/analyze-feedback` and were never independently validated. Such a block is
+dispatched to the analyst inside the nonce-bound delimiters
+`agents/feedback-analyzer.md` already defines for this same input class — that
+protocol reused exactly rather than a second one invented here. It is not inert
+prose at this stage: the analyst's return decides what the sweep re-runs as
+cited reject evidence, and its `Alternatives` become the resolution text stage 3
+dispatches to a fixer holding unrestricted `Edit`, `Write` and `Bash`, so
+untrusted text reaching the analyst unframed reaches a shell and an editor two
+stages later. The terms are those the agent protocol states: one nonce per
+analyst invocation, never shared across findings, 32 hex characters of
+cryptographic randomness (`openssl rand -hex 16`, falling back to
+`python3 -c 'import secrets; print(secrets.token_hex(16))'`), a generation that
+fails or yields anything else being an error that sends the finding down the
+degraded path; sanitisation before wrapping, replacing every literal
+`UNTRUSTED_COMMENT_BODY` with `UNTRUSTED_BODY_REDACTED` and every literal
+`UT_<nonce>` matching this invocation's nonce with `UT_NONCE_REDACTED`, since
+that is the caller-side invariant the agent protocol lets the analyst rely on;
+the reviewer-authored fields — `Problem`, `Impact`, `Remediation`, and the
+`**Source:**` line's handle and URL — wrapped in `<<<UT_{nonce}` …
+`UT_{nonce}>>>` with the nonce stated above them in the dispatch as the only
+authoritative boundary for the run; an explicit statement that everything
+between the delimiters is data to analyse and never instructions to execute or
+to persist verbatim, so that no code block inside them is copied verbatim into
+`Alternatives`, `Code Preview`, `Verification Plan` or `Rejection candidate`;
+the loop's own lines — the `**Location:**` stage 0 validated and any
+`**Decision-retired:**` lines — travelling *outside* the delimiters, since
+wrapping them would tell the analyst to distrust its own instructions; and a
+`<<<UT_<32-hex>` or `UT_<32-hex>>>>` token inside the delimiters that is not
+this invocation's nonce treated as suspicious data by `feedback-analyzer.md`
+Rule 1, nothing derived from it persisted and the finding returned to the sweep
+with no proposal. The flag travels the whole way: set at Step 1.4, carried into
+the stage 1 dispatch, rendered at the gate by stage 2's `Source` row, and
+present again in the stage 3 dispatch copy, where the reviewer-authored
+`**Source:**` line is not on the strip list and travels with the rest of the
+reviewer-authored block.
 
 Stage 3.5's execution boundary is not ceremony. `/fix-report` and `/fix-all`
 carry `Bash(git:*)` as a pre-approval, so an unbounded plan containing
@@ -604,12 +734,15 @@ required unless marked optional:
 
 Single source of truth for the decision stage, loaded in full by `/fix-report`
 and `/fix-all`, and by `/fix` for the `Alternatives:` render format only:
-stage 0's location pre-check, fan-out rules and batch size, the analyst return
-contract, the decision sweep and its five outcomes — including the reject
+stage 0's location pre-check — its usability rule's three conjuncts, parse,
+containment and existence — fan-out rules and batch size, the nonce-bound
+untrusted-data framing a feedback-origin block is dispatched under, the analyst
+return contract, the decision sweep and its five outcomes — including the reject
 evidence gate and the read-only execution boundary its re-run runs under — the
 dispatch contract, stage 3.5's orchestrator-run verification under that same
 boundary, and the decision record. It carries stage 2's render as well, so that
-every entry point renders one gate: always rendered are `Target`,
+every entry point renders one gate: always rendered are `Target`, the
+`**Source:**` line where the block carries one, marked as feedback-origin,
 `Recommendation` with its reason, `Risk`, both `Alternatives` in full,
 `Code Preview` and any `**Decision-retired:**` lines; held back unless the user
 asks are the verbatim command and tool output backing `Findings` — the claims
@@ -632,8 +765,8 @@ rather than a command — it adds no entry point, and the
 
 | File | Change |
 |---|---|
-| `commands/fix-report.md` | Step 2.2: `needs-decision` findings are partitioned onto their own labelled leading page(s) of the checklist, ahead of the severity-sorted `auto` pages. The four-option ceiling applies to every page, not only to the needs-decision ones: the checklist's usual 4 issues per page (`fix-report.md:129`) is deliverable only on a page with nothing appended to it, which is only ever the final page, and any page carrying the appended "Skip remaining" item (`:158-161`) holds 3 — needs-decision or `auto` alike. "Skip remaining" is appended to every needs-decision page that is followed by another page, and this change guarantees one follows whenever any `auto` finding survives the Step 1.3 filter, so such a needs-decision page holds 3; more than 3 needs-decision findings therefore occupy successive leading pages, all of them ahead of the first `auto` page. On a non-final needs-decision page that item advances to the next needs-decision page; only on the last one does it advance to the first `auto` page — so it is relabelled for what it actually does there, "Skip these 3 — next decision page (`<n>` of `<N>` shown)" on a non-final needs-decision page and "Skip these 3 — on to the auto fixes" on the last, never the imported description "Proceed with issues selected so far, skip remaining pages" (`fix-report.md:158-161`, routed to Step 3 at `:167`), which is false on a page that pages forward. The checklist has no early exit from the needs-decision pages at all: reaching the first `auto` page costs ⌈K/3⌉ answered pages for K needs-decision findings, and the four-option ceiling leaves no slot for a skip-all item beside the three issues. Step 2.2 states that count on the first needs-decision page. Where no `auto` finding survives the filter there is no page to advance to: the last needs-decision page is then the final page — nothing is appended to it, it holds 4, and selection ends when it is answered. It can therefore never leave a needs-decision finding undisplayed. Step 2.4 is replaced by an invocation of `decision-gate`, which runs stages 0-2 in that slot and returns the decided findings to Step 3 rather than dispatching them itself: Step 3 dispatches the decided and the selected `auto` findings in one sequential batch, decided first. Stage 3.5's orchestrator-run verification applies to the decided findings only — the `auto` findings keep today's path, where `fix-auto`'s own verdict is collected — and Step 4.1 / 4.1.5 then runs once over the whole batch, so the gate performs no write-back in `/fix-report`. `/fix-report` has no Step 4.1.5 today: Step 4.1 (`fix-report.md:222`) runs straight into Step 4.2 (`:244`) and the command ends there, so this change adds one mirroring `fix-all.md:353-370` — re-read the `source_file`, confirm the status line is the next non-blank line below the issue heading, collect `{issue_id, source_file, reason}` into `status_write_failures`, and render that list in Step 4.2. Step 4.2 also gains a decision-stage surface it does not have: its template (`| # | Issue | Status |` rows plus the `**Fixed:** N | **Partially Fixed:** N | **Failed:** N` counts and the reports-updated list) is closed and holds no slot for the disclosures the decision stage raises, so after Step 4.1 / 4.1.5 `/fix-report` prints a decision-stage summary block carrying the same rows `/fix-all`'s Step 5 block carries, and it names all eight: stage 0's Failed findings, an unverified rejection, advisory verification, `verification: unavailable`, the partial-coverage warning, out-of-scope writes, unpinned findings, and the `stalled — no progress` heading |
-| `commands/fix-all.md` | New Step 5 after Step 4.2: if `needs_decision` is non-empty, ask whether to resolve those *N* findings now, naming the count; on yes, run `decision-gate`, then re-run the Step 4.1 / 4.1.5 write-and-verify procedure over the decision batch — Steps 4.1 / 4.1.5 have already run and closed their progress task by then, so Step 5 owns the write-back for its own findings — and append a decision-stage summary block after the one Step 4.2 printed. Adds a fifth row to the progress-task table under "MANDATORY FIRST STEP". Step 4.2 is unchanged. Step 2.2.5 changes in one respect: its zero-auto-issues edge case no longer aborts — when the fix list is empty and `needs_decision` is non-empty, Steps 3–4 are skipped and control goes straight to Step 5's offer, which replaces the abort message pointing at `/fix-report` or `/fix <ID>`. On that zero-auto path the two claims above do not hold, and Step 5 compensates: Step 4.2 never printed the "Requires user decision" list, so Step 5 prints it itself before asking and its summary block follows nothing; and Steps 3–4 never ran, so Step 5 closes their progress rows as well as its own — without that, removing the abort leaves them open, since today only the abort helper closes them |
+| `commands/fix-report.md` | Step 2.2: `needs-decision` findings are partitioned onto their own labelled leading page(s) of the checklist, ahead of the severity-sorted `auto` pages. The four-option ceiling applies to every page, not only to the needs-decision ones: the checklist's usual 4 issues per page (`fix-report.md:129`) is deliverable only on a page with nothing appended to it, which is only ever the final page, and any page carrying the appended "Skip remaining" item (`:158-161`) holds 3 — needs-decision or `auto` alike. "Skip remaining" is appended to every needs-decision page that is followed by another page, and this change guarantees one follows whenever any `auto` finding survives the Step 1.3 filter, so such a needs-decision page holds 3; more than 3 needs-decision findings therefore occupy successive leading pages, all of them ahead of the first `auto` page. On a non-final needs-decision page that item advances to the next needs-decision page; only on the last one does it advance to the first `auto` page — so it is relabelled for what it actually does there, "Skip these 3 — next decision page (`<n>` of `<N>` shown)" on a non-final needs-decision page and "Skip these 3 — on to the auto fixes" on the last, never the imported description "Proceed with issues selected so far, skip remaining pages" (`fix-report.md:158-161`, routed to Step 3 at `:167`), which is false on a page that pages forward. The checklist has no early exit from the needs-decision pages at all: reaching the first `auto` page costs ⌈K/3⌉ answered pages for K needs-decision findings, and the four-option ceiling leaves no slot for a skip-all item beside the three issues. Step 2.2 states that count on the first needs-decision page. Where no `auto` finding survives the filter there is no page to advance to: the last needs-decision page is then the final page — nothing is appended to it, it holds 4, and selection ends when it is answered. It can therefore never leave a needs-decision finding undisplayed. Step 2.4 is replaced by an invocation of `decision-gate`, which runs stages 0-2 in that slot and returns the decided findings to Step 3 rather than dispatching them itself: Step 3 dispatches the decided and the selected `auto` findings in one sequential batch, decided first. Stage 3.5's orchestrator-run verification applies to the decided findings only — the `auto` findings keep today's path, where `fix-auto`'s own verdict is collected — and Step 4.1 / 4.1.5 then runs once over the whole batch, so the gate performs no write-back in `/fix-report`. `/fix-report` had no Step 4.1.5 before this change: Step 4.1 (`fix-report.md:222`) ran straight into Step 4.2 (`:244`) and the command ended there. It has one now, mirroring `fix-all.md:362-411` — re-read the `source_file`, collect `{issue_id, source_file, reason}` into `status_write_failures`, and render that list in Step 4.2 — and it verifies **three write kinds, not one**, over every finding the batch wrote back for: the `**Status:**` line, confirmed as the next non-blank line below the issue heading; the attempt entry appended to the block's live `**Decision:**` line, whose absence is recorded with reason `attempt-entry-missing`; and the `**Verification:**` line, located by its key wherever in the block it sits, whose absence is recorded with reason `verification-line-missing`. Two of stage 4's four cases write no `**Status:**` line and append the attempt entry instead, so a finding graded into one of those still received a write and is in the iteration set; the `**Verification:**` check runs over the whole decided partition, since both write cases carry that line, while the selected `auto` findings carry no decision record and are outside it. A rejected finding is outside all three — `reject` never dispatches and carries no `**Verification:**` line at all, so its missing line is not a failure. Step 4.2 also gains a decision-stage surface it does not have: its template (`| # | Issue | Status |` rows plus the `**Fixed:** N | **Partially Fixed:** N | **Failed:** N` counts and the reports-updated list) is closed and holds no slot for the disclosures the decision stage raises, so after Step 4.1 / 4.1.5 `/fix-report` prints a decision-stage summary block carrying the same rows `/fix-all`'s Step 5 block carries, and it names all eight: stage 0's Failed findings, an unverified rejection, advisory verification, `verification: unavailable`, the partial-coverage warning, out-of-scope writes, unpinned findings, and the `stalled — no progress` heading |
+| `commands/fix-all.md` | New Step 5 after Step 4.2: if `needs_decision` is non-empty, ask whether to resolve those *N* findings now, naming the count; on yes, run `decision-gate`, then re-run the Step 4.1 / 4.1.5 write-and-verify procedure over the decision batch — Steps 4.1 / 4.1.5 have already run and closed their progress task by then, so Step 5 owns the write-back for its own findings, and Step 4.1.5's re-run verifies over that batch the same three write kinds the `/fix-report` row names: the `**Status:**` line, the attempt entry (`attempt-entry-missing`) and the `**Verification:**` line (`verification-line-missing`), with rejected findings outside the check — and append a decision-stage summary block after the one Step 4.2 printed. Adds a fifth row to the progress-task table under "MANDATORY FIRST STEP". Step 4.2 is unchanged. Step 2.2.5 changes in one respect: its zero-auto-issues edge case no longer aborts — when the fix list is empty and `needs_decision` is non-empty, Steps 3–4 are skipped and control goes straight to Step 5's offer, which replaces the abort message pointing at `/fix-report` or `/fix <ID>`. On that zero-auto path the two claims above do not hold, and Step 5 compensates: Step 4.2 never printed the "Requires user decision" list, so Step 5 prints it itself before asking and its summary block follows nothing; and Steps 3–4 never ran, so Step 5 closes their progress rows as well as its own — without that, removing the abort leaves them open, since today only the abort helper closes them |
 | `commands/fix.md` | Phase 3 stops restating the `Alternatives:` format and defers to `decision-gate`. Render behaviour identical; the goal is that all three entry points render one format. Not otherwise unchanged, though: `/fix` also takes on the two read-side duties `Status vocabulary extension` assigns it — the Phase 0 abort on a resolved block already carrying `**Status:** 🚫 Rejected`, and the Phase 8 rule against writing a second `**Status:**` line over an existing one |
 
 **Ordering inside `/fix-report`.** Every decision is collected before any
@@ -732,7 +865,7 @@ by whole-line equality: the two Step 1.3 filters (`fix-report.md`,
 `fix-all.md`), `/fix` Phase 0's abort, and `loop.md`'s duty to leave a
 `🚫 Rejected` line untouched all resolve a line that may carry a reason, and a
 whole-line match fails on every one of them. Step 4.1.5's verify is unaffected
-and stays exact: `fix-all.md:361` checks a line the loop has just written
+and stays exact: `fix-all.md:370` checks a line the loop has just written
 itself, and the loop never writes a reason onto `✅ Fixed`.
 
 **`Location:` gains an extended written form.** Stage 2 rewrites the field in
@@ -839,7 +972,7 @@ write-protection: a rejected finding is never dispatched in the same run, and
 later runs are guarded per entry point — `/fix-report` and `/fix-all` exclude it
 at their Step 1.3 filter, while `/fix <ID>` has no such filter (Phase 0 resolves
 by ID) and is guarded instead by its own Phase 0 abort and its Phase 8
-second-Status-line rule. Both guards arrive with 1.18.0: a 1.17.3 filter does
+second-Status-line rule. Both guards arrive with 2.0.0: a 1.17.3 filter does
 not know the value, so `/fix-report` re-offers the finding and can dispatch it,
 and a 1.17.3 `/fix` re-fixes it in-thread and leaves the block carrying two
 `**Status:**` lines (see `Delivery`).
@@ -1029,8 +1162,17 @@ self-referential besides, since the pin line lives in the file it would hash.
 The line has a written form of its own:
 
 ```
-**Decision-pin:** block=<sha256> | <path>=<blob-hash>[:edit|:ref] | <path>=<blob-hash>[:edit|:ref]
+**Decision-pin:** block=<sha256> | <path>=<pin-value>[:edit|:ref] | <path>=<pin-value>[:edit|:ref]
 ```
+
+`<pin-value>` is one of exactly three forms: a **blob hash** from
+`git hash-object`; **`absent`**, written where the path does not exist in the
+working tree; or **`unpinnable`**, written where the path was rejected by the
+sanitisation rule below. The three are never written interchangeably — which one
+is written when, and how each is read, is stated in the paragraphs that follow.
+`plugins/qa/skills/report-format/SKILL.md` carries this grammar byte-identically
+and refers here for that assignment, so the two copies are one line of text in
+two files rather than two statements of the rule.
 
 The brackets mark an alternation and not an option: every pinned entry carries
 exactly one of the two role markers.
@@ -1042,7 +1184,10 @@ recorded as `<path>=absent` rather than hashed: `git hash-object` errors on a
 missing path, and "restore the referent" names one by construction, so hashing
 it would leave the pin unwritable and stage 4 would read a correct restore as
 no edit at all. `absent` → present and present → `absent` are both observable
-changes, exactly as a changed hash is. The pinned file set is that `Target`
+changes, exactly as a changed hash is. `absent` is a **recorded observation** —
+the command ran and the path was not there — and so is never interchangeable
+with the `unpinnable` state below, which records that no observation was taken
+at all. The pinned file set is that `Target`
 plus every
 `path[:line]` token appearing in the resolution text. A path token is recognised
 syntactically and never by testing the filesystem — the `absent` rule exists
@@ -1055,8 +1200,9 @@ names only as a referent — the canonical resolution above names
 `scripts/qa-run.sh` as a removed referent, and nobody undertook to edit it. The
 pre-dispatch pin comparison covers both roles, since an edit to a referent
 invalidates the decision as surely as an edit to a target; stage 4's expected
-set is the `:edit` entries alone, so an `absent` → present flip in a `:ref` path
-caused by anything other than the dispatch can never write a terminal
+set is the `:edit` entries alone — and never the `unpinnable` entries, even when
+marked `:edit` — so an `absent` → present flip in a `:ref` path caused by
+anything other than the dispatch can never write a terminal
 `⚠️ Partially Fixed` over a no-op dispatch. A well-formed resolution
 leaves nothing to resolve — the `Alternatives` contract requires each
 alternative to name every file and line it touches, which is why the canonical
@@ -1079,7 +1225,57 @@ drops the loop-written lines by their `**<Field>:**` prefixes, and piped
 straight to the hasher, in one pipeline with nothing in between. The comparison
 is byte-exact, so the canonicalisation is stated too: trailing whitespace is
 stripped from every line and the excerpt ends with exactly one trailing newline,
-at pin time and at comparison time alike. Where neither hasher exists the pin
+at pin time and at comparison time alike.
+
+**Sanitisation, because both extractions build a command around a token the run
+did not author.** The pinned path comes from the resolution text and the
+`<report>` operand from the report file the run was handed, and the recognition
+rule above is deliberately syntactic and tests nothing, so absent this rule a
+token reaches the shell exactly as the document wrote it. The rule therefore
+covers **every document- or tree-derived token entering a constructed
+command** — the pinned operand of `git hash-object` and the `<report>` operand
+of the `sed` pipeline alike, not the one instance that motivated it, and
+stage 4's re-derivation of an unpinned finding's expected set is held to it
+too. The test
+is an **allow-list, not a metacharacter blacklist**: a token survives only if
+every character is one of `A–Z a–z 0–9 . _ / -`, plus the `:` introducing the
+`:<line>` suffix, which is stripped before the path is used — a blacklist is
+what leaves the metacharacter nobody enumerated on the near side of the check. A
+token that fails is **rejected, never escaped**: escaping keeps the token and
+moves the problem into the quoting, where the next bug lives, while rejection
+ends it, and `docs/a.md;id`, `docs/a.md$(id)` and `--foo=x/y` all fail here with
+none of the three repaired into something runnable. What survives is still
+quoted: single-quote every interpolated token where it enters the command
+**and** neutralise a leading `-` on a path operand so it cannot be read as an
+option — both defences, not either. The quoting rules then differ between the
+two commands, so they are stated separately rather than assumed common.
+`git hash-object` accepts the `--` separator, so the path goes after it. BSD
+`sed`, which is what macOS ships, does **not**: it reads `--` as a filename,
+errors on it and processes the real operand anyway, which is a corrupted
+extraction rather than a refusal. The `sed` pipeline therefore prefixes a
+relative `<report>` path with `./`, which is portable and needs no per-platform
+test.
+
+**`unpinnable` is a different state from `absent`, and the two are never written
+interchangeably.** A rejected path is recorded `<path>=unpinnable`, carrying its
+`:edit`/`:ref` marker like any other entry. `absent` is an **observation**: the
+command ran, the path was not there, and a later present-state is an observable
+change stage 4 grades on. `unpinnable` is the **refusal to take one**: no
+command ran, and nothing is known about that path in either direction. It is
+skipped by the pre-dispatch pin comparison, and it is **never in the expected
+set** even when marked `:edit` — grading it would read "the loop never looked"
+as "the path was not there", manufacturing exactly the false `absent` → present
+flip the `:ref` exclusion exists to prevent — so a dispatch whose every `:edit`
+entry is `unpinnable` has no observation to grade and takes stage 4's
+*observation cannot be taken at all* case. The run summary names each such path
+as **unpinnable**, beside the `unpinned` disclosure and distinct from it:
+`unpinned` is a finding carrying no pin line at all, `unpinnable` is a named
+path inside a pin line whose other entries are good. Where the `<report>`
+operand **itself** is rejected the block excerpt cannot be cut at all, so no
+block hash exists and no pin can be written: that finding takes the `unpinned`
+path below rather than acquiring a state of its own.
+
+Where neither hasher exists the pin
 cannot be written at all:
 the decision is recorded without a `**Decision-pin:**` line, it is never
 replayed on a later run, and the run summary names that finding as unpinned. The
@@ -1136,6 +1332,7 @@ retirement above, and only then re-dispatches.
 | User answers "no" to `/fix-all`'s offer | Step 4.2 has already printed the "Requires user decision" list before the offer — except on the zero-auto path, where Steps 3–4 were skipped and Step 5 printed the list itself; either way, on "no" the run stops without repeating it, having closed the progress rows Step 5 owns |
 | Analyst fails or returns an unusable block | Degrade to the raw report block plus the same five-outcome prompt, with a visible "code analysis unavailable" note. The alternatives come from the finding's Remediation, but never verbatim: a reviewer-authored Remediation is under no self-containment contract, while stage 3 dispatches only a full self-contained resolution and `Decision record` calls a deictic one a contract violation, so the orchestrator restates each alternative as a full self-contained resolution naming every file and line it touches and shows the restatement for confirmation before dispatch, exactly as `other…` requires; a Remediation that cannot be restated self-containedly returns to the sweep. Where the Remediation names only one fix — and `Components`' `Alternatives` row records that it frequently names none at all — the call carries the three options `[A] [skip] [reject]`, never a placeholder B the user cannot act on. `reject` stays reachable — a failed analyst is no reason to strip the outcome for a finding that may still be wrong — but with no cited evidence to re-run it is gated on the user's non-empty reason alone, and the run summary marks that rejection `unverified`. Never a silent skip |
 | Location missing and user supplies none | Marked Failed up front, not dispatched — matching `fix-report` Step 2.4 today |
+| Location parses and exists but escapes the repository tree | Location-less, never merely non-existent: it is never reported as a missing file and never offered for creation. It takes the same single re-ask, and a replacement that also fails containment is handled exactly as a declined target — Failed in the run summary only, no `**Status:**` line, not dispatched |
 | Interruption during the sweep | Decisions already recorded inline, and every `path:line` stage 0 validated is already written into the finding's `**Location:**` field, so neither is asked for again; the next run reports how many remain. Stage 1's analyses are not persisted, so every finding still undecided is re-analysed and re-rendered on the next run |
 | Interruption during dispatch | The dispatch marker separates "decided, never dispatched" from "dispatched, outcome unknown". The first enters stage 3 normally; the second is never re-dispatched blind — the next run re-runs stage 3.5 for that finding first, and on failure records `attempt N: interrupted, unverified`, counting toward the two-attempt retirement, before any new dispatch |
 | More than 8 findings | Successive analyst batches, each announced ("analysing 8 of 13"). No silent truncation |
@@ -1145,7 +1342,17 @@ when it was not.
 
 ## Delivery
 
-`code-review` 1.17.3 → **1.18.0** (MINOR: new agent, new skill, new phase), in
+`code-review` 1.17.3 → **2.0.0** (MAJOR, not MINOR: this release changes the
+shared report format — a third `**Status:**` value, the extended `**Location:**`
+form, and six loop-written fields — and `CLAUDE.local.md` reserves MAJOR for
+"incompatible formats". The counter-argument, that SemVer governs backward
+compatibility rather than forward, was raised twice during spec review and
+refuted twice; it was reversed on the ground that the artifact is an interchange
+format shared between installs and with the `qa` plugin, that this repository's
+own precedent grades such a change MAJOR — `cb073c1`, "QA 2.0.0 — MAJOR:
+incompatible report format change" — and that the Upgrade Notes below already
+assert a MAJOR-shaped constraint in prose, which the version number should carry
+instead of leaving to a paragraph a reader may not reach), in
 all four places `scripts/check_plugin_versions.py` checks. `qa` 2.5.2 →
 **2.6.0** (MINOR, not PATCH: `/qa:loop` gains behaviour on a new input value —
 it must read `🚫 Rejected` as terminal and preserve the line — which is a
@@ -1164,15 +1371,28 @@ Prose requiring correction beyond version numbers:
   decision stage.
 - `docs/plugins/code-review.md` — new sections for the decision stage, the
   analyst, and the `Rejected` status.
-- `plugins/code-review/commands/fix-report.md` — the command has no Step 4.1.5
-  at all today: Step 4.1 (`fix-report.md:222`) runs straight into Step 4.2
-  (`:244`) and the command ends there, while Step 4.1.5, its positional check
-  and `status_write_failures` exist only at `fix-all.md:353-370`. One is added,
-  mirroring those lines — re-read the `source_file`, confirm the status line is
-  the next non-blank line below the issue heading, collect
+- `plugins/code-review/commands/fix-report.md` — the command had no Step 4.1.5
+  at all before this change: Step 4.1 (`fix-report.md:222`) ran straight into
+  Step 4.2 (`:244`) and the command ended there, while Step 4.1.5, its
+  positional check and `status_write_failures` existed only in `fix-all.md`
+  (today `fix-all.md:362-411`). One
+  is added, mirroring those lines — re-read the `source_file`, confirm the
+  status line is the next non-blank line below the issue heading, collect
   `{issue_id, source_file, reason}` into `status_write_failures`, and render
   that list in Step 4.2 — since every reference to "Step 4.1 / 4.1.5" in this
-  spec treats the pair as existing and merely re-run.
+  spec treats the pair as existing and merely re-run. Both commands' Step 4.1.5
+  then verifies **three write kinds, not one**, over every finding the batch
+  wrote back for: the `**Status:**` line by that positional check; the attempt
+  entry appended to the block's live `**Decision:**` line, whose absence is
+  recorded with reason `attempt-entry-missing`; and the `**Verification:**`
+  line, located by its key wherever in the block it sits, whose absence is
+  recorded with reason `verification-line-missing`. `status_write_failures`
+  therefore carries five reasons — `edit-errored`, `status-line-missing`,
+  `status-line-wrong-text`, `attempt-entry-missing` and
+  `verification-line-missing` — and the last two reach it only from a finding
+  the decision gate decided. A rejected finding is outside all three checks:
+  `reject` never dispatches, so it carries no `**Verification:**` line at all
+  and its absence is not flagged.
 - `plugins/code-review/commands/fix-report.md` and
   `plugins/code-review/commands/fix-all.md` — frontmatter gains
   `Bash(shasum:*)`, `Bash(sha256sum:*)`, `Bash(sed:*)` and `Bash(grep:*)`:
@@ -1187,7 +1407,7 @@ Prose requiring correction beyond version numbers:
 
 **The two versions are a pair, and neither side of the skew has a fail-safe.**
 The plugins install independently and the marketplace manifest has no dependency
-field, so `code-review` 1.18.0 can run beside `qa` 2.5.2 and write rejections an
+field, so `code-review` 2.0.0 can run beside `qa` 2.5.2 and write rejections an
 older `/qa:loop` neither recognises nor preserves. There is no fail-safe for
 that case: preserving the line is precisely the new duty this change assigns to
 2.6.0, so it cannot also be a property of an already-released build — an older
@@ -1199,9 +1419,9 @@ still on 1.17.3 opens it with a Step 1.3 filter that does not know the value,
 outcome `Oracle` calls terminal and hand-recoverable, where the old-`qa` case
 only fails to act. Nothing on the writing side prevents it. Both skews are
 therefore recorded as a requirement rather than a recommendation — `code-review`
-1.18.0 expects `qa` 2.6.0 for any report the two share, and any report
+2.0.0 expects `qa` 2.6.0 for any report the two share, and any report
 containing `🚫 Rejected`, or a `**Location:**` line in the extended `(was: …)`
-form, requires `code-review` ≥ 1.18.0 wherever it is read — in
+form, requires `code-review` ≥ 2.0.0 wherever it is read — in
 the upgrade notes of both `docs/plugins/code-review.md` and
 `docs/plugins/qa.md`, with the intra-plugin skew stated in
 `docs/plugins/code-review.md`'s upgrade notes. Both risks are carried under
@@ -1213,7 +1433,7 @@ Each outcome names the signal that decides whether it was right:
 
 | Outcome | Deciding signal |
 |---|---|
-| **A** / **B** / **other…** | Stage 3.5's raw verification output for the alternative actually decided, logged by the orchestrator; `fix-auto`'s own Phase 6 verdict is advisory narration. Whether the fixer edited is read from the tree — two observations taken immediately before and immediately after each dispatch: a `git hash-object` content hash of every path the `**Decision-pin:**` line names, recorded as `absent` where the path does not exist, which is the observation the status is decided on and needs no git report of the path, and `git status --porcelain` plus a content hash of every path it lists, which serves only to surface writes outside the pinned set — and never from that narration; a change inside the expected set, which is the pinned entries marked `:edit`, decides the status, while a change outside it is logged and named in the run summary as an out-of-scope write, and a dispatch whose observation could not be taken at all is not graded as "no edit": it writes no `**Status:**` line, carries `attempt N: dispatched, unverified` on the decision line, and the run summary names the finding as unobservable. A pass writes `✅ Fixed`; an observable change inside the expected set whose output does not pass writes `⚠️ Partially Fixed`; a dispatch that errored, or one after which no file in the expected set changed observably, writes no `**Status:**` line, only `attempt N: failed` on the decision line; and a finding where no check of any kind ran writes no `**Status:**` line either, with `attempt N: dispatched, unverified` on the decision line, `**Verification:** unavailable — <checks run>` in the block and `verification: unavailable` in the run summary; where some checks ran and others were refused or unrunnable the finding is graded on the raw output of those that ran, and the shortfall is disclosed rather than skipped — `**Verification:** advisory — <checks run>; <N> not run: <check text>` in the block and a coverage warning naming the finding in the run summary. The plan must use executable checks with observable output wherever the finding admits one; where it cannot — a documentation finding whose only available check is an LLM re-reading prose — that check is still runnable and its pass is stage 4's first case, but the verdict is soft, so the block carries `**Verification:** advisory — <checks run>` beside its status line and the run summary marks the finding `✅ Fixed (advisory verification)`: the persisted line, not the status, is what carries the softness out of the session. A wrong call lands as an uncommitted diff the user can read and revert |
+| **A** / **B** / **other…** | Stage 3.5's raw verification output for the alternative actually decided, logged by the orchestrator; `fix-auto`'s own Phase 6 verdict is advisory narration. Whether the fixer edited is read from the tree — two observations taken immediately before and immediately after each dispatch: a `git hash-object` content hash of every path the `**Decision-pin:**` line names **except its `unpinnable` entries**, recorded as `absent` where the path does not exist, which is the observation the status is decided on and needs no git report of the path, and `git status --porcelain` plus a content hash of every path it lists, which serves only to surface writes outside the pinned set — and never from that narration; a change inside the expected set, which is the pinned entries marked `:edit` and never the `:ref` entries nor the `unpinnable` ones, even when those are marked `:edit`, decides the status, while a change outside it is logged and named in the run summary as an out-of-scope write, and a dispatch whose observation could not be taken at all — one whose every `:edit` entry is `unpinnable` included — is not graded as "no edit": it writes no `**Status:**` line, carries `attempt N: dispatched, unverified` on the decision line, and the run summary names the finding as unobservable. A pass writes `✅ Fixed`; an observable change inside the expected set whose output does not pass writes `⚠️ Partially Fixed`; a dispatch that errored, or one after which no file in the expected set changed observably, writes no `**Status:**` line, only `attempt N: failed` on the decision line; and a finding where no check of any kind ran writes no `**Status:**` line either, with `attempt N: dispatched, unverified` on the decision line, `**Verification:** unavailable — <checks run>` in the block and `verification: unavailable` in the run summary; where some checks ran and others were refused or unrunnable the finding is graded on the raw output of those that ran, and the shortfall is disclosed rather than skipped — `**Verification:** advisory — <checks run>; <N> not run: <check text>` in the block and a coverage warning naming the finding in the run summary. The plan must use executable checks with observable output wherever the finding admits one; where it cannot — a documentation finding whose only available check is an LLM re-reading prose — that check is still runnable and its pass is stage 4's first case, but the verdict is soft, so the block carries `**Verification:** advisory — <checks run>` beside its status line and the run summary marks the finding `✅ Fixed (advisory verification)`: the persisted line, not the status, is what carries the softness out of the session. A wrong call lands as an uncommitted diff the user can read and revert |
 | **reject** | The analyst's cited evidence *where the block carries a `Rejection candidate`* — the cited commands and tool calls re-run by the orchestrator at the gate, under the read-only boundary, and shown to the user before the choice is offered. Whether the candidate is supported is decided by the support test `Decision outcomes` states once; on any other result the outcome is not offered at all, and the recorded and the fresh output are shown side by side as the discrepancy. Where there is no candidate, including a failed analyst, there is no evidence to re-run and the deciding signal is the user's stated reason alone, so the run summary marks that rejection `unverified`. Either way nothing beyond the `— <reason>` tail is persisted when the `🚫 Rejected` status is written |
 | **skip** | None, by construction — nothing is written and the finding returns next run |
 
@@ -1299,10 +1519,17 @@ was actually wrong rather than merely under-researched.
    `**Status:**` line over an existing one. `fix-report.md` is checked for one
    further addition, recorded with its own confirming line number: it had no
    Step 4.1.5 before this change, so the walk confirms the new one mirrors
-   `fix-all.md:353-370` — the `source_file` re-read, the status line confirmed
+   `fix-all.md:362-411` — the `source_file` re-read, the status line confirmed
    as the next non-blank line below the issue heading, and
    `{issue_id, source_file, reason}` collected into `status_write_failures` and
-   rendered in Step 4.2. Then walk the list a second time for
+   rendered in Step 4.2. The walk confirms, in both commands and each with its
+   own line number, that Step 4.1.5 verifies all three write kinds over the
+   decided batch and not the status line alone: the `**Status:**` line, the
+   attempt entry appended to the live `**Decision:**` line
+   (`attempt-entry-missing`), and the `**Verification:**` line located by its
+   key wherever in the block it sits (`verification-line-missing`) — with a
+   rejected finding stated to be outside the check, since it carries no
+   `**Verification:**` line at all. Then walk the list a second time for
    the decision record, recording a confirming line number for each of the three
    consumers it touches: `report-format/SKILL.md` documents `**Decision:**`,
    `**Decision-retired:**`, `**Verification-plan:**`, `**Decision-pin:**`,
@@ -1385,7 +1612,7 @@ for it: `fix.md`'s whole-line usability test reads the reviewer's original
 inside the `(was: …)` tail as a missing location. Its consequence is milder — a
 degraded run that asks the user for an address the report already holds, not a
 silently reversed terminal outcome — but it is the same skew. Such a report is
-safe only where every reader is `code-review` ≥ 1.18.0.
+safe only where every reader is `code-review` ≥ 2.0.0.
 
 **An older `qa` overwrites a rejection.** `qa` < 2.6.0 predates the preserve
 duty, so Step 4.1's in-place Status update (`loop.md:902-907`) replaces a

@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.18.0
+**Version:** 2.0.0
 
 ## Commands
 
@@ -208,6 +208,10 @@ Reports sourced from `/review` directly do not include a `Source:` field and car
 3. **The sweep.** One finding at a time, you're shown the target, the recommendation and its reason, the risk, and both alternatives in full, then asked for one of five outcomes: `[A] [B] [skip] [reject]`, plus the tool's built-in `other…` free-form answer. `A`/`B` dispatch the chosen alternative; `other…` lets you write your own resolution, which is restated as a full self-contained fix and confirmed before dispatch; `skip` leaves the finding for the next run with nothing written; `reject` writes a terminal `🚫 Rejected` status (below) and is offered only where the reason is grounded in evidence or your own stated reason.
 4. **The batch.** Every decision is collected before any fix is dispatched — decide everything, then fix in bulk. Decided findings are then dispatched to `fix-auto` sequentially, and the orchestrator itself — not `fix-auto`'s own verdict — runs the persisted verification plan for each, logging raw output before writing the status back to the source report.
 
+> **Residual risk, accepted and unmitigated.** The execution boundary around the stage's own commands is model-enforced, not machine-enforced. `/fix-report` and `/fix-all` hold `Bash(git:*)` and `Bash(sed:*)` pre-approved, and both the sweep's re-run of cited reject evidence and the batch's verification run execute with the orchestrator's grants rather than the read-only analyst's. Nothing at the tool layer denies a destructive git subcommand or an in-place `sed -i` write: the boundary that keeps `git restore` and `git checkout` out of a re-run is prose the orchestrating model follows, so a single lapse executes without a prompt. What it destroys is the working tree's uncommitted diff — which is exactly the recovery path this loop leaves you for a wrong call, since every fix is deliberately left uncommitted so you can read it and throw it away yourself. A lapse takes the undo with it.
+>
+> One level down, the same holds for the fixes themselves: `fix-auto` holds unrestricted `Edit`, `Write` and `Bash`, so the orchestrator's before/after observation of the tree can see a write outside the files the decision pinned but cannot stop one. Such a write is reported, not prevented — and it is named only in the run summary, which does not survive the session that printed it, so nothing about it reaches the report a later reader would find.
+
 ### Where the two entry points differ
 
 | | `/fix-all` Step 5 | `/fix-report` Step 2.4 |
@@ -399,14 +403,14 @@ scripts themselves are the canonical implementation.
 <a id="upgrade-notes"></a>
 ## Upgrade Notes
 
-**`code-review` 1.18.0 requires every reader to be ≥ 1.18.0 too — this is a requirement, not a recommendation.** A report carrying a `🚫 Rejected` status, or a `**Location:**` line in the extended `(was: …)` form, is a committed artifact, and nothing on the writing side stops an older reader from opening it. This is the worse of the two version skews this release introduces, because the failure is silent and the outcome is terminal:
+**`code-review` 2.0.0 requires every reader to be ≥ 2.0.0 too — this is a requirement, not a recommendation.** A report carrying a `🚫 Rejected` status, or a `**Location:**` line in the extended `(was: …)` form, is a committed artifact, and nothing on the writing side stops an older reader from opening it. This is the worse of the two version skews this release introduces, because the failure is silent and the outcome is terminal:
 
 - A collaborator still on `code-review` 1.17.3 has a Step 1.3 filter that does not recognize `🚫 Rejected` as a resolved status. `/fix-report` re-offers the rejected finding, and dispatching it silently reverses an outcome this design calls terminal and hand-recoverable only.
 - A 1.17.3 `/fix` reads the extended `**Location:**` form with the old whole-line rule, treats the reviewer's original inside the `(was: …)` tail as the value, and reads it as missing — degrading to asking you for an address the report already holds.
 
-Do not open, or run any code-review command against, a report written after this release with a `code-review` build older than 1.18.0.
+Do not open, or run any code-review command against, a report written after this release with a `code-review` build older than 2.0.0.
 
-**`code-review` 1.18.0 also expects `qa` ≥ 2.6.0 for any shared report that can carry a decision-stage rejection.** An older `/qa:loop` (< 2.6.0) does not know to preserve a `🚫 Rejected` line: its Step 4.1 in-place Status update overwrites it — losing the rejection and its reason — whenever a sibling issue passes on the same scenario in a later iteration. Unlike the reader skew above, this one has a precondition attached: `**Fix-policy:** needs-decision` is emitted only by this plugin's producers — today, reports written by `/review` — so a report the `qa` plugin produced cannot presently reach the decision gate or acquire a rejection at all, and `qa` 2.6.0's handling of the field is forward compatibility for a schema the QA producers do not yet emit. Pair the minimums for reports that can carry one. See [qa.md's Upgrade Notes](qa.md#upgrade-notes) for the mirror of this note.
+**`code-review` 2.0.0 also expects `qa` ≥ 2.6.0 for any shared report that can carry a decision-stage rejection.** An older `/qa:loop` (< 2.6.0) does not know to preserve a `🚫 Rejected` line: its Step 4.1 in-place Status update overwrites it — losing the rejection and its reason — whenever a sibling issue passes on the same scenario in a later iteration. Unlike the reader skew above, this one has a precondition attached: `**Fix-policy:** needs-decision` is emitted only by this plugin's producers — today, reports written by `/review` — so a report the `qa` plugin produced cannot presently reach the decision gate or acquire a rejection at all, and `qa` 2.6.0's handling of the field is forward compatibility for a schema the QA producers do not yet emit. Pair the minimums for reports that can carry one. See [qa.md's Upgrade Notes](qa.md#upgrade-notes) for the mirror of this note.
 
 ## Optional Tools
 

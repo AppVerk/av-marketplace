@@ -258,10 +258,12 @@ The status value is one of `✅ Fixed`, `⚠️ Partially Fixed` or `🚫 Reject
 **Decision:** <label> — <resolution text> [<who>, <YYYY-MM-DD>; attempt N: <outcome>…]
 **Decision-retired:** <label> — <resolution text> [<who>, <YYYY-MM-DD>; attempt N: <outcome>…]
 **Verification-plan:** <check> → <expected>[ (soft)]; <check> → <expected>
-**Decision-pin:** block=<sha256> | <path>=<blob-hash>[:edit|:ref] | <path>=<blob-hash>[:edit|:ref]
+**Decision-pin:** block=<sha256> | <path>=<pin-value>[:edit|:ref] | <path>=<pin-value>[:edit|:ref]
 **Dispatch:** attempt <N> dispatched <YYYY-MM-DD>
 **Verification:** hard|advisory|unavailable — <checks run>[; <N> not run: <check text>]
 ```
+
+`<pin-value>` is one of exactly three forms: a **blob hash** from `git hash-object`; **`absent`**, written where the path does not exist in the working tree; or **`unpinnable`**, written where the path was rejected as unsafe to hash. The three are never written interchangeably — see `decision-gate/SKILL.md` for which is written when.
 
 All six are **optional** fields of the schema: an existing report carrying none of them is still a valid report, and nothing here makes any of them required.
 

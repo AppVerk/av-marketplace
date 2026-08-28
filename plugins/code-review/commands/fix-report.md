@@ -310,14 +310,46 @@ For each issue, the verification is:
 
 That positional check is exact because `**Status:**` is always the first non-blank line under the heading, above any decision lines the block has accumulated. It is a whole-line comparison against a line this run just wrote itself — the one place whole-line matching is correct, as against Step 1.3, which reads a status line it did not write and therefore matches by prefix.
 
+**The iteration set over this batch.** Step 3 dispatches the findings the Step 2.4 gate decided together with the selected `auto` findings in one batch, and Step 4.1 / 4.1.5 runs once over that whole batch — so "each Fixed/Partially Fixed issue" is not the whole set. Two of the stage-4 cases write **no `**Status:**` line at all** and instead append the attempt entry to the finding's `**Decision:**` line — `code-review:decision-gate`'s *Stage 4* is the authority for which cases those are and for what each writes, and this step does not restate them. A finding graded into one of those cases still **received a write**, so it is in this step's iteration set: iterate over **every finding the batch wrote back for**, and verify the write that finding actually received.
+
+- A finding that received a `**Status:**` line is verified by steps 1–3 above, unchanged.
+- A finding that received **no `**Status:**` line** is verified by the attempt-entry check below.
+- **Every decided** finding of the batch, whichever of those two groups it fell into, is **additionally** verified by the `**Verification:**` check below — that line rides on both writes.
+
+For a finding in the second group, the verification is:
+
+1. Read the issue's `source_file`.
+2. Locate the issue's `### [SEVERITY] Title` heading and read its block, down to the next `###`, `---` or EOF.
+3. Locate the block's **live `**Decision:**` line** — the decision this dispatch was made against, not a `**Decision-retired:**` line beside it that a superseded decision left behind. The one exception is a line this same run's retirement rewrote in place: retirement keys the line `**Decision-retired:**` with its attempt entries intact, so where the run retired this decision the rewritten line is the one to read. It is a single physical line either way, so its bracketed field is read whole and split on `; `.
+4. Confirm its **last bracketed entry** is the `attempt N: <outcome>` entry stage 4 appended for this dispatch, with the `N` and the `<outcome>` this run just wrote. Like the positional check above, this is a comparison against something this run wrote itself, so it is exact rather than a prefix match.
+
+The append has not landed if the bracketed field still ends with the entry it carried before this dispatch, or if the block carries no decision line of either key at all.
+
+This is the one check whose absence is not merely cosmetic. The attempt entry is what advances the two-attempt retirement counter; a lost append freezes it, and a decision that fails every run then replays forever with the escape to `reject` unreachable behind it — precisely the failure retirement exists to prevent. A status line that fails to land costs an annotation; an attempt entry that fails to land costs the loop its exit.
+
+**The `**Verification:**` line, checked for every decided finding of the batch.** Both writes carry it: `code-review:decision-gate`'s *Stage 4* writes the `**Verification:**` line **in the same write as the `**Status:**` line**, and, for the two cases that write no status, **in the write that appends the attempt entry**. So every graded finding of the decided partition acquires one, whichever case it fell into, and this check runs over that whole partition rather than over one group of it. The selected `auto` findings carry no decision record and no `**Verification:**` line, exactly as Step 4.1 says, and are outside this check.
+
+For each decided finding of the batch, the verification is:
+
+1. Read the issue's `source_file`.
+2. Locate the issue's `### [SEVERITY] Title` heading and read its block, down to the next `###`, `---` or EOF.
+3. Locate the block's `**Verification:**` line **by its key, wherever in the block it sits**. This is deliberately **not** a "next non-blank line" check: `**Status:**` is the first non-blank line under the heading and every other loop-written line sits below it, so a positional read finds the status and never this field.
+4. Confirm the line reads `**Verification:** hard|advisory|unavailable — <checks run>`, carrying the `hard`, `advisory` or `unavailable` value and the `<checks run>` list this run just wrote, and the `; <N> not run: <check text>` tail where this run wrote one. Like the two checks above, this is a comparison against something this run wrote itself, so it is exact rather than a prefix match.
+
+The line has not landed if the block carries none, or if the one it carries is a value from an earlier dispatch rather than the one this run wrote.
+
+Losing it is silent, and it is not cosmetic either. That value is the only surviving record of **how** the verification was obtained — the run summary does not outlive the session, and the status grammar has no room for a qualifier on a `✅ Fixed` line — so a finding whose `advisory` line failed to land reads afterwards as a hard-verified one. A failed write there silently upgrades the finding in the committed record, which is the one disclosure the verification stage exists to produce.
+
+**A rejected finding is not in this check's set, and its missing line is not a failure.** `reject` never dispatches: its `🚫 Rejected` status is stage 2's write, and it carries no `**Verification:**` line at all. It is already outside this step's iteration set for that reason — the batch is Step 3's dispatch batch, and a rejected finding is never handed to Step 3 — so the check never reaches it. Do not flag the absence there.
+
 If verification fails for any issue:
 
-- Append `{issue_id, source_file, reason}` to a `status_write_failures` list (where `reason` is one of `edit-errored`, `status-line-missing`, `status-line-wrong-text`).
+- Append `{issue_id, source_file, reason}` to a `status_write_failures` list (where `reason` is one of `edit-errored`, `status-line-missing`, `status-line-wrong-text`, `attempt-entry-missing`, `verification-line-missing`).
 - Do **not** retry inside this step — surface the failure in Step 4.2 instead. A silent retry could mask a real heading-drift bug, and the next `/fix-report` run already retries by design (the issue stays unfixed and reappears).
 
-This list is consumed by Step 4.2's "Status write failures" block.
+This list is consumed by Step 4.2's "Status write failures" block — the same one list, whichever of the three write kinds failed.
 
-**Restart safety:** because Step 4.1.5 verifies every `**Status:**` write, re-running `/fix-report` is safe: any issue whose Status line was successfully written in a prior run is filtered out by Step 1.3 and will not be re-fixed. Only issues that failed verification (or were never attempted) are eligible for re-processing.
+**Restart safety:** because Step 4.1.5 verifies every `**Status:**` write, re-running `/fix-report` is safe: any issue whose Status line was successfully written in a prior run is filtered out by Step 1.3 and will not be re-fixed. Only issues that failed verification (or were never attempted) are eligible for re-processing. A finding in the no-status group is *meant* to reappear next run; verifying its attempt entry is what makes that next run a step forward rather than a repeat, since the counter it advances is what eventually retires the decision.
 
 ### Step 4.2: Display fix summary
 
@@ -346,14 +378,14 @@ Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌
 - <issue-id> in <source-file> — <reason>
 - ...
 
-Re-run `/fix-report` to retry, or manually add the `**Status:**` line below each heading.
+Re-run `/fix-report` to retry, or repair each finding block by hand — the `**Status:**` line below its heading, the missing `attempt N:` entry on its `**Decision:**` line, or the missing `**Verification:**` line below the `**Status:**` slot.
 ```
 
-Where `<reason>` is the value recorded in Step 4.1.5 (`edit-errored`, `status-line-missing`, or `status-line-wrong-text`). The code change itself already landed for these issues — only the report annotation is missing, which is why the re-run-or-manual-edit guidance is non-destructive. Omit this block entirely if `status_write_failures` is empty.
+Where `<reason>` is the value recorded in Step 4.1.5 (`edit-errored`, `status-line-missing`, `status-line-wrong-text`, `attempt-entry-missing`, or `verification-line-missing`). For the three status-line reasons the code change itself already landed — only the report annotation is missing, which is why the re-run-or-manual-edit guidance is non-destructive. `attempt-entry-missing` can only reach this list from a finding the Step 2.4 gate decided, and there nothing landed to lose: the finding reappears next run by design, but with its retirement counter un-advanced, so the manual repair is what keeps that counter honest. `verification-line-missing` reaches this list from a finding the Step 2.4 gate decided too, and from either group of that decided partition; where the finding's `**Status:**` line did land, Step 1.3 filters it out of every later run, so the re-run retries nothing and the hand repair is the only one there is — until it is made, an advisory pass reads as a hard-verified one. Omit this block entirely if `status_write_failures` is empty.
 
 **Decision-stage summary.** Where Step 2.4 ran the gate over at least one finding, print the block below after Step 4.1 / 4.1.5, following the fix summary. The template above is closed — the `| # | Issue | Status |` rows, the counts, and the reports-updated list — and holds no slot for what the decision stage has to disclose.
 
-Its rows are the eight disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty; omit the block entirely where the gate did not run.
+Its rows are the nine disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty; omit the block entirely where the gate did not run.
 
 ```markdown
 ## Decision Stage
@@ -380,6 +412,9 @@ Its rows are the eight disclosures `code-review:decision-gate` **raises and does
 
 **Unpinned decisions — not replayed on a later run:**
 - [SEVERITY] ID: Title
+
+**Unpinnable paths — no observation taken:**
+- [SEVERITY] ID: Title — <path>
 
 **stalled — no progress:**
 - [SEVERITY] ID: Title — <first retired resolution> / <second retired resolution>

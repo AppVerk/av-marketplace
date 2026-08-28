@@ -21,18 +21,18 @@ for **both** entry runs.
 
 ---
 
-## Prerequisite: install `code-review` ≥ 1.18.0 from this branch
+## Prerequisite: install `code-review` ≥ 2.0.0 from this branch
 
 The agent registry resolves from the **installed plugin cache**, not from
 this working tree. A cache still holding `code-review` 1.17.x has no
-`decision-analyst.md` — the agent ships in the unreleased 1.18.0 — and
+`decision-analyst.md` — the agent ships in the unreleased 2.0.0 — and
 stage 1's fan-out fails with `Agent type 'code-review:decision-analyst'
 not found`. Every finding then degrades to the analyst-failure path and
 DOC-004's post-condition ("the analyst's returned block carried a
 `Rejection candidate`") fails by construction, for a reason that is not a
 defect in the design.
 
-**Before starting:** install `code-review` ≥ 1.18.0 from this branch
+**Before starting:** install `code-review` ≥ 2.0.0 from this branch
 (`/plugin` → reinstall from the local marketplace), then confirm
 `code-review:decision-analyst` resolves — it must appear in the available
 agent types. If it does not, stop: nothing below this line is testable
@@ -86,9 +86,12 @@ back to you. That defeats the entire point of running the fixture twice.
 
 ## Step 1: Take the pristine snapshot
 
-From the repository root, once, before the first entry run:
+From the repository root, once, before the first entry run — and only
+while the fixture is still clean, since this overwrites any existing
+snapshot:
 
 ```bash
+rm -rf /tmp/nd-pristine
 cp -R docs/testing/fixtures/needs-decision-e2e /tmp/nd-pristine
 ```
 
@@ -280,11 +283,15 @@ stage 3, 3.5 or 4 also never accumulates a `**Decision:**` line or a
 that out directly, on the `report.md` each entry run actually produced
 (before you restore the pristine copy for the next run).
 
-The brief's own Step 6 grep uses BRE alternation
-(`'**Decision:**\|🚫 Rejected'`), which **BSD grep on macOS does not
-support** — the pattern would silently match nothing and the count
-would read `0` regardless of what the file contains, which looks like a
-failure even when the run was fine. Use extended regex instead:
+The brief's own Step 6 grep quotes the pattern
+(`'**Decision:**\|🚫 Rejected'`), which no grep will run at all: the
+leading `**` is a repetition operator with no operand, so the pattern
+is not a valid BRE. BSD grep on macOS (2.6.0-FreeBSD) rejects it
+outright — `grep: repetition-operator operand invalid`, exit status 2
+— rather than matching nothing, so the failure is loud and never a
+misleading `0`. BRE alternation `\|` itself works fine on macOS and is
+not the hazard here; the unescaped `**` is, and `-E` alone does not
+rescue it either. Drop the asterisks and use extended regex:
 
 ```bash
 grep -cE 'Decision:|🚫 Rejected' docs/testing/fixtures/needs-decision-e2e/report.md
