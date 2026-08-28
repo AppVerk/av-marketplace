@@ -21,6 +21,25 @@ for **both** entry runs.
 
 ---
 
+## Prerequisite: install `code-review` ≥ 1.18.0 from this branch
+
+The agent registry resolves from the **installed plugin cache**, not from
+this working tree. A cache still holding `code-review` 1.17.x has no
+`decision-analyst.md` — the agent ships in the unreleased 1.18.0 — and
+stage 1's fan-out fails with `Agent type 'code-review:decision-analyst'
+not found`. Every finding then degrades to the analyst-failure path and
+DOC-004's post-condition ("the analyst's returned block carried a
+`Rejection candidate`") fails by construction, for a reason that is not a
+defect in the design.
+
+**Before starting:** install `code-review` ≥ 1.18.0 from this branch
+(`/plugin` → reinstall from the local marketplace), then confirm
+`code-review:decision-analyst` resolves — it must appear in the available
+agent types. If it does not, stop: nothing below this line is testable
+yet, and the failure is an install problem, not a finding.
+
+---
+
 ## The first thing that will go wrong: auto-merge mode
 
 Both entry commands support two invocation modes. **Auto-merge mode**
