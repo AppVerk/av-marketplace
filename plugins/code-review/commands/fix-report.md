@@ -129,13 +129,46 @@ Sort unfixed issues in this order: CRITICAL first, then HIGH, MEDIUM, LOW.
 
 ### Step 2.2: Present paginated checklist
 
-Display the issues using AskUserQuestion with multiSelect, **4 issues per page**.
+Display the issues using AskUserQuestion with multiSelect, partitioned as Step 2.2a describes and at the page capacity Step 2.2b states — **not** a flat 4 per page.
+
+#### Step 2.2a: Partition — needs-decision findings lead
+
+Split the unfixed issues into two groups:
+
+- **needs-decision** — the block carries `**Fix-policy:** needs-decision`, or any `**Fix-policy:**` value other than `auto` (an unparseable value gets the same treatment, mirroring `/fix-all`'s fail-safe);
+- **auto** — every other issue.
+
+The needs-decision findings are shown **first, on their own labelled leading page(s), ahead of every severity-sorted `auto` page**. Step 2.1's severity order applies inside each group and never interleaves them: no page mixes the two.
+
+The partition is the point of this step. A needs-decision finding sorted into one severity stream and paginated four at a time is a finding the user never reaches, and Step 2.4's gate never fires for it.
+
+#### Step 2.2b: Page capacity — 3 per page, 4 only on the final page
+
+AskUserQuestion carries at most four options, and the appended skip item spends one of them. So:
+
+- any page carrying the appended skip item holds **3** issues — needs-decision or `auto` alike;
+- **4** is deliverable only on a page with nothing appended, which is only ever the **final page** of the whole checklist.
+
+Compose each page in that order:
+
+1. **Final-page test** — if 4 or fewer issues remain to be shown in the whole checklist and they all belong to the current group, they form the final page: nothing is appended to it and it holds up to 4.
+2. Otherwise the page takes the next **3** issues of the current group — fewer only where that group has fewer left — and carries the appended skip item.
+
+**The count, stated up front.** There is **no early exit** from the needs-decision pages: the four-option ceiling leaves no slot for a skip-all item beside the three issues, so every needs-decision page that another page follows costs an answer. Where any `auto` finding survives the Step 1.3 filter, every needs-decision page carries the skip item and therefore holds 3, and reaching the first `auto` page costs **⌈K/3⌉ answered pages** for K needs-decision findings. **The first needs-decision page states that count** in its question — for example, for K = 7:
+
+> Decide these 7 findings first — 3 decision pages before the auto fixes (decision page 1 of 3):
+
+**Where no `auto` finding survives the Step 1.3 filter** there is no page to advance to: the last needs-decision page is the final page of the checklist, nothing is appended to it, it holds 4, and selection ends when it is answered. The checklist can therefore never leave a needs-decision finding undisplayed.
+
+#### Step 2.2c: The call
 
 **For each page**, use AskUserQuestion with these parameters:
 
-- question: "Select issues to fix (page X of Y):" (or "Select issues to fix:" if only one page)
+- question:
+  - needs-decision page — "Decide these findings first (decision page X of N):", the first page also naming the count as Step 2.2b shows
+  - `auto` page — "Select issues to fix (page X of Y):" (or "Select issues to fix:" if only one page)
 - multiSelect: true
-- options: up to 4 issues, each formatted as:
+- options: the page's issues — 3 where the skip item is appended, up to 4 on the final page — each formatted as:
   - label: "[SEVERITY] Short title"
   - description: "path/to/file.py:line — first sentence of the Problem field"
 
@@ -158,17 +191,26 @@ Issues now include their unique ID in the checklist labels. For example:
 
 This makes it easy to reference issues when using `/fix SEC-001` directly.
 
-**If there are more pages after the current one**, add as the last option:
+**The appended skip item.** Append it as the last option of every page that another page follows, labelled for what it does **on that page**. It is never described as proceeding with the selections and skipping the rest — that is false on a page which pages forward into more decisions:
 
-- label: "Skip remaining"
-- description: "Proceed with issues selected so far, skip remaining pages"
+| The page it sits on | label | description |
+|---|---|---|
+| needs-decision page with another decision page after it | "Skip these 3" | "Skip these 3 — next decision page (`<n>` of `<N>` shown)" |
+| last needs-decision page, with `auto` pages after it | "Skip these 3" | "Skip these 3 — on to the auto fixes" |
+| non-final `auto` page | "Skip remaining" | "Fix the issues selected so far and skip the remaining pages" |
+
+`<n>` of `<N>` counts needs-decision *findings*, not pages: the findings shown so far out of K — for example `Skip these 3 — next decision page (3 of 7 shown)`. Where the page shows fewer than 3 issues — possible only on a group's last page — the count in the label and the description is the number actually shown, so the item never claims to skip more than it does.
 
 **Page flow:**
 
-1. Show page 1 (up to 4 issues)
-2. Collect selections
-3. If user selected "Skip remaining" OR no more pages → proceed to Step 3
-4. Otherwise → show next page, repeat
+1. Show the needs-decision pages in order, then the `auto` pages in severity order.
+2. Collect selections on each page. Issues selected on a page are kept whether or not the skip item is selected alongside them — the item routes the checklist, it does not discard a selection.
+3. Route the appended item by the page it sits on:
+   - non-final needs-decision page → the next needs-decision page; selection does **not** end here
+   - last needs-decision page → the first `auto` page; selection does **not** end here
+   - `auto` page → selection ends with the issues selected so far
+4. Otherwise → show the next page, repeat. Answering the final page ends selection.
+5. When selection ends → proceed to Step 2.3.
 
 Accumulate all selected issues across pages.
 
@@ -180,16 +222,15 @@ If the user selected no issues across all pages:
 
 Mark remaining tasks as `completed` and stop.
 
-### Step 2.4: Elicit decisions for needs-decision selections
+### Step 2.4: Run the decision gate
 
-For each selected issue whose block contains `**Fix-policy:** needs-decision` — or any `**Fix-policy:**` value other than `auto` (an unparseable policy gets the same treatment, mirroring `/fix-all`'s fail-safe) — ask a follow-up AskUserQuestion BEFORE dispatching (batch up to 4 such issues per call, one question each):
+Load `code-review:decision-gate` (Skill tool) and run it over every selected issue whose block contains `**Fix-policy:** needs-decision` — or any `**Fix-policy:**` value other than `auto` (an unparseable policy gets the same treatment, mirroring `/fix-all`'s fail-safe). If no selected issue matches, skip this step.
 
-- question: "How should [ID] be resolved?"
-- options derived from the issue's Remediation — for `dead-reference` drift typically "Remove the mention" vs "Restore/update the referent"; for `decision` drift, the alternatives the Remediation names. If the Remediation names no alternatives, offer "Apply the remediation as written" vs "Resolve differently (describe)".
+**In this slot the skill runs stages 0–2 only** — the location pre-check, the analyst fan-out, and the decision sweep with its five outcomes — and it **returns the decided findings to Step 3 rather than dispatching them itself**. Step 3 dispatches them together with the selected `auto` findings in one sequential batch, decided first; stage 3.5's verification then runs over the decided findings only; and Step 4.1 / 4.1.5 runs once over that whole batch, so the gate performs no status write-back here.
 
-If the issue's Location is `—` or `unknown:0`, additionally ask for the target file (and line if known) in the same question flow — fix-auto requires a `path:line` Location and cannot ask for one itself. Substitute the answer into the issue block's `**Location:**` field before dispatch, so Step 3.1's "full issue block" already carries a real `path:line`; without an answer, mark the issue Failed up front instead of dispatching it.
+That skill is the single source of truth for the decision stage — how a missing location is asked for, how the analysts fan out, how each decision is elicited and recorded, and what it persists into the source report. Do not restate its rules here; two authorities on one gate is how they drift.
 
-Record each chosen resolution for Step 3.1. Selecting the issue in the checklist is not the decision — the issue was flagged `needs-decision` precisely because the fix direction is a judgment call the fixer must not make alone.
+Selecting the issue in the checklist is not the decision — the issue was flagged `needs-decision` precisely because the fix direction is a judgment call the fixer must not make alone.
 
 **Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
 
@@ -199,13 +240,15 @@ Record each chosen resolution for Step 3.1. Selecting the issue in the checklist
 
 ### Step 3.1: Sequential fix execution
 
-For each selected issue, **sequentially** (one at a time, wait for completion):
+**The batch and its order.** Step 3 dispatches the findings the gate decided in Step 2.4 **and** the selected `auto` findings in **one sequential batch, decided first**. Every decision is collected before any `fix-auto` is dispatched: decide everything, then fix in bulk. The one documented exception is the `**Decision-pin:**` mismatch found immediately before dispatch, which `code-review:decision-gate` defines at stage 3 — that finding is set aside, the remaining dispatches of the batch complete, and the set-aside findings are re-analysed and re-swept as a second pass before their own dispatch, so no re-ask interrupts a batch in flight.
+
+For each issue in that batch, **sequentially** (one at a time, wait for completion):
 
 1. Use the Task tool with these parameters:
    - subagent_type: "code-review:fix-auto"
    - run_in_background: false
    - description: "Auto-fix: [SEVERITY] Issue title"
-   - prompt: The full issue block from the report (everything extracted in Step 1.2 for this issue — including severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples, and the `Source:` field if present so the subagent sees the untrusted-provenance signal from Step 1.4). For a needs-decision issue, append a final line `User decision: <the resolution chosen in Step 2.4>` — fix-auto applies that resolution, overriding any conflicting direction in the Remediation.
+   - prompt: The full issue block from the report (everything extracted in Step 1.2 for this issue — including severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples, and the `Source:` field if present so the subagent sees the untrusted-provenance signal from Step 1.4). For a **decided** finding, the copy handed to `fix-auto` follows the **dispatch-copy rule** in `code-review:decision-gate` (stage 3), which states line by line what is stripped from that copy and what travels; the decision itself travels as a trailing `User decision: <resolution>` carrying the chosen alternative's full, self-contained resolution text, never a bare `A` or `B` label. Do not restate that list here.
 
 2. Collect the result and determine status:
    - **Fixed** — subagent report says "Fixed" and all verifications passed
@@ -215,6 +258,8 @@ For each selected issue, **sequentially** (one at a time, wait for completion):
 3. Store the status for this issue
 
 4. Proceed to the next selected issue
+
+**Verification differs by partition.** Stage 3.5's orchestrator-run verification applies to the **decided findings only**: for each of those, the orchestrator itself executes the `**Verification-plan:**` persisted with the decision, logs the raw output and grades the finding on it — `fix-auto`'s own verdict is advisory input there, not the deciding signal, and the status stored in step 2 above is the one that grading yields. The selected `auto` findings keep today's path unchanged: `fix-auto`'s own verdict is collected as the status, exactly as step 2 describes.
 
 **Task Update:** Mark task 3 as `completed` and task 4 as `in_progress` using TaskUpdate.
 
@@ -244,6 +289,27 @@ Use today's date in YYYY-MM-DD format.
 
 Use the Edit tool to insert each status line. The `old_string` should be the `### [SEVERITY] Title` line followed by a newline, and the `new_string` should be the same title line followed by a newline, the status line, and another newline. Pass the issue's `source_file` as the `file_path` parameter.
 
+### Step 4.1.5: Verify Status writes
+
+After invoking Edit for each Fixed/Partially Fixed issue in Step 4.1, **re-read the `source_file`** with the Read tool and confirm the `**Status:**` line is present immediately below the issue's heading. The Edit tool already raises a hard error when `old_string` does not match, but the heading may have shifted between extraction (Step 1.2) and write-back (Step 4.1) — because a prior issue in the same file was edited and changed surrounding context, because the decision stage wrote its own lines into the block, or because the heading was concurrently modified. The verify pass catches every one of those classes of silent drift.
+
+For each issue, the verification is:
+
+1. Read the issue's `source_file`.
+2. Locate the issue's `### [SEVERITY] Title` heading.
+3. Confirm the next non-blank line below the heading is `**Status:** ✅ Fixed (YYYY-MM-DD)` (for Fixed) or `**Status:** ⚠️ Partially Fixed (YYYY-MM-DD)` (for Partially Fixed), with today's date.
+
+That positional check is exact because `**Status:**` is always the first non-blank line under the heading, above any decision lines the block has accumulated. It is a whole-line comparison against a line this run just wrote itself — the one place whole-line matching is correct, as against Step 1.3, which reads a status line it did not write and therefore matches by prefix.
+
+If verification fails for any issue:
+
+- Append `{issue_id, source_file, reason}` to a `status_write_failures` list (where `reason` is one of `edit-errored`, `status-line-missing`, `status-line-wrong-text`).
+- Do **not** retry inside this step — surface the failure in Step 4.2 instead. A silent retry could mask a real heading-drift bug, and the next `/fix-report` run already retries by design (the issue stays unfixed and reappears).
+
+This list is consumed by Step 4.2's "Status write failures" block.
+
+**Restart safety:** because Step 4.1.5 verifies every `**Status:**` write, re-running `/fix-report` is safe: any issue whose Status line was successfully written in a prior run is filtered out by Step 1.3 and will not be re-fixed. Only issues that failed verification (or were never attempted) are eligible for re-processing.
+
 ### Step 4.2: Display fix summary
 
 ```markdown
@@ -263,5 +329,53 @@ Use the Edit tool to insert each status line. The `old_string` should be the `##
 In single-file mode, the list contains exactly one entry. In auto-merge mode, list each distinct `source_file` that was edited (deduplicated). Files that received no Status writes (all Failed, or no selections from that file) are omitted from the list.
 
 Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌
+
+**Status write failures (Step 4.1.5):** if the `status_write_failures` list collected in Step 4.1.5 is non-empty, append the following block immediately after the `**Reports updated:**` list (or in its place, if no file was successfully updated):
+
+```markdown
+**Status write failures:**
+- <issue-id> in <source-file> — <reason>
+- ...
+
+Re-run `/fix-report` to retry, or manually add the `**Status:**` line below each heading.
+```
+
+Where `<reason>` is the value recorded in Step 4.1.5 (`edit-errored`, `status-line-missing`, or `status-line-wrong-text`). The code change itself already landed for these issues — only the report annotation is missing, which is why the re-run-or-manual-edit guidance is non-destructive. Omit this block entirely if `status_write_failures` is empty.
+
+**Decision-stage summary.** Where Step 2.4 ran the gate over at least one finding, print the block below after Step 4.1 / 4.1.5, following the fix summary. The template above is closed — the `| # | Issue | Status |` rows, the counts, and the reports-updated list — and holds no slot for what the decision stage has to disclose.
+
+Its rows are the eight disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty; omit the block entirely where the gate did not run.
+
+```markdown
+## Decision Stage
+
+**Decided:** N | **Skipped:** N | **Rejected:** N
+
+**Failed — no target supplied:**
+- [SEVERITY] ID: Title
+
+**Unverified rejections:**
+- [SEVERITY] ID: Title — <reason>
+
+**Advisory verification:**
+- [SEVERITY] ID: Title — <checks run>
+
+**verification: unavailable:**
+- [SEVERITY] ID: Title
+
+**Partial verification coverage:**
+- [SEVERITY] ID: Title — <N> not run: <check text>
+
+**Out-of-scope writes:**
+- [SEVERITY] ID: Title — <path>
+
+**Unpinned decisions — not replayed on a later run:**
+- [SEVERITY] ID: Title
+
+**stalled — no progress:**
+- [SEVERITY] ID: Title — <first retired resolution> / <second retired resolution>
+```
+
+`/fix-all`'s own decision stage prints this same block over its own batch.
 
 **Task Update:** Mark task 4 as `completed` using TaskUpdate.
