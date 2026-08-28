@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), Bash(shasum:*), Bash(sha256sum:*), Bash(sed:*), Bash(grep:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
 description: Parse review and QA reports (auto-merge by default), present issues as a checklist, fix selected issues, and mark them resolved in their source reports.
 model: opus
 argument-hint: [path-to-review-or-qa-report]
@@ -83,12 +83,13 @@ Aggregate all tagged issues across all files into a single list before applying 
 
 ### Step 1.3: Filter out already-fixed issues
 
-For each extracted issue, check if the block contains any of these status lines:
+For each extracted issue, check if the block contains a `**Status:**` line whose value **starts with** any of these (match by prefix, not whole-line equality — a `🚫 Rejected` line carries a ` — <reason>` tail that a whole-line comparison would fail on):
 
 - `**Status:** ✅ Fixed`
 - `**Status:** ⚠️ Partially Fixed`
+- `**Status:** 🚫 Rejected`
 
-If a status line is present, **skip this issue** — it has already been handled.
+If a status line is present, **skip this issue** — it has already been handled. A `🚫 Rejected` status is terminal: the finding never re-enters the fix set, on this run or any later one.
 
 Collect only unfixed issues (those without a `**Status:**` line).
 
@@ -108,9 +109,11 @@ For each extracted issue, check whether the block contains a `**Source:**` line 
 
 Mark all tasks as `completed` and stop.
 
-**If all issues have a Status field (all fixed/partially fixed):**
+**If all issues have a Status field (all fixed/partially fixed/rejected):**
 
-> All issues in the report(s) have been resolved. Nothing to do.
+With `🚫 Rejected` in the vocabulary, a `**Status:**` field no longer implies the finding was fixed — count fixed/partially-fixed issues and rejected issues separately and name both counts:
+
+> N fixed, M rejected. Nothing to do.
 
 Mark all tasks as `completed` and stop.
 
