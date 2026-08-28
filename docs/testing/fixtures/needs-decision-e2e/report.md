@@ -96,7 +96,7 @@ Procedures" in `target-b.md` if the retitling was unintended.
 ### [HIGH] DOC-005: Report-generation script does not exist
 
 **ID:** DOC-005
-**Location:** `docs/testing/fixtures/needs-decision-e2e/target-b.md:13`
+**Location:** `docs/testing/fixtures/needs-decision-e2e/target-b.md:14`
 **Category:** Documentation
 **Drift-class:** dead-reference
 **Fix-policy:** needs-decision

@@ -81,29 +81,40 @@ and the run summary does **not** mark this rejection `unverified`.
 
 ## DOC-005 — choose A
 
-DOC-005 is the ordinary dead-reference case: `target-b.md:13` cites
+DOC-005 is the ordinary dead-reference case: `target-b.md:14` cites
 `scripts/generate-legacy-report.sh`, which does not exist anywhere in
 the repository (confirmed — no renamed or relocated referent, unlike
-DOC-004). Its `Drift-class` is `dead-reference`, so the analyst derives
-alternatives structurally — per `decision-gate/SKILL.md`'s
-`**Alternatives:**` render-format table, `dead-reference` gives "remove
-the mention **vs** restore/update the referent", in that order, which
-this fixture expects to render as **A = remove the mention**, **B =
-restore/update the referent**.
+DOC-004). Its `Drift-class` is `dead-reference`.
 
-**Answer: choose whichever option the live sweep renders as `[A]`** —
-the scripted answer is the **label**, not a specific action. If the
-live render's `[A]` turns out to read as "restore" rather than
-"remove" (i.e. the order above did not hold), still answer `A`; do not
-override the script based on the wording. Either way, confirm afterward
-which action DOC-005's `**Decision:**` line actually recorded, since
-the post-conditions in `RUNBOOK.md` are written against "whichever
-resolution `A` names," not against "remove" specifically — except
-where a post-condition names the concrete edit (see below), which
-assumes the expected order held.
+**A = remove the mention is pinned by construction, not by the live
+analyst's per-run judgment.** Two independent sources fix the mapping:
 
-The natural hard, executable verification for this alternative is a
-post-edit grep asserting the string is gone, e.g.:
+- `decision-gate/SKILL.md:119` — `| dead-reference | remove the mention
+  **vs** restore/update the referent |`.
+- `decision-analyst.md:28` — the same instruction, given directly to the
+  agent that populates `Alternatives`: "`dead-reference` → remove the
+  mention vs. restore the referent," in that order.
+
+`Recommendation` (`decision-analyst.md:29`) is a **separate field**,
+reported after the fact as "A or B, with the reason" — nothing ties
+"recommended" to "rendered as A," so a recommendation to restore does
+not change which label removal gets. For this finding, `[A]` renders as
+**"remove the mention of `scripts/generate-legacy-report.sh` from
+`target-b.md`"** and `[B]` renders as "restore/update the referent."
+
+**Answer: choose `A`.**
+
+**If the live sweep's `[A]` does not read as "remove the mention"** —
+treat that as a **run/implementation defect to report**, with the same
+rigor `RUNBOOK.md` already applies to DOC-004's no-candidate case, not
+as a labeling quirk to shrug off. Still answer `A` (the scripted
+button-press is the label), but record in your write-up that
+`decision-analyst.md:28`'s contract was not honored this run, and check
+the resulting edit against whichever action `[A]` actually named so the
+rest of the checklist is graded against what really happened.
+
+The hard, executable verification for this alternative is a post-edit
+grep asserting the string is gone, e.g.:
 
 ```
 grep -c "generate-legacy-report.sh" docs/testing/fixtures/needs-decision-e2e/target-b.md
@@ -122,7 +133,7 @@ about this fixture should need a test/build command or a write.
 
 Expected effect: a `**Decision:**` line in the delimited grammar;
 `**Location:**` rewritten to the analyst's verified `Target` normalised
-to `path:line`, with `(was: `docs/testing/fixtures/needs-decision-e2e/target-b.md:13`)`
+to `path:line`, with `(was: `docs/testing/fixtures/needs-decision-e2e/target-b.md:14`)`
 (or whatever the reviewer's original was) still recoverable; and
 `**Status:** ✅ Fixed (YYYY-MM-DD)` with `**Verification:** hard — <the
 checks actually run>`.

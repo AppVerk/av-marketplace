@@ -220,14 +220,21 @@ these you actually verified, not just that the run "seemed to work."
 - [ ] Stage 3.5's raw output for exactly those checks appears in the
       transcript, and the `✅ Fixed` status is derivable by reading that
       output — not asserted past it.
-- [ ] The edit actually made matches the alternative `**Decision:**`
-      recorded, whatever it turned out to be — not just that *some*
-      edit happened. `ANSWERS.md` expects `[A]` to render as "remove
-      the mention," in which case `scripts/generate-legacy-report.sh`
-      should be gone from `target-b.md`; if the live sweep instead
-      rendered `[A]` as "restore/update the referent," confirm the
-      script mention is preserved and a referent was actually added,
-      and note that the expected A/B order did not hold for this run.
+- [ ] `[A]` rendered as **"remove the mention of
+      `scripts/generate-legacy-report.sh` from `target-b.md`"** — this
+      is pinned by construction for a `dead-reference` finding
+      (`decision-gate/SKILL.md:119`, `decision-analyst.md:28`: "remove
+      the mention **vs** restore/update the referent," in that order),
+      not something the live analyst is free to reorder per run. Confirm
+      the edit actually made matches: the mention of
+      `scripts/generate-legacy-report.sh` should be gone from
+      `target-b.md`, not just that *some* edit happened.
+- [ ] **If `[A]` rendered as anything other than "remove the mention"**
+      — this is a **run/implementation defect to report**, with the same
+      rigor applied to DOC-004's no-candidate case above, not a labeling
+      quirk to note and move past. Record it as such, then grade the
+      rest of this finding's checklist against whichever action `[A]`
+      actually named.
 - [ ] **Any** of the following fails this finding for this run: a
       `⚠️ Partially Fixed` status, a missing `**Status:**` line, or a
       `**Verification:**` value other than `hard`.
