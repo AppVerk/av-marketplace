@@ -472,7 +472,9 @@ That skill is the single source of truth for the decision stage — how a missin
 
 ### Step 5.5: Write back and verify
 
-Re-run the **Step 4.1 / 4.1.5** write-and-verify procedure over the decision batch — the same insert-after-heading `Edit` recipe and the same positional re-read, unchanged. Steps 4.1 / 4.1.5 have already run and closed task 4 by the time this step is reached, so **Step 5 owns the write-back for its own findings**: no later step will make it.
+Re-run the **Step 4.1 / 4.1.5** write-and-verify procedure over the decision batch — the same insert-after-heading `Edit` recipe and the same positional re-read, unchanged. Steps 4.1 / 4.1.5 have already run and closed task 4 by the time this step is reached — or, on the zero-auto path, never ran at all and Step 5.2 closed task 4 in their place. Either way **Step 5 owns the write-back for its own findings**: no later step will make it.
+
+**The deciding signal.** Every finding in this batch is a decided one, so stage 3.5's orchestrator-run verification covers all of them: for each, the orchestrator itself executes the `**Verification-plan:**` persisted with the decision, logs the raw output and grades the finding on it — `fix-auto`'s own verdict is advisory input there, not the deciding signal, and the status this re-run writes back is the one that grading yields. That is the one respect in which the status source differs from Step 4.1's rule; the `auto` findings Steps 3–4 already handled kept `fix-auto`'s verdict, exactly as Step 3.1 describes.
 
 Which findings of the batch that covers is `code-review:decision-gate`'s to state, not this step's. Stage 4's status write-back is command-owned, but the outcomes that reach it — and the ones for which the gate has already written a status itself — are defined there.
 
