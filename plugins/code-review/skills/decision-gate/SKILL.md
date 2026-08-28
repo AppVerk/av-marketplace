@@ -13,12 +13,14 @@ It carries stage 2's render as well, so that every entry point renders one gate.
 
 Loaded in full by `/fix-report` and `/fix-all`. `/fix` loads it for the `Alternatives:` render format alone: `/fix`'s own gate stays `(A / B / no)`, `/fix` never writes `🚫 Rejected`, and the five-outcome sweep belongs to `/fix-report` and `/fix-all`.
 
-### What the skill *runs* differs by command
+### *Where* the stages run differs by command
 
-| Entry point | Stages this skill runs |
+| Entry point | Where the stages run |
 |---|---|
-| `/fix-all`, Step 5 | stages 0 → 3.5 |
-| `/fix-report`, in the Step 2.4 slot | stages 0–2 only; the decided findings are handed back to **Step 3**, which dispatches them together with the selected `auto` findings in one sequential batch, decided first. Stage 3.5's verification then runs over the **decided findings only** — the `auto` findings keep today's path, where `fix-auto`'s own verdict is collected |
+| `/fix-all`, Step 5 | stages 0 → 3.5 run in this skill's own slot; Step 5.5 then performs the stage 4 write-back over the same findings, graded by *Stage 4* below |
+| `/fix-report`, in the Step 2.4 slot | stages 0–2 run in this skill's own slot, and the decided findings are handed back to **Step 3**, which dispatches them together with the selected `auto` findings in one sequential batch, decided first, **applying the whole of stage 3's dispatch contract** — the `**Dispatch:**` marker, the pin comparison and the dispatch-copy strip list. Stage 3.5's verification then runs over the **decided findings only** — the `auto` findings keep today's path, where `fix-auto`'s own verdict is collected — and Step 4.1 / 4.1.5 performs the stage 4 write-back once over that whole batch |
+
+Every stage's contract is this skill's in both rows. The column records **where** it is executed: inside the skill's own slot, or by the command applying it.
 
 ### What this skill deliberately excludes
 
