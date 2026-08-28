@@ -474,9 +474,13 @@ That skill is the single source of truth for the decision stage — how a missin
 
 Re-run the **Step 4.1 / 4.1.5** write-and-verify procedure over the decision batch — the same insert-after-heading `Edit` recipe and the same positional re-read, unchanged. Steps 4.1 / 4.1.5 have already run and closed task 4 by the time this step is reached — or, on the zero-auto path, never ran at all and Step 5.2 closed task 4 in their place. Either way **Step 5 owns the write-back for its own findings**: no later step will make it.
 
+That recipe is this step's; **what it writes is not**. Which of stage 4's four cases a finding falls into — and therefore whether a `**Status:**` line is written at all, and which one — is graded by `code-review:decision-gate`'s **Stage 4**, from the two tree observations it defines. Do not restate those cases here.
+
 **The deciding signal.** Every finding in this batch is a decided one, so stage 3.5's orchestrator-run verification covers all of them: for each, the orchestrator itself executes the `**Verification-plan:**` persisted with the decision, logs the raw output and grades the finding on it — `fix-auto`'s own verdict is advisory input there, not the deciding signal, and the status this re-run writes back is the one that grading yields. That is the one respect in which the status source differs from Step 4.1's rule; the `auto` findings Steps 3–4 already handled kept `fix-auto`'s verdict, exactly as Step 3.1 describes.
 
-Which findings of the batch that covers is `code-review:decision-gate`'s to state, not this step's. Stage 4's status write-back is command-owned, but the outcomes that reach it — and the ones for which the gate has already written a status itself — are defined there.
+Which findings of the batch that covers is `code-review:decision-gate`'s to state, not this step's — as are the outcomes that reach this write-back and the ones for which the gate has already written a status itself.
+
+**Two lines, one write.** The `**Status:**` line and the `**Verification:**` line are written **in the same write**, per that skill's *Stage 4*: the `**Verification:**` value records how the verification was obtained, and a status written without it cannot be told apart from a hard-verified one once the session ends. For the two stage-4 cases that write **no** `**Status:**` line, this step instead **appends the attempt entry** to the finding's `**Decision:**` line — together with that same `**Verification:**` line — which is what keeps the two-attempt retirement counter advancing and the escape to `reject` reachable. Both writes go into the finding's `source_file`, below the `**Status:**` slot, on one physical line each.
 
 Collect `status_write_failures` exactly as Step 4.1.5 does. If the list is non-empty, render it with Step 4.2's **Status write failures** block over Step 5's own list, below the summary block of Step 5.6. Step 4.2 itself is unchanged; this reuses its template rather than editing it.
 

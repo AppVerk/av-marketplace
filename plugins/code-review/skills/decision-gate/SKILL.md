@@ -7,7 +7,7 @@ description: Use when resolving code-review findings flagged needs-decision in b
 
 ## Scope of this skill
 
-This skill is the **single source of truth for the decision stage**: stage 0's location pre-check, the fan-out rules and batch size, the analyst return contract as it is rendered, the decision sweep and its five outcomes — including the reject evidence gate and the read-only execution boundary its re-run runs under — the dispatch contract, stage 3.5's orchestrator-run verification under that same boundary, and the decision record written into the report.
+This skill is the **single source of truth for the decision stage**: stage 0's location pre-check, the fan-out rules and batch size, the analyst return contract as it is rendered, the decision sweep and its five outcomes — including the reject evidence gate and the read-only execution boundary its re-run runs under — the dispatch contract, stage 3.5's orchestrator-run verification under that same boundary, stage 4's grading of each dispatch, and the decision record written into the report.
 
 It carries stage 2's render as well, so that every entry point renders one gate.
 
@@ -22,12 +22,12 @@ Loaded in full by `/fix-report` and `/fix-all`. `/fix` loads it for the `Alterna
 
 ### What this skill deliberately excludes
 
-**Stage 4's status write-back is not in this skill, in either case: it is command-owned.** Each command re-runs its own Step 4.1 / 4.1.5 procedure over its own batch.
+**The mechanical write is command-owned — the grading is not.** Stage 4's grading is stated here, under *Stage 4*, and is the same for both entry points: the two tree observations, the expected set, the four ordered cases, and the `**Status:**`, `**Verification:**` and attempt-entry writes each case makes. What each command owns is the *procedure* that performs that write over its own batch: Step 4.1's insert-after-heading `Edit` recipe (`old_string = "<heading>\n"`), Step 4.1.5's positional re-read, and its own `status_write_failures` list.
 
-- In `/fix-report` the gate dispatched nothing — Step 3 dispatched the decided findings together with the auto ones — so Steps 4.1 / 4.1.5 run once over that whole batch and the gate writes back nothing of its own.
-- In `/fix-all` those steps have already run and closed their progress task by the time Step 5 offers the decision stage, so Step 5 owns the write-back for its own findings — except on the zero-auto path, where Steps 3–4 never ran and Step 5 owns both the write-back and their progress rows.
+- In `/fix-report` the gate dispatched nothing — Step 3 dispatched the decided findings together with the auto ones — so Steps 4.1 / 4.1.5 run once over that whole batch and the gate performs no write of its own.
+- In `/fix-all` those steps have already run and closed their progress task by the time Step 5 offers the decision stage, so Step 5 re-runs them for its own findings — except on the zero-auto path, where Steps 3–4 never ran and Step 5 owns both the write-back and their progress rows.
 
-Do not implement the write-back here. Two authorities on one write is how a status line gets written twice.
+Do not implement the insert-and-verify recipe here, and do not restate the four cases in a command. Two authorities on one write is how a status line gets written twice; two authorities on the grading is how the cases drift apart.
 
 The run-summary disclosures this skill's stages raise — a stage 0 Failed finding, an unverified rejection, advisory verification, `verification: unavailable`, a partial-coverage warning, an out-of-scope write, an unpinned finding, and the `stalled — no progress` heading — are *raised* here and *printed* by the command's own summary block.
 
@@ -265,6 +265,116 @@ That approval **was already taken at stage 2**, in the same sweep turn as the de
 - Where **some ran and some did not** → the finding is graded on the raw output of those that ran, and the shortfall is disclosed as stage 4's fourth case describes: the block carries `**Verification:** advisory — <checks run>; <N> not run: <check text>`, and the run summary carries a coverage warning naming the finding.
 
 Where no check of **any** kind ran, stage 4's fourth case applies.
+
+---
+
+## Stage 4: grading the dispatch
+
+**This section is the single authority for how a dispatch is graded** — for both
+entry points, and for the replay path. What each command owns is the
+**mechanical** write: Step 4.1's insert-after-heading `Edit` recipe and Step
+4.1.5's positional re-read, run over its own batch. *Which* status that write
+carries — and whether any status is written at all — is decided here.
+
+### The two observations
+
+Whether the fixer edited is read **from the tree, never from its narration**.
+Immediately before and immediately after each dispatch the orchestrator takes
+two observations and **logs both**:
+
+1. **A `git hash-object` content hash of every path the `**Decision-pin:**` line
+   names**, recorded as `absent` where the path does not exist. This is the
+   observation the status is decided on, and it needs no git report of the path
+   at all: an ignored path, or one marked `skip-worktree` or
+   `assume-unchanged`, is hashed here even though porcelain never lists it.
+2. **`git status --porcelain` plus a content hash of every path it lists**,
+   which serves **only** to surface writes outside the pinned set. Porcelain
+   alone cannot see an edit — a path already ` M` before the dispatch is still
+   ` M` after a further edit — so the per-path content hash is what makes that
+   edit observable.
+
+A path that **appears, disappears or changes content** between the two
+observations — `absent` → present and present → `absent` included — is an
+**observable change**. Anything else is **no edit**, whatever the fixer
+reported, and its verdict stays advisory.
+
+### The expected set
+
+The expected set is the pinned entries marked **`:edit`** — the paths the
+resolution says it changes — and **never the `:ref` entries**, which are pinned
+as referents nobody undertook to edit. An observable change **inside** the
+expected set decides the status below. An observable change **outside** it is
+logged and named in the run summary as an **out-of-scope write**: `fix-auto` can
+edit beyond the pinned set (several locations, its own auto-iteration), and such
+a write must be reported rather than read as no edit at all. The loop's own
+writes to the source reports are declared expected and are never reported
+out-of-scope.
+
+Where **no `**Decision-pin:**` line could be written** because neither hasher
+existed, the expected set is **re-derived by the membership rule** under *The
+decision record*, with its `:edit`/`:ref` marking, applied to the resolution
+text the decision line carries: an unpinned finding is graded exactly as a
+pinned one, only the pre-dispatch pin comparison is skipped, and the run summary
+names it as **unpinned**.
+
+Where an observation **cannot be taken at all**, the dispatch is **not graded as
+"no edit"**: no `**Status:**` line, `attempt N: dispatched, unverified` per the
+fourth case, and the finding is named in the run summary as **unobservable** —
+disclosed in that case's `verification: unavailable` row, which is the slot the
+commands render, rather than in a row of its own.
+
+### The four cases, tried in this order
+
+1. **Stage 3.5's raw output passes** → `**Status:** ✅ Fixed (YYYY-MM-DD)`. A
+   soft check — an LLM re-read of prose — passes like any other, and the run
+   summary carries **advisory verification** for that finding.
+2. **An observable change inside the expected set, and a plan whose raw output
+   does not pass** → `**Status:** ⚠️ Partially Fixed (YYYY-MM-DD)`.
+3. **The dispatch errored, or nothing in the expected set changed observably** →
+   **no `**Status:**` line at all**, `attempt N: failed` appended to the
+   decision line, and the finding reappears next run. This case is tried
+   **before** the fourth, so a dispatch that errored where no plan existed
+   records `attempt N: failed` and not `attempt N: dispatched, unverified`.
+4. **No check of any kind ran** — no plan of any kind existed (the degraded
+   path, or a finding for which the analyst supplied none), or every check of
+   the decided plan was refused or unrunnable at stage 3.5's execution
+   boundary → **no `**Status:**` line**, `attempt N: dispatched, unverified`
+   appended to the decision line, counting toward the two-attempt retirement
+   exactly as `interrupted, unverified` does, and `verification: unavailable`
+   carried in the run summary, naming the finding.
+
+   **The partial-coverage branch.** Where **some** checks ran and passed and
+   others were refused or unrunnable, this case does **not** apply: the finding
+   is graded on the raw output of the checks that did run, and the shortfall is
+   disclosed rather than silently skipped — the block carries
+   `**Verification:** advisory — <checks run>; <N> not run: <check text>`, and
+   the run summary carries a **coverage warning** naming the finding.
+
+**The last two cases are never `⚠️ Partially Fixed`.** That status is terminal at
+both Step 1.3 filters, so writing it would freeze the finding out of every
+future run. Writing no `**Status:**` line instead is stage 0's own Failed
+handling, applied here.
+
+### The writes
+
+- **The `**Status:**` line**, for the first two cases only, written with the
+  command's own insert-after-heading recipe into the finding's `source_file`.
+- **The `**Verification:**` line**, written **in the same write as the
+  `**Status:**` line** — and, for the two cases that write no status, in the
+  write that appends the attempt entry. Its value is `hard`, `advisory` or
+  `unavailable` by the test stated under *The decision record*, which reads the
+  `(soft)` marker on the `**Verification-plan:**` line rather than
+  re-classifying the check text. Without it, an advisory `✅ Fixed` is
+  indistinguishable from a hard-verified one once the session ends.
+- **The attempt entry**, appended to the bracketed field of the `**Decision:**`
+  line by **every case that writes no `**Status:**` line** — the third and the
+  fourth. That append is what keeps the two-attempt retirement counter
+  advancing and the escape to `reject` reachable; without it a failing decision
+  replays forever.
+
+A rejection reaches none of this: `reject` never dispatches, so its
+`🚫 Rejected` status is stage 2's write and it carries no `**Verification:**`
+line at all.
 
 ---
 

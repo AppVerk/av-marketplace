@@ -289,6 +289,13 @@ Use today's date in YYYY-MM-DD format.
 
 Use the Edit tool to insert each status line. The `old_string` should be the `### [SEVERITY] Title` line followed by a newline, and the `new_string` should be the same title line followed by a newline, the status line, and another newline. Pass the issue's `source_file` as the `file_path` parameter.
 
+**For a finding the Step 2.4 gate decided, the recipe above is the write — not the grading.** Which of stage 4's four cases the finding falls into, and therefore whether a `**Status:**` line is written at all and which one, is `code-review:decision-gate`'s **Stage 4** to decide, from the two tree observations it defines. Do not restate those cases here. Two things follow for this step:
+
+- **The `**Status:**` line and the `**Verification:**` line are written in the same write.** The `**Verification:**` value records how the verification was obtained; a status written without it cannot be told apart from a hard-verified one once the session ends.
+- **For the two stage-4 cases that write no `**Status:**` line, the write instead appends the attempt entry** to the finding's `**Decision:**` line, carrying that same `**Verification:**` line with it. That append is what keeps the two-attempt retirement counter advancing and the escape to `reject` reachable.
+
+Both lines go into the finding's `source_file`, below the `**Status:**` slot, on one physical line each. The `auto` findings of the batch are unaffected: they carry no decision record and keep the plain status write above.
+
 ### Step 4.1.5: Verify Status writes
 
 After invoking Edit for each Fixed/Partially Fixed issue in Step 4.1, **re-read the `source_file`** with the Read tool and confirm the `**Status:**` line is present immediately below the issue's heading. The Edit tool already raises a hard error when `old_string` does not match, but the heading may have shifted between extraction (Step 1.2) and write-back (Step 4.1) — because a prior issue in the same file was edited and changed surrounding context, because the decision stage wrote its own lines into the block, or because the heading was concurrently modified. The verify pass catches every one of those classes of silent drift.
