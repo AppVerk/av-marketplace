@@ -172,7 +172,7 @@ Ask user to provide:
 - Problem description
 - Remediation suggestion
 
-**Determining whether Location is usable — read rule, two clauses:** take the first backticked token as the location, ignoring any trailing parenthetical — this is the extended form the decision-gate loop writes when it corrects a location, e.g. `` **Location:** `path:line` (was: `original`) ``. A `—` that appears *inside* that `(was: …)` tail is part of the reviewer's original value being preserved for audit, never the location itself, and must not be read as making the line unusable. Where the line carries no backticked token at all — a legacy `**Location:** src/foo.ts:12` — take the first whitespace-delimited token after the field name instead. Under either clause, a value of `—`, `unknown:0`, or anything that does not parse as a real `path:line` is location-less.
+**Determining whether Location is usable — read rule, two clauses:** take the first backticked token as the location, ignoring any trailing parenthetical — this is the extended form the decision-gate loop writes when it corrects a location, e.g. `` **Location:** `path:line` (was: `original`) ``. A `—` that appears *inside* that `(was: …)` tail is part of the reviewer's original value being preserved for audit, never the location itself, and must not be read as making the line unusable. Where the line carries no backticked token at all — a legacy `**Location:** src/foo.ts:12` — take the first whitespace-delimited token after the field name instead. Under either clause, a value of `—`, `unknown:0`, or anything that does not parse as a real `path:line` or `path:line-range` is location-less.
 
 **If Location is present but location-less** by the rule above:
 
