@@ -63,7 +63,7 @@ Never scan the whole line. A `—` or an `unknown:0` inside the `(was: …)` tai
 
 ### Asking for what is missing
 
-- Ask with `AskUserQuestion`, in **batches of at most 4, one question per finding** — the four-question ceiling, matching `fix-report.md:182`.
+- Ask with `AskUserQuestion`, in **batches of at most 4, one question per finding** — the four-question ceiling, matching `fix-report.md` Step 2.4.
 - A supplied `path:line` is validated by the same usability rule above. On failure the user is **re-asked once**; a second failure is handled exactly as a declined target.
 - A validated `path:line` is carried into the analyst dispatch **and is written into the finding's `**Location:**` field in the source report at once**, in the extended form — not held back until stage 2:
 
@@ -107,6 +107,24 @@ What "render the block" means is fixed, so the reading cost of a decision is bou
 | **Always rendered** | `Target`; `Recommendation` with its reason; `Risk`; both `Alternatives` in full; `Code Preview`; and any `**Decision-retired:**` lines the block carries |
 | **Held back unless the user asks for it** | the verbatim command and tool output backing `Findings` — the claims themselves are always rendered — and both `Verification Plan`s |
 | **Always rendered and never held back** | the re-run raw output of a `Rejection candidate`'s citations, and the recorded/fresh output side by side where that re-run diverges — because the reject gate exists so that the user judges that evidence |
+
+### The `**Alternatives:**` render format
+
+Every entry point renders alternatives in one format, which is what `/fix` loads this skill for and what the sweep renders "both `Alternatives` in full" from: an extra `**Alternatives:**` line laying out the alternative resolutions, **A and B**, with one of them recommended.
+
+A and B are derived from the finding's `Drift-class`:
+
+| `Drift-class` | A and B |
+|---|---|
+| `dead-reference` | remove the mention **vs** restore/update the referent |
+| `decision` | the alternatives the finding's Remediation names |
+| `decision` whose Remediation names none, `mechanical`, an absent `Drift-class` field, and any unrecognised value | the **fallback route** below — none of them names alternatives |
+
+**The fallback route.** A is the Remediation applied as written. B is a concrete alternative *direction* derived from the code — **never the placeholder "resolve differently"**, which no fixer can act on — written to the same full, self-contained standard as A.
+
+**Where the code supports no second direction** that can be stated, A is returned alone and said to be alone: the field is satisfied by that single alternative, and the sweep for that finding carries the three options `[A] [skip] [reject]`.
+
+Each alternative is written as a **full, self-contained resolution sentence on exactly one physical line**, with no embedded newline, dispatchable verbatim as `User decision:` — it names every file and line it touches and refers back neither to the Remediation nor to the other alternative, since the fixer sees neither and stage 3 forbids a bare label.
 
 ### The call
 
@@ -212,7 +230,7 @@ Read the line by splitting on `; `, splitting each resulting check on its first 
 
 ### The plan-rejection test applies to a derived plan too
 
-The mechanical test a `Verification Plan` is held to is **not scoped to the analyst's return**. The plan the orchestrator derives for `other…` after the decision is held to it too, applied by the orchestrator to its own checks **before stage 3.5 runs them**: a plan is rejected when every one of its checks would pass on an unedited tree, or would fail only because the edit's own text is absent.
+The mechanical test a `Verification Plan` is held to is **not scoped to the analyst's return**. The plan the orchestrator derives for `other…` after the decision is held to it too, applied by the orchestrator to its own checks **before stage 3.5 runs them**: a plan is rejected when every one of its checks would pass on an unedited tree, or would fail only because the edit's own text is absent. A check that inspects the artifact's post-condition — that the referent no longer appears anywhere in the tree, say — **is accepted**, and that is the form the test takes for documentation drift, where the distinction otherwise collapses.
 
 A plan that fails the test — **returned or derived** — is treated as **no plan for that alternative**: stage 3.5 runs nothing for it, and stage 4's fourth case applies.
 
