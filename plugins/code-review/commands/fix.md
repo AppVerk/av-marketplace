@@ -106,6 +106,14 @@ If the ID is not found in the report, display error and stop:
 >
 > Use `/fix <paste issue block>` to fix using the full block, or check the report path.
 
+### Step 0.5.5: Abort on a rejected finding
+
+If the block extracted in Step 0.4 carries a `**Status:**` line whose value begins with `🚫 Rejected`, stop here and do not edit anything. Match by **prefix**, not whole-line equality — the line may carry a ` — <reason>` tail (e.g. `**Status:** 🚫 Rejected (2026-08-27) — duplicate of QA-004`). Report:
+
+> Issue `{ID}` was rejected on {date} ({reason if present}) and will not be fixed.
+
+This guard exists only for the ID-mode path: `/fix` has no Step 1.3 filter of its own — Phase 0 resolves the block by ID directly from the report — so neither the `/fix-report`/`/fix-all` Step 1.3 filter nor their Step 1.5 all-resolved message covers a rejected finding reached through `/fix`. Legacy Paste Mode skips Phase 0 entirely and is not covered by this step; a pasted block is the user's own responsibility.
+
 ### Step 0.6: Proceed to Phase 1
 
 Pass the extracted issue block to Phase 1 as if it were the original `$ARGUMENTS`.
@@ -146,7 +154,7 @@ Extract the following fields from the issue block:
 |-------|---------|----------|
 | Severity | `[CRITICAL\|HIGH\|MEDIUM\|LOW]` in title | Yes |
 | Title | Text after severity in first line | Yes |
-| Location | `**Location:** \`path:line\`` | Yes |
+| Location | `**Location:** \`path:line\`` (plain form) or `` **Location:** `path:line` (was: `original`) `` (extended form, written by the decision-gate loop when it corrects a location) | Yes |
 | Category | `**Category:** Security\|Performance\|Architecture\|Maintainability\|Documentation\|Testing` | Yes |
 | OWASP | `**OWASP:** A##:####` | No |
 | CWE | `**CWE:** CWE-###` | No |
@@ -164,7 +172,9 @@ Ask user to provide:
 - Problem description
 - Remediation suggestion
 
-**If Location is present but not usable** (`—`, `unknown:0`, or any value lacking a real `path:line`):
+**Determining whether Location is usable — read rule, two clauses:** take the first backticked token as the location, ignoring any trailing parenthetical — this is the extended form the decision-gate loop writes when it corrects a location, e.g. `` **Location:** `path:line` (was: `original`) ``. A `—` that appears *inside* that `(was: …)` tail is part of the reviewer's original value being preserved for audit, never the location itself, and must not be read as making the line unusable. Where the line carries no backticked token at all — a legacy `**Location:** src/foo.ts:12` — take the first whitespace-delimited token after the field name instead. Under either clause, a value of `—`, `unknown:0`, or anything that does not parse as a real `path:line` is location-less.
+
+**If Location is present but location-less** by the rule above:
 
 The `**Location:**` field exists, so the "required fields missing" branch above does **not** fire — but Phase 2 Step 2.1 opens the file at Location and would fail on a placeholder like `—`. Before proceeding, ask the user for the target (this mirrors `/fix-report` Step 2.4, which does the same for `needs-decision` issues routed here):
 
@@ -235,7 +245,7 @@ Store the detected patterns for use in Phases 3 and 4.
 
 ## Phase 3: Propose Fix
 
-If the issue block carries `**Fix-policy:** needs-decision` (or any `Fix-policy` value other than `auto` — unparseable policies get the same treatment), the proposal MUST lay out the alternative resolutions in an extra `**Alternatives:**` line (for a `dead-reference`: remove the mention vs restore/update the referent) and recommend one — and the closing question becomes `Which resolution should I apply? (A / B / no)` instead of the yes/no line. The choice is the user's, made at the approval gate below.
+If the issue block carries `**Fix-policy:** needs-decision` (or any `Fix-policy` value other than `auto` — unparseable policies get the same treatment), load `code-review:decision-gate` (Skill tool) and use its `### The **Alternatives:** render format` subsection to render the proposal's `**Alternatives:**` line. Render behaviour is identical to `/fix-report` and `/fix-all` — all three entry points render one format — but `/fix` does not run the rest of that skill's stages: its own gate stays `Which resolution should I apply? (A / B / no)` instead of the yes/no line, and the choice is the user's, made at the approval gate below.
 
 Present the fix proposal in this exact format:
 
@@ -538,6 +548,10 @@ From Phase 7 (Generate Report), the status is one of:
 - **Fixed** — all verification passed
 - **Partially Fixed** — main issue fixed, minor issues remain
 - **Failed** — could not fix within 3 iterations
+
+### Step 8.1.5: Never write a second **Status:** line
+
+Before Step 8.2's insert: never write a second `**Status:**` line over an existing one. If the issue heading already carries a `**Status:**` line, update that line in place instead of inserting a new one below the heading. If that existing line's value begins with `🚫 Rejected`, do not touch it at all — Phase 0's Step 0.5.5 should already have aborted before Phases 1-7 ever ran, and reaching this point with a rejected status still present means the block was pasted rather than resolved by ID.
 
 ### Step 8.2: Update the report for Fixed status
 
