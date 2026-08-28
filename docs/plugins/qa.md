@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.5.2
+**Version:** 2.6.0
 
 ## Commands
 
@@ -394,6 +394,11 @@ The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, 
 | `test-plan-format` | With plugin | Test plan structure produced by `/qa:create-plan` and consumed by `/qa:run` and `/qa:loop`. |
 | `fe-testing` | `qa:fe-tester` agent | Frontend test-execution guidance using Playwright MCP — navigation, interaction, assertions, and screenshots on failure. |
 | `be-testing` | `qa:be-tester` agent | Backend test-execution guidance — API request construction, response verification, database state checks, error-path testing, and adaptive CLI/MCP tool detection. |
+
+<a id="upgrade-notes"></a>
+## Upgrade Notes
+
+**`qa` 2.6.0 pairs with `code-review` ≥ 1.18.0 — this is a requirement, not a recommendation.** `code-review` 1.18.0 adds a `🚫 Rejected` status to reports it shares with this plugin; `/qa:loop` on `qa` ≥ 2.6.0 knows to read it as terminal and preserve the line. An older `/qa:loop` (< 2.6.0) does not: its Step 4.1 in-place Status update overwrites a `🚫 Rejected` line and its reason whenever a sibling issue passes on the same scenario in a later iteration, silently discarding the rejection. This is milder than `code-review`'s own intra-plugin skew — an older `code-review` reader can silently re-offer and dispatch a rejected finding, which is worse — but it is stated as a requirement too: keep both plugins on paired minimums (`code-review` ≥ 1.18.0, `qa` ≥ 2.6.0) wherever a shared report might carry a decision-stage rejection. See [code-review.md's Upgrade Notes](code-review.md#upgrade-notes) for the fuller detail.
 
 ## Prerequisites
 
