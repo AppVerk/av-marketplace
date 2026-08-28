@@ -594,9 +594,12 @@ was the owner's call, and the maintenance obligation it creates is real.
 
 **Still open, and deliberately not fixed:**
 
-- `docs/superpowers/plans/2026-08-28-…` contradicts all six deltas — `:179` carries the
-  superseded pin grammar byte-for-byte — and every one of its spec line-anchors is now
-  shifted by the sync. Sync or drop is the same decision the spec faced.
+- The implementation plan was **dropped** rather than synced. It contradicted all six
+  deltas — it carried the superseded pin grammar byte-for-byte — and the spec sync had
+  shifted every one of its line-anchors. Nothing referenced it but this bullet, and the
+  work it described is done and committed, so it was removed as a working artifact of the
+  change rather than maintained as a document with no consumers. Precedent: `ce2f15b`.
+  It remains recoverable from git history.
 - `spec:747` says stage 4's write-back is "command-owned"; the shipped skill now declares
   itself the grading authority with only the *mechanical* write command-owned. Not false
   as written, but it understates the skill.
