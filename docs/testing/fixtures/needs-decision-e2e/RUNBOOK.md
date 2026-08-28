@@ -220,10 +220,14 @@ these you actually verified, not just that the run "seemed to work."
 - [ ] Stage 3.5's raw output for exactly those checks appears in the
       transcript, and the `✅ Fixed` status is derivable by reading that
       output — not asserted past it.
-- [ ] The mention of `scripts/generate-legacy-report.sh` is actually
-      gone from `target-b.md` (A = remove the mention — confirm the
-      edit matches the chosen alternative, not just that some edit
-      happened).
+- [ ] The edit actually made matches the alternative `**Decision:**`
+      recorded, whatever it turned out to be — not just that *some*
+      edit happened. `ANSWERS.md` expects `[A]` to render as "remove
+      the mention," in which case `scripts/generate-legacy-report.sh`
+      should be gone from `target-b.md`; if the live sweep instead
+      rendered `[A]` as "restore/update the referent," confirm the
+      script mention is preserved and a referent was actually added,
+      and note that the expected A/B order did not hold for this run.
 - [ ] **Any** of the following fails this finding for this run: a
       `⚠️ Partially Fixed` status, a missing `**Status:**` line, or a
       `**Verification:**` value other than `hard`.

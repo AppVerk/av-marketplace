@@ -85,12 +85,22 @@ DOC-005 is the ordinary dead-reference case: `target-b.md:13` cites
 `scripts/generate-legacy-report.sh`, which does not exist anywhere in
 the repository (confirmed — no renamed or relocated referent, unlike
 DOC-004). Its `Drift-class` is `dead-reference`, so the analyst derives
-alternatives structurally: **A = remove the mention**, **B =
-restore/update the referent** (`decision-gate/SKILL.md`, "The
-`**Alternatives:**` render format").
+alternatives structurally — per `decision-gate/SKILL.md`'s
+`**Alternatives:**` render-format table, `dead-reference` gives "remove
+the mention **vs** restore/update the referent", in that order, which
+this fixture expects to render as **A = remove the mention**, **B =
+restore/update the referent**.
 
-**Answer: choose `A`** — remove the dead mention of
-`scripts/generate-legacy-report.sh` from `target-b.md`.
+**Answer: choose whichever option the live sweep renders as `[A]`** —
+the scripted answer is the **label**, not a specific action. If the
+live render's `[A]` turns out to read as "restore" rather than
+"remove" (i.e. the order above did not hold), still answer `A`; do not
+override the script based on the wording. Either way, confirm afterward
+which action DOC-005's `**Decision:**` line actually recorded, since
+the post-conditions in `RUNBOOK.md` are written against "whichever
+resolution `A` names," not against "remove" specifically — except
+where a post-condition names the concrete edit (see below), which
+assumes the expected order held.
 
 The natural hard, executable verification for this alternative is a
 post-edit grep asserting the string is gone, e.g.:
