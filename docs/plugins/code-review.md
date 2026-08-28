@@ -406,7 +406,7 @@ scripts themselves are the canonical implementation.
 
 Do not open, or run any code-review command against, a report written after this release with a `code-review` build older than 1.18.0.
 
-**`code-review` 1.18.0 also expects `qa` ≥ 2.6.0 for any report the two plugins share.** An older `/qa:loop` (< 2.6.0) does not know to preserve a `🚫 Rejected` line: its Step 4.1 in-place Status update overwrites it — losing the rejection and its reason — whenever a sibling issue passes on the same scenario in a later iteration. See [qa.md's Upgrade Notes](qa.md#upgrade-notes) for the mirror of this note.
+**`code-review` 1.18.0 also expects `qa` ≥ 2.6.0 for any shared report that can carry a decision-stage rejection.** An older `/qa:loop` (< 2.6.0) does not know to preserve a `🚫 Rejected` line: its Step 4.1 in-place Status update overwrites it — losing the rejection and its reason — whenever a sibling issue passes on the same scenario in a later iteration. Unlike the reader skew above, this one has a precondition attached: `**Fix-policy:** needs-decision` is emitted only by this plugin's producers — today, reports written by `/review` — so a report the `qa` plugin produced cannot presently reach the decision gate or acquire a rejection at all, and `qa` 2.6.0's handling of the field is forward compatibility for a schema the QA producers do not yet emit. Pair the minimums for reports that can carry one. See [qa.md's Upgrade Notes](qa.md#upgrade-notes) for the mirror of this note.
 
 ## Optional Tools
 
