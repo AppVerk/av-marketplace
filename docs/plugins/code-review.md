@@ -213,7 +213,7 @@ Reports sourced from `/review` directly do not include a `Source:` field and car
 | | `/fix-all` Step 5 | `/fix-report` Step 2.4 |
 |---|---|---|
 | When it runs | After the auto batch, behind its own yes/no offer | Before Step 3's dispatch, folded into the same checklist |
-| Stages it runs | All of them — dispatches and verifies its own batch | The sweep only; decided findings join the selected `auto` findings in Step 3's single sequential batch, decided first |
+| Stages it runs | All of them — dispatches and verifies its own batch | The sweep runs in the gate's own slot; Step 3 then applies the same dispatch contract, and decided findings join the selected `auto` findings in one sequential batch, decided first |
 | Where `needs-decision` findings appear | Listed as skipped in the pre-flight/final summary, then offered | Lead the paginated checklist on their own page(s), ahead of every `auto` page |
 
 ### The `decision-analyst` agent
