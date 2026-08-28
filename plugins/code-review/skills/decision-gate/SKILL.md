@@ -210,6 +210,12 @@ Compare the `**Decision-pin:**` line against the tree, applying the attribution 
 
 Read the line by splitting on `; `, splitting each resulting check on its first ` → `, and applying the execution boundary to each check whole.
 
+### The plan-rejection test applies to a derived plan too
+
+The mechanical test a `Verification Plan` is held to is **not scoped to the analyst's return**. The plan the orchestrator derives for `other…` after the decision is held to it too, applied by the orchestrator to its own checks **before stage 3.5 runs them**: a plan is rejected when every one of its checks would pass on an unedited tree, or would fail only because the edit's own text is absent.
+
+A plan that fails the test — **returned or derived** — is treated as **no plan for that alternative**: stage 3.5 runs nothing for it, and stage 4's fourth case applies.
+
 ### How a check is decided
 
 A check passes when its **logged raw output matches the expected result recorded with it** on the `**Verification-plan:**` line — **never on exit status alone**, since a grep asserting an absence exits non-zero on success. A plan passes when every check that ran passes.
