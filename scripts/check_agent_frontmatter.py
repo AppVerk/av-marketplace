@@ -79,10 +79,11 @@ TOOL_KEYS = ("tools", "disallowedTools")
 # `Tool(cmd:*)` spelling is a plausible mistake worth warning about.
 COLON_SPECIFIER_TOOLS = frozenset({"Bash", "PowerShell"})
 
-# Agent files under plugins/*/agents/*.md at the time of the 2026-07-27 audit.
-# A lower count warns; it never errors, so a legitimately shrinking tree
-# cannot flip the build red.
-EXPECTED_AGENT_FILES = 25
+# Agent files under plugins/*/agents/*.md at the time of the 2026-07-27 audit,
+# raised to 26 when `code-review:decision-analyst` was added. A lower count
+# warns; it never errors, so a legitimately shrinking tree cannot flip the
+# build red.
+EXPECTED_AGENT_FILES = 26
 
 
 def _comment_error(key: str) -> str:

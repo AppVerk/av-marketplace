@@ -97,6 +97,14 @@ Each issue MUST include the canonical code-review fields:
 1. **Heading:** `### [SEVERITY] QA-NNN: <title>` — severity in brackets, ID with colon, then title
 2. **`**ID:** QA-NNN`** — repeated for the parser
 3. **`**Location:** ` `` `path:line` `` `** — best-effort source identification (route, endpoint, stack trace). When truly unidentifiable, use placeholder `unknown:0` and add a note in `Problem`. The `/fix` command will prompt the user for the location at fix time.
+
+   The field has two written forms. The plain form above, and the extended form the decision-gate loop writes when it corrects a location:
+
+   ```
+   **Location:** `path:line` (was: `original`)
+   ```
+
+   **Read rule, two clauses:** take the first backticked token as the location, ignoring any trailing parenthetical — this is the form the loop always writes. Where the line carries no backticked token at all — a legacy `**Location:** src/foo.ts:12`, which this loop never writes but every consumer still meets — take the first whitespace-delimited token after the field name instead. Under either clause, a value of `—`, `unknown:0`, or anything that does not parse as `path:line` or `path:line-range` is location-less.
 4. **`**Category:** Testing`** — constant for QA issues; maps to the `QA` prefix in the canonical Category→Prefix table.
 5. **`**Problem:**`** — Expected vs Actual rendered as a bullet list inside this field.
 6. **`**Remediation:**`** — best-effort suggestion in natural language. No code block required (the `fix-auto` agent will generate the code).
@@ -230,7 +238,38 @@ The `Testing → QA` row is part of the canonical Category→Prefix mapping in `
 
 ### Status write-back
 
-After `/fix QA-001` or `/fix-report` resolves an issue, code-review inserts `**Status:** ✅ Fixed (YYYY-MM-DD)` (or `⚠️ Partially Fixed`) immediately after the issue's `### [SEVERITY] QA-NNN: Title` heading. Already-fixed issues (those with a `**Status:**` field) are skipped on subsequent `/fix-report` runs, so reports become living documents.
+After `/fix QA-001` or `/fix-report` resolves an issue, code-review inserts a `**Status:**` line immediately after the issue's `### [SEVERITY] QA-NNN: Title` heading, following the grammar:
+
+```
+**Status:** <icon> <text> (YYYY-MM-DD)[ — <reason>]
+```
+
+The status value is one of `✅ Fixed`, `⚠️ Partially Fixed` or `🚫 Rejected`. The ` — <reason>` tail is permitted **only** for `🚫 Rejected` — no other status value carries one — and `<reason>` is a single line with no embedded newline.
+
+**Read rule:** a consumer matches the status value by **prefix**, never by whole-line equality — the ` — <reason>` tail is not the reader's to control, and a whole-line test would fail to recognize a rejected line it should match.
+
+`🚫 Rejected` is terminal: a rejected issue is excluded from the fix set on every subsequent run, and its `**Status:**` line is never overwritten. Already-fixed issues (those with any `**Status:**` field) are skipped on subsequent `/fix-report` runs, so reports become living documents.
+
+### Decision-gate fields (optional, loop-written)
+
+`/fix-report` and `/fix-all` write six further fields into a QA report's finding block by construction, when `code-review`'s decision-gate runs a `needs-decision` finding through its analysis-and-dispatch loop. These are the finding-block schema both plugins share — see `code-review`'s `decision-gate/SKILL.md` for the full behavior behind each one — reproduced here as their written forms:
+
+```
+**Decision:** <label> — <resolution text> [<who>, <YYYY-MM-DD>; attempt N: <outcome>…]
+**Decision-retired:** <label> — <resolution text> [<who>, <YYYY-MM-DD>; attempt N: <outcome>…]
+**Verification-plan:** <check> → <expected>[ (soft)]; <check> → <expected>
+**Decision-pin:** block=<sha256> | <path>=<pin-value>[:edit|:ref] | <path>=<pin-value>[:edit|:ref]
+**Dispatch:** attempt <N> dispatched <YYYY-MM-DD>
+**Verification:** hard|advisory|unavailable — <checks run>[; <N> not run: <check text>]
+```
+
+`<pin-value>` is one of exactly three forms: a **blob hash** from `git hash-object`; **`absent`**, written where the path does not exist in the working tree; or **`unpinnable`**, written where the path was rejected as unsafe to hash. The three are never written interchangeably — see `decision-gate/SKILL.md` for which is written when.
+
+All six are **optional** fields of the schema: an existing report carrying none of them is still a valid report, and nothing here makes any of them required.
+
+**One physical line.** Each of these lines occupies **exactly one physical line**, with no continuation line of any kind — content that does not fit is rewritten or split before it is written, never wrapped.
+
+**Slot order.** `**Status:**` stays the first non-blank line under the finding's `### [SEVERITY] QA-NNN: Title` heading. All six of these lines are written **below** that slot, never above it.
 
 ---
 

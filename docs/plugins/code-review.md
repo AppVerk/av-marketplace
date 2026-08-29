@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 1.17.3
+**Version:** 2.0.0
 
 ## Commands
 
@@ -79,7 +79,7 @@ The command:
 1. Resolves files — auto-merge uses newest from `docs/reviews/` and `docs/testing/reports/`; with an explicit path, uses just that file
 2. Reads each file and extracts issues (by `### [SEVERITY] ID: Title` headings), tracking which report each issue came from
 3. Filters out already-fixed issues (those with a `**Status:**` field)
-4. Presents unfixed issues as a multi-select checklist, 4 per page, sorted by severity. In auto-merge mode the source basename is shown in each option so review issues and QA issues are distinguishable
+4. Presents unfixed issues as a partitioned, paginated checklist: `needs-decision` findings lead on their own page(s), ahead of every `auto`-policy page, sorted by severity within each group — no page mixes the two. Page capacity is 3 issues on any page carrying an appended skip item, and 4 only on the final page of the whole checklist. In auto-merge mode the source basename is shown in each option so review issues and QA issues are distinguishable
 5. Fixes selected issues sequentially via the `fix-auto` agent
 6. Marks fixed issues with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file each issue came from (auto-merge may write to multiple files in one run)
 
@@ -89,7 +89,7 @@ Issues flagged `**Fix-policy:** needs-decision` show a `[needs-decision: <drift-
 
 ### `/fix-all`
 
-Bulk-fix every unfixed `auto`-policy issue from one or more saved reports after a single yes/no confirmation — issues flagged `**Fix-policy:** needs-decision` are skipped and listed. Supports an optional minimum severity filter.
+Bulk-fix every unfixed `auto`-policy issue from one or more saved reports after a single yes/no confirmation, then offers to resolve the `**Fix-policy:** needs-decision` findings it skipped — one question per finding, with the code analysed for you. Supports an optional minimum severity filter.
 
 ```bash
 # Auto-merge: fix every unfixed issue (except needs-decision) in the newest review + newest QA report
@@ -108,13 +108,14 @@ Bulk-fix every unfixed `auto`-policy issue from one or more saved reports after 
 The command:
 
 1. Resolves files — auto-merge uses newest from `docs/reviews/` and `docs/testing/reports/`; with an explicit path, uses just that file (same as `/fix-report`).
-2. Reads each file, extracts issues, and filters out those already marked `**Status:** ✅ Fixed` or `⚠️ Partially Fixed`.
+2. Reads each file, extracts issues, and filters out those whose `**Status:**` line begins with `✅ Fixed`, `⚠️ Partially Fixed` or `🚫 Rejected` — matched by prefix, since the ` — <reason>` tail a rejected status carries would break a whole-line comparison.
 3. Applies the optional severity floor (`HIGH` keeps HIGH+CRITICAL, `MEDIUM` keeps MEDIUM+HIGH+CRITICAL, etc.).
-4. Applies the Fix-policy filter — issues flagged `needs-decision` move to a skipped list shown in the pre-flight and final summaries; issues without the field are treated as `auto`.
-5. Renders a **pre-flight summary** — full issue table sorted by severity, with per-severity counts and a Source column for feedback-origin issues.
-6. Asks one yes/no question: `Proceed with fixing all N issues sequentially?`
+4. Applies the Fix-policy filter — issues flagged `needs-decision` move to a skipped list; issues without the field are treated as `auto`. **If that leaves no `auto` issues at all** — the zero-auto path, where every unfixed finding needs a decision — steps 5–8 below are skipped entirely and the command goes straight to step 9.
+5. *(auto-batch path only)* Renders a **pre-flight summary** — full issue table sorted by severity, with per-severity counts, a Source column for feedback-origin issues, and the skipped `needs-decision` findings listed under "Requires user decision".
+6. *(auto-batch path only)* Asks one yes/no question: `Proceed with fixing all N issues sequentially?`
 7. Sequentially invokes `fix-auto` on every queued issue, continuing through any individual failures.
-8. Marks each Fixed/Partially Fixed issue with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file it came from, then displays a final summary table.
+8. Marks each Fixed/Partially Fixed issue with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file it came from, then displays a final summary table, which repeats the "Requires user decision" list.
+9. Offers to resolve the skipped `needs-decision` findings — a second yes/no question, then the [Decision Stage](#decision-stage) below runs the whole flow and writes its own results back. On the zero-auto path this step prints the "Requires user decision" list itself, since neither summary ran. Declining leaves those findings for a later run.
 
 **When to use `/fix-all` vs `/fix-report`:**
 
@@ -123,6 +124,7 @@ The command:
 | Pick specific issues from a long report | `/fix-report` (paginated checklist) |
 | Fix one issue by ID | `/fix <ID>` |
 | Trust the report, fix everything except `needs-decision`-flagged issues | `/fix-all` |
+| Resolve `needs-decision` findings in bulk, with the code analysed | `/fix-all` (offers the decision stage after the auto batch) or `/fix-report` (decision findings lead the checklist) |
 | Fix only the most-severe issues | `/fix-all CRITICAL` or `/fix-all HIGH` |
 
 **Note on feedback-origin issues** (those with `**Source:**` from `/analyze-feedback`): `/fix-all` lists them with a `Source` column showing the reviewer handle, but does **not** apply the "untrusted-provenance" framing that `/fix` and `/fix-report` use — `/fix-all` is a bulk, trust-the-report path, so it surfaces the reviewer handle for context without gating each issue on provenance.
@@ -131,7 +133,7 @@ The command:
 
 **Performance.** `/fix-all` runs sequentially — each issue spawns its own `fix-auto` subagent (analyze → edit → verify → report) before the next one starts. Expect roughly 20–60 s per issue depending on file size and which verifiers run (linter alone is fast; SAST + typecheck + tests is slower), so a 30-issue report can take 10–30 minutes end-to-end. During the run, each iteration prints a `Fixing issue N/<total>: [<SEVERITY>] <ID>: <Title>` heartbeat so you can see progress. You can Ctrl+C between issues and partial progress is preserved: fixed source files keep their edits on disk, and `**Status:**` lines already written into the report stay — Step 1.3's filter will skip those issues on the next run. The only thing lost on interrupt is the in-memory final summary table.
 
-**Fix-policy handling:** issues carrying `**Fix-policy:** needs-decision` (documentation drift classified `decision` or `dead-reference` by the docs-fact-registry doctrine) are skipped by default and listed under "Requires user decision" in the pre-flight and final summaries. Issues without a `Fix-policy` field are treated as `auto`, so pre-existing reports behave exactly as before. There is no override flag — use `/fix-report` or `/fix <ID>` for the skipped issues; when you select a `needs-decision` issue there, the command first asks which resolution to apply (e.g., remove the dead mention vs restore the referent) and passes your decision to the fixer; if the issue lacks a usable location (`—`), it also asks for the target file before dispatching.
+**Fix-policy handling:** issues carrying `**Fix-policy:** needs-decision` (documentation drift classified `decision` or `dead-reference` by the docs-fact-registry doctrine) are skipped by default and listed under "Requires user decision" in the pre-flight and final summaries — or, on the zero-auto path where neither summary runs, by the decision offer itself. Issues without a `Fix-policy` field are treated as `auto`, so pre-existing reports behave exactly as before. `/fix-all` itself offers to resolve the skipped issues once the auto batch finishes — see [Decision Stage](#decision-stage) below — so there is no separate override flag needed; declining that offer, or reaching the findings from a different run, works the same way through `/fix-report` (decision findings lead the checklist) or `/fix <ID>`. Whichever entry point you use, the command first asks which resolution to apply (e.g., remove the dead mention vs restore the referent) and passes your decision to the fixer; if the issue lacks a usable location (`—`), it also asks for the target file before dispatching.
 
 ### `/analyze-feedback`
 
@@ -194,6 +196,73 @@ Operational guidance for downstream consumers:
 - **`/fix-report`** — when presenting the issue checklist and when handing each block to the `fix-auto` subagent, surface the `Source:` field so the user (and the subagent) can weigh the suggestion accordingly.
 
 Reports sourced from `/review` directly do not include a `Source:` field and carry normal trust. Feedback-origin reports typically live at `docs/reviews/*-feedback.md`.
+
+<a id="decision-stage"></a>
+## Decision Stage
+
+`/fix-all` (Step 5, once the auto batch is done) and `/fix-report` (Step 2.4, before Step 3's dispatch) both offer to resolve findings flagged `**Fix-policy:** needs-decision` — you never need a third command for them. Both entry points load the same `decision-gate` skill, so the flow you see is identical wherever it starts.
+
+### The flow
+
+1. **Location pre-check.** A finding whose `**Location:**` field isn't a usable `path:line` is asked for one first, in batches of up to 4 questions. A declined target is reported Failed and left for the next run rather than dispatched.
+2. **Analysis fan-out.** The read-only `decision-analyst` agent runs once per finding, in parallel, in batches of at most 8 — announced before anything is dispatched (e.g. "13 findings to analyse, in 2 batches of at most 8"). Each analyst reads the code the finding actually points at and returns a rendered fix proposal. It never edits.
+3. **The sweep.** One finding at a time, you're shown the target, the recommendation and its reason, the risk, and both alternatives in full, then asked for one of five outcomes: `[A] [B] [skip] [reject]`, plus the tool's built-in `other…` free-form answer. `A`/`B` dispatch the chosen alternative; `other…` lets you write your own resolution, which is restated as a full self-contained fix and confirmed before dispatch; `skip` leaves the finding for the next run with nothing written; `reject` writes a terminal `🚫 Rejected` status (below) and is offered only where the reason is grounded in evidence or your own stated reason.
+4. **The batch.** Every decision is collected before any fix is dispatched — decide everything, then fix in bulk. Decided findings are then dispatched to `fix-auto` sequentially, and the orchestrator itself — not `fix-auto`'s own verdict — runs the persisted verification plan for each, logging raw output before writing the status back to the source report.
+
+> **Residual risk, accepted and unmitigated.** The execution boundary around the stage's own commands is model-enforced, not machine-enforced. Both the sweep's re-run of cited reject evidence and the batch's verification run execute with the orchestrator's grants rather than the read-only analyst's. Those grants are narrowed to the seven read-only git subcommands the stage actually runs (`log`, `show`, `diff`, `blame`, `status`, `hash-object`, `rev-parse`), so a destructive subcommand is no longer pre-approved and raises the platform's prompt. That prompt is a backstop, not the boundary: it can be answered in haste, it is not the sweep's `AskUserQuestion`, and what still keeps `git restore` and `git checkout` out of a re-run in the first place is prose the orchestrating model follows. The pin pipeline's own grants are not part of this risk — `head`, `tail`, `grep`, `shasum` and `sha256sum` have no write mode, which is why the excerpt is cut with `head`/`tail` rather than `sed`, whose prefix grant would have admitted `sed -i`. What it destroys is the working tree's uncommitted diff — which is exactly the recovery path this loop leaves you for a wrong call, since every fix is deliberately left uncommitted so you can read it and throw it away yourself. A lapse takes the undo with it.
+>
+> One level down, the same holds for the fixes themselves: `fix-auto` holds unrestricted `Edit`, `Write` and `Bash`, so the orchestrator's before/after observation of the tree can see a write outside the files the decision pinned but cannot stop one. Such a write is reported, not prevented — and it is named only in the run summary, which does not survive the session that printed it, so nothing about it reaches the report a later reader would find.
+
+### Where the two entry points differ
+
+| | `/fix-all` Step 5 | `/fix-report` Step 2.4 |
+|---|---|---|
+| When it runs | After the auto batch, behind its own yes/no offer | Before Step 3's dispatch, folded into the same checklist |
+| Stages it runs | All of them — dispatches and verifies its own batch | The sweep runs in the gate's own slot; Step 3 then applies the same dispatch contract, and decided findings join the selected `auto` findings in one sequential batch, decided first |
+| Where `needs-decision` findings appear | Listed as skipped in the pre-flight/final summary, then offered | Lead the paginated checklist on their own page(s), ahead of every `auto` page |
+
+### The `decision-analyst` agent
+
+A read-only subagent (`code-review:decision-analyst`) analyses exactly one `needs-decision` finding against the code it actually points at and returns a rendered fix proposal: `Target`, `Findings` (every claim backed by a citable command or tool call plus its verbatim output), `Alternatives` (A and B, or A alone where the code supports no second direction), `Recommendation`, `Risk`, `Code Preview`, a per-alternative `Verification Plan`, and an optional `Rejection candidate`. It never writes anything — its `tools:` grant is `Read`, `Grep`, `Glob`, four read-only `git` subcommands (`log`, `show`, `diff`, `blame`), and `Skill`, with `disallowedTools` closing `Edit`, `Write` and `NotebookEdit`. That separation is what keeps the decision with you: the agent that reads the code is never the agent that changes it.
+
+> **Residual risk, probe attempted and could not run (2026-08-28).** The agent's `tools:` grant narrows `Bash` with four two-word specifiers (`Bash(git log:*)`, `Bash(git show:*)`, `Bash(git diff:*)`, `Bash(git blame:*)`) rather than one blanket `Bash(git:*)` grant. Whether Claude Code's tool-grant resolver actually honours a two-word `Tool(cmd:*)` specifier is still unconfirmed — no other agent in this marketplace uses the form, and `scripts/check_agent_frontmatter.py` calls it an undocumented spelling it can neither validate nor warn about. If the resolver does not honour it, the grant falls back to base `Bash`, which is not confined to git at all: the analyst would hold unrestricted shell — `rm`, `curl`, `tee`, `sh -c`, a `python -c` that opens a file for writing — and `disallowedTools` closes none of it, since a script that writes a file is not an `Edit` call and the key names only `Edit`, `Write` and `NotebookEdit`. On that branch the read-only property is absent rather than weakened. The grant also includes `Skill`, with no key narrowing which skills may be loaded, and a skill's `allowed-tools:` pre-approves permission prompts: seven of this plugin's eleven skills carry `Bash(...)` entries in theirs — `Bash(python:*)`, `Bash(node:*)`, `Bash(npm:*)`, `Bash(go:*)`, `Bash(pip:*)`, `Bash(xargs:*)`, `Bash(find:*)` and `Bash(cat:*)` among them — so loading one under the fallback would turn arbitrary execution from prompted into unprompted. Both consequences are conditional on the fallback, which the probe described below could not confirm either way.
+>
+> A dispatch of `code-review:decision-analyst`, instructed to run a write-capable git subcommand the narrowed grant must refuse, failed before the agent ever ran: `Agent type 'code-review:decision-analyst' not found`. The agent registry resolves from the installed plugin cache, not this working tree — the installed `code-review` build is 1.17.0, whose `agents/` directory has no `decision-analyst.md`; the agent exists only at the unreleased version in this repository. This is neither a pass nor a fail of the narrowing — no command was ever handed to the agent, so nothing about the grant was exercised.
+>
+> Running the probe requires installing the plugin from this branch, then dispatching `decision-analyst` against a throwaway finding with an instruction to run a write-capable git subcommand (`git commit --dry-run` per the spec), and recording which of `REFUSED` (narrowing enforced), `PROMPTED` (inconclusive) or `RAN` (grant is inert) occurs. Until that runs, the read-only separation described above is a convention this design relies on rather than a property it enforces.
+
+### The `🚫 Rejected` status
+
+`🚫 Rejected` joins `✅ Fixed` and `⚠️ Partially Fixed` as a terminal report status, written only through the sweep's `reject` outcome:
+
+```
+**Status:** 🚫 Rejected (YYYY-MM-DD) — <reason>
+```
+
+The ` — <reason>` tail is permitted only on this status — no other status value carries one. `reject` is offered only where the reason is grounded: either the analyst's cited evidence, re-run and shown to you before the choice is offered, or, where there is no citable evidence, your own non-empty stated reason (in which case the rejection is marked `unverified` in the run summary). `🚫 Rejected` is terminal and hand-recoverable only — no command re-offers a rejected finding: `/fix-report` and `/fix-all` exclude it at their Step 1.3 filter (matched by prefix, since the ` — <reason>` tail would break a whole-line comparison), `fix-auto` aborts immediately if dispatched against a block that already carries it, and `/fix <ID>` aborts at Phase 0 before reaching it and never overwrites an existing `**Status:**` line.
+
+### The extended `Location:` form
+
+Where the decision stage supplies or corrects a finding's address, it writes the extended form rather than replacing the field outright:
+
+```
+**Location:** `path:line` (was: `original`)
+```
+
+The reviewer's original location is preserved in the `(was: …)` tail rather than discarded, so a wrong correction costs a stale parenthetical, not the finding's only address. Every consumer reads the field the same way: take the first backticked token as the location and ignore any trailing parenthetical; where the line carries no backticked token at all (a legacy, unbackticked `**Location:** path:line`), take the first whitespace-delimited token after the field name instead.
+
+### Loop-written finding-block fields
+
+The decision stage writes up to six additional fields into a finding block, alongside the existing `**Status:**`. Each occupies exactly one physical line, is replaced in place rather than accumulated across attempts, and is stripped from the copy handed to `fix-auto` (except the rewritten `**Location:**`, which travels with it).
+
+| Field | Written when | Carries |
+|---|---|---|
+| `**Decision:**` | `A`, `B` or `other…` is chosen | `<label> — <resolution text> [<who>, <date>; attempt N: <outcome>…]` — the dispatchable resolution plus attempt bookkeeping |
+| `**Decision-retired:**` | A decision fails twice without ever writing a status | The superseded decision's full history, kept rather than deleted, so the next sweep shows what was already tried |
+| `**Verification-plan:**` | Alongside `**Decision:**` | The per-check plan (`<check> → <expected>[ (soft)]; …`) the orchestrator runs at verification time, persisted so a resumed run can verify without re-analysing |
+| `**Decision-pin:**` | Alongside `**Decision:**` | A content hash of the finding block plus one hash per file the resolution touches, so an edit to those files between decision and dispatch is detected |
+| `**Dispatch:**` | Immediately before each `fix-auto` call | `attempt <N> dispatched <date>` — distinguishes "decided, never dispatched" from "dispatched, outcome unknown" on a resumed run |
+| `**Verification:**` | Alongside the status line (or the attempt entry, where none is written) | `hard`/`advisory`/`unavailable` — `<checks run>[; <N> not run: <check text>]` — how the status was actually verified, since a run summary does not survive the session that printed it |
 
 ## What It Analyzes
 
@@ -331,6 +400,18 @@ follow-up work is **adding a `bats-core` test suite** under
 Until those tests exist, the `O_CREAT|O_EXCL|O_NOFOLLOW` invariant and the
 slug contract are verified only by code review. Tracked as a follow-up; the
 scripts themselves are the canonical implementation.
+
+<a id="upgrade-notes"></a>
+## Upgrade Notes
+
+**`code-review` 2.0.0 requires every reader to be ≥ 2.0.0 too — this is a requirement, not a recommendation.** A report carrying a `🚫 Rejected` status, or a `**Location:**` line in the extended `(was: …)` form, is a committed artifact, and nothing on the writing side stops an older reader from opening it. This is the worse of the two version skews this release introduces, because the failure is silent and the outcome is terminal:
+
+- A collaborator still on `code-review` 1.17.3 has a Step 1.3 filter that does not recognize `🚫 Rejected` as a resolved status. `/fix-report` re-offers the rejected finding, and dispatching it silently reverses an outcome this design calls terminal and hand-recoverable only.
+- A 1.17.3 `/fix` reads the extended `**Location:**` form with the old whole-line rule, treats the reviewer's original inside the `(was: …)` tail as the value, and reads it as missing — degrading to asking you for an address the report already holds.
+
+Do not open, or run any code-review command against, a report written after this release with a `code-review` build older than 2.0.0.
+
+**`code-review` 2.0.0 also expects `qa` ≥ 2.6.0 for any shared report that can carry a decision-stage rejection.** An older `/qa:loop` (< 2.6.0) does not know to preserve a `🚫 Rejected` line: its Step 4.1 in-place Status update overwrites it — losing the rejection and its reason — whenever a sibling issue passes on the same scenario in a later iteration. Unlike the reader skew above, this one has a precondition attached: `**Fix-policy:** needs-decision` is emitted only by this plugin's producers — today, reports written by `/review` — so a report the `qa` plugin produced cannot presently reach the decision gate or acquire a rejection at all, and `qa` 2.6.0's handling of the field is forward compatibility for a schema the QA producers do not yet emit. Pair the minimums for reports that can carry one. See [qa.md's Upgrade Notes](qa.md#upgrade-notes) for the mirror of this note.
 
 ## Optional Tools
 

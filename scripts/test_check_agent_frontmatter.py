@@ -759,6 +759,22 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("shrinking glob is a false pass", output)
 
+    def test_tree_at_exactly_the_floor_does_not_warn(self):
+        # The boundary is now the operating point: the constant equals the
+        # tree's size, so `<` mutated to `<=` would warn on every CI run.
+        # The shrinking and growing cases sit on either side of that edge and
+        # both survive the mutant; only a tree of exactly EXPECTED_AGENT_FILES
+        # kills it.
+        clean = _agent(name="a", description="d", tools="Read")
+        code, output = self._run(
+            {
+                f"x/agents/a{index}.md": clean
+                for index in range(EXPECTED_AGENT_FILES)
+            }
+        )
+        self.assertEqual(code, 0)
+        self.assertNotIn("shrinking glob is a false pass", output)
+
     def test_growing_tree_does_not_warn(self):
         # The floor is a floor. main() guards with `<` and says "expected at
         # least", so a tree one file larger than the constant is legitimate and

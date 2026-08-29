@@ -39,7 +39,7 @@ Extract the following fields from the issue block:
 |-------|---------|----------|
 | Severity | `[CRITICAL\|HIGH\|MEDIUM\|LOW]` in title | Yes |
 | Title | Text after severity in first line | Yes |
-| Location | `**Location:** \`path:line\`` | Yes |
+| Location | `**Location:** \`path:line\`` (plain form) or `**Location:** \`path:line\` (was: \`original\`)` (extended form, written when a location is corrected) — take the first backticked token as the location, ignoring any trailing parenthetical; if the line carries no backticked token at all, take the first whitespace-delimited token after the field name instead. Under either clause, `—`, `unknown:0`, or anything that does not parse as `path:line` or `path:line-range` is location-less. | Yes |
 | Category | `**Category:** Security\|Performance\|Architecture\|Maintainability\|Documentation\|Testing` | Yes |
 | OWASP | `**OWASP:** A##:####` | No |
 | CWE | `**CWE:** CWE-###` | No |
@@ -58,6 +58,10 @@ Ask user to provide:
 - Location (file path and line number)
 - Problem description
 - Remediation suggestion
+
+**If the block already carries a `**Status:**` line whose value begins with `🚫 Rejected`:** abort immediately — `🚫 Rejected` is terminal, and a rejected finding must never be fixed again. Report an explicit error naming the issue's title and the rejected status line, then stop; do not proceed to Phase 2. Match by **prefix**, not whole-line equality: the `**Status:**` line may carry a ` — <reason>` tail (e.g. `**Status:** 🚫 Rejected (2026-08-27) — duplicate of QA-004`), so compare only the leading `🚫 Rejected` text.
+
+This abort is safe for callers: it returns before Phase 6, so it emits none of the three verdict values defined there (see Phase 6's Status Definitions), and the dispatching command collects the abort as **Failed**.
 
 **Store parsed data mentally for next phases.**
 
@@ -319,6 +323,8 @@ Present the final report in this exact format:
 | Fixed | ✅ | All verification passed |
 | Partially Fixed | ⚠️ | Main issue fixed, minor issues remain |
 | Failed | ❌ | Could not fix within 3 iterations |
+
+This vocabulary is unchanged by the `🚫 Rejected` status: `🚫 Rejected` is a report status, never a fixer verdict — it is a verdict `fix-auto` can never emit, and no caller maps it here.
 
 ### Next Steps by Status
 
