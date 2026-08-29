@@ -11,7 +11,7 @@ for instead of an agent-run sweep.
 
 The authority for every post-condition below is
 `docs/superpowers/specs/2026-08-27-needs-decision-batch-resolution-design.md`,
-`Verification` step 4, spec lines 1238–1285. Where this runbook and the
+`Verification` step 4. Where this runbook and the
 spec ever disagree, the spec wins — re-read it before filing a
 discrepancy against this file.
 
@@ -44,10 +44,24 @@ yet, and the failure is an install problem, not a finding.
 
 Both entry commands support two invocation modes. **Auto-merge mode**
 (no path argument) globs `docs/reviews/*.md` and
-`docs/testing/reports/*.md` (`fix-all.md:108-110`, `fix-report.md:41-43`)
-— **neither directory exists in this repository**. An auto-merge
-invocation aborts at Step 1.1 with "No reports found" and never reaches
-this fixture at all.
+`docs/testing/reports/*.md`, in `fix-all.md` and `fix-report.md`,
+*Step 1.1: Resolve files to read*, under **Auto-merge mode**:
+
+```bash
+newest_review=$(ls -t docs/reviews/*.md 2>/dev/null | head -1)
+newest_qa=$(ls -t docs/testing/reports/*.md 2>/dev/null | head -1)
+```
+
+**`docs/reviews/` exists in this repository** and holds a committed
+code-review report whose findings point at real plugin files;
+`docs/testing/reports/` does not exist. A bare invocation therefore
+resolves `files` to that one review report, does **not** abort, and
+starts working through *its* findings — against the wrong target,
+without saying so, and never reaching this fixture.
+
+That is strictly worse than the "No reports found" abort this section
+used to describe. The old failure was harmless and loud; this one is
+silent and does real work on real files.
 
 **Always invoke with the explicit fixture path** — single-file mode:
 
@@ -173,7 +187,7 @@ Expected: no output (clean).
 
 ---
 
-## Post-conditions (spec lines 1238–1285) — check every item, both runs
+## Post-conditions (spec `Verification` step 4) — check every item, both runs
 
 Any single missing item fails the step for that run. Record which of
 these you actually verified, not just that the run "seemed to work."
@@ -244,10 +258,13 @@ these you actually verified, not just that the run "seemed to work."
       output — not asserted past it.
 - [ ] `[A]` rendered as **"remove the mention of
       `scripts/generate-legacy-report.sh` from `target-b.md`"** — this
-      is pinned by construction for a `dead-reference` finding
-      (`decision-gate/SKILL.md:119`, `decision-analyst.md:28`: "remove
-      the mention **vs** restore/update the referent," in that order),
-      not something the live analyst is free to reorder per run. Confirm
+      is pinned by construction for a `dead-reference` finding by two
+      sources, each in its own words, each naming removal first:
+      `decision-gate/SKILL.md`, *The `**Alternatives:**` render format*
+      ("remove the mention **vs** restore/update the referent"), and
+      `decision-analyst.md:28` ("remove the mention vs. restore the
+      referent"). It is not something the live analyst is free to
+      reorder per run. Confirm
       the edit actually made matches: the mention of
       `scripts/generate-legacy-report.sh` should be gone from
       `target-b.md`, not just that *some* edit happened.

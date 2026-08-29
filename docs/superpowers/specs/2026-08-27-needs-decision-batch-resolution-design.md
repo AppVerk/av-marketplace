@@ -253,22 +253,30 @@ input          /fix-report: findings selected on the needs-decision page
            finding
            returns to the sweep with the recorded and the fresh output
            shown side by side as the discrepancy.
-           The re-run happens under stage 3.5's execution boundary,
-           tightened here to read-only inspection alone: no test or
-           build command, and of git only log, show, diff, blame and
-           status. A cited command that writes, or any git subcommand
-           outside those five, is displayed unexecuted and the
-           candidate is treated as not re-runnable; so is a citation
-           whose inspection command falls outside the commands'
-           pre-approved grants and raises a permission prompt the user
-           denies. Either way the finding takes the no-candidate path
-           below and its rejection is marked unverified. The boundary
-           is not optional here: /fix-report and /fix-all carry
-           Bash(git:*) pre-approved, and a cited command is re-run with
-           the orchestrator's grants rather than the analyst's, so an
-           unbounded re-run of a cited git restore would execute
-           without a prompt and destroy the uncommitted diff Oracle
-           names as the recovery path.
+           The re-run's boundary has no escalation path. It happens
+           under stage 3.5's execution boundary — read-only inspection,
+           and so of git only log, show, diff, blame and status — with
+           the one local difference that nothing outside it is offered
+           for approval here: no test or build command is run at this
+           gate, approved or not. A cited command that writes, a cited
+           test or build command, or any git subcommand outside those
+           five, is displayed unexecuted and the candidate is treated
+           as not re-runnable; so is a citation whose inspection
+           command falls outside the commands' pre-approved grants and
+           raises a permission prompt the user denies. Either way the
+           finding takes the no-candidate path below and its rejection
+           is marked unverified. The restriction is not optional, and
+           it does not rest on the grant list: a cited command is
+           re-run with the orchestrator's grants rather than the
+           analyst's, and those git grants are now narrowed to the
+           seven read-only subcommands the stage actually runs, so a
+           cited git restore raises the platform's prompt rather than
+           executing silently. That prompt is a backstop, never the
+           restriction — it can be answered in haste, and it is not the
+           boundary's AskUserQuestion. The restriction is what keeps a
+           write-capable git subcommand from being offered for
+           execution at all, and what protects the uncommitted diff
+           Oracle names as the recovery path for a wrong call.
            A finding with no Rejection candidate, including one whose
            analyst failed, has no cited evidence to re-run: reject
            stays offered, gated only on the user's non-empty reason,
@@ -388,22 +396,26 @@ input          /fix-report: findings selected on the needs-decision page
            The excerpt is quoted file content and not a command's
            observable output, so a pass resting on such a check is
            classified advisory and never hard.
-           Execution boundary: a plan may contain read-only inspection
-           plus the project's declared test and build commands, both
-           defined once below the diagram. Anything outside that
-           surface is executed only with the user's explicit approval,
-           and that approval was already taken at stage 2, in the same
-           sweep turn as the decision, in one AskUserQuestion call per
-           finding carrying every such command's exact text and the
-           cost of declining. This stage raises no new ask for a plan
-           approved that way, so nothing here interrupts the phase the
-           sweep sold as uninterrupted; only a plan the orchestrator
-           derived after an other… decision may escalate here, in an
-           AskUserQuestion call carrying the exact command text and the
-           same statement of cost, and the sweep told the user so when
-           it took that answer. Read-only inspection — Read, Grep and
-           Glob — is inside the boundary, so the ordinary
-           documentation-drift check escalates at neither point. A
+           Execution boundary: read-only inspection is the whole of
+           what is inside it and is the one term never escalated; the
+           project's declared test and build commands are outside it
+           and escalate exactly like anything else outside it. Both
+           terms are defined once below the diagram. Anything outside
+           that surface is executed only with the user's explicit
+           approval, and that approval was already taken at stage 2, in
+           the same sweep turn as the decision, in one AskUserQuestion
+           call per finding carrying every such command's exact text
+           and the cost of declining. This stage raises no new ask for
+           a plan approved that way, so nothing here interrupts the
+           phase the sweep sold as uninterrupted; only a plan the
+           orchestrator derived after an other… decision may escalate
+           here, in an AskUserQuestion call carrying the exact command
+           text and the same statement of cost, and the sweep told the
+           user so when it took that answer. Read-only inspection — the
+           Read, Grep and Glob tools plus git log, show, diff, blame
+           and status — is inside the boundary, so the ordinary
+           documentation-drift check, a grep or a re-read of the prose,
+           escalates at neither point. A
            check the user refuses, or one that
            cannot be run, is never silently skipped: where no check of
            the plan ran at all, stage 4's fourth case applies; where
@@ -593,41 +605,76 @@ present again in the stage 3 dispatch copy, where the reviewer-authored
 `**Source:**` line is not on the strip list and travels with the rest of the
 reviewer-authored block.
 
-Stage 3.5's execution boundary is not ceremony. `/fix-report` and `/fix-all`
-carry `Bash(git:*)` as a pre-approval, so an unbounded plan containing
-`git checkout` or `git restore` would execute without a prompt and destroy the
-uncommitted diff `Oracle` names as the user's recovery path for a wrong call.
+Stage 3.5's execution boundary is not ceremony, and it does not rest on the
+grant list. `/fix-report` and `/fix-all` no longer carry `Bash(git:*)`: their
+git pre-approvals are narrowed to the seven read-only subcommands the stage
+actually runs, so an unbounded plan containing `git checkout` or `git restore`
+raises the platform's permission prompt rather than executing silently. That
+prompt is a backstop, never the boundary — it can be answered in haste, and it
+is not the boundary's `AskUserQuestion`. The boundary is what keeps such a
+command out of a plan at all, and what protects the uncommitted diff `Oracle`
+names as the user's recovery path for a wrong call.
 
-**The boundary's two terms, defined once.** *Read-only inspection* is the
-`Read`, `Grep` and `Glob` tools plus the read-only git subcommands `git log`,
-`git show`, `git diff`, `git blame` and `git status`, and nothing else. *The
-project's declared test and build commands* are the commands named in the
-repository's `CLAUDE.md`, in its `package.json` `scripts` block, or as its
-`Makefile` targets; where the repository declares none, the surface is
-read-only inspection alone. Every other mention of the boundary — stage 3.5 in
-the diagram, stage 2's re-run of cited reject evidence, and the
-`Verification Plan` row of the return contract — refers here for the terms
-themselves and restates only what is local to it: stage 2 restates its own
-tightening of the surface, to read-only inspection alone, for the re-run of
-cited reject evidence.
+**The boundary's one never-escalated term, defined once.** *Read-only
+inspection* is the `Read`, `Grep` and `Glob` tools plus the read-only git
+subcommands `git log`, `git show`, `git diff`, `git blame` and `git status`, and
+nothing else. *The project's declared test and build commands* are the commands
+named in the repository's `CLAUDE.md`, in its `package.json` `scripts` block, or
+as its `Makefile` targets; that term is defined so that the sweep's approval
+call can name what it is asking about, and it is **not** a second
+never-escalated term. Every other mention of the boundary — stage 3.5 in the
+diagram, stage 2's re-run of cited reject evidence, and the `Verification Plan`
+row of the return contract — refers here for the terms themselves and restates
+only what is local to it: stage 2 restates only what its re-run does with a
+check that falls outside, which is to display it unexecuted rather than escalate
+it.
 
-Read-only inspection and the project's declared test and build commands are
-inside the boundary and are never escalated; anything outside that surface is
-shown to the user and explicitly approved first. That approval is asked with
-`AskUserQuestion` — the only construct whose answer provably originates with the
-user — and the call carries the exact command text that would be run; if
-`AskUserQuestion` is unavailable or errors, the check counts as one that cannot
-be run. Inside the boundary is not the same as unprompted: the declared set is
-open, read from the repository, while the commands' own pre-approved `Bash(...)`
-grants are a fixed list, so a declared command outside them — `make check`, or
-this repository's own declared checks — still raises the platform's own
-permission prompt. That prompt is not the boundary's `AskUserQuestion`
-escalation and never substitutes for it, and a prompt the user denies, or one
-that errors, makes the check one that cannot be run. A check that is refused, or
-that cannot be run, is never silently skipped: where no check of the plan ran at
-all it takes stage 4's fourth case, and where some checks ran and others did not
-the finding is graded on the raw output of those that ran, with the shortfall
-disclosed as stage 4's fourth case describes.
+Read-only inspection is the whole of what is inside the boundary, and it alone
+is never escalated — so the ordinary documentation-drift check, a grep or a
+re-read of the prose, escalates nowhere. The project's declared test and build
+commands are **outside** it and escalate exactly like anything else outside it.
+Their membership is read from the repository under review, which is the same
+trust domain as the report whose finding proposed the check; and the declared
+name says nothing about what runs, since `npm test` executes whatever
+`package.json` `scripts.test` currently holds and `pytest` executes the
+`conftest.py` it collects. Nothing declared in the tree can license its own
+execution, so declaring a command buys it no exemption from the ask. Anything
+outside that surface is shown to the user and explicitly approved first. That
+approval is asked with `AskUserQuestion` — the only construct whose answer
+provably originates with the user — and the call carries the exact command text
+that would be run; if `AskUserQuestion` is unavailable or errors, the check
+counts as one that cannot be run.
+
+**Approved is not the same as unprompted, and unprompted is not the same as
+approved.** The platform's own permission prompt and this boundary's escalation
+are independent gates, and the declared set crosses them in both directions: it
+is open, read from the repository, while the commands' own pre-approved
+`Bash(...)` grants are a fixed list. A declared command **on** that list —
+`Bash(pytest:*)` and `Bash(npm test:*)` both are — runs with no platform prompt
+at all, and that silence is **not** approval: without the sweep's
+`AskUserQuestion` the check was never approved and is not run. A declared
+command **off** it — `make check`, or this repository's own declared checks —
+raises the platform's prompt as well, and that prompt is not the boundary's
+`AskUserQuestion` escalation and never substitutes for it; a prompt the user
+denies, or one that errors, makes the check one that cannot be run, including
+one the sweep had already approved.
+
+**That fixed list is written down and machine-checked.** `decision-gate` carries
+it as a `### The grant registry` section: a scope table classifying every
+consumer of the skill, and a grant table classifying every `Bash(...)`
+pre-approval on a runs-the-stage consumer as `inside-boundary`, `pipeline` or
+`outside-escalates`. `scripts/check_execution_boundary.py` reads that registry
+together with the consumers' `allowed-tools:` and fails the build on an
+undeclared grant, a declared grant its consumer does not carry, an unclassified
+consumer, an `inside-boundary` row the boundary text above does not admit, or a
+family wildcard the boundary admits only in part. So the paragraph above cannot
+quietly stop being true — though what is checked is the list, not the boundary:
+see `Residual risks`.
+
+A check that is refused, or that cannot be run, is never silently skipped: where
+no check of the plan ran at all it takes stage 4's fourth case, and where some
+checks ran and others did not the finding is graded on the raw output of those
+that ran, with the shortfall disclosed as stage 4's fourth case describes.
 
 Stages 3 and 3.5 separate the actor from the verifier. `fix-auto` picks its own
 checks and narrates its own result, so its report is advisory input to the
@@ -672,10 +719,22 @@ appear only in command and skill `allowed-tools:`, which `CLAUDE.md` defines as
 permission pre-approval rather than capability — and
 `scripts/check_agent_frontmatter.py:78-80` calls the `Tool(cmd:*)` spelling
 undocumented. If the resolver does not honour it, the entry falls back to base
-`Bash`, every git subcommand included, and `disallowedTools` does not close
-that, since it names only `Edit`, `Write` and `NotebookEdit`. `Verification`
-step 6 probes which of the two it is, and `Residual risks` carries the case
-where the grant turns out inert. Separating the analyst that reads from the `fix-auto`
+`Bash` — which is not confined to git at all. On that branch the analyst holds
+unrestricted shell: `rm`, `curl`, `tee`, `sh -c`, `python -c 'open(f,"w")'`.
+`disallowedTools` closes none of it, because a `python -c` that writes a file is
+not an `Edit` call; it names only `Edit`, `Write` and `NotebookEdit`. The
+read-only property is then **absent, not degraded**: this is not a wider git
+grant, it is no confinement at all. The fallback also reaches further than
+`Bash`: the grant carries `Skill` with no
+key narrowing which skills may be loaded, and per `CLAUDE.md` a skill's
+`allowed-tools:` pre-approves permission prompts, so with seven of this plugin's
+eleven skills carrying `Bash(...)` entries in theirs — between them
+`Bash(python:*)`, `Bash(node:*)`, `Bash(npm:*)`, `Bash(go:*)`, `Bash(pip:*)`,
+`Bash(xargs:*)`, `Bash(find:*)` and `Bash(cat:*)` — loading one converts
+arbitrary execution from prompted into unprompted. Both consequences are
+**strictly conditional on the fallback**, which is still unverified.
+`Verification` step 6 probes which of the two it is, and `Residual risks`
+carries the case where the grant turns out inert. Separating the analyst that reads from the `fix-auto`
 that writes is what makes the decision gate real: the analyst cannot pre-empt
 the user's choice because it cannot edit. Frontmatter keys stay within the
 permitted set (the thirteen keys in `PERMITTED_KEYS`,
@@ -725,7 +784,7 @@ required unless marked optional:
 | `Recommendation` | A or B, with the reason |
 | `Risk` | What the recommendation costs if it is the wrong call |
 | `Code Preview` | Current and proposed code for the recommended alternative |
-| `Verification Plan` | One plan per alternative: the checks that would confirm A, and separately the checks that would confirm B — never a single plan for the recommendation, since stage 3.5 runs the plan for whichever alternative was decided. Each check is written as `<check> → <expected result>`, on exactly one physical line, carrying no `; `, no ` → ` beyond its own separator and no embedded newline — one that would is rewritten or split before it is returned — and the expected result is stated in terms observable in that check's own raw output, since stage 3.5 decides a check on its logged output and never on exit status alone. Each soft check is marked `<check> → <expected result> (soft)` by the hard/soft test `Decision record` states beside the `**Verification:**` grammar, so stage 4 reads the marker instead of re-classifying the check text. A check is runnable when the orchestrator can execute it and log a result, a soft LLM re-read of prose included; a soft check's logged raw output is the verbatim excerpt the re-read quotes out of the file it inspected, given with the `path:line` it was read from, and it passes when that excerpt matches the recorded expected result — a re-read that logs a verdict rather than an excerpt has logged no result and is a check that cannot be run, and a pass resting on such a check is `advisory`, never `hard`. A plan may contain read-only inspection plus the project's declared test and build commands, both as `The flow` defines them below its diagram; anything outside that surface is shown to the user in an `AskUserQuestion` call carrying the exact command text and explicitly approved before it is executed. A declared test or build command outside the commands' pre-approved `Bash(...)` grants is inside the boundary and is not escalated, but it still raises the platform's own permission prompt, which is not that escalation; a denied or errored prompt makes the check one that cannot be run. A refused or unrunnable check is never silently skipped: where no check of the plan ran at all, stage 4's fourth case applies; where some ran and some did not, the finding is graded on the raw output of those that ran and the shortfall is disclosed as stage 4's fourth case describes. For `other…` no analyst plan can exist, so the orchestrator derives the checks after the decision and records them as post-decision. Stage 2 persists the decided plan on the `**Verification-plan:**` line, so the replay path runs it rather than re-deriving one; where no check of any kind ran, stage 4's fourth case applies |
+| `Verification Plan` | One plan per alternative: the checks that would confirm A, and separately the checks that would confirm B — never a single plan for the recommendation, since stage 3.5 runs the plan for whichever alternative was decided. Each check is written as `<check> → <expected result>`, on exactly one physical line, carrying no `; `, no ` → ` beyond its own separator and no embedded newline — one that would is rewritten or split before it is returned — and the expected result is stated in terms observable in that check's own raw output, since stage 3.5 decides a check on its logged output and never on exit status alone. Each soft check is marked `<check> → <expected result> (soft)` by the hard/soft test `Decision record` states beside the `**Verification:**` grammar, so stage 4 reads the marker instead of re-classifying the check text. A check is runnable when the orchestrator can execute it and log a result, a soft LLM re-read of prose included; a soft check's logged raw output is the verbatim excerpt the re-read quotes out of the file it inspected, given with the `path:line` it was read from, and it passes when that excerpt matches the recorded expected result — a re-read that logs a verdict rather than an excerpt has logged no result and is a check that cannot be run, and a pass resting on such a check is `advisory`, never `hard`. Read-only inspection — the `Read`, `Grep` and `Glob` tools plus the git subcommands `log`, `show`, `diff`, `blame` and `status`, and nothing else — is the whole of what is inside the boundary, and it alone needs no escalation. Everything else is outside it, **the project's declared test and build commands included**: their membership is read from the repository under review, the same trust domain as the report whose finding proposed the check, and a declared name says nothing about what runs, since `npm test` executes whatever `package.json` `scripts.test` currently holds. Both terms are as `The flow` defines them below its diagram. A check outside the boundary is still permitted — proposed where the finding calls for one — but it is flagged as needing the user's explicit approval before it runs, never as pre-approved, and its exact command text is given so the sweep's approval call can name what it is asking about; approval is taken in an `AskUserQuestion` call, and a platform permission prompt, denied or errored, makes the check one that cannot be run whether or not the sweep had approved it. A refused or unrunnable check is never silently skipped: where no check of the plan ran at all, stage 4's fourth case applies; where some ran and some did not, the finding is graded on the raw output of those that ran and the shortfall is disclosed as stage 4's fourth case describes. For `other…` no analyst plan can exist, so the orchestrator derives the checks after the decision and records them as post-decision. Stage 2 persists the decided plan on the `**Verification-plan:**` line, so the replay path runs it rather than re-deriving one; where no check of any kind ran, stage 4's fourth case applies |
 | `Rejection candidate` | Optional. Present when the code contradicts the finding — a `dead-reference` whose referent exists under another name. Carries the reason on a single line with no embedded newline, since it prefills the `<reason>` of a status line every consumer resolves line-wise, and the same two-form citation requirement applies to the evidence backing it — the empty-result rule of `Findings` included: the sweep re-runs exactly those commands and tool calls before offering `reject` and grades them by the support test `Decision outcomes` states, so a candidate backed by a tool name rather than by a command-plus-output or a `tool: …` citation is not re-runnable — and neither is one whose citation the sweep's read-only boundary refuses to execute — and its finding falls to the no-candidate path |
 
 ### Skill: `decision-gate`
@@ -753,10 +812,16 @@ the reject gate exists so that the user judges that evidence. What the skill *ru
 `/fix-all`'s Step 5 it runs stages 0 through 3.5, while in `/fix-report` it runs
 stages 0-2 in the Step 2.4 slot and hands the decided findings back to Step 3,
 which dispatches them, after which stage 3.5's verification is run over the
-decided findings only. Stage 4's status write-back is deliberately not in the
-skill in either case: it is command-owned, each command re-running its own
-Step 4.1 / 4.1.5 procedure, which is what `/fix-all`'s Step 5 wording already
-implies. A skill
+decided findings only. Stage 4's **grading** is the skill's, and the skill
+declares itself the single authority for it — the two tree observations, the
+expected set, the four ordered cases and the `**Status:**`, `**Verification:**`
+and attempt-entry writes each case makes, identical for both entry points and
+for the replay path. Only the **mechanical** write is command-owned: Step 4.1's
+insert-after-heading `Edit` recipe and Step 4.1.5's positional re-read, each
+command running them over its own batch with its own `status_write_failures`
+list. *Which* status that write carries — and whether any status is written at
+all — is decided in the skill, which is why a command restates neither the four
+cases nor the observations. A skill
 rather than a command — it adds no entry point, and the
 "doctrine in a skill" pattern is established in this plugin by
 `verdict-protocol`, `docs-fact-registry` and `finding-falsification`.
@@ -1220,9 +1285,18 @@ is perl-provided — and `git hash-object` over each pinned file as it stands in
 the working tree. The block excerpt is never retyped from context, which is what
 would make a later session's re-derivation approximate: it is cut from the
 report on disk by a deterministic command over the line range Step 1.2
-delimits — `sed -n '<first>,<last>p' <report>` — piped through a `grep -v` that
-drops the loop-written lines by their `**<Field>:**` prefixes, and piped
-straight to the hasher, in one pipeline with nothing in between. The comparison
+delimits — `head -n <last> -- ./<report> | tail -n +<first>`, byte-identical to
+the `sed -n '<first>,<last>p'` slice it replaces — piped through a `grep -v`
+that drops the loop-written lines by their `**<Field>:**` prefixes, and piped
+straight to the hasher, in one pipeline with nothing in between. **The cut uses
+`head` and `tail`, and that is a security property rather than a stylistic
+one:** these commands run under a pre-approved `Bash(...)` grant, and prefix
+matching grants the whole tool, so `sed` would carry `sed -i` and, on GNU `sed`,
+the `e` command and the `s///e` flag — an in-place write and a shell escape
+inside a grant whose pipeline only ever reads. Neither `head` nor `tail` has a
+write mode. Nor is a `Read` plus in-model line slicing a substitute: it would
+route the excerpt through the model and break the never-retyped property this
+same paragraph rests on. The comparison
 is byte-exact, so the canonicalisation is stated too: trailing whitespace is
 stripped from every line and the excerpt ends with exactly one trailing newline,
 at pin time and at comparison time alike.
@@ -1234,9 +1308,10 @@ rule above is deliberately syntactic and tests nothing, so absent this rule a
 token reaches the shell exactly as the document wrote it. The rule therefore
 covers **every document- or tree-derived token entering a constructed
 command** — the pinned operand of `git hash-object` and the `<report>` operand
-of the `sed` pipeline alike, not the one instance that motivated it, and
+of the excerpt pipeline alike, not the one instance that motivated it, and
 stage 4's re-derivation of an unpinned finding's expected set is held to it
-too. The test
+too. In that pipeline the operand reaches `head` only: `tail`, the `grep -v` and
+the hasher all read stdin and take no document-derived token at all. The test
 is an **allow-list, not a metacharacter blacklist**: a token survives only if
 every character is one of `A–Z a–z 0–9 . _ / -`, plus the `:` introducing the
 `:<line>` suffix, which is stripped before the path is used — a blacklist is
@@ -1247,14 +1322,17 @@ ends it, and `docs/a.md;id`, `docs/a.md$(id)` and `--foo=x/y` all fail here with
 none of the three repaired into something runnable. What survives is still
 quoted: single-quote every interpolated token where it enters the command
 **and** neutralise a leading `-` on a path operand so it cannot be read as an
-option — both defences, not either. The quoting rules then differ between the
-two commands, so they are stated separately rather than assumed common.
-`git hash-object` accepts the `--` separator, so the path goes after it. BSD
-`sed`, which is what macOS ships, does **not**: it reads `--` as a filename,
-errors on it and processes the real operand anyway, which is a corrupted
-extraction rather than a refusal. The `sed` pipeline therefore prefixes a
-relative `<report>` path with `./`, which is portable and needs no per-platform
-test.
+option — both defences, not either. The rule is the same for both commands
+that take a path operand, and it was measured rather than assumed common. Both
+accept the `--` separator, so the path goes after it: `git hash-object`, and —
+verified against the BSD `head` macOS ships, rather than carried over from
+either previous case — `head`, which consumes `--` as end-of-options and reads
+the operand after it correctly. The excerpt pipeline **additionally** prefixes a
+relative `<report>` path with `./`. The two are not redundant: `--` protects the
+operand's leading `-` at the command's own option parser, while `./` makes the
+path safe even where a caller drops the separator, and `./` alone is what makes
+the operand readable as a path in the written form of the pipeline. Neither is
+dropped.
 
 **`unpinnable` is a different state from `absent`, and the two are never written
 interchangeably.** A rejected path is recorded `<path>=unpinnable`, carrying its
@@ -1395,15 +1473,45 @@ Prose requiring correction beyond version numbers:
   and its absence is not flagged.
 - `plugins/code-review/commands/fix-report.md` and
   `plugins/code-review/commands/fix-all.md` — frontmatter gains
-  `Bash(shasum:*)`, `Bash(sha256sum:*)`, `Bash(sed:*)` and `Bash(grep:*)`:
-  without one of the two hashers neither command can compute the block hash the
-  `**Decision-pin:**` line requires, `sha256sum` being the fallback where
-  `shasum` is absent, and `sed` and `grep` are what cut the block excerpt out of
-  the report on disk and drop its loop-written lines before it reaches the
-  hasher, as `Decision record` requires. The pinned-file hashes and stage 4's
-  `git status --porcelain` tree observation need no new grant, since
-  `git hash-object` and `git status` both fall under the `Bash(git:*)` both
-  commands already carry.
+  `Bash(shasum:*)`, `Bash(sha256sum:*)`, `Bash(head:*)`, `Bash(tail:*)` and
+  `Bash(grep:*)`: without one of the two hashers neither command can compute the
+  block hash the `**Decision-pin:**` line requires, `sha256sum` being the
+  fallback where `shasum` is absent, and `head`, `tail` and `grep` are what cut
+  the block excerpt out of the report on disk and drop its loop-written lines
+  before it reaches the hasher, as `Decision record` requires. No `Bash(sed:*)`
+  is granted, and the omission is the point: a prefix-matched `sed` grant would
+  carry `sed -i` and, on GNU `sed`, the `e` command and the `s///e` flag, while
+  neither `head` nor `tail` has an in-place write mode. The same frontmatter
+  **loses** `Bash(git:*)`, replaced by the seven read-only subcommands the stage
+  actually runs — `Bash(git log:*)`, `Bash(git show:*)`, `Bash(git diff:*)`,
+  `Bash(git blame:*)`, `Bash(git status:*)`, `Bash(git hash-object:*)` and
+  `Bash(git rev-parse:*)`. The last two are the pipeline's own rather than
+  boundary members: `git hash-object` computes the pinned-file hashes and
+  stage 4's first observation, and `git rev-parse --show-toplevel` resolves the
+  repository root for stage 0's containment test. The pinned-file hashes and
+  stage 4's `git status --porcelain` tree observation are therefore still
+  covered, and no destructive git subcommand is pre-approved any more.
+- `plugins/code-review/skills/decision-gate/SKILL.md` — a new
+  `### The grant registry` section, placed immediately after the execution
+  boundary it serves: a scope table classifying every consumer of the skill
+  (`runs-the-stage`, `render-only`, `dispatch-only`, `reference-only`) and a
+  grant table classifying every `Bash(...)` pre-approval on a runs-the-stage
+  consumer as `inside-boundary`, `pipeline` or `outside-escalates`. A grant row
+  is not a boundary permission and licenses no check; it records only that the
+  platform raises no prompt, which is what makes the sweep's `AskUserQuestion`
+  the sole remaining gate for anything the boundary excludes.
+- `scripts/check_execution_boundary.py`, with
+  `scripts/test_check_execution_boundary.py` (55 tests) — a registry-parity
+  check in the shape `plugins/code-review/scripts/check-prefix-sync.sh` already
+  uses here. It parses the boundary's terms and the grant registry out of the
+  skill's own prose rather than hardcoding them, reads the consumers'
+  `allowed-tools:` through `check_agent_frontmatter.py`'s parser, and fails the
+  build on a `Bash(...)` grant no registry row declares, a registry row its
+  consumer does not carry, a file that mentions the skill and appears in no
+  scope-table row, an `inside-boundary` row the boundary text does not admit, or
+  a command-family wildcard the boundary admits only in part (`Bash(git:*)`
+  against the five named git subcommands). This is what moves the grant-list
+  half of the boundary from prose-only to machine-checked.
 
 **The two versions are a pair, and neither side of the skew has a fail-safe.**
 The plugins install independently and the marketplace manifest has no dependency
@@ -1444,9 +1552,19 @@ evidence to re-run. A rejection with no `Rejection candidate` behind it has
 none, which is why it is recorded as `unverified` rather than treated as
 checked.
 
+One structural claim now has a deciding signal of its own. The claim that the
+fixed list of pre-approved `Bash(...)` grants is what `decision-gate` says it is
+is decided by `scripts/check_execution_boundary.py`, which diffs the skill's
+grant registry against the runs-the-stage consumers' `allowed-tools:` — a build
+failure, not a reading. That invariant was prose-only and is machine-checked
+from this release on. It decides parity between a table and a frontmatter list
+and nothing beyond: the checker never observes a running check, so the boundary
+itself still has no oracle but the reader.
+
 What none of these oracles can check: that the applied edit matches what the
 user meant; that a documentation fix is factually right; that a rejected finding
-was actually wrong rather than merely under-researched.
+was actually wrong rather than merely under-researched; or that a check the
+model chose to run was in fact inside the execution boundary.
 
 ## Verification
 
@@ -1566,6 +1684,17 @@ was actually wrong rather than merely under-researched.
    inconclusive rather than as either verdict. The result is recorded as it
    stands and carried into `Residual risks`, not repaired by re-spelling the
    grant.
+7. `scripts/check_execution_boundary.py`, with
+   `scripts/test_check_execution_boundary.py` (55 tests) — run both. The check
+   is registry parity, so it is mutation-tested rather than merely run green:
+   add `Bash(git:*)` to `fix-all.md` and confirm the build fails on the
+   partly-admitted family wildcard; add an undeclared `Bash(curl:*)` and confirm
+   it fails on the undeclared grant; delete the scope-table row for a file that
+   mentions the skill and confirm it fails on the unclassified consumer; revert
+   each. Record what the checker does **not** cover, so that no later reader
+   takes a green build for more than it is: it reads `*/commands/*.md` and
+   `*/skills/*/SKILL.md` only, and within those only the `Bash(...)` grants of
+   the runs-the-stage consumers.
 
 ## Residual risks
 
@@ -1587,15 +1716,25 @@ The `finding-falsification` doctrine exists in this plugin for that class of
 problem and is a candidate for the analyst to load, but this spec does not
 require it.
 
-**The analyst's read-only grant may be inert.** `Bash(git log:*)` and its three
-siblings have no precedent in any agent's `tools:` in this tree, and
+**The analyst's read-only grant may be inert, and the fallback is worse than a
+wider git grant.** `Bash(git log:*)` and its three siblings have no precedent in
+any agent's `tools:` in this tree, and
 `scripts/check_agent_frontmatter.py:78-80` calls the spelling undocumented. If
 the resolver does not honour a two-word specifier, the entry falls back to base
-`Bash` — every git subcommand, the writes included — and `disallowedTools` does
-not close that, since it names only `Edit`, `Write` and `NotebookEdit`.
-Verification step 6 probes which it is; until that probe has run, the
-separation of the reader from the writer is a convention this design relies on
-rather than a property it enforces.
+`Bash`, which is not confined to git at all: the analyst then holds unrestricted
+shell — `rm`, `curl`, `tee`, `sh -c`, a `python -c` that opens a file for
+writing — and `disallowedTools` closes none of it, since it names only `Edit`,
+`Write` and `NotebookEdit` and a `python -c` write is not an `Edit` call. The
+read-only property is then **absent, not degraded**. The fallback also reaches
+past `Bash`: the grant carries `Skill` with no key narrowing which skills may be
+loaded, and seven of this plugin's eleven skills carry `Bash(...)` entries in
+their `allowed-tools:`, so loading one converts arbitrary execution from
+prompted into unprompted. Both consequences are strictly conditional on the
+fallback, which remains unverified. Verification step 6 probes which it is;
+until that probe has run, the separation of the reader from the writer is a
+convention this design relies on rather than a property it enforces.
+`check_execution_boundary.py` does not help here: it reads commands' and skills'
+`allowed-tools:`, never an agent's `tools:`.
 
 **Fixture coverage is synthetic.** With no `docs/reviews/` in the repository,
 the end-to-end run tests the design against a report this project wrote for
@@ -1619,13 +1758,29 @@ duty, so Step 4.1's in-place Status update (`loop.md:902-907`) replaces a
 `🚫 Rejected` line and its reason whenever a sibling issue passes on the same
 scenario. The pairing is stated in both upgrade notes and enforced by nothing.
 
-**The execution boundary is model-enforced, not machine-enforced.**
-`/fix-report` and `/fix-all` hold `Bash(git:*)` pre-approved, and both stage 2's
-re-run of cited reject evidence and stage 3.5's verification run with those
-grants. Nothing at the tool layer denies a destructive git subcommand: the
-boundary that keeps `git restore` and `git checkout` out of a re-run is prose
-the orchestrating model follows, so a single lapse destroys the uncommitted diff
-`Oracle` names as the recovery path for a wrong call.
+**The execution boundary is narrowed and its grant list is machine-checked;
+the boundary itself is still model-enforced.** Two things changed.
+`/fix-report` and `/fix-all` no longer hold `Bash(git:*)`: their git
+pre-approvals are the seven read-only subcommands the stage actually runs, so a
+cited or planned `git restore` or `git checkout` now raises the platform's
+permission prompt instead of executing silently. And
+`scripts/check_execution_boundary.py` fails the build if either command's
+`Bash(...)` grants drift from the grant registry in `decision-gate/SKILL.md`, so
+the narrowing cannot be widened again unnoticed. What is **not** enforced is the
+boundary itself: the checker decides parity between a table and a frontmatter
+list and never observes a running check, so nothing at the tool layer decides
+whether a command the model chose to run was inside the boundary. The platform
+prompt is the remaining backstop and it can be answered in haste. The checker's
+reach is narrower still — `*/commands/*.md` and `*/skills/*/SKILL.md` only, and
+within those only the `Bash(...)` grants of the two runs-the-stage consumers.
+`fix-auto`'s own unrestricted `Bash` is outside it, and so are the four other
+`code-review` surfaces that still carry `Bash(git:*)`: `commands/fix.md`, which
+the registry classifies `render-only` and whose grants the checker therefore
+does not diff; `commands/review.md` and `commands/analyze-feedback.md`, which
+never mention the skill and are not consumers at all; and
+`agents/feedback-analyzer.md`, an agent file outside the checker's globs
+entirely. None of the four runs this stage, and none of them would fail the
+build.
 
 **Out-of-scope writes are reported, not prevented, and the report evaporates.**
 `fix-auto` holds unrestricted `Edit`, `Write` and `Bash`, so stage 4's

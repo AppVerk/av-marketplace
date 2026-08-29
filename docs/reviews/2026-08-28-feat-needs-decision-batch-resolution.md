@@ -32,6 +32,7 @@ Three escalations proposed by the Cross-Verifier were **not** applied (DOC-002 �
 ## Security
 
 ### [MEDIUM] SEC-001: Execution-boundary allowlist is read from the repository under review
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** SEC-001
 **Location:** `plugins/code-review/skills/decision-gate/SKILL.md:254`
@@ -70,6 +71,7 @@ Stage 0's usability rule reads: "A location is usable **iff** it parses as `path
 Add containment as a third conjunct, mirroring the assertion the repository already ships at `plugins/code-review/scripts/allocate-feedback-file.sh:139-152`. A path failing containment is location-less — never merely non-existent — and takes the declined-target path.
 
 ### [MEDIUM] SEC-003: New `Bash(sed:*)` grant pre-approves an in-place write primitive
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** SEC-003
 **Location:** `plugins/code-review/commands/fix-report.md:2`
@@ -89,6 +91,7 @@ Before this change, `sed -i` on these commands raised a permission prompt. The b
 Either drop `Bash(sed:*)` and cut the block excerpt with the `Read` tool plus in-model line slicing before hashing (`shasum` reads stdin), or keep the grant and record the increment in the residual-risk section alongside the `Bash(git:*)` entry. Note that the obvious narrowing, `Bash(sed -n:*)`, is the same two-word specifier form MAINT-002 shows is unverified — so the record, not the narrowing, is the cheap remedy.
 
 ### [MEDIUM] SEC-004: Analyst grant-fallback blast radius is understated, and the `Skill` grant amplifies it
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** SEC-004
 **Location:** `plugins/code-review/agents/decision-analyst.md:39`
@@ -215,6 +218,7 @@ The append is unverified and `status_write_failures` cannot represent it. The co
 Extend Step 4.1.5's positional re-read to cover the attempt-entry append for the two no-status cases, with a fourth failure reason, and collect it into the same `status_write_failures` list Step 5.6 already renders.
 
 ### [MEDIUM] MAINT-002: The read-only narrowing is invisible to the CI oracle, twice over
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** MAINT-002
 **Location:** `scripts/check_agent_frontmatter.py:434`
@@ -283,6 +287,7 @@ The consent moment is the user's only basis for agreeing to an explicitly unboun
 Reword the description to "at least one question per finding — more where a location must be supplied or an out-of-boundary check approved", and add one sentence naming interruption as a lossless exit.
 
 ### [LOW] MAINT-005: A finding-shaped heading with an actionable payload now ships inside a skill
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** MAINT-005
 **Location:** `plugins/code-review/skills/decision-gate/SKILL.md:405`
@@ -396,6 +401,7 @@ Prefix with `rm -rf /tmp/nd-pristine`.
 ## Documentation
 
 ### [MEDIUM] DOC-001: `/fix-all` doc names two terminal statuses at the Step 1.3 filter; there are now three
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** DOC-001
 **Location:** `docs/plugins/code-review.md:111`
@@ -414,6 +420,7 @@ A reader checking whether a rejected finding can be re-dispatched by a later bul
 Either add `🚫 Rejected` to the enumeration, or replace the inline list with a pointer to the `🚫 Rejected` status section. The extend-vs-pointer choice is why this is not an auto-fix.
 
 ### [MEDIUM] DOC-002: `/qa:loop`'s documented fix-set pre-filter omits the rejected drop and states the forbidden whole-line rule
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** DOC-002
 **Location:** `docs/plugins/qa.md:206`
@@ -432,6 +439,7 @@ The one place in `qa.md` that enumerates what `/qa:loop` refuses to dispatch doe
 Name all three drop conditions and their three recorded reasons, and reword the location clause to describe the field's *value* rather than the line's contents. Mirror the rejected condition into the Algorithm summary.
 
 ### [LOW] DOC-003: `/fix-all` walkthrough asserts the pre-flight-and-confirm path unconditionally and stops at Step 4
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** DOC-003
 **Location:** `docs/plugins/code-review.md:113`
@@ -450,6 +458,7 @@ Bounded — that path still ends in a consent gate (`fix-all.md:446-455`), so no
 Add a step covering Step 5, and qualify the pre-flight and confirmation steps for the zero-auto path. Point at the existing Decision Stage section rather than restating its internals.
 
 ### [LOW] DOC-004: Runbook and answer sheet cite `decision-gate/SKILL.md:119` for a row that lives at line 121
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** DOC-004
 **Location:** `docs/testing/fixtures/needs-decision-e2e/RUNBOOK.md:245`
@@ -470,6 +479,7 @@ Load-bearing, not decorative: this is one of the two independent sources the fix
 Change both citations to `:121`, or cite the section (*The `**Alternatives:**` render format*) as `RUNBOOK.md:76-77` already does elsewhere. In `RUNBOOK.md:245-246`, quote the two sources separately as `ANSWERS.md` does.
 
 ### [LOW] DOC-005: Runbook cites `fix-all.md:108-110` for two glob lines that sit at 110-111
+**Status:** ✅ Fixed (2026-08-28)
 
 **ID:** DOC-005
 **Location:** `docs/testing/fixtures/needs-decision-e2e/RUNBOOK.md:47`

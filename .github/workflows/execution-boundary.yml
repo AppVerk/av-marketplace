@@ -1,0 +1,38 @@
+name: Execution Boundary
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: execution-boundary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-execution-boundary:
+    name: Check execution boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.12"
+
+      # No PyYAML step, unlike agent-frontmatter.yml: this checker and its tests
+      # are stdlib-only. It reuses check_agent_frontmatter's frontmatter parser
+      # rather than reimplementing it, and that parser is stdlib too.
+
+      - name: Run boundary checker unit tests
+        run: python3 scripts/test_check_execution_boundary.py
+
+      - name: Check execution boundary
+        run: python3 scripts/check_execution_boundary.py

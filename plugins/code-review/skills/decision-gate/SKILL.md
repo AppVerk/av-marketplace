@@ -172,9 +172,9 @@ The gate is scoped to findings whose block carries a `Rejection candidate`.
 - **For one that does not,** including a finding whose analyst failed: there is no cited evidence to re-run. `reject` stays offered, gated only on the user's non-empty reason, and the run summary marks such a rejection `unverified`.
 - The re-run **persists nothing**: the ` — <reason>` tail of the status line stays the whole record of a rejection.
 
-**The re-run's tightened boundary.** The re-run happens under stage 3.5's execution boundary, tightened here to read-only inspection alone: **no test or build command**, and of git only `log`, `show`, `diff`, `blame` and `status`. A cited command that writes, or any git subcommand outside those five, is displayed **unexecuted** and the candidate is treated as not re-runnable; so is a citation whose inspection command falls outside the commands' pre-approved grants and raises a permission prompt the user denies. Either way the finding takes the no-candidate path and its rejection is marked `unverified`.
+**The re-run's boundary has no escalation path.** The re-run happens under stage 3.5's execution boundary — read-only inspection, and so of git only `log`, `show`, `diff`, `blame` and `status` — with the one local difference that nothing outside it is offered for approval here: **no test or build command is run at this gate, approved or not**. A cited command that writes, a cited test or build command, or any git subcommand outside those five, is displayed **unexecuted** and the candidate is treated as not re-runnable; so is a citation whose inspection command falls outside the commands' pre-approved grants and raises a permission prompt the user denies. Either way the finding takes the no-candidate path and its rejection is marked `unverified`.
 
-The tightening is not optional. `/fix-report` and `/fix-all` carry `Bash(git:*)` pre-approved, and a cited command is re-run with the **orchestrator's** grants rather than the analyst's, so an unbounded re-run of a cited `git restore` would execute without a prompt and destroy the uncommitted diff that is the user's recovery path for a wrong call.
+The restriction is not optional, and it does not rest on the grant list. A cited command is re-run with the **orchestrator's** grants rather than the analyst's, and the orchestrator's git grants are now narrowed to the seven read-only subcommands the stage actually runs — so a cited `git restore` raises the platform's prompt rather than executing silently. That prompt is a backstop, never the restriction: it can be answered in haste, and it is not the boundary's `AskUserQuestion`. The restriction is what keeps a write-capable git subcommand from being offered for execution at all, and what protects the uncommitted diff that is the user's recovery path for a wrong call.
 
 ### Approval for out-of-boundary checks is asked here
 
@@ -275,20 +275,73 @@ A check is **runnable** when the orchestrator can execute it and log a result �
 
 `fix-auto`'s own "Fixed" verdict is **advisory input, not the deciding signal**.
 
-### The execution boundary — its two terms, defined once
+<a id="execution-boundary"></a>
+### The execution boundary — the one term never escalated, defined once
 
-*Defined here and nowhere else in this skill. Stage 2's re-run of cited reject evidence and the analyst's `Verification Plan` refer here for the terms themselves and restate only what is local to them — stage 2 restates its own tightening of the surface, to read-only inspection alone.*
+*Defined here and nowhere else in this skill. Stage 2's re-run of cited reject evidence and the analyst's `Verification Plan` refer here for the terms themselves and restate only what is local to them — stage 2 restates only what its re-run does with a check that falls outside, which is to display it unexecuted rather than escalate it.*
 
 - **Read-only inspection** is the `Read`, `Grep` and `Glob` tools plus the read-only git subcommands `git log`, `git show`, `git diff`, `git blame` and `git status`, **and nothing else**.
-- **The project's declared test and build commands** are the commands named in the repository's `CLAUDE.md`, in its `package.json` `scripts` block, or as its `Makefile` targets. Where the repository declares none, the surface is read-only inspection alone.
+- **The project's declared test and build commands** are the commands named in the repository's `CLAUDE.md`, in its `package.json` `scripts` block, or as its `Makefile` targets. The term is defined so that the sweep's approval call can name what it is asking about; it is **not** a second never-escalated term.
 
-A plan may contain read-only inspection plus the project's declared test and build commands. Both are **inside** the boundary and are **never escalated** — so the ordinary documentation-drift check escalates at neither point.
+Read-only inspection is the whole of what is **inside** the boundary, and it alone is **never escalated** — so the ordinary documentation-drift check, a grep or a re-read of the prose, escalates nowhere.
+
+The project's declared test and build commands are **outside** it and escalate exactly like anything else outside it. Their membership is read from the repository under review, which is the same trust domain as the report whose finding proposed the check; and the declared name says nothing about what runs, since `npm test` executes whatever `package.json` `scripts.test` currently holds and `pytest` executes the `conftest.py` it collects. Nothing declared in the tree can license its own execution, so declaring a command buys it no exemption from the ask.
 
 Anything outside that surface is executed **only with the user's explicit approval**: shown to the user first, in an `AskUserQuestion` call — the only construct whose answer provably originates with the user — carrying the **exact command text** that would be run. If `AskUserQuestion` is unavailable or errors, the check counts as one that cannot be run.
 
 That approval **was already taken at stage 2**, in the same sweep turn as the decision, in one call per finding carrying every such command's exact text and the cost of declining. **This stage raises no new ask for a plan approved that way**, so nothing here interrupts the phase the sweep sold as uninterrupted. Only a plan the orchestrator derived after an `other…` decision may escalate here, in an `AskUserQuestion` call carrying the exact command text and the same statement of cost — and the sweep told the user so when it took that answer.
 
-**Inside the boundary is not the same as unprompted.** The declared set is open, read from the repository, while the commands' own pre-approved `Bash(...)` grants are a fixed list — so a declared command outside them (`make check`, or this repository's own declared checks) still raises the platform's own permission prompt. That prompt is **not** the boundary's `AskUserQuestion` escalation and never substitutes for it; a prompt the user denies, or one that errors, makes the check one that cannot be run.
+**Approved is not the same as unprompted, and unprompted is not the same as approved.** The platform's own permission prompt and this boundary's escalation are independent gates, and the declared set crosses them in both directions: it is open, read from the repository, while the commands' own pre-approved `Bash(...)` grants are a fixed list. A declared command **on** that list — `Bash(pytest:*)` and `Bash(npm test:*)` both are — runs with no platform prompt at all, and that silence is **not** approval: without the sweep's `AskUserQuestion` the check was never approved and is not run. A declared command **off** it (`make check`, or this repository's own declared checks) raises the platform's prompt as well, and that prompt is **not** the boundary's escalation and never substitutes for it. A prompt the user denies, or one that errors, makes the check one that cannot be run — including one the sweep had already approved.
+
+<a id="grant-registry"></a>
+### The grant registry — every prompt-free `Bash(...)` on a stage-running consumer
+
+*The paragraph above states that a pre-approved grant removes the platform's prompt. This table is that "fixed list", written down. `scripts/check_execution_boundary.py` reads it and the consumers' `allowed-tools:` and fails the build on any divergence, so the claim above cannot quietly stop being true.*
+
+A grant here is **not** a boundary permission and never licenses a check. It records that, for this command, the platform raises **no prompt** — so for anything the boundary excludes, the sweep's `AskUserQuestion` is the only gate left. The classification says why that is acceptable:
+
+- **`inside-boundary`** — the grant's whole executable surface is admitted by *The execution boundary* above. Machine-verified: a `Bash(...)` grant can only qualify as a specific admitted `git` subcommand, since the boundary's other members are the `Read`/`Grep`/`Glob` **tools**, which no `Bash(...)` grant confers.
+- **`pipeline`** — the command's own machinery, never a verification check and never selected by a finding's text.
+- **`outside-escalates`** — acknowledged outside the boundary. It runs only after the stage-2 approval, and the silent grant is exactly the trap the paragraph above names.
+
+#### Scope — every consumer of this skill, classified
+
+| Consumer | Kind | Why |
+|---|---|---|
+| `plugins/code-review/commands/fix-all.md` | runs-the-stage | Loads this skill in full; Step 5 runs stages 0 → 3.5. |
+| `plugins/code-review/commands/fix-report.md` | runs-the-stage | Loads this skill in full. Step 2.4 runs stages 0–2 and hands the decided findings to Step 3; stage 3.5's verification then runs over those findings, under this boundary — see *Where the stages run* above, which is authoritative for the split. |
+| `plugins/code-review/skills/decision-gate/SKILL.md` | runs-the-stage | This file. Declares no `allowed-tools:`; the row keeps it that way. |
+| `plugins/code-review/commands/fix.md` | render-only | Loads the `**Alternatives:**` render format alone. Runs no stage, so no check of its executes under this boundary. |
+| `plugins/qa/commands/loop.md` | dispatch-only | Follows stage 3's dispatch-copy rule and strips `**Verification-plan:**`. Runs neither the sweep nor stage 3.5. |
+| `plugins/qa/skills/report-format/SKILL.md` | reference-only | Reproduces the finding-block fields this skill writes. Declares no `allowed-tools:` and executes nothing. |
+
+#### Grants — every `Bash(...)` on a runs-the-stage consumer
+
+| Grant | Class | Consumers | Why |
+|---|---|---|---|
+| `Bash(git log:*)` | inside-boundary | `fix-all`, `fix-report` | Admitted by the boundary as read-only inspection. |
+| `Bash(git show:*)` | inside-boundary | `fix-all`, `fix-report` | Admitted by the boundary as read-only inspection. |
+| `Bash(git diff:*)` | inside-boundary | `fix-all`, `fix-report` | Admitted by the boundary as read-only inspection. |
+| `Bash(git blame:*)` | inside-boundary | `fix-all`, `fix-report` | Admitted by the boundary as read-only inspection. |
+| `Bash(git status:*)` | inside-boundary | `fix-all`, `fix-report` | Admitted by the boundary as read-only inspection; also stage 4's second observation. |
+| `Bash(git hash-object:*)` | pipeline | `fix-all`, `fix-report` | Stage 4's first observation and the `**Decision-pin:**` file hashes. Never selected by a finding's text; a *cited* `git hash-object` still escalates. |
+| `Bash(git rev-parse:*)` | pipeline | `fix-all`, `fix-report` | Stage 0's containment test resolves the repository root with `git rev-parse --show-toplevel`. Never a check; a *cited* `git rev-parse` still escalates. |
+| `Bash(command:*)` | pipeline | `fix-all`, `fix-report` | `command -v` probes for the hasher and the linters before constructing a call. |
+| `Bash(shasum:*)` | pipeline | `fix-all`, `fix-report` | The `**Decision-pin:**` block-excerpt hash. |
+| `Bash(sha256sum:*)` | pipeline | `fix-all`, `fix-report` | The Linux fallback where `shasum` is absent. |
+| `Bash(head:*)` | pipeline | `fix-all`, `fix-report` | The excerpt pipeline's only document-derived operand. |
+| `Bash(tail:*)` | pipeline | `fix-all`, `fix-report` | The excerpt pipeline, stdin only. |
+| `Bash(grep:*)` | pipeline | `fix-all`, `fix-report` | The excerpt pipeline's `grep -v`, stdin only. A **cited** shell `grep` is outside the boundary — the boundary admits the `Grep` tool, not this — and escalates despite this silent grant. |
+| `Bash(jq:*)` | pipeline | `fix-all`, `fix-report` | Report and tool-output JSON parsing. |
+| `Bash(pytest:*)` | outside-escalates | `fix-all`, `fix-report` | A declared test command. This row and the next are the two the paragraph above names by hand. |
+| `Bash(npm test:*)` | outside-escalates | `fix-all`, `fix-report` | A declared test command. |
+| `Bash(ruff:*)` | outside-escalates | `fix-all`, `fix-report` | `fix-auto`'s own post-fix verification, not a decision-stage check. |
+| `Bash(mypy:*)` | outside-escalates | `fix-all`, `fix-report` | As `ruff`. |
+| `Bash(semgrep:*)` | outside-escalates | `fix-all`, `fix-report` | As `ruff`. |
+| `Bash(eslint:*)` | outside-escalates | `fix-all`, `fix-report` | As `ruff`. |
+| `Bash(tsc:*)` | outside-escalates | `fix-all`, `fix-report` | As `ruff`. |
+| `Bash(bandit:*)` | outside-escalates | `fix-all`, `fix-report` | As `ruff`. |
+| `Bash(trufflehog:*)` | outside-escalates | `fix-all`, `fix-report` | As `ruff`. |
 
 ### A refused or unrunnable check is never silently skipped
 
@@ -445,7 +498,7 @@ Each decision is written to its source report **immediately, before dispatch**, 
 
 ```markdown
 ### [MEDIUM] DOC-004: Doc cites a removed script
-**Decision:** A — delete the line citing scripts/qa-run.sh at docs/plugins/qa.md:88 and the line citing scripts/qa-run.sh at README.md:41 [user, 2026-08-27; attempt 1: failed]
+**Decision:** A — delete the line citing scripts/example-tool.sh at docs/example/widget.md:88 and the line citing scripts/example-tool.sh at docs/example/index.md:41 [user, 2026-08-27; attempt 1: failed]
 ```
 
 **A**, **B** and **other…** write this line. `skip` writes nothing. A rejected finding carries the `**Status:** 🚫 Rejected` line alone and no `**Decision:**` line — for a rejection the status *is* the record.
@@ -548,14 +601,15 @@ A well-formed resolution leaves nothing to resolve — the `Alternatives` contra
 
 - `shasum -a 256` over the block excerpt — falling back to `sha256sum` where `shasum` is absent, as it is on many Linux images, since it is perl-provided.
 - `git hash-object` over each pinned file as it stands in the working tree.
-- The block excerpt is **never retyped from context**, which is what would make a later session's re-derivation approximate. It is cut from the report on disk by a deterministic command over the line range Step 1.2 delimits — `sed -n '<first>,<last>p' <report>` — piped through a `grep -v` that drops the loop-written lines by their `**<Field>:**` prefixes, and piped straight to the hasher, **in one pipeline with nothing in between**.
+- The block excerpt is **never retyped from context**, which is what would make a later session's re-derivation approximate. It is cut from the report on disk by a deterministic command over the line range Step 1.2 delimits — `head -n <last> -- ./<report> | tail -n +<first>` — piped through a `grep -v` that drops the loop-written lines by their `**<Field>:**` prefixes, and piped straight to the hasher, **in one pipeline with nothing in between**.
+- **The cut uses `head` and `tail`, and this is a security property, not a stylistic one.** The commands here run under a pre-approved `Bash(...)` grant, and prefix matching grants the whole tool: `sed` would carry `sed -i` and, on GNU sed, the `e` command and the `s///e` flag, putting an in-place write and a shell escape inside a grant whose pipeline only ever reads. Neither `head` nor `tail` has a write mode. Do not "simplify" this back to a single `sed -n`, and do not replace it with a `Read` plus in-model line slicing either — that would route the excerpt through the model and break the never-retyped property this same bullet rests on.
 - **Canonicalisation**, because the comparison is byte-exact: trailing whitespace is stripped from every line, and the excerpt ends with exactly one trailing newline — at pin time and at comparison time alike.
 
-**Sanitisation, because both extractions build a command around a token the run did not author.** The pinned path comes from the resolution text and the `<report>` operand from the report file the run was handed; the recognition rule above is deliberately syntactic and tests nothing, so absent this rule a token reaches the shell exactly as the document wrote it. The rule therefore covers **every document- or tree-derived token entering a constructed command** — the pinned operand of `git hash-object` and the `<report>` operand of the `sed` pipeline alike, not the one instance that motivated it.
+**Sanitisation, because both extractions build a command around a token the run did not author.** The pinned path comes from the resolution text and the `<report>` operand from the report file the run was handed; the recognition rule above is deliberately syntactic and tests nothing, so absent this rule a token reaches the shell exactly as the document wrote it. The rule therefore covers **every document- or tree-derived token entering a constructed command** — the pinned operand of `git hash-object` and the `<report>` operand of the excerpt pipeline alike, not the one instance that motivated it. In that pipeline the operand reaches **`head` only** — `tail`, `grep -v` and the hasher all read stdin and take no document-derived token at all.
 
 - **The test is an allow-list, not a metacharacter blacklist.** A token survives only if every character is one of `A–Z a–z 0–9 . _ / -`, plus the `:` introducing the `:<line>` suffix, which is stripped before the path is used. A blacklist is what leaves the metacharacter nobody enumerated on the near side of the check.
 - **A token that fails is rejected, never escaped.** Escaping keeps the token and moves the problem into the quoting, where the next bug lives; rejection ends it. `docs/a.md;id`, `docs/a.md$(id)` and `--foo=x/y` all fail here, and none of the three is repaired into something runnable.
-- **What survives is still quoted.** Single-quote every interpolated token where it enters the command, and neutralise a leading `-` on a path operand so it cannot be read as an option — **both** defences, not either. `git hash-object` accepts the `--` separator, so the path goes after it. BSD `sed`, which is what macOS ships, does **not**: it reads `--` as a filename, errors on it and processes the real operand anyway, which is a corrupted extraction rather than a refusal. The `sed` pipeline therefore prefixes a relative `<report>` path with `./`, which is portable and needs no per-platform test.
+- **What survives is still quoted.** Single-quote every interpolated token where it enters the command, and neutralise a leading `-` on a path operand so it cannot be read as an option — **both** defences, not either. Both commands that take a path operand accept the `--` separator, so the path goes after it: `git hash-object`, and — verified against the BSD `head` macOS ships, rather than assumed from either previous case — `head`, which consumes `--` as end-of-options and reads the operand after it correctly. The excerpt pipeline **additionally** prefixes a relative `<report>` path with `./`. The two are not redundant: `--` protects the operand's leading `-` at the command's option parser, while `./` makes the path safe even where a caller drops the separator, and `./` alone is what makes the operand readable as a path in the written form of the pipeline. Do not drop either.
 
 **`unpinnable` is a different state from `absent`, and the two are never written interchangeably.** A rejected path is recorded `<path>=unpinnable`, carrying its `:edit`/`:ref` marker like any other entry.
 

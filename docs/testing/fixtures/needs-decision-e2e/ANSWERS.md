@@ -5,7 +5,7 @@ These are the operator's scripted answers for both entry runs
 They exist so the run is reproducible and so the post-conditions in
 `RUNBOOK.md` are bound to a specific handling of each finding, rather
 than to whatever an improvised sweep happens to produce (spec
-`Verification` step 4, lines 1238–1285: "neither is a sweep the
+`Verification` step 4: "neither is a sweep the
 operator improvises").
 
 Answer **only** the decision-stage asks these findings trigger. Anything
@@ -66,7 +66,7 @@ prefilled reason if it says materially the same thing):
 > Procedures", a rename, not a dead reference.
 
 Do **not** accept a run where the analyst's block carries no
-`Rejection candidate` for DOC-004 — per spec lines 1238–1285, a rejection
+`Rejection candidate` for DOC-004 — per spec `Verification` step 4, a rejection
 without a candidate is graded `unverified`, and "a run in which the
 analyst returned no candidate for finding 2 does not satisfy the step,
 however the status line reads." If the live analyst fails to surface a
@@ -89,8 +89,9 @@ DOC-004). Its `Drift-class` is `dead-reference`.
 **A = remove the mention is pinned by construction, not by the live
 analyst's per-run judgment.** Two independent sources fix the mapping:
 
-- `decision-gate/SKILL.md:119` — `| dead-reference | remove the mention
-  **vs** restore/update the referent |`.
+- `decision-gate/SKILL.md`, *The `**Alternatives:**` render format* —
+  `| dead-reference | remove the mention **vs** restore/update the
+  referent |`.
 - `decision-analyst.md:28` — the same instruction, given directly to the
   agent that populates `Alternatives`: "`dead-reference` → remove the
   mention vs. restore the referent," in that order.

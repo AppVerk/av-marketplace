@@ -187,7 +187,7 @@ A *malformed* generated plan (missing the always-present `## Source` / `## Chang
 2. **Baseline Run** — Execute all FE and BE scenarios (mutation guard skips state-changing scenarios unless `--allow-mutations`); render QA-XXX report
 3. **Loop Iterations** — For each iteration (bounded by `--max-iterations`, `--max-dispatches`, `--time-budget`):
    - Select failing scenarios at/above `--severity` threshold
-   - Pre-filter issues with missing Location or required fields (report as "needs manual location"; never dispatch)
+   - Pre-filter the fix-set — drop findings already rejected by you (`rejected by user`), findings whose Location value is unusable (`needs manual location`), and findings missing required fields (`incomplete fields`); each is recorded under that reason and never dispatched
    - HITL gate per `--mode` (approve: one batch; step: per re-test; auto: no gate)
    - Auto-fix each selected issue via `code-review:fix-auto` (source-only constraint injected)
    - Anti-hardcoding warning: flag added literals matching scenario request-payloads (human-review only; not a credit block)
@@ -203,7 +203,10 @@ A *malformed* generated plan (missing the always-present `## Source` / `## Chang
 
 - **Environment guard:** base URL must resolve to loopback (`localhost`, `127.0.0.1`, `::1`, `*.localhost`) or be in `--allow-host`, else **abort**
 - **Mutation guard:** state-changing BE scenarios (HTTP POST/PUT/PATCH/DELETE or DB-write checks) SKIP with reason `mutation-guard` unless `--allow-mutations` is set; their issues reported as "needs --allow-mutations"; never counted as fixed. Classification is syntactic/best-effort (case-insensitive verbs); it does **not** detect GET-with-side-effects or FE UI actions that trigger writes (e.g. a Delete button) — keep the test database disposable
-- **Location pre-filter:** issues with `Location: unknown:0` or missing Location/Problem/Remediation are dropped from the fix-set and reported as "needs manual location"
+- **Fix-set pre-filter:** three classes of issue are dropped from the fix-set and never dispatched, each recorded under its own reason:
+  - a `**Status:**` line beginning `🚫 Rejected` — reason `rejected by user`. The status is terminal, so the finding never re-enters the fix-set on this or any later run. Matched **by prefix**, never by whole-line equality: a rejected line carries a ` — <reason>` tail that is not this loop's to control
+  - a location-less `**Location:**` field — reason `needs manual location`. The field's **value** is what is tested, read by a two-clause rule: the first backticked token, ignoring any trailing parenthetical; or, where the line carries no backticked token, the first whitespace-delimited token after the field name. That value is location-less when it is `—`, `unknown:0`, absent, or anything that does not parse as `path:line` or `path:line-range`. **Never test the whole line** — a repaired finding reading `` **Location:** `src/a.py:12` (was: `unknown:0`) `` still contains `unknown:0` in its preserved tail, yet is perfectly dispatchable
+  - missing fix-auto-required fields (Location, Problem, Remediation) — reason `incomplete fields`
 - **Anti-hardcoding warning:** a heuristic check (not a credit gate) flags fixes where added source literals match scenario request-payload values; surfaced for human review in `approve` mode, logged in auto/step
 
 **Sidecar & state:**

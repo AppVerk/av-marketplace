@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), Bash(shasum:*), Bash(sha256sum:*), Bash(sed:*), Bash(grep:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git log:*), Bash(git show:*), Bash(git diff:*), Bash(git blame:*), Bash(git status:*), Bash(git hash-object:*), Bash(git rev-parse:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), Bash(shasum:*), Bash(sha256sum:*), Bash(head:*), Bash(tail:*), Bash(grep:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
 description: Fix unfixed issues from a review/QA report after a single yes/no confirmation — everything except issues flagged needs-decision, which it then offers to resolve with you. Optional severity floor.
 model: opus
 argument-hint: [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
