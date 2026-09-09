@@ -1,22 +1,23 @@
 # Superutils Plugin
 
-Companion utilities for the superpowers workflow — loop-engineered
-verification of design specs.
+Companion utilities for the superpowers workflow — bounded, loop-engineered
+triage of design specs.
 
-**Version:** 1.0.2
+**Version:** 2.0.0
 
 ## Commands
 
 ### `/superutils:spec-review`
 
-Closed review loop for a design spec from `docs/superpowers/specs/`
-(brainstorming→design shape). Each round: decomposition into `##` units (uses
-the sequential-thinking MCP server when available) →
-3–6 lens reviewers in parallel (2 core lenses always on) → orchestrator
-finding registry (SR ids) → adversarial challenger per major+ finding
-(2 for criticals) → needs-decision questions → fix batch behind an
-approve-before-apply diff preview → fresh-panel re-review decides
-convergence.
+Fixed triage pipeline for a design spec from `docs/superpowers/specs/`
+(brainstorming→design shape). One pass, nothing repeats: decomposition into `##`
+units (uses the sequential-thinking MCP server when available) → every
+applicable lens reviewer in parallel (2 core lenses always on, no cap) →
+orchestrator finding registry (SR ids) → one adversarial challenger per
+**critical** finding → needs-decision questions (grouped four per call) → batch
+A behind an approve-before-apply diff preview → a `fix-coherence` verifier that
+reads the applied diff and says, per finding, whether the defect is gone →
+batch B (unresolved and fix-induced findings, same gate) → report.
 
 ```bash
 # Newest spec in docs/superpowers/specs/
@@ -29,85 +30,86 @@ convergence.
 /superutils:spec-review --no-approve
 
 # Headless; needs-decision findings skipped, never auto-decided
-/superutils:spec-review --auto --max-iterations 2
+/superutils:spec-review --auto --max-dispatches 12
 ```
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--no-approve` | off | Skip the batch gate; print full diff after each batch |
+| `--no-approve` | off | Skip the approve gate; print the full diff after each batch |
 | `--auto` | off | Headless; implies `--no-approve` |
 | `--allow-dirty` | off | Bypass the working-tree gate |
-| `--max-iterations` | 3 | Round cap |
-| `--max-dispatches` | 60 | Subagent-launch cap (retries count) |
-| `--time-budget` | 1800 | Active seconds (user waits excluded) |
+| `--max-dispatches` | 20 | Subagent-launch cap (retries count) |
+| `--time-budget` | 900 | Active seconds (user waits excluded) |
 
-**Terminal statuses:** `CONVERGED`, `CONVERGED (low-confidence)`,
-`STOPPED(budget | no-progress | oscillation | pending-decisions |
-user-declined | interaction-unavailable | external-edit)` — a stop is never
-success. Reports and a state sidecar land in
-`docs/superpowers/specs/reviews/`; the loop never commits, and recovery
-points at the pre-loop snapshot.
+A typical run costs 8–12 dispatches: five to seven reviewers, a challenger per
+critical, two fixers, one verifier. There is no iteration flag — the pipeline's
+shape bounds it.
 
-**`CONVERGED` means the work actually landed.** The loop will not report success
-while it still owes you something, so convergence requires all three: no
-significant findings left, **no unlanded fix** (a fix that entered the batch but
-whose edit did not apply — at any severity, including a minor), and **no
-unconfirmed finding** (a major+ whose challenger never returned). Consequences
-worth knowing before you see them:
+**Terminal statuses:** `TRIAGED` · `TRIAGED (incomplete)` ·
+`STOPPED(user-declined | budget | interaction-unavailable | external-edit)` — a
+stop is never success. The report lands in `docs/superpowers/specs/reviews/`
+beside a pre-loop snapshot of the spec; the pipeline never commits.
 
-- A fix you accepted whose edit fails to apply is re-proposed next round with a
-  freshly derived edit — never a replay of the one that already failed. If that
-  attempt fails too, the run ends `STOPPED(no-progress)`, not `CONVERGED`. You
-  are told the fix never landed rather than being handed a green report.
-- A challenger that dies is re-dispatched every round until it returns a
-  verdict; its finding is never silently treated as refuted.
-- Accepting a fix settles *which* edit to make, not *whether* the defect exists:
-  if a later fresh panel still finds it, it comes back as a normal finding.
+**`TRIAGED` means the pipeline ran to the end and every fix it batched landed.**
+It does not mean a fresh panel would find nothing: minors and nits are reported,
+not fixed, and batch B's edits are applied without further verification (their
+outcome says so: `applied (not re-reviewed)`). `TRIAGED (incomplete)` means
+something the pipeline owed did not land or return — a lens or the verifier did
+not come back, a fix failed twice, or a needs-decision entry was skipped under
+`--auto` — and the report names it. Residuals are ordered most- to
+least-serious, with `confirmed (not fixed — stopped)` and `fix-failed` first.
 
-**Re-running (the sidecar is control flow, not just an artifact):**
+**Re-running (the report is the durable state):**
 
 | State | What a re-run does |
 |---|---|
-| Spec unchanged since a finished run | Prints the prior report summary and exits — no dispatches, no new review |
-| Run interrupted mid-way | Resumes: counters continue, recorded decisions replay without re-asking |
-| Spec edited since the last run | Starts a new run; prior report and rounds are archived. The finding registry carries forward whole — decisions **and** unfinished work (unlanded fixes, unconfirmed findings): a new run does not forgive them |
-
-To force a clean review of an unchanged spec (e.g. after a
-`CONVERGED (low-confidence)` run whose lens failures you want re-tried), delete
-`docs/superpowers/specs/reviews/<spec>-review.state.json` first.
+| Spec unchanged since the last run (its hash equals the report's `post-loop` hash) | Interactive: asks re-run / exit. `--auto`: prints the prior status and exits — no dispatches |
+| Spec edited since the last run, or a report with no hash line (pre-2.0.0) | Archives the report to `<spec>-review.run<N>.bak` and starts fresh from SR-001 |
+| Run interrupted mid-way | Nothing resumes: re-run, and the pipeline triages whatever the spec now contains. A pre-2.0.0 sidecar beside the report is archived, never read |
 
 **Honest limits:**
 
-- The oracle is soft (an LLM panel plus challengers), so every verdict is
-  advisory — reported as "Re-reviewed", never "Verified". It cannot check your
-  intent, external facts, or requirements you never wrote down.
-- It meets the `qa:loop-engineering` bar on 10 of its 11 items. **Item 4 is only
-  partially met:** no fail-closed TTY check exists in this harness (a tool's
-  stdin is never a TTY), so interactivity is judged heuristically and fails
-  closed by default, with an AskUserQuestion failure aborting the run as a
-  backstop. Disclosed rather than designed away.
-- The dispatch cap doubles as the cost ceiling; there is no hard token budget.
+- The oracle is soft (an LLM panel, a challenger per critical, an LLM verifier),
+  so every verdict is advisory — "Re-reviewed (advisory)", never "Verified". It
+  cannot check your intent, external facts, or requirements you never wrote down.
+- Against the `qa:loop-engineering` bar: **item 4 is not met** — no fail-closed
+  TTY check exists in this harness (a tool's stdin is never a TTY), so
+  interactivity is judged heuristically and the run fails closed by default, with
+  an AskUserQuestion failure stopping it before any write of the pending batch.
+  **Item 9 applies** — the pipeline auto-corrects, and every assertion it corrects
+  toward is a stochastic panel finding; majors carry no challenger, so under
+  `--auto` or `--no-approve` a wrong finding is fixed rather than questioned.
+  **Item 10's first clause is not met, deliberately** — the registry, your
+  decisions and the pinned hash live in the orchestrator's context until the
+  report is written; an interruption across the approve gate loses them and the
+  questions are asked again next run.
+- Human interaction cost is disclosed, not budgeted: at most one question per
+  needs-decision finding (four per call), one approve gate per batch, and one
+  page per four edit groups only if you choose to approve a subset.
+- The dispatch cap doubles as the cost ceiling; there is no token budget.
+- Spec growth is measured and shown at the gate (`+N lines (+P%)`), not limited.
 - **The acceptance protocol (`plugins/superutils/tests/ACCEPTANCE.md`) has not
-  been run.** The loop is verified statically — by review, not by execution — so
-  treat the first real run as the actual test.
+  been run against 2.0.0.** Treat the first real run as the actual test.
 
 ## Agents
 
-- `spec-reviewer` — one lens per dispatch, self-falsifying, raw JSON findings;
-  barred from reading the loop's own reports and sidecar, so a fresh panel
-  cannot read its own answer key
-- `spec-challenger` — one finding per dispatch, uphold or refute at the finder's
-  severity. `refute` means *not a real defect*: uncertainty upholds, and a real
-  defect graded too high is still upheld rather than deleted over its grade
-- `spec-fixer` — proposes exact `{old, new}` edit pairs (plus an `obsolete` list
-  for defects already gone from the text); has no write tools — the orchestrator
-  applies what you approve
+- `spec-reviewer` — one lens per dispatch, self-falsifying, raw JSON; barred from
+  reading the pipeline's own reports and snapshots. With the `fix-coherence`
+  lens it verifies an applied batch: it sees the diff, the spec and each
+  finding's description, never the proposed fix or the fixer's pairs, and it
+  echoes SR ids without ever deriving one
+- `spec-challenger` — one critical finding per dispatch, uphold or refute at the
+  finder's severity. `refute` means *not a real defect*: uncertainty upholds
+- `spec-fixer` — proposes exact `{old, new}` edit pairs; a pair lists every SR it
+  resolves (`sr_ids`), rewrites before it appends, reports the batch's growth,
+  and re-derives (`re-derive`) or re-fixes (`re-fix`) what an earlier pass left
+  unresolved; it has no write tools — the orchestrator applies what you approve
 
 ## Skills
 
-- `lens-catalog` — lens roster, panel-selection rules, severity and
-  needs-decision anchors, and the loop-engineering bar the
-  `doctrine-compliance` lens audits against
-- `spec-report-format` — report structure, sidecar schema, outcome enum,
-  statuses (named apart from `qa:report-format`, which is the QA test-report
-  format)
+- `lens-catalog` — lens roster (seven panel lenses plus the verification-only
+  `fix-coherence`), panel-selection rules, severity and needs-decision anchors,
+  and the loop-engineering bar the `doctrine-compliance` lens audits against
+- `spec-report-format` — output shapes (reviewer, challenger, verifier, fixer),
+  SR-id rules, markers, outcome enum, statuses, and the report skeleton (named
+  apart from `qa:report-format`, which is the QA test-report format)
