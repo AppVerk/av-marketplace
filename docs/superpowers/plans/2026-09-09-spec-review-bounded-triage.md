@@ -988,7 +988,7 @@ Expected: `Contract OK: 1 file(s)`.
 - [ ] **Step 5: Measure the contract**
 
 Run: `wc -l plugins/superutils/commands/spec-review.md`
-Expected: between 200 and 260 lines (the spec's "≈130" counted body prose without the tables and the batch procedure; the honest figure for a self-contained contract with both tables is in this range). Above 300 means text from the old loop survived — grep for `round` and `registry carry` and remove it.
+Expected: between 300 and 340 lines — the content in Step 2 is 319 lines as written (the spec's "≈130" counted body prose without the flag table, the error table and the batch procedure). Above 360 means text from the old loop survived — grep for `round` and `registry carry` and remove it; below 300 means a section of Step 2 was dropped — compare the headings against Step 2.
 
 - [ ] **Step 6: Run the execution-boundary validator (it scans every `*/commands/*.md`)**
 
