@@ -449,7 +449,7 @@ Expected: `Contract OK: 1 file(s)`. If it prints `cat: forbidden 'logged in the 
 - [ ] **Step 6: Confirm the doctrine bar copy is untouched**
 
 Run: `git diff plugins/superutils/skills/lens-catalog/SKILL.md | grep -E '^-' | grep -vE '^---' | wc -l`
-Expected: `6` — the three preamble lines, rule 5, and the two `major` anchor lines are the only removed lines. Any other number means an edit strayed into the doctrine bar or another lens; inspect `git diff` and revert the stray hunk.
+Expected: `5` — the three preamble lines, rule 5, and the second line of the `major` anchor (its first line is identical before and after, so git does not show it as removed). Any other number means an edit strayed into the doctrine bar or another lens; inspect `git diff` and revert the stray hunk.
 
 - [ ] **Step 7: Commit**
 
