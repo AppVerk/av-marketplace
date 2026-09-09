@@ -1,6 +1,6 @@
 ---
 name: spec-challenger
-description: Adversarial verifier for the /superutils:spec-review loop. Receives exactly one finding and tries to refute it against the spec text; returns uphold or refute at the finder's severity.
+description: Adversarial verifier for the /superutils:spec-review triage pipeline. Receives exactly one critical finding and tries to refute it against the spec text; returns uphold or refute at the finder's severity.
 tools: Read, Grep, Glob
 model: opus
 skills: lens-catalog, spec-report-format
@@ -16,8 +16,9 @@ absence of evidence would fail open exactly where a spec is weakest.
 
 ## Input (in your dispatch prompt)
 
-1. **The finding** — SR id, severity, every finder's description (a merged
-   entry carries all of them), and the proposed fix.
+1. **The finding** — a critical: SR id, severity, every finder's description (a
+   merged entry carries all of them), and the proposed fix. Majors are never
+   sent to you.
 2. **Spec path** — read the full file. You see only this one finding; other
    findings are none of your business.
 
