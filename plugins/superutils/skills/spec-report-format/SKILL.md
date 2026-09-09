@@ -1,11 +1,11 @@
 ---
 name: spec-report-format
-description: Report structure, sidecar schema, SR-id rules, outcome enum, and terminal statuses for the /superutils:spec-review loop. Load when reading or writing spec-review loop state or reports. (Distinct from qa:report-format, which is the QA test-report format.)
+description: Report structure, SR-id rules, reviewer/challenger/verifier/fixer output shapes, outcome enum, and terminal statuses for the /superutils:spec-review triage pipeline. Load when reading or writing a spec-review report. (Distinct from qa:report-format, which is the QA test-report format.)
 ---
 
-# Spec-Review Report & Sidecar Format
+# Spec-Review Report Format
 
-## Reviewer finding shape (agent output, one JSON object)
+## Reviewer finding shape (panel lenses; one JSON object)
 
 ```json
 {
@@ -22,7 +22,8 @@ description: Report structure, sidecar schema, SR-id rules, outcome enum, and te
 }
 ```
 
-Reviewers never emit SR ids or fingerprints — identity is orchestrator-owned.
+Panel reviewers never emit SR ids or fingerprints — identity is
+orchestrator-owned; the fix-coherence verifier echoes only the ids it was given.
 
 ## Challenger verdict shape
 
@@ -30,172 +31,116 @@ Reviewers never emit SR ids or fingerprints — identity is orchestrator-owned.
 {"sr_id": "SR-007", "verdict": "uphold|refute", "justification": "<one paragraph>"}
 ```
 
+## Verifier output shape (`fix-coherence` lens; one JSON object)
+
+```json
+{"resolved": [{"sr_id": "SR-003", "resolved": true, "reason": "<one sentence>"}],
+ "findings": [{"severity": "major", "location": "<## heading>", "description": "…",
+               "proposed_fix": "…", "needs_decision": false,
+               "fix_induced": true, "introduced_by": ["SR-003"]}],
+ "rejected": ["<one line per self-falsified candidate>"]}
+```
+
+`resolved` carries exactly one entry per SR of batch A, judged against the SR
+description alone (the verifier never holds a proposed fix). The orchestrator
+checks the id set: a batch A SR missing from it is treated as unresolved and
+enters batch B marked `re-fix`, and the omission is noted under Coverage.
+`findings` are the defects the edits introduced; each names the SR ids whose
+edits introduced it. The verifier's `rejected` list is recorded like a panel
+reviewer's, labelled with the `fix-coherence` lens id.
+
 ## Fixer output shape (no writes — edit pairs only)
 
 ```json
-{"edits": [{"sr_id": "SR-007", "old": "<exact current text>", "new": "<replacement>"}],
- "obsolete": [{"sr_id": "SR-009", "evidence": "<current text proving the defect is already gone>"}],
- "notes": "<per-SR reasons when no unique pair could be produced — orchestrator marks those fix-failed>"}
+{"edits": [{"sr_ids": ["SR-007", "SR-011"], "old": "<exact current text>",
+            "new": "<replacement>"}],
+ "growth": {"net_lines": 12, "drivers": ["SR-007"]},
+ "notes": "<per-SR reasons when no unique pair could be produced>"}
 ```
 
-`obsolete` is the **only** channel for "this defect no longer exists"; it is not
-`notes`. "I could not produce a unique pair" belongs in `notes` and yields
-`fix-failed`. Conflating them retires real, unfixed defects.
+A pair lists every SR it resolves in `sr_ids`; several pairs may share an SR.
+`growth.net_lines` is the fixer's own estimate of the batch's net line delta
+and `growth.drivers` the SR ids whose pairs account for most of it — advisory,
+shown at the gate beside the measured figure. An SR that no returned pair lists
+is `fix-failed`; the reason belongs in `notes`.
 
-## SR ids and registry identity
+## SR ids and anchors (one run)
 
-- SR ids are assigned once per issue, in discovery order (panel order as
-  logged, then each reviewer's own output order), reused on reappearance;
-  a later run continues at max+1.
-- Location anchor: nearest enclosing `##` heading slug (GitHub-style:
-  lowercase, spaces→hyphens, punctuation stripped; duplicates get `-2`, `-3`).
+- SR ids are assigned once per registry entry, in discovery order: panel order
+  as logged, then each reviewer's own output order; fix-induced findings from the
+  verifier take the next ids. Every run starts at SR-001. Ids are never reused
+  across runs — there is no registry to continue.
+- Location anchor: nearest enclosing `##` heading slug (GitHub-style: lowercase,
+  spaces→hyphens, punctuation stripped; duplicates get `-2`, `-3`).
   Pre-first-heading content → `__preamble__`; locationless/document-level →
   `__document__`; cross-section → first-cited section's slug, **with the other
-  section named in the canonical phrase** (without it, two cross-section
-  findings sharing a first-cited heading can false-merge).
-- Stored key: `sha256(slug + "|" + canonical-phrase)` where the canonical
-  phrase is an orchestrator-derived ≤10-word identity phrase (the original
-  description is never replaced). Matching (within and across rounds) is slug
-  equality + an orchestrator yes/no equivalence judgment, logged.
-- Within-round duplicates merge to one entry at maximum severity; the entry
-  records all contributing lenses.
+  section named in the canonical phrase** (without it, two cross-section findings
+  sharing a first-cited heading can false-merge).
+- Canonical phrase: an orchestrator-derived ≤10-word identity phrase; the
+  original description is never replaced.
+- Duplicate matching is within the panel only: slug equality plus an
+  orchestrator yes/no equivalence judgment, logged in the report. Duplicates merge
+  to one entry at maximum severity, recording every contributing lens.
 
-## Sidecar
+## Markers
 
-Path: `docs/superpowers/specs/reviews/<spec>-review.state.json`
-(`<spec>` = target basename without `.md`). Written after every round and
-after every fix application.
-
-```json
-{
-  "spec_path": "docs/superpowers/specs/<spec>.md",
-  "last_written_hash": "<sha256 of the spec as last written by the loop>",
-  "status": "in-progress",
-  "run": 1,
-  "iterations_used": 0,
-  "dispatches_used": 0,
-  "active_seconds": 0,
-  "decisions": {"SR-003": {"decision": "accepted|keep-as-is|declined", "edit": {"old": "", "new": ""}}},
-  "registry": [
-    {"sr_id": "SR-001", "slug": "loop-algorithm", "phrase": "…", "key": "…",
-     "severity": "major", "lenses": ["completeness"], "needs_decision": false,
-     "unlanded": true, "unconfirmed": false, "fix_failures": 1}
-  ],
-  "rounds": [
-    {"round": 1, "panel": ["internal-consistency", "…"], "panel_rationale": "…",
-     "units": ["…"],
-     "findings": [{"sr_id": "SR-001", "severity": "major",
-                   "lenses": ["completeness"], "outcome": "applied"}],
-     "rejected": [{"lens": "internal-consistency", "candidate": "…"}],
-     "equivalence_log": [{"a": "SR-001", "b": "SR-004", "match": true}]}
-  ]
-}
-```
-
-Round findings carry their **round-local** severity and lens set: both are
-mutable across rounds, so back-filling them from the registry would render an
-early round with a later round's escalated severity and erase the trajectory
-the report exists to show.
-
-`rejected` holds every reviewer's self-falsified candidates verbatim, one entry
-per candidate. It is written every round and rendered in the report: a
-fresh-panel loop re-derives the same ghosts by design, and dropping the list is
-the very "silent drop" every reviewer is forbidden to perform.
-
-`decisions.edit` preserves the exact pair for accepted decisions (including
-user-supplied alternatives) so replay never re-derives a fix — **unless the
-entry is an unlanded fix**, in which case the stored pair is known not to match
-and the fixer re-derives an equivalent edit preserving the decided `new` text.
-
-Registry flags `unlanded` / `unconfirmed` / `fix_failures` are **per-entry loop
-state, not per-round outcomes** — they persist across rounds, across a resume,
-and across a new run on an edited spec, together with the registry entry itself.
-`unlanded` is cleared by exactly four events: a successful apply, an `obsolete`
-verdict, a user `declined` at the batch gate, or a stale-drop in the tamper flow
-(the entry's heading slug no longer exists). `unconfirmed` is cleared only by a
-returned challenger verdict. **A stale-drop that discards unfinished work is
-reported** — under Coverage, naming the SR ids and what was outstanding — since
-the loop is vacating a promise it cannot keep, not fulfilling it.
+- `re-derive` — the pair never landed (mismatch, no pair, or fixer failure). The
+  fixer derives a fresh pair against the current text; a decided `new` text is
+  preserved.
+- `re-fix` — the batch A edit landed and the verifier judged the defect
+  unresolved (or omitted the SR). `old` targets the applied text and the fix
+  must change it. For a user-decided entry this is a new decision: the fixer may
+  depart from the decided text; in default mode the approve gate shows the
+  departure, in `--no-approve` the entry is re-asked before the fixer runs.
 
 ## Outcome enum (exhaustive — every emitted finding gets exactly one)
 
-`applied` · `applied (not re-reviewed)` (final permitted round, under
-STOPPED(budget)) · `fix-failed` (a batched fix did not land — pair mismatch, no
-pair returned, or fixer failure → registry flag `unlanded: true`, `fix_failures`
-incremented. **At any severity, minor and nit included**, an unlanded fix closes
-every convergence exit, is never re-challenged or refuted, and is never settled
-by a user decision it carries; it is re-batched with a **re-derived** pair, and
-is cleared only by a successful apply. `fix_failures` gates the retry only: at
-≤ 1 Step 5 excludes it from the no-progress comparison so the retry can run; at
-≥ 2 — the re-derived pair failed too — it stays in the comparison, so an
-unlandable fix stops the run as `STOPPED(no-progress)` instead of consuming the
-iteration cap) · `obsolete` (the fresh panel no longer finds the entry **and**
-the fixer reports its target text is gone — the defect is fixed, not unfixed;
-the only vacate path for `unlanded`, never a way to retire a failed fix)
-· `refuted` · `unconfirmed` (challenger failed
-twice, or was never dispatched at a budget stop; registry flag
-`unconfirmed: true`; blocks convergence as its own condition; never treated as
-refuted; excluded from the no-progress comparison; **re-dispatched every
-following round until a verdict returns**) · `confirmed (not fixed
-— stopped)` (significant findings **and unlanded fixes of any severity** of a
-round that ends at **any** stop — oscillation, no-progress, budget,
-pending-decisions, user-declined, interaction-unavailable, or external-edit —
-whether it ends before or during its fix phase) · `reported-only` (sub-major
-needs-decision, and any minor/nit of a round that ends before **or during** its
-fix phase without being batched — **never an unlanded fix**, which was promised,
-not merely reported) ·
-`accepted-risk` (user keep-as-is) · `pending-decision` (`--auto` skip — always,
-including in the round that triggers STOPPED(pending-decisions)) · `declined`
-(user-declined at the batch gate; sticky; clears `unlanded` — a conscious
-withdrawal, reported under Declined).
-
-**Exhaustiveness rule.** Every emitted finding takes exactly one outcome on
-every reachable path. When a round ends at a stop, each entry takes the outcome
-its state implies — significant or unlanded → `confirmed (not fixed — stopped)`;
-`--auto`-skipped → `pending-decision`; everything else minor/nit →
-`reported-only`. An entry with an `accepted` decision **whose fix has landed**
-is not exempt from a later round's adjudication: if a fresh panel re-finds it,
-it is a normal finding again (challenger, significance, outcome) — the decision
-settled *which* fix, not *whether* the defect exists.
-
-**Unfinished work blocks success.** Convergence (Step 6 and Step 8.6) requires
-all three: zero significant findings, **zero unlanded fixes**, **zero
-`unconfirmed` entries**. The latter two are checked as their own conditions, not
-as filters on the significant set — a minor/nit is never in that set, and an
-`unconfirmed` entry survived no refutation, so folding either into the
-significance test lets the loop converge green over an unlanded fix or an
-unadjudicated major. No decision rule removes either. A loop that reports
-`CONVERGED` while one is outstanding is reporting a fix that does not exist.
+`applied` (a batch A edit landed) · `applied (not re-reviewed)` (a batch B edit
+landed, or a batch A edit landed and no verifier read it) · `fix-failed` (a
+batched fix did not land — pair mismatch, no pair, or fixer failure; after batch
+B it stays and makes the run incomplete) · `refuted` (a critical a challenger
+refuted) · `reported-only` (minors and nits, and sub-major needs-decision
+entries — never batched) · `accepted-risk` (user chose keep-as-is) ·
+`pending-decision` (`--auto` skipped a needs-decision entry) · `declined` (user
+deselected the group at the gate) · `confirmed (not fixed — stopped)` (a major+
+entry a stop left unfixed, including a verifier-unresolved batch A entry whose
+batch B never ran — its Residuals line says the edit did land).
 
 ## Terminal statuses
 
-`CONVERGED` · `CONVERGED (low-confidence)` · `STOPPED(budget | no-progress |
-oscillation | pending-decisions | user-declined | interaction-unavailable |
-external-edit)`. A stop is never reported as success. Every verdict is
-advisory: report "Re-reviewed (advisory)", never "Verified".
+`TRIAGED` · `TRIAGED (incomplete)` ·
+`STOPPED(user-declined | budget | interaction-unavailable | external-edit)`.
+`TRIAGED (incomplete)` is set by any of: a lens not returned, a verifier that was
+dispatched and did not return after its retry (a skipped Stage 4 is not such a
+case), a `fix-failed` entry after batch B, a `pending-decision` entry. A stop is
+never success. Every verdict is advisory.
 
-## Report skeleton
+## Report header and skeleton
 
-Path: `docs/superpowers/specs/reviews/<spec>-review.md`.
+Path: `docs/superpowers/specs/reviews/<spec>-review.md`. Re-run detection reads
+the `post-loop` hash line, so both hash lines are mandatory and verbatim.
 
 ```markdown
-# Spec-review loop report — <spec>.md
-**Run / Mode / Budgets used / Terminal status / Verdict label**
-## Round N — panel, units
-| SR | severity | lenses | outcome |
+# Spec-review report — <spec>.md
+**Mode:** default | --no-approve | --auto · **Budgets used:** <D> of <max> dispatches, <S> of <budget> active seconds · **Terminal status:** `<status>` · **Verdict label:** <label>
+**Spec hash (pre-loop):** <sha256>
+**Spec hash (post-loop):** <sha256>
+**Spec lines:** <before> → <after>
+## Panel — lenses, units
+| SR | severity | lenses | needs-decision | outcome |
+## Critical challengers
+| SR | verdict | note |
+## Verification of batch A
+| SR | resolved | reason |
+Fix-induced findings: | SR | severity | introduced by | outcome |
+## Residuals
+- confirmed (not fixed — stopped) · fix-failed · pending-decision · declined · accepted-risk · applied (not re-reviewed) · reported-only
+- Ordered most- to least-serious; `confirmed (not fixed — stopped)` and `fix-failed` entries carry their full description, not just an SR id.
 ## Coverage
-- Catalog lenses not selected this run: …
-- Not returned (failures, with reasons): …
-- Standing oracle blind spots: intent, external facts, unstated requirements.
-## Rejected by the panel (self-falsification)
-- Plain bullets, `- [lens] candidate — why it was refuted`; `None` when empty.
-  Never rendered as findings.
-## Accepted risks (user-decided)
-## Declined (user-decided)
+- Lenses not selected · not returned (with reasons) · standing blind spots (intent, external facts, unstated requirements)
+## Rejected by the panel and the verifier (self-falsification)
+- `- [lens] candidate — why it was refuted`; `None` when empty. Never rendered as findings.
 ## Residual risks
 ## Recovery
-- Loop-touched files + snapshot path (never `git restore` on the spec).
+- Loop-touched files, snapshot path; never `git restore` on the spec
 ```
-
-Shallow coverage (any selected lens failed to return) → WARNING in the report
-and `CONVERGED (low-confidence)` when the run converged.
