@@ -12,11 +12,13 @@ Usage: python3 plugins/superutils/tests/check_contract.py [--file KEY]
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins" / "superutils"
+VERSION = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
 
 FILES: dict[str, Path] = {
     "cmd": PLUGIN / "commands" / "spec-review.md",
@@ -65,20 +67,26 @@ REQUIRED: dict[str, list[str]] = {
         "re-derive", "re-fix", "fix-coherence", "Outcomes at a stop",
         "Re-reviewed (advisory)", "Not re-reviewed (verifier not returned)",
         "post-loop", "sr_ids", "Empty batch", "run<N>.bak", "| 20 |", "| 900 |",
+        "### Stage 0", "### Stage 1", "### Stage 2", "### Stage 3:",
+        "### Stage 4", "### Stage 3'", "### Stage 5",
+        "1. **Needs-decision gate.**", "8. **Record outcomes**",
+        "## Outcomes at a stop", "## Terminalization",
     ],
     "cat": ["fix-coherence", "does not arbitrate", "No cap"],
     "fmt": OUTCOMES + STATUSES + [
         "sr_ids", '"growth"', "fix_induced", "introduced_by", '"resolved"',
         "post-loop", "Panel reviewers never emit SR ids", "SR-001",
         "re-derive", "re-fix",
+        "## Outcome enum (exhaustive", "## Terminal statuses",
     ],
-    "rev": ["fix-coherence", "echo"],
-    "chl": ["critical"],
+    # "echoes the SR ids" as the agent file hard-wraps it.
+    "rev": ["fix-coherence", "echoes the\n  SR ids", "Never read the pipeline's own state"],
+    "chl": ["exactly one critical finding", "Majors are never sent to you"],
     "fix": ["sr_ids", "growth", "re-derive", "re-fix", "Rewrite before append"],
-    "acc": ["`TRIAGED`"],
-    "doc": FLAGS + STATUSES + ["**Version:** 2.0.0", "Honest limits", "| 20 |", "| 900 |"],
-    "wf": ["`TRIAGED`"],
-    "readme": ["2.0.0", "triage"],
+    "acc": ["`TRIAGED`", "not `TRIAGED (incomplete)`"],
+    "doc": FLAGS + STATUSES + [f"**Version:** {VERSION}", "Honest limits", "| 20 |", "| 900 |"],
+    "wf": ["`TRIAGED`", "triage pipeline", "nothing repeats"],
+    "readme": [f"| {VERSION} |", "triage"],
 }
 
 FORBIDDEN: dict[str, list[str]] = {key: list(DELETED) for key in FILES}
@@ -88,7 +96,7 @@ for key in ("fmt", "rev", "chl", "fix", "acc", "wf"):
 # no-progress, oscillation and the durable sidecar); that copy is untouched by design,
 # so only the catalog's own panel-selection prose is checked for the sidecar.
 FORBIDDEN["cat"] = [tok for tok in DELETED if tok not in ("no-progress", "oscillation")]
-FORBIDDEN["cat"] += ["Cap at 6", "logged in the sidecar"]
+FORBIDDEN["cat"] += ["Cap at 6", "rationale in the sidecar"]
 FORBIDDEN["readme"] += ["sidecar", "convergence", "quorum"]
 
 

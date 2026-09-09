@@ -51,8 +51,8 @@ still cheap to fix.
 ```
 
 Runs a fixed triage pipeline on the newest spec (lens panel → challengers
-for criticals → one approve-gated fix batch → verification of the applied
-edits → one final batch). One pass; nothing repeats.
+for criticals → an approve-gated fix batch → verification of the applied
+edits → a second approve-gated batch). One pass; nothing repeats.
 
 **Artifact:** report and pre-loop snapshot in
 `docs/superpowers/specs/reviews/`; terminal status `TRIAGED`

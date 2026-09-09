@@ -1,6 +1,6 @@
 ---
 name: lens-catalog
-description: Lens roster, panel-selection rules, and severity/needs-decision anchors for the /superutils:spec-review loop. Load when composing a review panel or grading findings.
+description: Lens roster, panel-selection rules, and severity/needs-decision anchors for the /superutils:spec-review triage pipeline. Load when composing a review panel or grading findings.
 ---
 
 # Lens Catalog
@@ -127,7 +127,7 @@ is the verifier shape in the spec-report-format skill.
    `doctrine-compliance` + `feasibility`; UI/screens/flows → `ux`;
    API/schema/format → `contracts`.
 4. **Floor at 3:** if rules 1–3 yield fewer than 3 lenses (a short spec with no
-   content trigger), add `completeness`, then `feasibility`, until the panel
+   content trigger), add `feasibility`, then `completeness`, until the panel
    reaches 3. The panel is never smaller than 3.
 5. No cap: the roster is the ceiling. Log the selected ids and one-line rationale in the report.
 

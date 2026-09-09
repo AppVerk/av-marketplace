@@ -45,7 +45,7 @@ budget (done twice in the needs-decision run) bought more of the same.
 
 | Question | Decision |
 |---|---|
-| What does "done" mean? | Bounded triage: one panel, one fix batch, one verification of the edits, one final batch. No fresh-panel convergence. |
+| What does "done" mean? | Bounded triage: one panel, one fix batch, one verification of the edits, a second approve-gated batch. No fresh-panel convergence. |
 | Challengers | Criticals only, one per finding. Majors go to the batch on panel argument plus self-falsification. |
 | Reviewer model | Opus, unchanged. Savings come from the pipeline shape, not the model. |
 | Relationship to the current command | Replace in place. No flag, no second command. Breaking change → superutils 2.0.0. |
@@ -137,7 +137,8 @@ Skipped when batch A applied nothing; batch B's input is then batch A's `fix-fai
 entries with `re-derive`, and nothing else.
 
 Write two files to the session scratchpad: the unified diff of batch A (spec before →
-after) and the SR list of batch A (id, severity and description only — the reviewer's
+after) and the SR list of batch A — the SRs whose edits landed, never a declined,
+fix-failed or accepted-risk entry — (id, severity and description only — the reviewer's
 `proposed_fix` and the fixer's pairs are withheld, so the verifier judges whether the
 defect is resolved rather than whether the edit matches a suggestion the fixer also
 held; the applied text is visible in the diff). Dispatch one `superutils:spec-reviewer`
@@ -152,10 +153,10 @@ both paths in addition to the spec path. Its mandate (§6, lens catalog):
   or a dangling reference that was not there before → findings tagged
   `fix_induced: true`, each naming the SR ids whose edits introduced it.
 
-`resolved` must carry exactly one entry per SR of batch A. The orchestrator checks the
-id set; a batch A SR missing from it is treated as unresolved (fail closed — uncertainty
-never resolves), enters batch B marked `re-fix`, and the omission is noted under
-Coverage.
+`resolved` must carry exactly one entry per landed SR of batch A. The orchestrator
+checks the id set; a batch A SR missing from it is treated as unresolved (fail closed —
+uncertainty never resolves), enters batch B marked `re-fix`, and the omission is noted
+under Coverage.
 
 Fix-induced findings receive the next SR ids. The verifier's `rejected` list is recorded
 verbatim alongside the panel's, labelled with the `fix-coherence` lens id. The verifier
@@ -232,9 +233,9 @@ and return — the fixer is never dispatched with an empty batch.
    ids, the highest severity in the group, each finding's canonical phrase, and the
    group's net line delta. Deselected groups → `declined`; deselecting every group is a decline of
    the whole batch → `STOPPED(user-declined)`, exactly as the explicit third option.
-   `--no-approve` / `--auto`: apply immediately, then print the same diff. In batch B
-   the gate prompt states "these edits are applied without further verification" above
-   the diff.
+   `--no-approve` / `--auto`: no gate — every group counts as approved; step 7 applies,
+   then print the same diff. In batch B the gate prompt states "these edits are applied
+   without further verification" above the diff.
 7. **Re-hash** (the gate is an unbounded human wait; this check guards the write), then
    take the snapshot if not yet taken, then apply approved pairs to the spec with
    `Edit`. Outcome per landed SR: `applied` in batch A, `applied (not re-reviewed)` in
@@ -243,7 +244,7 @@ and return — the fixer is never dispatched with an empty batch.
 
 ## 6. Components
 
-### `commands/spec-review.md` — rewritten (target ≈130 lines)
+### `commands/spec-review.md` — rewritten (≈320 lines: the whole contract, tables included)
 
 Frontmatter: `argument-hint` loses `--max-iterations`, and `description` is rewritten to
 the triage shape (lens panel → critical challengers → fix batch → verification of the
@@ -428,9 +429,11 @@ success.
 ## Verification of batch A
 | SR | resolved | reason |
 Fix-induced findings: | SR | severity | introduced by | outcome |
+## Decisions
+| SR | decision | edit text (verbatim) |
 ## Residuals
 - confirmed (not fixed — stopped) · fix-failed · pending-decision · declined · accepted-risk · applied (not re-reviewed) · reported-only
-- Ordered most- to least-serious; `confirmed (not fixed — stopped)` and `fix-failed` entries carry their full description, not just an SR id.
+- Ordered most- to least-serious; `confirmed (not fixed — stopped)` and `fix-failed` entries carry their full description, not just an SR id, and a `fix-failed` entry quotes the fixer's `notes` reason.
 ## Coverage
 - Lenses not selected · not returned (with reasons) · standing blind spots (intent, external facts, unstated requirements)
 ## Rejected by the panel and the verifier (self-falsification)
@@ -460,6 +463,9 @@ Fix-induced findings: | SR | severity | introduced by | outcome |
   four edit groups; `--time-budget` does not count that time.
 - Item 4 is not met: headless detection is best-effort (no TTY probe); the loop fails
   closed rather than probing.
+- Budget ceiling: with the full seven-lens roster and the ×2 retry headroom, seven or
+  more criticals stop the run as `STOPPED(budget)` before batch A; the docs tell the
+  user to raise `--max-dispatches` for a defect-rich spec.
 
 ## 11. Testing
 

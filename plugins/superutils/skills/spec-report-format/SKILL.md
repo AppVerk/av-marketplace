@@ -41,10 +41,12 @@ orchestrator-owned; the fix-coherence verifier echoes only the ids it was given.
  "rejected": ["<one line per self-falsified candidate>"]}
 ```
 
-`resolved` carries exactly one entry per SR of batch A, judged against the SR
-description alone (the verifier never holds a proposed fix). The orchestrator
-checks the id set: a batch A SR missing from it is treated as unresolved and
-enters batch B marked `re-fix`, and the omission is noted under Coverage.
+`resolved` carries exactly one entry per landed SR of batch A (`applied`);
+declined, fix-failed and accepted-risk entries are never in the list, judged
+against the SR description alone (the verifier never holds a proposed fix). The
+orchestrator checks the id set: a batch A SR missing from it is treated as
+unresolved and enters batch B marked `re-fix`, and the omission is noted under
+Coverage.
 `findings` are the defects the edits introduced; each names the SR ids whose
 edits introduced it. The verifier's `rejected` list is recorded like a panel
 reviewer's, labelled with the `fix-coherence` lens id.
@@ -133,9 +135,11 @@ the `post-loop` hash line, so both hash lines are mandatory and verbatim.
 ## Verification of batch A
 | SR | resolved | reason |
 Fix-induced findings: | SR | severity | introduced by | outcome |
+## Decisions
+| SR | decision | edit text (verbatim) |
 ## Residuals
 - confirmed (not fixed — stopped) · fix-failed · pending-decision · declined · accepted-risk · applied (not re-reviewed) · reported-only
-- Ordered most- to least-serious; `confirmed (not fixed — stopped)` and `fix-failed` entries carry their full description, not just an SR id.
+- Ordered most- to least-serious; `confirmed (not fixed — stopped)` and `fix-failed` entries carry their full description, not just an SR id, and a `fix-failed` entry quotes the fixer's `notes` reason.
 ## Coverage
 - Lenses not selected · not returned (with reasons) · standing blind spots (intent, external facts, unstated requirements)
 ## Rejected by the panel and the verifier (self-falsification)

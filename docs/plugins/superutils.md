@@ -30,7 +30,7 @@ batch B (unresolved and fix-induced findings, same gate) → report.
 /superutils:spec-review --no-approve
 
 # Headless; needs-decision findings skipped, never auto-decided
-/superutils:spec-review --auto --max-dispatches 12
+/superutils:spec-review --auto --max-dispatches 16
 ```
 
 | Flag | Default | Meaning |
@@ -43,21 +43,26 @@ batch B (unresolved and fix-induced findings, same gate) → report.
 
 A typical run costs 8–12 dispatches: five to seven reviewers, a challenger per
 critical, two fixers, one verifier. There is no iteration flag — the pipeline's
-shape bounds it.
+shape bounds it. The stage check reserves double the planned dispatches as retry
+headroom, so a budget must exceed roughly `2 × panel + 2 × criticals + 6`; with
+the full seven-lens roster the default 20 stops the run before batch A once seven
+or more criticals are found — raise `--max-dispatches` for a defect-rich spec.
 
 **Terminal statuses:** `TRIAGED` · `TRIAGED (incomplete)` ·
 `STOPPED(user-declined | budget | interaction-unavailable | external-edit)` — a
-stop is never success. The report lands in `docs/superpowers/specs/reviews/`
-beside a pre-loop snapshot of the spec; the pipeline never commits.
+stop is never success. The report lands in `docs/superpowers/specs/reviews/`,
+beside a pre-loop snapshot of the spec once any edit has landed; the pipeline
+never commits.
 
 **`TRIAGED` means the pipeline ran to the end and every fix it batched landed.**
 It does not mean a fresh panel would find nothing: minors and nits are reported,
 not fixed, and batch B's edits are applied without further verification (their
 outcome says so: `applied (not re-reviewed)`). `TRIAGED (incomplete)` means
-something the pipeline owed did not land or return — a lens or the verifier did
-not come back, a fix failed twice, or a needs-decision entry was skipped under
-`--auto` — and the report names it. Residuals are ordered most- to
-least-serious, with `confirmed (not fixed — stopped)` and `fix-failed` first.
+something the pipeline owed did not land or return — a lens or a dispatched
+verifier did not come back, a fix did not land by the end of batch B, or a
+needs-decision entry was skipped under `--auto` — and the report names it.
+Residuals are ordered most- to least-serious, with `confirmed (not fixed —
+stopped)` and `fix-failed` first.
 
 **Re-running (the report is the durable state):**
 
@@ -87,6 +92,9 @@ least-serious, with `confirmed (not fixed — stopped)` and `fix-failed` first.
   needs-decision finding (four per call), one approve gate per batch, and one
   page per four edit groups only if you choose to approve a subset.
 - The dispatch cap doubles as the cost ceiling; there is no token budget.
+- With the full seven-lens roster, seven or more critical findings exhaust the
+  default dispatch budget before any fix is attempted; raise `--max-dispatches`
+  for a defect-rich spec.
 - Spec growth is measured and shown at the gate (`+N lines (+P%)`), not limited.
 - **The acceptance protocol (`plugins/superutils/tests/ACCEPTANCE.md`) has not
   been run against 2.0.0.** Treat the first real run as the actual test.

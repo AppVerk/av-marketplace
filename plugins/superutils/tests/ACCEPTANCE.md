@@ -19,8 +19,8 @@ default mode with this answer script:
 
 ## Pass condition (per run)
 
-Terminal status `TRIAGED` (not `TRIAGED (incomplete)`) within default budgets AND all three post-run
-content predicates hold on the final fixture file:
+Terminal status `TRIAGED` (not `TRIAGED (incomplete)`) within default budgets
+AND all three post-run content predicates hold on the final fixture file:
 
 1. **Contradiction seed:** the Delivery-rules / Batching / 60-second claims
    no longer conflict (one consistent policy remains).
