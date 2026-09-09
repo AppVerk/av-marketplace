@@ -5,9 +5,10 @@ description: Lens roster, panel-selection rules, and severity/needs-decision anc
 
 # Lens Catalog
 
-A lens is one reviewer's single perspective. The orchestrator selects 3–6
-lenses per round; the two core lenses are always on. Panel composition and
-selection rationale are logged in the sidecar every round.
+A lens is one reviewer's single perspective. The orchestrator dispatches every
+panel lens the selection rules name — there is no cap — and the two core lenses
+are always on. Panel composition and rationale are logged in the report. One
+lens, `fix-coherence`, is never on a panel: it verifies a fix batch.
 
 ## Roster (v1)
 
@@ -106,6 +107,18 @@ with UI/UX surface.
 Mandate: API shapes, schemas, data contracts, versioning/compatibility.
 Select only for specs defining external interfaces or data formats.
 
+### Lens: fix-coherence (verification only — never selected for a panel)
+Mandate: given the spec, the unified diff of the applied batch, and the batch's
+SR list (id, severity, description — no proposed fix), answer two questions.
+(1) Per SR: judged against the SR description alone, does the spec as edited
+still exhibit the defect → `resolved: true|false` with a reason. How the edit
+was made is never a ground for `false`; an edit that removes the defect by any
+means is `resolved: true`. (2) Do the edits, read against the whole spec,
+introduce a contradiction, an ambiguity, or a dangling reference that was not
+there before → findings tagged `fix_induced: true`, each naming the SR ids whose
+edits introduced it. Out of mandate: any defect the batch did not touch. Output
+is the verifier shape in the spec-report-format skill.
+
 ## Panel selection
 
 1. Always include both core lenses.
@@ -116,14 +129,16 @@ Select only for specs defining external interfaces or data formats.
 4. **Floor at 3:** if rules 1–3 yield fewer than 3 lenses (a short spec with no
    content trigger), add `completeness`, then `feasibility`, until the panel
    reaches 3. The panel is never smaller than 3.
-5. Cap at 6. Log the selected ids and one-line rationale in the sidecar.
+5. No cap: the roster is the ceiling. Log the selected ids and one-line rationale in the report.
 
 ## Severity anchors (shared by reviewers and challengers)
 
 - **critical** — the spec self-contradicts or a compliant implementation
   would violate a stated invariant.
 - **major** — two competent implementers would build observably different
-  load-bearing behavior.
+  load-bearing behavior, **and the spec's own text does not arbitrate between
+  the readings**. When another passage settles it, the defect is a
+  cross-reference gap: minor.
 - **minor** — divergence with low blast radius.
 - **nit** — wording/format only.
 
