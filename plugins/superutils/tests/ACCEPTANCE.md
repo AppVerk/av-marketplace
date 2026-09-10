@@ -43,8 +43,9 @@ document, so use one from the project you are working in. Pass = a valid
 terminal status within default budgets and a report conforming to
 `superutils:spec-report-format`, with both hash lines present.
 
-**Isolate it — the loop edits its target in place.** The working-tree gate now
-names a clean tracked target and asks before proceeding (and aborts under
-`--auto` unless `--allow-dirty`), but confirming it still rewrites a committed
-document. Run it on a scratch branch and discard that branch afterwards (or
-`git restore` the spec once the report is captured).
+**Isolate it — the loop edits its target in place.** The working-tree gate
+names a clean tracked target and asks before proceeding (under `--auto` it
+passes a target you named and stops a bare invocation unless `--allow-dirty`),
+but confirming it still rewrites a committed document. Run it on a scratch
+branch and discard that branch afterwards (or `git restore` the spec once the
+report is captured).

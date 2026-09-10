@@ -34,7 +34,7 @@ external facts, or unstated requirements. Every verdict is advisory — never
 | `<path>` | The target spec | — | Must be a `.md` file directly in `docs/superpowers/specs/`; anything else → out-of-scope error, all modes |
 | `--no-approve` | Skip the approve gate; apply + print the full diff | (off) | Valueless; needs-decision questions still asked |
 | `--auto` | Headless: no interaction at all; implies `--no-approve` | (off) | Needs-decision entries skipped → `pending-decision`; an unchanged-spec re-run exits |
-| `--allow-dirty` | Bypass the working-tree gate, including a committed (tracked, clean) target | (off) | Valueless |
+| `--allow-dirty` | Bypass the working-tree gate: a dirty or untracked target, or a committed target a bare invocation resolved to | (off) | Valueless |
 | `--max-dispatches` | Subagent-launch cap (reviewers + challengers + fixers + verifier; retries count) | 20 | Positive integer, else error + stop |
 | `--time-budget` | Active seconds (user waits excluded) | 900 | Positive integer, else error + stop |
 
@@ -102,12 +102,15 @@ committed clean one, and only `git ls-files` tells them apart.
 | Probe result | Target | Action |
 |---|---|---|
 | `git status` non-empty | Dirty or untracked | `--auto` → abort unless `--allow-dirty`; interactive → warn and confirm via AskUserQuestion (proceed / abort) |
-| `git status` empty, `git ls-files` prints the path | Tracked and clean — a committed file this run edits in place | `--auto` → abort unless `--allow-dirty`; interactive → AskUserQuestion naming the path: "Target `<path>` is a committed file; this run edits it in place — proceed / abort" |
+| `git status` empty, `git ls-files` prints the path | Tracked and clean — a committed file this run edits in place | Explicit `<path>` under `--auto` → pass (the caller named the file, and git holds its history); bare invocation under `--auto` → abort unless `--allow-dirty`; interactive → AskUserQuestion naming the path: "Target `<path>` is a committed file; this run edits it in place — proceed / abort" |
 | `git status` empty, `git ls-files` silent | Gitignored, or outside any repository | Pass |
 
 The second row is the common case, not an edge case: in any repository that
 keeps its specs committed under `docs/superpowers/specs/` — this plugin's own
-included — a bare invocation resolves to a tracked, clean file.
+included — a bare invocation resolves to a tracked, clean file. The hazard the
+row guards is surprise, not loss (git holds the committed content), so it bites
+only where the target was not named — resolved by mtime rather than passed. A
+caller who gave the path has already said which file the run edits.
 
 #### 0.4 Hash pin and re-run detection
 

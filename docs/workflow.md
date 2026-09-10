@@ -54,6 +54,13 @@ Runs a fixed triage pipeline on the newest spec (lens panel → challengers
 for criticals → an approve-gated fix batch → verification of the applied
 edits → a second approve-gated batch). One pass; nothing repeats.
 
+Two things the stage asks of you. When the resolved spec is a committed file
+it names it and asks before editing it in place — a bare `--auto` run stops
+there unless `--allow-dirty`, so name the spec to run headless. And every run
+leaves a pre-loop snapshot beside the report; snapshots and reports are
+working artifacts, not deliverables — prune them with the branch's other
+working artifacts before merge.
+
 **Artifact:** report and pre-loop snapshot in
 `docs/superpowers/specs/reviews/`; terminal status `TRIAGED`
 (`TRIAGED (incomplete)` when something the pipeline owed did not land or

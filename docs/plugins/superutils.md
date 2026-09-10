@@ -29,15 +29,16 @@ batch B (unresolved and fix-induced findings, same gate) → report.
 # Auto-apply with printed diffs; questions still asked
 /superutils:spec-review --no-approve
 
-# Headless; needs-decision findings skipped, never auto-decided
-/superutils:spec-review --auto --max-dispatches 16
+# Headless; needs-decision findings skipped, never auto-decided. Name the spec:
+# a bare headless run on a committed spec stops unless --allow-dirty
+/superutils:spec-review docs/superpowers/specs/2026-07-13-foo-design.md --auto --max-dispatches 16
 ```
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--no-approve` | off | Skip the approve gate; print the full diff after each batch |
 | `--auto` | off | Headless; implies `--no-approve` |
-| `--allow-dirty` | off | Bypass the working-tree gate, including a committed (tracked, clean) target |
+| `--allow-dirty` | off | Bypass the working-tree gate: a dirty or untracked target, or a committed target a bare invocation resolved to |
 | `--max-dispatches` | 20 | Subagent-launch cap (retries count) |
 | `--time-budget` | 900 | Active seconds (user waits excluded) |
 
@@ -93,7 +94,8 @@ stopped)` and `fix-failed` first.
   questions are asked again next run.
 - Human interaction cost is disclosed, not budgeted: one confirm per run when
   the resolved target is a committed file the run would edit in place (tracked
-  and clean — the usual case once specs are committed), at most one question
+  and clean — the usual case once specs are committed; under `--auto` a named
+  spec passes, a bare run stops unless `--allow-dirty`), at most one question
   per needs-decision finding (four per call), one approve gate per batch, and
   one page per four edit groups only if you choose to approve a subset.
 - The dispatch cap doubles as the cost ceiling; there is no token budget.
