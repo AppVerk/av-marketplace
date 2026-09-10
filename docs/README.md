@@ -13,6 +13,7 @@
 - [Python Developer](plugins/python-developer.md) — Python best practices, TDD, Django, Celery, FastAPI, async patterns
 - [QA](plugins/qa.md) — Automated QA testing: code-change analysis, FE/BE test plans, Playwright + API/DB execution, code-review-compatible reports
 - [Security Pipeline](plugins/security-pipeline.md) — CI/CD security scanning setup (Semgrep SAST + TruffleHog)
+- [Superutils](plugins/superutils.md) — Bounded spec triage: lens panel, challengers for criticals, approve-gated fix batches, verification of applied edits
 - [Web Auditor](plugins/web-auditor.md) — Comprehensive web audit: security, SEO, performance, compliance
 
 ## Contributing

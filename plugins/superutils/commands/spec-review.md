@@ -1,344 +1,362 @@
 ---
-allowed-tools: Bash(ls:*), Bash(stat:*), Bash(sort:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(echo:*), Bash(git status:*), Bash(git diff:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion, mcp__plugin_sequentialthinking_sequential-thinking__sequentialthinking
-description: Closed spec-review loop — MoA lens panel, challenger quorum, needs-decision gate, fix batch behind an approve gate, fresh-panel convergence. For superpowers-produced design specs.
+allowed-tools: Bash(ls:*), Bash(stat:*), Bash(sort:*), Bash(head:*), Bash(mkdir:*), Bash(git status:*), Bash(git diff:*), Bash(git ls-files:*), Bash(shasum:*), Bash(cp:*), Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion, mcp__plugin_sequentialthinking_sequential-thinking__sequentialthinking
+description: Bounded spec triage — lens panel, challengers for criticals, an approve-gated fix batch, verification of the applied edits, a second approve-gated batch. For superpowers-produced design specs.
 model: opus
-argument-hint: [spec path] [--no-approve] [--auto] [--allow-dirty] [--max-iterations N] [--max-dispatches D] [--time-budget S]
+argument-hint: [spec path] [--no-approve] [--auto] [--allow-dirty] [--max-dispatches D] [--time-budget S]
 ---
 
-# Spec Review Loop Command
+# Spec Triage Command
 
-Run a closed review loop on a design spec from `docs/superpowers/specs/`:
-decompose → lens-panel review → challenger quorum → needs-decision gate →
-fix batch (approve-gated) → fresh-panel re-review, until convergence or a
-stop. **This file, with the two skills it loads, is the contract** — it is
-self-contained by design, so the loop behaves identically in a marketplace
-install, where no repo-internal design document ships.
+Run a fixed triage pipeline on a design spec from `docs/superpowers/specs/`:
+panel → critical challengers → batch A → verify the edits → batch B → report.
+Nothing repeats. **This file, with the two skills it loads, is the contract** —
+self-contained by design, so the pipeline behaves identically in a marketplace
+install.
 
-> **Doctrine:** this command implements the `qa:loop-engineering` bar. Load
-> the `superutils:lens-catalog` and `superutils:spec-report-format` skills
-> before Step 1 — they define the vocabulary this command uses.
+> **Doctrine:** this command implements the `qa:loop-engineering` bar as
+> disclosed in `docs/plugins/superutils.md` "Honest limits" (items 4 and 10 are
+> not met; item 9 applies and carries a residual). Load the
+> `superutils:lens-catalog` and `superutils:spec-report-format` skills before
+> Stage 1 — they define the vocabulary this command uses.
 
-**Oracle (soft, advisory):** panel verdict + challenger survival. It cannot
-verify user intent, external facts, or unstated requirements. Every verdict
-is "Re-reviewed (advisory)" — never "Verified".
+**Oracle (soft, advisory):** panel verdict, critical-challenger survival, and
+the `fix-coherence` verifier on the applied batch. It cannot verify user intent,
+external facts, or unstated requirements. Every verdict is advisory — never
+"Verified".
 
 ## Arguments
 
 **Input:** `$ARGUMENTS`
 
 | Argument | Interpretation | Default | Rules |
-|----------|---|---|---|
+|---|---|---|---|
 | (empty) | Newest `.md` by mtime in `docs/superpowers/specs/` (non-recursive; `reviews/` excluded) | — | No candidate, or a byte-equal-mtime tie for newest (per `stat`) → list and ask (interactive) / abort (`--auto`) — never guess |
 | `<path>` | The target spec | — | Must be a `.md` file directly in `docs/superpowers/specs/`; anything else → out-of-scope error, all modes |
-| `--no-approve` | Skip the batch-approve gate; auto-apply + print the full diff | (off) | Valueless flag; needs-decision questions still asked |
-| `--auto` | Headless: no interaction at all; implies `--no-approve` | (off) | Needs-decision findings skipped → `pending-decision` |
-| `--allow-dirty` | Bypass the working-tree gate | (off) | Valueless flag |
-| `--max-iterations` | Round cap | 3 | Positive integer, else error + stop |
-| `--max-dispatches` | Subagent-launch cap (reviewers + challengers + fixer; retries count) | 60 | Positive integer, else error + stop |
-| `--time-budget` | Active seconds (user-wait excluded) | 1800 | Positive integer, else error + stop |
+| `--no-approve` | Skip the approve gate; apply + print the full diff | (off) | Valueless; needs-decision questions still asked |
+| `--auto` | Headless: no interaction at all; implies `--no-approve` | (off) | Needs-decision entries skipped → `pending-decision`; an unchanged-spec re-run exits |
+| `--allow-dirty` | Bypass the working-tree gate: a dirty or untracked target, or a committed target a bare invocation resolved to | (off) | Valueless |
+| `--max-dispatches` | Subagent-launch cap (reviewers + challengers + fixers + verifier; retries count) | 20 | Positive integer, else error + stop |
+| `--time-budget` | Active seconds (user waits excluded) | 900 | Positive integer, else error + stop |
 
-All flags are validated before any I/O; exit on any validation error.
+There is no iteration flag: the pipeline's shape bounds iterations, and an
+unknown flag is a validation error. All flags are validated before any I/O.
 
-## Step 0: Resolve & Validate
+## Budgets
 
-### 0.1 Parse + headless check (fail-fast)
+**Stage budget rule (enforced at every stage boundary):** before dispatching a
+stage, check `dispatches_used + 2 × planned_stage_dispatches ≤ max_dispatches`
+(the ×2 is retry headroom) and active time < `--time-budget`. On failure →
+Terminalization as `STOPPED(budget)`; never cut within a dispatch phase.
 
-Parse flags per the table. Then: if the session is non-interactive and the
-mode is default or `--no-approve`, abort:
+## Pipeline
+
+Create progress tasks (TaskCreate): 1 Resolve · 2 Panel · 3 Challengers ·
+4 Batch A · 5 Verify · 6 Batch B · 7 Report. Update as the stages complete.
+
+### Stage 0: Resolve & gate
+
+#### 0.1 Parse + headless check (fail-fast)
+
+Parse flags per the table. If the session is non-interactive and the mode is
+default or `--no-approve`, abort:
 > Error: interactive modes require an interactive session. Use --auto.
 
 Session interactivity is model-judged and best-effort (no shell TTY probe
 exists — Bash stdin is never a TTY). If interactivity cannot be positively
 established, treat the session as non-interactive and abort — fail closed.
-**Runtime backstop (the fail-closed element):** in default/`--no-approve`
-modes, any AskUserQuestion failure mid-run aborts immediately as
-`STOPPED(interaction-unavailable)`, before any fix application in that round.
+**Runtime backstop:** in default/`--no-approve` modes, any AskUserQuestion
+failure mid-run aborts immediately as `STOPPED(interaction-unavailable)`, before
+any write of the pending batch; an earlier batch's edits stay, the snapshot
+recovers them.
 
-### 0.2 Resolve the target spec
+#### 0.2 Resolve the target spec
 
 Explicit path → validate scope (table above). No argument:
 
 ```bash
 ls -t docs/superpowers/specs/*.md 2>/dev/null | head -5
-# BSD stat; on GNU/Linux use: stat -c '%Y %n' … (the 2>/dev/null would otherwise hide the failure)
+# BSD stat; on GNU/Linux use: stat -c '%Y %n' …
 stat -f '%m %N' docs/superpowers/specs/*.md 2>/dev/null | sort -rn | head -5
 ```
 
 Newest by mtime wins; byte-equal top mtimes → AskUserQuestion with the tied
 files (interactive) or abort (`--auto`). Zero candidates → same ask/abort.
-Set `spec_path` = the resolved target file, `spec` = its basename without
-`.md`, and:
-`sidecar_path = docs/superpowers/specs/reviews/<spec>-review.state.json`,
+Set `spec_path` = the resolved file, `spec` = its basename without `.md`,
 `report_path = docs/superpowers/specs/reviews/<spec>-review.md`,
-`snapshot_path = docs/superpowers/specs/reviews/<spec>.pre-loop.bak`.
+`snapshot_path = docs/superpowers/specs/reviews/<spec>.pre-loop.run<N>.bak`
+(`N` = 1 + the number of such snapshots already present, counted exactly as the
+report archive counts its own). No sidecar is written: the report is the durable
+state.
 
-### 0.3 Working-tree gate (reused: /qa:loop Step 0.1.5 pattern)
+#### 0.3 Working-tree gate
 
 ```bash
 git status --porcelain -- "$spec_path"
+git ls-files -- "$spec_path"
 ```
 
-Dirty or untracked: `--auto` → abort unless `--allow-dirty`; interactive →
-warn and confirm via AskUserQuestion (proceed / abort). The snapshot (0.4)
-is the recovery guard either way.
+Both probes are needed: a non-empty `git status` means dirty or untracked, but an
+empty one is ambiguous — it describes a gitignored file exactly as it describes a
+committed clean one, and only `git ls-files` tells them apart.
 
-### 0.4 Sidecar lifecycle (idempotency)
+| Probe result | Target | Action |
+|---|---|---|
+| `git status` non-empty | Dirty or untracked | `--auto` → abort unless `--allow-dirty`; interactive → warn and confirm via AskUserQuestion (proceed / abort) |
+| `git status` empty, `git ls-files` prints the path | Tracked and clean — a committed file this run edits in place | Explicit `<path>` under `--auto` → pass (the caller named the file, and git holds its history); bare invocation under `--auto` → abort unless `--allow-dirty`; interactive → AskUserQuestion naming the path: "Target `<path>` is a committed file; this run edits it in place — proceed / abort" |
+| `git status` empty, `git ls-files` silent | Gitignored, or outside any repository | Pass |
 
-Hash the spec: `shasum -a 256 "$spec_path"`. Then, if the sidecar exists:
+The second row is the common case, not an edge case: in any repository that
+keeps its specs committed under `docs/superpowers/specs/` — this plugin's own
+included — a bare invocation resolves to a tracked, clean file. The hazard the
+row guards is surprise, not loss (git holds the committed content), so it bites
+only where the target was not named — resolved by mtime rather than passed. A
+caller who gave the path has already said which file the run edits.
 
-| Sidecar state | Action |
+#### 0.4 Hash pin and re-run detection
+
+`pinned_hash` = `shasum -a 256 "$spec_path"`. If `report_path` exists, read its
+`**Spec hash (post-loop):**` line:
+
+| Report state | Action |
 |---|---|
-| terminal status ∧ hash == `last_written_hash` | Print the prior report summary and exit — no dispatches |
-| `in-progress` | **Resume:** counters continue (never reset), recorded decisions replay without re-asking, snapshot is NOT retaken. Hash ≠ `last_written_hash` → tamper flow (0.5) first |
-| terminal status ∧ hash ≠ `last_written_hash` | **New run:** archive sidecar `rounds[]` + report to `.bak` under an incremented `run`; retake the snapshot; SR ids continue at max+1; carry the **whole registry** forward — entries with their `unlanded` / `unconfirmed` / `fix_failures` state (a new run does not forgive unfinished work) — plus `decisions` keyed by registry identity, revalidating each (its heading slug must still exist — stale ones dropped **with a report note naming any unfinished work discarded**) and replaying without re-asking |
+| No readable `post-loop` line (a pre-2.0.0 report, or one truncated by an interrupted run) | Treat as differing: archive and start fresh |
+| `post-loop` hash == `pinned_hash` | The spec is unchanged since the last triage. Interactive → AskUserQuestion *re-run / exit*; `--auto` → print the prior status line and exit, no dispatches |
+| Differing, or re-run chosen | Archive the report to `<spec>-review.run<N>.bak` (`N` = 1 + the number of such archives present) and start fresh |
 
-No sidecar → fresh run: `mkdir -p docs/superpowers/specs/reviews`, write the
-initial sidecar (schema: `superutils:spec-report-format` skill), pin
-`last_written_hash`. **Snapshot rule:** copy the spec to `snapshot_path`
-before the first fix application of a run, at most once per run.
+A `<spec>-review.state.json` beside the report is a pre-2.0.0 sidecar: archive
+it the same way (`<spec>-review.state.run<N>.bak`) and never read it. Every run
+starts fresh — SR ids restart at SR-001. `mkdir -p docs/superpowers/specs/reviews`.
 
-### 0.5 Tamper flow (also mid-run)
+**Snapshot rule.** Copy the spec to `snapshot_path` at the end of 0.4 — after
+the re-run/exit decision, before Stage 1 and before any tamper adopt (0.5) —
+exactly once per run, so the copy holds the spec as the run found it rather than
+as an adopted external edit left it. **Never overwrite an earlier run's
+snapshot:** git holds only committed history, and `--allow-dirty` (or an
+interactive dirty confirm) admits a spec whose pre-run content is committed
+nowhere — for those runs the snapshot is the only copy that exists. Every run
+that reaches Stage 1 leaves one, whether or not it goes on to edit; nothing
+prunes them.
 
-Re-hash at round start and immediately before each fix application. Mismatch
-vs `last_written_hash` = external edit. Interactive → AskUserQuestion:
-**adopt** (re-pin to current content; registry entries whose slug no longer
-exists are marked stale and excluded from matching) or **stop**
-(`STOPPED(external-edit)`). `--auto` → abort as `STOPPED(external-edit)`.
-The fixer-write→re-stamp window is non-atomic; a crash inside it surfaces
-here on resume — same choice applies.
+#### 0.5 Tamper flow
 
-## Workflow
+Re-hash immediately before each write (batch steps 3 and 7). A mismatch against
+`pinned_hash` is an external edit. Interactive → AskUserQuestion: **adopt**
+(re-pin to the current content) or **stop** (`STOPPED(external-edit)`).
+`--auto` → abort as `STOPPED(external-edit)`.
 
-Create progress tasks (TaskCreate): 1 Validate & resolve · 2 Round N/M ·
-3 Write report. Update as the loop proceeds.
+### Stage 1: Panel
 
-### Round r (repeat up to --max-iterations)
+Units = the spec's `##` headings (sequential-thinking tool when available, else
+inline; a `##` line inside a fenced code block is not a unit). Select lenses per
+`superutils:lens-catalog`: both core lenses; `completeness` unless the spec has
+fewer than three sections; content triggers; floor at 3; **no cap** — every lens
+the rules name is dispatched, the roster is the ceiling. Log the panel and
+rationale for the report.
 
-**Stage budget rule (enforced at every stage boundary below):** before
-dispatching a stage, check `dispatches_used + 2 × planned_stage_dispatches ≤
-max_dispatches` (the ×2 is retry headroom) and active time < budget. On
-failure → skip to Terminalization with `STOPPED(budget)`; never cut within a
-dispatch phase. Major+ entries whose challengers were never dispatched →
-`unconfirmed`.
+⟨stage budget check⟩ Dispatch one `superutils:spec-reviewer` Task per lens **in
+parallel**, prompt = lens id + mandate + spec path + unit list. A reviewer that
+fails or returns unparseable JSON is retried once; still failing → its lens goes
+to Coverage "not returned", print a WARNING, and the run ends
+`TRIAGED (incomplete)` unless it stops earlier.
 
-**1. Decompose & select panel.** Units = the spec's `##` headings (use the
-sequential-thinking tool when available, else inline). Select 3–6 lenses per
-`superutils:lens-catalog`; log panel + rationale + units to the sidecar.
+**Registry** (orchestrator context, written to the report): for each finding,
+anchor slug and canonical phrase per `superutils:spec-report-format`; match
+within the panel (slug equality + a logged equivalence judgment); merge
+duplicates at maximum severity recording all lenses; assign SR ids in discovery
+order (panel order as logged, then each reviewer's output order). Record every
+reviewer's `rejected` list verbatim.
 
-**2. Review fan-out.** ⟨stage budget check⟩ Dispatch one
-`superutils:spec-reviewer` Task per lens **in parallel**, prompt = lens id +
-mandate + spec path + unit list. A reviewer that fails or returns unparseable
-JSON is retried once; still failing → its lens goes to Coverage "not
-returned" and the round proceeds (shallow-coverage WARNING; a converged run
-becomes `CONVERGED (low-confidence)`).
+### Stage 2: Critical challengers
 
-**3. Registry.** For each finding: anchor slug (rules in
-`superutils:spec-report-format`), derive the canonical phrase, match
-semantically against the registry (within-round and cross-round; log every
-equivalence verdict), merge duplicates at max severity recording all lenses,
-assign SR ids in discovery order. Each reviewer's `rejected` list is recorded
-verbatim in the round record — never dropped.
+⟨stage budget check⟩ One `superutils:spec-challenger` per **critical** entry,
+in parallel; prompt = the entry (SR id, severity, every finder's description +
+proposed fix) + spec path. `refute` → outcome `refuted`, the entry leaves the
+batch. `uphold` → stays critical. Failure → one retry; still failing → the entry
+stays **upheld** with the report note "challenger not returned" — uncertainty
+never refutes.
+Majors receive no challenger.
 
-**Unfinished work (definition — the loop may never report success while any
-exists).** Two registry flags, both orthogonal to severity and to any user
-decision:
+### Stage 3: Batch A
 
-- **Unlanded fix** — `unlanded: true`, set when a batched fix does not land
-  (pair mismatch, no pair returned, *or* fixer failure), **at any severity,
-  minor and nit included** (minor/nit are batched without a challenger, so their
-  failures never pass through the significant set and would otherwise leak past
-  every convergence check). It is never re-challenged, never refuted, and the
-  decision filter never removes it: it was adjudicated once and promised.
-  **Cleared by exactly four events, all of them explicit:** a successful apply
-  (8.5); an `obsolete` verdict (below); a user `declined` at the batch gate (the
-  user consciously withdraws the fix — reported under Declined); or a stale-drop
-  in the tamper flow, whose anchor no longer exists (0.5) — **and a stale-drop
-  of unfinished work is reported as such, never silently vacated.** Nothing else
-  clears it.
-- **Unconfirmed** — `unconfirmed: true`, a major+ entry whose challenger never
-  returned. Never treated as refuted. **Every `unconfirmed` entry is
-  re-dispatched to a challenger in the next round — whether or not the fresh
-  panel re-found it** (budget permitting; if the budget stops the run first, the
-  status is a truthful `STOPPED(budget)`). The flag clears only when a
-  challenger returns a verdict. Without this re-dispatch rule the flag is a
-  one-way latch that makes convergence unreachable.
-- `fix_failures` counts failed attempts for an entry (0 initially; incremented
-  on **every** failed attempt *after* the fixer's one retry; reset to 0 whenever
-  the flag is cleared). It gates the retry, never the safety property.
-- **`obsolete`** (a vacate path, tightly gated): the fresh panel does not
-  re-find the entry **and** the fixer reports — in the structured `obsolete`
-  field of its output, not in prose — that the target text no longer exists (the
-  defect is already gone). Outcome `obsolete`, `unlanded` cleared. It may never
-  retire a fix that merely failed to apply; that is `fix-failed`.
+Input: every surviving critical and every major. Minors and nits go straight to
+the report as `reported-only`. Empty input → Stage 4 is skipped and batch B is
+empty; go to Stage 5. Otherwise run the batch procedure; a landed edit takes
+`applied`.
 
-**A decision settles *which* fix, not *whether* the defect exists.** An
-`accepted` decision suppresses re-*asking* (Step 7), never re-*finding*: once its
-fix is applied, the entry returns to normal adjudication — a fresh panel that
-re-finds it gets a challenger and, if upheld, a significant finding, exactly as
-if it were new (an accepted fix that landed but did not work must not be
-invisible to the loop that applied it). Only `keep-as-is` (`accepted-risk`) and
-`declined` are significance waivers.
+### Stage 4: Verify the edits
 
-**4. Challenger quorum.** ⟨stage budget check⟩ Skip challenger dispatch for
-entries already adjudicated: those whose decision is a significance waiver
-(`keep-as-is`, `declined`), and **every unlanded fix** — of any severity and
-regardless of its decision status. An unlanded fix is **never re-challenged and
-never refuted**; it re-enters this round's batch directly (and, if major+, the
-significant set). An entry whose `accepted` fix has already been applied is
-**not** skipped — a re-finding means the fix did not work. Dispatch per
-remaining major+ entry **in parallel** — including **every `unconfirmed` entry,
-re-dispatched whether or not this round's panel re-found it**:
-majors 1 × `superutils:spec-challenger`, criticals 2. Prompt = the entry (all
-finder descriptions + proposed fix) + spec path. Failure → one retry; still
-failing → `unconfirmed` (for a critical: `unconfirmed` if either challenger
-is missing, regardless of the other verdict). Verdicts: major upheld →
-significant; refuted → `refuted`. Critical: both uphold → significant; both
-refute → `refuted`; split → escalate to the gate as needs-decision (stays in
-the significant set until decided). **Significant = major+ ∧ survived
-refutation.**
+Skipped when batch A applied nothing (batch B's input is then batch A's
+`fix-failed` entries, marked `re-derive`, and nothing else). Otherwise write two
+files to the session scratchpad: the unified diff of batch A
+(`git diff --no-index <pre-batch copy> "$spec_path"`) and the SR list of batch A
+— **the SRs whose edits landed** (`applied`), never a `declined`, `fix-failed`
+or `accepted-risk` entry; **id, severity and description only**: the reviewer's
+`proposed_fix` and the fixer's pairs are withheld, so the verifier judges
+whether the defect is resolved rather than whether the edit matches a
+suggestion the fixer also held; the applied text is visible in the diff.
 
-**5. Stop evaluation (after quorum, before the gate)** — precedence:
-pending-decisions → oscillation → no-progress → budget.
-- *pending-decisions* (→ `STOPPED(pending-decisions)`): significant set non-empty and consists entirely of
-  `--auto`-skipped needs-decision entries.
-- *oscillation* (→ `STOPPED(oscillation)`): an entry fixed in round r−2 reappears in this round's
-  post-refutation significant set (sub-major reappearance: log only).
-- *no-progress* (→ `STOPPED(no-progress)`): comparison sets for this and the
-  previous round are identical. **Both sets are computed now, at evaluation
-  time**, with current flags and decisions applied retroactively to the previous
-  round's set (otherwise an entry excluded last round at `fix_failures ≤ 1` and
-  retained this round at `≥ 2` would make the sets differ, and the stop this
-  rule exists for could never fire). Each set = that round's post-refutation
-  significant entries **plus every unlanded fix, at any severity**, minus:
-  - entries user-decided or `--auto`-skipped **as of now** (decisions filter
-    retroactively) — **this filter never removes an unlanded fix**;
-  - `unconfirmed` entries (their challenger has yet to be re-dispatched);
-  - unlanded fixes with `fix_failures ≤ 1` (their re-derived retry has yet to
-    run — excluding them is precisely what lets Step 8 attempt it).
+⟨stage budget check⟩ Dispatch one `superutils:spec-reviewer` with lens
+`fix-coherence`, both paths, the spec path and the unit list. Its mandate (lens
+catalog): per SR, judged against the description alone, does the spec as edited
+still exhibit the defect → `resolved: true|false` with a reason; and do the edits
+introduce a contradiction, an ambiguity, or a dangling reference that was not
+there before → findings tagged `fix_induced: true` naming the SR ids whose edits
+introduced it.
 
-  An unlanded fix at `fix_failures ≥ 2` — the re-derived pair failed too —
-  **stays** in the set, so a fix that cannot land stops the loop here,
-  truthfully, instead of consuming the iteration cap. An empty comparison set
-  never triggers.
-- *budget* (→ `STOPPED(budget)`): the stage budget rule above already stopped
-  the round at a stage boundary; listed here for precedence only.
-A stop here skips gate+fix: significant findings **and unlanded fixes of any
-severity** → `confirmed (not fixed — stopped)` (except skipped needs-decision →
-`pending-decision`) — an unlanded fix was promised, not merely reported; the
-round's remaining minor/nit → `reported-only`.
+`resolved` must carry exactly one entry per landed SR of batch A: check the id
+set; a missing SR is treated as unresolved (fail closed), enters batch B marked
+`re-fix`, and the omission is noted under Coverage. Fix-induced findings take the
+next SR ids. Record the verifier's `rejected` list verbatim, labelled
+`fix-coherence`. Verifier failure → one retry; still failing → batch B is batch
+A's `fix-failed` entries only, every applied edit of batch A takes
+`applied (not re-reviewed)`, and the run ends `TRIAGED (incomplete)`.
 
-**6. Convergence check (before the gate).** CONVERGED requires **all three**:
-(a) zero significant findings after excluding entries user-decided in earlier
-rounds; **(b) zero unlanded fixes, at any severity**; **(c) zero `unconfirmed`
-entries**. (b) and (c) are separate conditions, not filters on (a), because
-neither is reliably inside the significant set: a minor/nit never is, and an
-`unconfirmed` entry survived no refutation so it is not significant either.
-Collapsing them into (a) is how a loop converges green over an unadjudicated
-major or an unlanded minor. On CONVERGED: terminate before the fix phase; this
-round's minor/nit → `reported-only`.
+### Stage 3': Batch B
 
-**7. Needs-decision gate.** Only challenger-surviving major+ needs-decision
-entries (+ split criticals) → AskUserQuestion, options: accept the proposed
-fix / supply an alternative / keep as is. Sub-major needs-decision →
-`reported-only`, never asked. Accepted (with the exact edit content stored in
-`decisions`) → joins the fix batch. Keep-as-is → outcome `accepted-risk`:
-recorded, excluded from significance from now on, reported under Accepted
-risks. Decided entries are
-never re-asked (in-run or on resume). `--auto`: skip → `pending-decision`.
+Input: SRs the verifier marked unresolved or omitted (marked `re-fix`: the batch
+A edit landed, `old` targets the applied text, the fix must change it),
+fix-induced findings of severity major or critical (no challenger — one pass),
+and batch A's `fix-failed` entries (marked `re-derive`). Fix-induced minors and
+nits → `reported-only`. Empty input → Stage 5. A user-decided entry marked
+`re-fix` is a new decision: the fixer may depart from the decided `new` text; in
+default mode the approve gate shows the departure, in `--no-approve` the entry
+is re-asked as a needs-decision question in step 1. Run the batch procedure; a
+landed edit takes `applied (not re-reviewed)` — no further verification follows.
+A `fix-failed` here stays `fix-failed` and makes the run `TRIAGED (incomplete)`.
 
-**8. Fix (two-phase).** ⟨stage budget check⟩ Batch = confirmed major+ +
-accepted decisions **whose fix has not yet been applied** (an applied one is
-done — re-batching it would replay a landed edit and, per doctrine item 10,
-re-apply a correction) + minor/nit not flagged needs-decision + **every unlanded
-fix, at any severity**. Each unlanded fix is marked **re-derive**: the fixer
-must produce a fresh pair against the current text — preserving the decided
-`new` content for user-decided entries — and never replay the stored `old`
-(a pair that already failed to match cannot succeed on replay). Dispatch
-`superutils:spec-fixer` (batch + spec path) → edit pairs, no writes. **A fixer
-failure is retried once, like a reviewer or challenger** (the stage budget's ×2
-headroom is reserved for exactly this); only after the retry fails do its
-entries take `fix-failed` — a transient dispatch fault must not charge
-`fix_failures` to a whole batch. Then:
-1. Re-hash the spec (tamper flow 0.5 on mismatch).
-2. Materialize the candidate: copy the spec to the session scratchpad (outside the repo, so the
-   scoped-writes rule holds), apply all pairs there. **Any batched entry that
-   produces no edit in the candidate → `fix-failed`: set `unlanded: true` and
-   increment `fix_failures`.** That covers all three producers — a pair whose
-   `old` does not match, an entry the fixer returned no pair for (named in its
-   `notes`), and a fixer dispatch that failed twice (every entry in the batch).
-   A counter that Step 5 reads but that some failure path fails to increment
-   would silently disarm the retry-stop. (This is about the candidate, not the
-   gate: an entry the user later declines is `declined`, not `fix-failed`.)
-   *Exception:* an entry the fixer lists in its structured `obsolete` field, and
-   which this round's fresh panel did not re-find, → `obsolete` (`unlanded`
-   cleared) — the defect is gone, not unfixed. Atomic
-   groups: overlapping pairs — target ranges intersect or one edit changes
-   the region another must match — succeed or fail together; revert the
-   group's earlier pairs from the candidate on failure, and every member of a
-   failed group gets `fix-failed` with its counter incremented.
-3. Compute the unified diff (spec vs candidate) + SR-id → hunk mapping.
-   **Zero applicable pairs → zero hunks:** there is nothing to approve, so skip
-   the gate entirely (never ask an empty question) and go to 8.5's no-op and
-   Step 9. Every entry stays `fix-failed`/unlanded, which blocks 8.6 — a batch
-   that produced no pair is a failed fix, not a converged spec.
-4. **Gate by mode.** Default: show the diff → approve (apply all) / approve
-   subset (unselected → `declined`, sticky: recorded as a decision, excluded
-   from significance and no-progress, never re-proposed; a decline of a
-   gate-accepted fix supersedes that acceptance) / decline & stop (nothing
-   applied → `STOPPED(user-declined)`). **The selection unit of approve-subset
-   is the overlapping-edit group of 8.2, not the individual finding**:
-   selecting or deselecting any member selects or deselects the whole group,
-   partial in-group selection is never offered (an intersecting group renders
-   as one diff hunk — offering half of it would apply text the user never
-   approved). Elicit the subset with AskUserQuestion (`multiSelect`), **4
-   groups per page**, paginating until every group has been shown; each option
-   names every SR id in its group (declining a group sticky-declines all of
-   them, so the user must see what rides along); a group the user never saw is
-   never `declined`. **Deselecting every group is a decline of the whole batch —
-   terminate as `STOPPED(user-declined)`**, exactly as the explicit third option
-   does; the same user intent must never yield a green status through the subset
-   path. `--no-approve`/`--auto`: apply
-   immediately, then print the same full diff.
-5. **Re-hash the spec (tamper flow 0.5 on mismatch) — the gate is an unbounded
-   human wait, so this check, not 8.1's, is the one that guards the write.**
-   Then apply approved pairs to the spec via Edit (orchestrator tool work, not
-   a dispatch) — each successfully applied finding gets outcome `applied`, with
-   **`unlanded` cleared and `fix_failures` reset to 0**; a group the user
-   declined gets `declined`, which also clears `unlanded` and resets the counter
-   (a conscious withdrawal, reported under Declined — not a silent drop);
-   re-stamp `last_written_hash`; write the sidecar.
-6. **Empty-batch convergence:** if after the gate nothing will be applied, the
-   significant set is empty after this round's decisions, **there are no
-   unlanded fixes, and there are no `unconfirmed` entries** → CONVERGED now (the
-   spec is byte-identical to what this panel reviewed). Otherwise a fresh round
-   is required. These are Step 6's conditions (a)+(b)+(c): **both convergence
-   exits carry all three, or the loop reports success through whichever one was
-   left open.**
+### Stage 5: Report
 
-**9. Round end.** Write the sidecar (round record: panel, units, findings with
-severity + lenses + outcome, each reviewer's `rejected` list, equivalence log;
-counters). Fixes applied in the final permitted round → `applied (not
-re-reviewed)` under `STOPPED(budget)`.
+Terminal statuses: `TRIAGED` · `TRIAGED (incomplete)` ·
+`STOPPED(user-declined | budget | interaction-unavailable | external-edit)`. Set
+`TRIAGED (incomplete)` when a lens did not return, or the verifier was dispatched
+and did not return after its retry (a skipped Stage 4 is not such a case), or a
+`fix-failed` entry remains after batch B, or a `pending-decision` entry exists; a
+stop status when a stop fired; `TRIAGED` otherwise. Then go to Terminalization.
 
-### Terminalization
+## The batch procedure
 
-Write the terminal status to the sidecar (once, from the authoritative final
-state) and generate the report per `superutils:spec-report-format`: round
-traces, Coverage (3 sublists + WARNING when shallow), Rejected by the panel
-(self-falsification), Accepted risks, Declined,
-residual risks (verifier gaming; stochasticity; lens drift; no token
-ceiling; soft registry matching; best-effort headless detection), recovery
-(loop-touched files; point at `snapshot_path`; never `git restore` on the
-spec). Nothing is ever committed. Print: terminal status + one-line
-per-round summary + report path + "Re-reviewed (advisory)".
+Used by stages 3 and 3'. Input: a list of SR entries, some marked `re-derive`
+or `re-fix`.
 
-### Error handling
+**Empty batch.** If the input is empty, or step 1 leaves it empty, record no
+outcomes and return — the fixer is never dispatched with an empty batch.
+
+1. **Needs-decision gate.** For every major+ entry flagged `needs_decision`
+   with no recorded decision (a `re-fix` entry in `--no-approve` mode counts as
+   undecided): AskUserQuestion, up to four entries per call, each with *accept
+   the proposed fix / supply an alternative / keep as is*. `accept` and
+   `alternative` store the exact edit content with the entry; `keep as is` →
+   `accepted-risk`, entry leaves the batch. `--auto` → `pending-decision`, entry
+   leaves the batch. A decision recorded in batch A is not re-asked for a
+   `re-derive` entry (its decided `new` text is preserved).
+2. ⟨stage budget check⟩ Dispatch `superutils:spec-fixer` with the batch and
+   the spec path. Every `re-derive` or `re-fix` entry carries why the previous
+   attempt failed: a `re-fix` entry the verifier's reason and the batch A `new`
+   text now standing in the spec; a pair-mismatch `re-derive` entry the `old`
+   text that failed to match; an entry from a double fixer failure no prior pair.
+   Decided edit content is passed verbatim, except as the `re-fix` rule allows.
+   Fixer failure → one retry; a second failure → every entry `fix-failed`, go to
+   step 8.
+3. **Re-hash** the spec; mismatch against `pinned_hash` → tamper flow (0.5).
+4. **Materialize the candidate** in the session scratchpad: copy the spec
+   (keep this copy — it is the pre-batch text Stage 4 diffs against), apply
+   every pair to the copy. A pair whose `old` does not match uniquely, whose
+   `new` is byte-equal to its `old`, or an entry no returned pair lists in its
+   `sr_ids`, → `fix-failed`. Overlapping
+   pairs (intersecting ranges, or one edit changing text another must match)
+   form an atomic group: all land or all fail, earlier members reverted from the
+   candidate on failure, every member `fix-failed`.
+5. **Zero hunks** → nothing to approve; skip the gate (never ask an empty
+   question), go to step 8.
+6. **Diff and gate.** Compute the unified diff (`git diff --no-index` between
+   the pre-batch copy and the candidate), the SR → hunk mapping, and the growth
+   line `+N lines (+P%)`: N is the candidate's measured net line delta against
+   the pre-batch copy (added minus deleted from `git diff --no-index --numstat`),
+   P is N over the pre-batch line count, rounded to a whole percent. The fixer's
+   `growth.net_lines` is advisory — when it differs from N, show N followed by
+   `(fixer reported +M)`; a discrepancy is disclosed, never a failure. Under the
+   diff list `growth.drivers` as `largest: SR-… (+K lines)`. In batch B the gate
+   prompt states "these edits are applied without further verification" above
+   the diff. **Default mode:** show the diff and the growth line, then *approve
+   all / approve a subset / decline and stop*. Subset selection is by atomic
+   group (a group renders as one hunk; half of it is never offered):
+   AskUserQuestion with `multiSelect`, four groups per page until every group has
+   been shown, each option labelled with its SR ids, the highest severity in the
+   group, each finding's canonical phrase, and the group's net line delta.
+   Deselected groups → `declined`; deselecting every group is a decline of the
+   whole batch → `STOPPED(user-declined)`, exactly as the explicit third option.
+   **`--no-approve` / `--auto`:** no gate — every group counts as approved;
+   step 7 applies, then print the same diff.
+7. **Re-hash** (the gate is an unbounded human wait; this check guards the
+   write; tamper flow on mismatch), then apply approved pairs to the spec with
+   `Edit` — the snapshot was taken at 0.4 and is never taken or re-taken here.
+   Outcome per landed SR:
+   `applied` in batch A, `applied (not re-reviewed)` in batch B. Re-pin
+   `pinned_hash` to the written file.
+8. **Record outcomes** for every entry of the batch; return to the pipeline.
+
+## Outcomes at a stop
+
+At any stop — budget, user-declined, interaction-unavailable, external-edit —
+every entry whose outcome is not yet final takes the one its state implies: a
+major+ entry never batched, or in a batch whose fixer or gate did not complete
+→ `confirmed (not fixed — stopped)`; a batch A edit already applied when the
+stop lands before Stage 4 → `applied (not re-reviewed)`; a batch A entry the
+verifier marked unresolved whose batch B pass never ran →
+`confirmed (not fixed — stopped)`, superseding its batch A `applied`, and its
+Residuals line states that an edit for it did land — the spec was changed, the
+defect was not resolved. Outcomes already assigned stand: minors and nits
+`reported-only`, deselected groups `declined`, `--auto`-skipped needs-decision
+entries `pending-decision`, refuted criticals `refuted`.
+
+## Error handling
 
 | Event | Handling |
 |---|---|
-| Reviewer fails twice | Lens → Coverage "not returned"; WARNING; proceed |
-| Challenger fails twice / never dispatched **at a budget stop** | Entry `unconfirmed`; blocks convergence as its own condition; never refuted; **re-dispatched every following round until a verdict returns** (a deliberate Step-4 skip is not `unconfirmed`) |
-| Fixer fails / pair mismatch | `fix-failed` → the entry is an **unlanded fix** (any severity): no convergence exit may fire (Steps 6 and 8.6), it is never settled by its user decision (Step 4), and it is re-batched next round with a **re-derived** pair — never a replay of the pair that failed. If the re-derived pair fails too (`fix_failures ≥ 2`), Step 5 stops the run as `STOPPED(no-progress)` |
-| AskUserQuestion fails (interactive modes) | `STOPPED(interaction-unavailable)` before any fix application |
-| Hash mismatch | Tamper flow 0.5 (adopt / stop / `--auto` abort) |
-| User abort (Esc) | Report partial state; changes stay uncommitted; recovery = snapshot |
+| Reviewer fails twice | Lens → Coverage "not returned"; WARNING; run ends `TRIAGED (incomplete)` |
+| Challenger fails twice | Critical stays upheld with a report note; never refuted |
+| Fixer fails twice | Whole batch `fix-failed`; batch A → re-derived in batch B; batch B → residuals, `TRIAGED (incomplete)` |
+| Pair mismatch / no pair | That SR `fix-failed`; batch A → batch B with `re-derive`; batch B → residual |
+| Verifier fails twice | Batch B = batch A's `fix-failed` only; batch A edits → `applied (not re-reviewed)`; `TRIAGED (incomplete)` |
+| Verifier omits an SR | That SR → unresolved, batch B with `re-fix`; noted under Coverage |
+| Hash mismatch before a write | Tamper flow (0.5) |
+| AskUserQuestion fails (interactive modes) | `STOPPED(interaction-unavailable)` before any write of the current batch; an earlier batch's edits stay, the snapshot recovers them |
+| Whole batch declined | `STOPPED(user-declined)`; nothing from that batch applied; an earlier batch's edits stay, the snapshot recovers them |
+| Any stop | Outcomes per **Outcomes at a stop** |
+| User abort (Esc) | Partial report; changes uncommitted; recovery = snapshot |
+
+## Terminalization
+
+Write the report to `report_path` per `superutils:spec-report-format`: the
+header with both hash lines (`pre-loop` = the hash pinned at 0.4, `post-loop` =
+the hash of the file as last written — equal to `pre-loop` when nothing was
+written), the line delta, the panel table, critical challengers, the
+verification table with fix-induced findings, the Decisions table (every
+needs-decision answer with its verbatim edit text — recorded for the reader;
+no run reads it back, every run asks afresh), Residuals ordered most- to
+least-serious (a `fix-failed` entry quotes the fixer's `notes` reason),
+Coverage (lenses not selected, not returned with
+reasons, standing blind spots), Rejected by the panel and the verifier, Residual
+risks (one panel pass; the tightened major anchor; stochastic panel and
+verifier; no token ceiling; majors carry no challenger; no mid-run resume and
+in-context state across the gate; growth disclosed not limited; interaction cost
+disclosed not budgeted; item 4 not met; the budget ceiling — with the full
+seven-lens roster and the ×2 retry headroom, seven or more criticals stop the
+run as `STOPPED(budget)` before batch A, so raise `--max-dispatches` for a
+defect-rich spec; snapshots are per-run, uncommitted and never pruned —
+recovery depends on picking the right `run<N>`, and a `git clean` of an
+untracked `reviews/` directory takes all of them), and Recovery
+(loop-touched files, this run's `snapshot_path`; never `git restore` on the
+spec — under `--allow-dirty` or a dirty confirm the committed history predates
+the uncommitted draft the run started from, so the snapshot is the only copy of
+it). Nothing is ever committed.
+
+Print: the status with its reason in parentheses when incomplete (e.g.
+`TRIAGED (incomplete: fix-coherence verifier not returned)`); a one-line outcome
+summary `N residuals (X confirmed-not-fixed, Y fix-failed, Z pending-decision)`;
+the one-line cost summary (dispatches, active seconds, spec line delta); the
+report path; and the verdict label — `Re-reviewed (advisory)` when the batch A
+verifier returned, `Not re-reviewed (verifier not returned)` when it was
+dispatched and did not, `Not re-reviewed (no batch A edits)` when Stage 4 was
+skipped because batch A applied nothing — in every case followed by `K edits
+applied without re-review` when any `applied (not re-reviewed)` entry exists.

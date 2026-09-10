@@ -7,8 +7,8 @@ below. (Future automation: Agent SDK `canUseTool` auto-responder.)
 ## Procedure (3 independent runs)
 
 Each run starts fresh: copy `fixtures/seeded-spec.md` to
-`docs/superpowers/specs/seeded-spec.md` in a scratch branch, with no sidecar,
-report, or snapshot present.
+`docs/superpowers/specs/seeded-spec.md` in a scratch branch, with no report or
+snapshot present under `docs/superpowers/specs/reviews/`.
 
 Run `/superutils:spec-review docs/superpowers/specs/seeded-spec.md` in the
 default mode with this answer script:
@@ -19,8 +19,8 @@ default mode with this answer script:
 
 ## Pass condition (per run)
 
-Terminal status `CONVERGED` within default budgets AND all three post-run
-content predicates hold on the final fixture file:
+Terminal status `TRIAGED` (not `TRIAGED (incomplete)`) within default budgets
+AND all three post-run content predicates hold on the final fixture file:
 
 1. **Contradiction seed:** the Delivery-rules / Batching / 60-second claims
    no longer conflict (one consistent policy remains).
@@ -40,10 +40,12 @@ and result here.
 Run the command on a **real** design spec — one produced by the superpowers
 brainstorming→design flow, not the seeded fixture; this repo keeps no such
 document, so use one from the project you are working in. Pass = a valid
-terminal status within default budgets and a report + sidecar conforming to
-`superutils:spec-report-format`.
+terminal status within default budgets and a report conforming to
+`superutils:spec-report-format`, with both hash lines present.
 
-**Isolate it — the loop edits its target in place.** A clean tracked file
-passes the working-tree gate silently, so an unisolated run rewrites a
-committed document with no warning. Run it on a scratch branch and discard that
-branch afterwards (or `git restore` the spec once the report is captured).
+**Isolate it — the loop edits its target in place.** The working-tree gate
+names a clean tracked target and asks before proceeding (under `--auto` it
+passes a target you named and stops a bare invocation unless `--allow-dirty`),
+but confirming it still rewrites a committed document. Run it on a scratch
+branch and discard that branch afterwards (or `git restore` the spec once the
+report is captured).

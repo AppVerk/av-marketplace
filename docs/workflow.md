@@ -50,13 +50,21 @@ still cheap to fix.
 /superutils:spec-review
 ```
 
-Runs a closed review loop on the newest spec (lens panel → adversarial
-challengers → approve-gated fix batches) until it converges or stops.
+Runs a fixed triage pipeline on the newest spec (lens panel → challengers
+for criticals → an approve-gated fix batch → verification of the applied
+edits → a second approve-gated batch). One pass; nothing repeats.
 
-**Artifact:** report and state sidecar in
-`docs/superpowers/specs/reviews/`; terminal status `CONVERGED`
-(`CONVERGED (low-confidence)` when a review lens failed to return) or
-`STOPPED(...)` — a stop is never success.
+Two things the stage asks of you. When the resolved spec is a committed file
+it names it and asks before editing it in place — a bare `--auto` run stops
+there unless `--allow-dirty`, so name the spec to run headless. And every run
+leaves a pre-loop snapshot beside the report; snapshots and reports are
+working artifacts, not deliverables — prune them with the branch's other
+working artifacts before merge.
+
+**Artifact:** report and pre-loop snapshot in
+`docs/superpowers/specs/reviews/`; terminal status `TRIAGED`
+(`TRIAGED (incomplete)` when something the pipeline owed did not land or
+return) or `STOPPED(...)` — a stop is never success.
 **Next stage consumes:** the reviewed spec, now the contract for the plan —
 passed by you: unlike the other hand-offs, Stage 3 does not discover it on
 its own; reference the spec in the task or plan you hand to it.

@@ -1,5 +1,5 @@
 {
   "name": "superutils",
-  "description": "Companion utilities for the superpowers workflow — loop-engineered verification of design specs.",
-  "version": "1.0.2"
+  "description": "Companion utilities for the superpowers workflow — bounded, loop-engineered triage of design specs.",
+  "version": "2.0.0"
 }
