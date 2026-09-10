@@ -27,5 +27,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # No PyYAML step, unlike agent-frontmatter.yml: this checker and its
+      # tests are stdlib-only.
+
+      - name: Run contract checker unit tests
+        run: python3 plugins/superutils/tests/test_check_contract.py
+
       - name: Check superutils contract
         run: python3 plugins/superutils/tests/check_contract.py

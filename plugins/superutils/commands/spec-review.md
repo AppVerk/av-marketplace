@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(ls:*), Bash(stat:*), Bash(sort:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(echo:*), Bash(git status:*), Bash(git diff:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion, mcp__plugin_sequentialthinking_sequential-thinking__sequentialthinking
+allowed-tools: Bash(ls:*), Bash(stat:*), Bash(sort:*), Bash(head:*), Bash(mkdir:*), Bash(git status:*), Bash(git diff:*), Bash(git ls-files:*), Bash(shasum:*), Bash(cp:*), Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion, mcp__plugin_sequentialthinking_sequential-thinking__sequentialthinking
 description: Bounded spec triage — lens panel, challengers for criticals, an approve-gated fix batch, verification of the applied edits, a second approve-gated batch. For superpowers-produced design specs.
 model: opus
 argument-hint: [spec path] [--no-approve] [--auto] [--allow-dirty] [--max-dispatches D] [--time-budget S]
@@ -34,7 +34,7 @@ external facts, or unstated requirements. Every verdict is advisory — never
 | `<path>` | The target spec | — | Must be a `.md` file directly in `docs/superpowers/specs/`; anything else → out-of-scope error, all modes |
 | `--no-approve` | Skip the approve gate; apply + print the full diff | (off) | Valueless; needs-decision questions still asked |
 | `--auto` | Headless: no interaction at all; implies `--no-approve` | (off) | Needs-decision entries skipped → `pending-decision`; an unchanged-spec re-run exits |
-| `--allow-dirty` | Bypass the working-tree gate | (off) | Valueless |
+| `--allow-dirty` | Bypass the working-tree gate, including a committed (tracked, clean) target | (off) | Valueless |
 | `--max-dispatches` | Subagent-launch cap (reviewers + challengers + fixers + verifier; retries count) | 20 | Positive integer, else error + stop |
 | `--time-budget` | Active seconds (user waits excluded) | 900 | Positive integer, else error + stop |
 
@@ -83,17 +83,31 @@ Newest by mtime wins; byte-equal top mtimes → AskUserQuestion with the tied
 files (interactive) or abort (`--auto`). Zero candidates → same ask/abort.
 Set `spec_path` = the resolved file, `spec` = its basename without `.md`,
 `report_path = docs/superpowers/specs/reviews/<spec>-review.md`,
-`snapshot_path = docs/superpowers/specs/reviews/<spec>.pre-loop.bak`.
-No sidecar is written: the report is the durable state.
+`snapshot_path = docs/superpowers/specs/reviews/<spec>.pre-loop.run<N>.bak`
+(`N` = 1 + the number of such snapshots already present, counted exactly as the
+report archive counts its own). No sidecar is written: the report is the durable
+state.
 
 #### 0.3 Working-tree gate
 
 ```bash
 git status --porcelain -- "$spec_path"
+git ls-files -- "$spec_path"
 ```
 
-Dirty or untracked: `--auto` → abort unless `--allow-dirty`; interactive →
-warn and confirm via AskUserQuestion (proceed / abort).
+Both probes are needed: a non-empty `git status` means dirty or untracked, but an
+empty one is ambiguous — it describes a gitignored file exactly as it describes a
+committed clean one, and only `git ls-files` tells them apart.
+
+| Probe result | Target | Action |
+|---|---|---|
+| `git status` non-empty | Dirty or untracked | `--auto` → abort unless `--allow-dirty`; interactive → warn and confirm via AskUserQuestion (proceed / abort) |
+| `git status` empty, `git ls-files` prints the path | Tracked and clean — a committed file this run edits in place | `--auto` → abort unless `--allow-dirty`; interactive → AskUserQuestion naming the path: "Target `<path>` is a committed file; this run edits it in place — proceed / abort" |
+| `git status` empty, `git ls-files` silent | Gitignored, or outside any repository | Pass |
+
+The second row is the common case, not an edge case: in any repository that
+keeps its specs committed under `docs/superpowers/specs/` — this plugin's own
+included — a bare invocation resolves to a tracked, clean file.
 
 #### 0.4 Hash pin and re-run detection
 
@@ -110,9 +124,15 @@ A `<spec>-review.state.json` beside the report is a pre-2.0.0 sidecar: archive
 it the same way (`<spec>-review.state.run<N>.bak`) and never read it. Every run
 starts fresh — SR ids restart at SR-001. `mkdir -p docs/superpowers/specs/reviews`.
 
-**Snapshot rule.** Copy the spec to `snapshot_path` before the first `Edit` of
-the run, at most once per run, overwriting an earlier run's snapshot (git holds
-the committed history; the snapshot is this run's recovery point).
+**Snapshot rule.** Copy the spec to `snapshot_path` at the end of 0.4 — after
+the re-run/exit decision, before Stage 1 and before any tamper adopt (0.5) —
+exactly once per run, so the copy holds the spec as the run found it rather than
+as an adopted external edit left it. **Never overwrite an earlier run's
+snapshot:** git holds only committed history, and `--allow-dirty` (or an
+interactive dirty confirm) admits a spec whose pre-run content is committed
+nowhere — for those runs the snapshot is the only copy that exists. Every run
+that reaches Stage 1 leaves one, whether or not it goes on to edit; nothing
+prunes them.
 
 #### 0.5 Tamper flow
 
@@ -237,8 +257,9 @@ outcomes and return — the fixer is never dispatched with an empty batch.
 3. **Re-hash** the spec; mismatch against `pinned_hash` → tamper flow (0.5).
 4. **Materialize the candidate** in the session scratchpad: copy the spec
    (keep this copy — it is the pre-batch text Stage 4 diffs against), apply
-   every pair to the copy. A pair whose `old` does not match uniquely, or an
-   entry no returned pair lists in its `sr_ids`, → `fix-failed`. Overlapping
+   every pair to the copy. A pair whose `old` does not match uniquely, whose
+   `new` is byte-equal to its `old`, or an entry no returned pair lists in its
+   `sr_ids`, → `fix-failed`. Overlapping
    pairs (intersecting ranges, or one edit changing text another must match)
    form an atomic group: all land or all fail, earlier members reverted from the
    candidate on failure, every member `fix-failed`.
@@ -264,8 +285,9 @@ outcomes and return — the fixer is never dispatched with an empty batch.
    **`--no-approve` / `--auto`:** no gate — every group counts as approved;
    step 7 applies, then print the same diff.
 7. **Re-hash** (the gate is an unbounded human wait; this check guards the
-   write; tamper flow on mismatch), take the snapshot if not yet taken, then
-   apply approved pairs to the spec with `Edit`. Outcome per landed SR:
+   write; tamper flow on mismatch), then apply approved pairs to the spec with
+   `Edit` — the snapshot was taken at 0.4 and is never taken or re-taken here.
+   Outcome per landed SR:
    `applied` in batch A, `applied (not re-reviewed)` in batch B. Re-pin
    `pinned_hash` to the written file.
 8. **Record outcomes** for every entry of the batch; return to the pipeline.
@@ -307,21 +329,31 @@ header with both hash lines (`pre-loop` = the hash pinned at 0.4, `post-loop` =
 the hash of the file as last written — equal to `pre-loop` when nothing was
 written), the line delta, the panel table, critical challengers, the
 verification table with fix-induced findings, the Decisions table (every
-needs-decision answer with its verbatim edit text, so a re-run can reuse it),
-Residuals ordered most- to least-serious (a `fix-failed` entry quotes the
-fixer's `notes` reason), Coverage (lenses not selected, not returned with
+needs-decision answer with its verbatim edit text — recorded for the reader;
+no run reads it back, every run asks afresh), Residuals ordered most- to
+least-serious (a `fix-failed` entry quotes the fixer's `notes` reason),
+Coverage (lenses not selected, not returned with
 reasons, standing blind spots), Rejected by the panel and the verifier, Residual
 risks (one panel pass; the tightened major anchor; stochastic panel and
 verifier; no token ceiling; majors carry no challenger; no mid-run resume and
 in-context state across the gate; growth disclosed not limited; interaction cost
-disclosed not budgeted; item 4 not met), and Recovery (loop-touched files,
-`snapshot_path`; never `git restore` on the spec). Nothing is ever committed.
+disclosed not budgeted; item 4 not met; the budget ceiling — with the full
+seven-lens roster and the ×2 retry headroom, seven or more criticals stop the
+run as `STOPPED(budget)` before batch A, so raise `--max-dispatches` for a
+defect-rich spec; snapshots are per-run, uncommitted and never pruned —
+recovery depends on picking the right `run<N>`, and a `git clean` of an
+untracked `reviews/` directory takes all of them), and Recovery
+(loop-touched files, this run's `snapshot_path`; never `git restore` on the
+spec — under `--allow-dirty` or a dirty confirm the committed history predates
+the uncommitted draft the run started from, so the snapshot is the only copy of
+it). Nothing is ever committed.
 
 Print: the status with its reason in parentheses when incomplete (e.g.
 `TRIAGED (incomplete: fix-coherence verifier not returned)`); a one-line outcome
 summary `N residuals (X confirmed-not-fixed, Y fix-failed, Z pending-decision)`;
 the one-line cost summary (dispatches, active seconds, spec line delta); the
 report path; and the verdict label — `Re-reviewed (advisory)` when the batch A
-verifier returned, `Not re-reviewed (verifier not returned)` when it did not, in
-either case followed by `K edits applied without re-review` when any
-`applied (not re-reviewed)` entry exists.
+verifier returned, `Not re-reviewed (verifier not returned)` when it was
+dispatched and did not, `Not re-reviewed (no batch A edits)` when Stage 4 was
+skipped because batch A applied nothing — in every case followed by `K edits
+applied without re-review` when any `applied (not re-reviewed)` entry exists.

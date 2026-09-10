@@ -122,6 +122,13 @@ never success. Every verdict is advisory.
 Path: `docs/superpowers/specs/reviews/<spec>-review.md`. Re-run detection reads
 the `post-loop` hash line, so both hash lines are mandatory and verbatim.
 
+`<label>` is one of three, exhaustively: `Re-reviewed (advisory)` when the batch
+A verifier returned · `Not re-reviewed (verifier not returned)` when it was
+dispatched and did not · `Not re-reviewed (no batch A edits)` when Stage 4 was
+skipped because batch A applied nothing. Any of the three is followed by
+`K edits applied without re-review` when any `applied (not re-reviewed)` entry
+exists.
+
 ```markdown
 # Spec-review report — <spec>.md
 **Mode:** default | --no-approve | --auto · **Budgets used:** <D> of <max> dispatches, <S> of <budget> active seconds · **Terminal status:** `<status>` · **Verdict label:** <label>
@@ -129,6 +136,10 @@ the `post-loop` hash line, so both hash lines are mandatory and verbatim.
 **Spec hash (post-loop):** <sha256>
 **Spec lines:** <before> → <after>
 ## Panel — lenses, units
+- Units: the spec's `##` headings, in order.
+- Lenses selected, each with its one-line selection rationale; lenses the rules
+  did not name are listed under Coverage.
+- Merges: one line per merged entry — `SR-0NN ← [lens-a, lens-b] · <judgment>`.
 | SR | severity | lenses | needs-decision | outcome |
 ## Critical challengers
 | SR | verdict | note |

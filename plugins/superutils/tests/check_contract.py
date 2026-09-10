@@ -56,7 +56,9 @@ DELETED = [
     "unlanded",
     "unconfirmed",
     "fix_failures",
-    "obsolete",
+    # Narrowed to the identifier's own backticked rendering: the bare word is
+    # ordinary English and would forbid any future prose using it.
+    "`obsolete`",
     "no-progress",
     "oscillation",
     "last_written_hash",
@@ -90,8 +92,13 @@ REQUIRED: dict[str, list[str]] = {
 }
 
 FORBIDDEN: dict[str, list[str]] = {key: list(DELETED) for key in FILES}
+# cmd (the 0.4 archive rule) and doc (the "Run interrupted mid-way" row of the
+# re-run table) describe archiving the pre-2.0.0 sidecar, so "sidecar" is not
+# forbidden for them — they're left out of the loop below.
 for key in ("fmt", "rev", "chl", "fix", "acc", "wf"):
     FORBIDDEN[key].append("sidecar")
+# The doc's Upgrade Notes name what 2.0.0 removed, so those two are allowed there.
+FORBIDDEN["doc"] = [tok for tok in DELETED if tok not in ("CONVERGED", "--max-iterations")]
 # The lens catalog quotes the qa:loop-engineering bar verbatim (items 7 and 10 name
 # no-progress, oscillation and the durable sidecar); that copy is untouched by design,
 # so only the catalog's own panel-selection prose is checked for the sidecar.
@@ -110,13 +117,17 @@ def haystack(key: str) -> str:
 
 def check(key: str) -> list[str]:
     text = haystack(key)
+    if key == "readme" and not text:
+        return ["readme: Superutils row not found in the Available Plugins table"]
     problems = [f"{key}: missing '{tok}'" for tok in REQUIRED.get(key, []) if tok not in text]
     problems += [f"{key}: forbidden '{tok}' found" for tok in FORBIDDEN.get(key, []) if tok in text]
     return problems
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        description="Check the superutils contract vocabulary across its files."
+    )
     parser.add_argument("--file", choices=sorted(FILES), help="check one file only")
     args = parser.parse_args(argv)
     keys = [args.file] if args.file else list(FILES)

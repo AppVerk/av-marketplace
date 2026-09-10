@@ -126,9 +126,9 @@ is the verifier shape in the spec-report-format skill.
 3. Content triggers from the unit list: loop/agent/plugin design →
    `doctrine-compliance` + `feasibility`; UI/screens/flows → `ux`;
    API/schema/format → `contracts`.
-4. **Floor at 3:** if rules 1–3 yield fewer than 3 lenses (a short spec with no
-   content trigger), add `feasibility`, then `completeness`, until the panel
-   reaches 3. The panel is never smaller than 3.
+4. **Floor at 3:** rules 1–3 always yield at least the two core lenses; when
+   they yield exactly two (a short spec with no content trigger), add
+   `feasibility`. The panel is never smaller than 3.
 5. No cap: the roster is the ceiling. Log the selected ids and one-line rationale in the report.
 
 ## Severity anchors (shared by reviewers and challengers)

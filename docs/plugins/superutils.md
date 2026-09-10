@@ -37,22 +37,25 @@ batch B (unresolved and fix-induced findings, same gate) → report.
 |---|---|---|
 | `--no-approve` | off | Skip the approve gate; print the full diff after each batch |
 | `--auto` | off | Headless; implies `--no-approve` |
-| `--allow-dirty` | off | Bypass the working-tree gate |
+| `--allow-dirty` | off | Bypass the working-tree gate, including a committed (tracked, clean) target |
 | `--max-dispatches` | 20 | Subagent-launch cap (retries count) |
 | `--time-budget` | 900 | Active seconds (user waits excluded) |
 
 A typical run costs 8–12 dispatches: five to seven reviewers, a challenger per
 critical, two fixers, one verifier. There is no iteration flag — the pipeline's
-shape bounds it. The stage check reserves double the planned dispatches as retry
-headroom, so a budget must exceed roughly `2 × panel + 2 × criticals + 6`; with
-the full seven-lens roster the default 20 stops the run before batch A once seven
-or more criticals are found — raise `--max-dispatches` for a defect-rich spec.
+shape bounds it. The stage check reserves double *that stage's* planned
+dispatches as retry headroom, so the budget must satisfy
+`max(2 × panel, panel + 2 × criticals, panel + criticals + 4)` — the middle term
+binds first. With the full seven-lens roster the default 20 therefore stops the
+run at the challenger stage once seven or more criticals are found; raise
+`--max-dispatches` for a defect-rich spec.
 
 **Terminal statuses:** `TRIAGED` · `TRIAGED (incomplete)` ·
 `STOPPED(user-declined | budget | interaction-unavailable | external-edit)` — a
 stop is never success. The report lands in `docs/superpowers/specs/reviews/`,
-beside a pre-loop snapshot of the spec once any edit has landed; the pipeline
-never commits.
+beside a pre-loop snapshot of the spec — `<spec>.pre-loop.run<N>.bak`, taken
+once per run before the pipeline touches anything and never overwritten by a
+later run; the pipeline never commits.
 
 **`TRIAGED` means the pipeline ran to the end and every fix it batched landed.**
 It does not mean a fresh panel would find nothing: minors and nits are reported,
@@ -88,16 +91,44 @@ stopped)` and `fix-failed` first.
   decisions and the pinned hash live in the orchestrator's context until the
   report is written; an interruption across the approve gate loses them and the
   questions are asked again next run.
-- Human interaction cost is disclosed, not budgeted: at most one question per
-  needs-decision finding (four per call), one approve gate per batch, and one
-  page per four edit groups only if you choose to approve a subset.
+- Human interaction cost is disclosed, not budgeted: one confirm per run when
+  the resolved target is a committed file the run would edit in place (tracked
+  and clean — the usual case once specs are committed), at most one question
+  per needs-decision finding (four per call), one approve gate per batch, and
+  one page per four edit groups only if you choose to approve a subset.
 - The dispatch cap doubles as the cost ceiling; there is no token budget.
 - With the full seven-lens roster, seven or more critical findings exhaust the
   default dispatch budget before any fix is attempted; raise `--max-dispatches`
   for a defect-rich spec.
 - Spec growth is measured and shown at the gate (`+N lines (+P%)`), not limited.
+- Snapshots are per-run (`<spec>.pre-loop.run<N>.bak`), uncommitted and never
+  pruned: recovery means picking the right `run<N>`, and a `git clean` of an
+  untracked `reviews/` directory takes every one of them. For a spec reviewed
+  under `--allow-dirty` or an interactive dirty confirm the snapshot is the only
+  copy of the pre-run draft that exists anywhere — git holds nothing for it.
 - **The acceptance protocol (`plugins/superutils/tests/ACCEPTANCE.md`) has not
   been run against 2.0.0.** Treat the first real run as the actual test.
+
+## Upgrade Notes
+
+**`superutils` 2.0.0 replaces the convergence loop with a bounded triage
+pipeline.** The `--max-iterations` round-cap flag (default 3) is removed
+outright — the pipeline's fixed stage sequence now bounds repetition, and
+passing the flag is a validation error, not a silent no-op. Two defaults
+tightened alongside it: `--max-dispatches` drops from 60 to 20, and
+`--time-budget` drops from 1800 to 900 active seconds.
+
+The old `CONVERGED` / `CONVERGED (low-confidence)` terminal status, and the
+old `STOPPED(...)` reasons tied to round-over-round comparison, are gone — a
+run now ends as `TRIAGED`, `TRIAGED (incomplete)`, or
+`STOPPED(user-declined | budget | interaction-unavailable | external-edit)`.
+
+The per-round `<spec>-review.state.json` the pipeline wrote beside the report
+is deleted; the report is now the only durable state, and one left over from
+an older run is archived unread. A report with no hash line — every report
+written before this release — is archived to `<spec>-review.run<N>.bak` on the
+first run after upgrading, and the run starts fresh from SR-001 (see
+"Re-running" above).
 
 ## Agents
 
