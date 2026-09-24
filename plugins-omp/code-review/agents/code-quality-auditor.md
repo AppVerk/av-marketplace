@@ -17,6 +17,7 @@ autoloadSkills: ["code-review:standards-discovery", "code-review:linter-integrat
 > - **WebSearch** → `web_search`. **WebFetch** → `read` on the URL.
 > - A subagent has no `ask` tool: where the instructions say to ask the user, choose the most likely option and state the choice and its reason in your report.
 > - **allowed-tools** and `Bash(<cmd>:*)` grants are Claude Code permission pre-approvals. They grant and restrict nothing here.
+> - In the text below, a backticked command right after `!` (for example !`git status`) is Claude Code inline context: Claude Code runs it and puts its output there before the model reads the text. Here nothing ran: run each such command in the text below with `bash` first and use its output in its place.
 
 # Code Quality Auditor Agent
 
