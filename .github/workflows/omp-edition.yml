@@ -53,3 +53,10 @@ jobs:
       - name: Test delivery hooks against OMP
         run: bun test tests/delivery.test.ts
         working-directory: omp/native/delivery
+
+      - name: Install OMP for plan review tests
+        run: bun install --no-save --cwd omp/native/plan-review @oh-my-pi/pi-coding-agent@latest
+
+      - name: Test plan review against OMP
+        run: bun test tests/plan-review.test.ts
+        working-directory: omp/native/plan-review

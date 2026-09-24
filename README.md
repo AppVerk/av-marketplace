@@ -15,11 +15,11 @@ After installation, verify with `/help` — you should see the new commands list
 
 ### Oh My Pi (OMP)
 
-An OMP edition is generated from the same sources: Code Review and the Frontend, PHP and Python developer plugins. It adds one OMP-only plugin, **Delivery**:
+An OMP edition is generated from the same sources: Code Review and the Frontend, PHP and Python developer plugins. It adds two OMP-only plugins, **Delivery** and **Plan Review**:
 
 ```bash
 omp plugin marketplace add AppVerk/av-marketplace
-for p in code-review delivery python-developer frontend-developer php-developer; do
+for p in code-review delivery plan-review python-developer frontend-developer php-developer; do
   omp plugin install "$p@av-marketplace"
 done
 ```
@@ -34,7 +34,9 @@ Delivery runs approved plans end to end, without slash commands. Plan in OMP pla
 
 A plan without `### Task` headings runs as usual. `/delivery:execute <plan>` resumes an interrupted delivery, skipping committed tasks, or delivers a plan file you wrote yourself; tasks of such a plan that list no files are routed by Jev (the `judge` model role, e.g. `typesafe/jev-latest`) when it is at least 0.8 confident; below that, or on every such task when the `judge` role resolves to a non-Jev model, delivery asks you. See the [Delivery guide](docs/plugins/delivery.md) for the plan format and prerequisites.
 
-Agents route through model roles instead of a fixed model: reviewers use `code_review`, fixers and developers `executor`, adversarial verification `challenger`, finding analysis (composite grouping, needs-decision findings, PR feedback) `analyst`, and plan mode `plan`. Map each role in `~/.omp/agent/config.yml`, for example:
+Plan Review has a second model check every plan-mode plan before it reaches the approval dialog. The agent sends the plan to `xd://plan_review`; the reviewer (the `advisor` model role, with read-only tools) reports blockers, concerns and nits, and `xd://propose` stays blocked until a review approves the current plan text or 3 review rounds are used. See the [Plan Review guide](docs/plugins/plan-review.md).
+
+Agents route through model roles instead of a fixed model: reviewers use `code_review`, fixers and developers `executor`, adversarial verification `challenger`, finding analysis (composite grouping, needs-decision findings, PR feedback) `analyst`, plan mode `plan`, and Plan Review's reviewer `advisor`. Map each role in `~/.omp/agent/config.yml`, for example:
 
 ```yaml
 modelRoles:
@@ -42,6 +44,7 @@ modelRoles:
   analyst: anthropic/claude-opus-5-5
   executor: openai-codex/gpt-5.5
   challenger: openai-codex/gpt-5.5
+  advisor: openai-codex/gpt-5.5
 ```
 
 An unmapped role falls back to the model the Claude Code edition names (`opus`), or to the session model where that edition inherits one.

@@ -37,6 +37,13 @@
       "category": "development"
     },
     {
+      "name": "plan-review",
+      "source": "./plan-review",
+      "description": "Reviews every plan-mode plan with the advisor-role model before it reaches the approval dialog: xd://propose stays blocked until the review approves the plan or 3 review rounds are used. Oh My Pi only.",
+      "version": "0.1.0",
+      "category": "development"
+    },
+    {
       "name": "python-developer",
       "source": "./python-developer",
       "description": "Master the Python programming language for efficient and effective development",
