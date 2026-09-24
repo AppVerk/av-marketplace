@@ -44,6 +44,8 @@ Each task commit carries `Delivery-Plan: <PLAN_PATH>`, `Delivery-Task: <N>`, and
 
 To resume, run `/delivery:execute <PLAN_PATH>`. Delivery skips a task only if a commit for that exact plan path contains both its task number and exactly the same task title as the current plan. If a task number matches but the title differs (or the title trailer is missing), Delivery stops and shows the commit, task number, committed title, and plan title rather than silently treating the task as done. The stop message names them: `Task N is committed as "<committed title>" in <commit>, but <plan> titles it "<plan title>"`.
 
+Delivery runs its git commit commands with the AV_COMMIT_SKILL=1 prefix, so the Commit plugin's git commit guard lets them through. The prefix is not part of the commit message.
+
 ## Review and fix rounds
 
 Every task is reviewed before its commit. Findings marked `critical` or `important` return to the same implementing agent for up to 3 fix rounds, with another review after each round. If blocking findings remain, choose `Accept and commit with open findings` or `Stop delivery`. Accepted open findings add the review trailer above; stopping leaves the delivery unfinished.
