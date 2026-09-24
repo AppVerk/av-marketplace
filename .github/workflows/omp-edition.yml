@@ -44,6 +44,10 @@ jobs:
         with:
           bun-version: "1.3.14"
 
+      - name: Test the Claude hooks extension
+        run: bun test
+        working-directory: omp/claude-hooks
+
       - name: Install OMP for delivery hook tests
         run: bun install --no-save --cwd omp/native/delivery @oh-my-pi/pi-coding-agent@latest
 
