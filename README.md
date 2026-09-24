@@ -15,14 +15,16 @@ After installation, verify with `/help` — you should see the new commands list
 
 ### Oh My Pi (OMP)
 
-An OMP edition is generated from the same sources: Code Review and the Frontend, PHP and Python developer plugins. It adds two OMP-only plugins, **Delivery** and **Plan Review**:
+An OMP edition is generated from the same sources: Code Review, Commit and the Frontend, PHP and Python developer plugins. It adds two OMP-only plugins, **Delivery** and **Plan Review**:
 
 ```bash
 omp plugin marketplace add AppVerk/av-marketplace
-for p in code-review delivery plan-review python-developer frontend-developer php-developer; do
+for p in code-review commit delivery plan-review python-developer frontend-developer php-developer; do
   omp plugin install "$p@av-marketplace"
 done
 ```
+
+With Commit installed, Delivery 0.4.0 and older stop at their first commit. If you added the marketplace earlier, run `omp plugin marketplace update av-marketplace` before installing Commit, and upgrade an installed Delivery with `omp plugin upgrade delivery@av-marketplace`. Commit's git guards need `jq` on `PATH`: without it, every `bash` call they do not deny asks for confirmation, and in print mode and subagents, Delivery's agents included, such calls are blocked.
 
 Delivery needs Python 3.9 or newer, available as `python3` on `PATH`: its plan check, task router and preflight run Python. Without it, approving a plan does not start a delivery and the plan runs as usual.
 

@@ -24,6 +24,7 @@ You should see commands like `/review`, `/commit`, `/develop`, `/audit`, and `/s
 | Git 2.x+ | Yes | Version control |
 | GitHub CLI (`gh`) | No | Pull request integration for `/review` and `/analyze-feedback` |
 | Python 3.9+ (`python3`) | For Delivery (Oh My Pi) | Plan check, task routing and preflight of the Delivery plugin — see [Oh My Pi (OMP)](../README.md#oh-my-pi-omp) |
+| `jq` | For Commit | Both editions' git commit and push guards parse their input with `jq` |
 
 ## Optional Tools
 

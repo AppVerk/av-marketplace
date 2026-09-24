@@ -65,7 +65,7 @@ This plugin includes two PreToolUse hooks that automatically guard destructive g
 
 ### `git commit` block
 
-The hook blocks any direct `git commit` so all commits flow through the `/commit` skill.
+The hook blocks direct `git commit` commands so commits go through the `/commit` skill. It is a guardrail, not enforcement: any command whose text contains `AV_COMMIT_SKILL=1` passes, and so do forms the pattern does not match, such as `git -C <dir> commit` or `git -c key=value commit`.
 
 **What's blocked:**
 
@@ -107,9 +107,24 @@ top-level command string):
 - **Secret leakage:** allowing feature-branch pushes means a branch containing
   accidentally-committed secrets can be published to `origin`. Content is not
   scanned. The non-origin/URL prompt mitigates exfiltration to other remotes.
-- **`jq` dependency:** both hooks parse their input with `jq`. If `jq` is not
-  on `PATH` the hook cannot read the command and allows it through (the same
-  assumption the `git commit` block makes). Claude Code's hook runtime and the
-  CI image both provide `jq`.
+- **`jq` dependency:** both hooks parse their input with `jq`. Without `jq` on `PATH`, the `git commit` hook applies its rules to the raw hook input, so a direct `git commit` is still denied while `AV_COMMIT_SKILL=1` and `--amend` commits pass, and the `git push` hook asks for confirmation on every Bash call. The CI image provides `jq`; install it wherever you run Claude Code or OMP (see Prerequisites in `docs/installation.md`).
 
 Both hooks are registered automatically when the plugin is enabled. No configuration required.
+
+## Oh My Pi
+
+Install with `omp plugin install commit@av-marketplace`. If you added the marketplace earlier, first run `omp plugin marketplace update av-marketplace`. The command is `/commit:commit [task-id]`.
+
+In OMP, `/commit:commit` runs on the session's model because OMP commands have no model setting; the Claude Code edition runs on Haiku. OMP does not pre-fill context for the command, so the model gathers the status, diff, branch and recent commits with `bash`.
+
+The plugin's OMP extension runs the same two guard scripts before every agent `bash` call. An ask decision opens a confirmation dialog. Without a UI (print mode `omp -p` or subagents), every command the push guard would prompt for is blocked. This includes commands it cannot parse: a command containing `push` together with a quoted `git -C "<dir>"` or `git -c key="<value>"`, such as `git -C "$REPO" diff -- scripts/block-git-push.sh`. A guard that fails or runs longer than 10 s blocks the call.
+
+`jq` is required: without it, the push guard asks on every `bash` call the commit guard lets through. With a UI this opens a dialog; in print mode and subagents the call is blocked.
+
+Delivery 0.4.1 and later mark their own commits, so the guard does not block them. Older versions stop at their first commit; upgrade an installed Delivery with `omp plugin upgrade delivery@av-marketplace`.
+
+If the guard blocks a commit, run `/commit:commit` yourself. The "/commit skill" mentioned in the block reason means this command.
+
+The `git commit` guard remains a guardrail (see [`git commit` block](#git-commit-block)). The `git push` guard ignores the `AV_COMMIT_SKILL=1` marker. Only the command text counts for the commit guard: setting the marker through the `bash` tool's `env` parameter does not pass it.
+
+Only the agent's `bash` tool calls are checked. The extension does not inspect commands run from the `eval` tool (including IPython `!` lines), commands you type with `!`, `omp commit`, the autoresearch `init_experiment` and `log_experiment` tools, or the `github` tool. Its `pr_push` operation pushes the PR branch and, with `forceWithLease`, force-pushes.

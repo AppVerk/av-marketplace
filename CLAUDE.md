@@ -51,6 +51,8 @@ or an agent frontmatter key the script does not know fails the build rather
 than being dropped. Versions are copied from `.claude-plugin/marketplace.json`,
 so the four-place versioning rule above is unchanged.
 
+A generated plugin's `hooks/hooks.json` becomes an OMP extension. The generator copies `omp/claude-hooks/claude-hooks.ts` to `extensions/`, writes the mapped hooks to `extensions/claude-hooks.json`, and writes a `package.json` that declares the extension, with the catalog version. Only `PreToolUse` command hooks on `Bash` are supported, and only in the form `${CLAUDE_PLUGIN_ROOT}/scripts/<file>` (unquoted, no arguments) where the script's first line is exactly `#!/bin/bash` or `#!/usr/bin/env bash`; any other hook fails the build. The extension implements a subset of Claude Code's hook contract; its header lists the known deviations, and its tests run with `bun test` in `omp/claude-hooks/`. OMP's update check (at startup with `marketplace.autoUpdate: auto`, and `omp plugin upgrade` or `/marketplace upgrade` without a plugin id) compares versions, so a change to `omp/claude-hooks/` reaches installed OMP editions only with a new version: bump every generated plugin that has hooks, in all four places.
+
 In the OMP edition every skill is named `<plugin>:<skill>`: OMP resolves skills
 by name, and several plugins ship a `coding-standards` or `tdd-workflow`. An
 overlay `autoload` list replaces the agent's `skills:` for OMP; keep it to the
