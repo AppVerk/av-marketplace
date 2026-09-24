@@ -1,6 +1,7 @@
 /**
- * Claude Code PreToolUse command-hook adapter. Known differences from Claude Code:
- * - Hooks run sequentially, not in parallel.
+ * Claude Code PreToolUse command-hook adapter. Matching hooks run concurrently;
+ * deny outranks ask and allow, with the first configured denial reason winning.
+ * Known differences from Claude Code:
  * - Stdin includes only session_id, hook_event_name, tool_name, tool_input,
  *   tool_use_id and cwd. tool_input is OMP's bash input (timeout in seconds,
  *   cwd, env, pty, async, etc.). In subagents session_id is the subagent's own
@@ -8,14 +9,14 @@
  * - Only CLAUDE_PLUGIN_ROOT and CLAUDE_PROJECT_DIR are set; CLAUDE_PROJECT_DIR
  *   is ctx.cwd (the subagent worktree when isolated).
  * - Exit 0 with non-JSON output or JSON lacking a PreToolUse decision, any exit
- *   other than 0 or 2 (even with JSON output), and timeouts block. Each hook
- *   gets 10 s; Claude Code defaults to 600 s and permits a timeout key, which
- *   the generator rejects.
+ *   other than 0 or 2 (even with JSON output), timeouts, and output exceeding
+ *   1 MiB per pipe block. Each hook gets 10 s; Claude Code defaults to 600 s
+ *   and permits a timeout key, which the generator rejects.
  * - On exit 2, stderr supplies the reason even when stdout contains JSON.
  * - allow does not bypass OMP approval; a blocked ask reason reaches the model.
  * - defer, updatedInput, additionalContext, systemMessage, continue/stopReason
  *   and the top-level decision field are unsupported.
- * - POSIX only: timeouts kill a process group.
+ * - POSIX only: timeouts and output overflows kill a process group.
  */
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -30,6 +31,28 @@ const HOOKABLE_TOOLS = ["bash"];
 
 type RunResult = { code: number; stdout: string; stderr: string } | { error: string };
 type Outcome = { decision: "allow" } | { decision: "ask" | "deny"; reason: string };
+const MAX_HOOK_OUTPUT_BYTES = 1024 * 1024;
+const OUTPUT_TOO_LARGE = Symbol("output too large");
+
+async function readHookOutput(stream: ReadableStream<Uint8Array>): Promise<string> {
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	const chunks: string[] = [];
+	let bytes = 0;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			bytes += value.byteLength;
+			if (bytes > MAX_HOOK_OUTPUT_BYTES) throw OUTPUT_TOO_LARGE;
+			chunks.push(decoder.decode(value, { stream: true }));
+		}
+		chunks.push(decoder.decode());
+		return chunks.join("");
+	} finally {
+		reader.releaseLock();
+	}
+}
 
 function pluginName(root: string): string {
 	try {
@@ -44,10 +67,10 @@ function pluginName(root: string): string {
 function hookCwd(inputCwd: unknown, projectCwd: string): string | undefined {
 	let cwd = projectCwd;
 	if (typeof inputCwd === "string" && inputCwd.length > 0) {
-		if (/^\/+$/u.test(inputCwd)) cwd = projectCwd;
-		else if (inputCwd.startsWith("~")) cwd = path.resolve(homedir(), inputCwd.slice(1).replace(/^\/+/, ""));
-		else if (path.isAbsolute(inputCwd)) cwd = inputCwd;
-		else cwd = path.resolve(projectCwd, inputCwd);
+		const p = inputCwd.startsWith("~") ? path.join(homedir(), inputCwd.slice(1)) : inputCwd;
+		if (/^\/+$/u.test(p)) cwd = projectCwd;
+		else if (path.isAbsolute(p)) cwd = p;
+		else cwd = path.resolve(projectCwd, p);
 	}
 	try {
 		return statSync(cwd).isDirectory() ? cwd : undefined;
@@ -74,8 +97,8 @@ async function runHook(root: string, entry: HookEntry, projectCwd: string, stdin
 			try { process.kill(-proc.pid, "SIGKILL"); } catch { /* The process group may have already exited. */ }
 			resolve({ error: "timeout" });
 		}, timeoutMs);
-		// The timer stays armed until the exit and both pipes have fully settled.
-		Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]).then(
+		// The timer stays armed until the exit and both bounded pipe reads have settled.
+		Promise.all([proc.exited, readHookOutput(proc.stdout), readHookOutput(proc.stderr)]).then(
 			([code, stdout, stderr]) => {
 				if (settled) return;
 				settled = true;
@@ -87,7 +110,7 @@ async function runHook(root: string, entry: HookEntry, projectCwd: string, stdin
 				settled = true;
 				clearTimeout(timer);
 				try { process.kill(-proc.pid, "SIGKILL"); } catch { /* The process group may have already exited. */ }
-				resolve({ error: String(error) });
+				resolve({ error: error === OUTPUT_TOO_LARGE ? "output too large" : String(error) });
 			},
 		);
 		return await promise;
@@ -141,7 +164,7 @@ export function createClaudeHooks(root: string, config: HookConfig, options?: { 
 				block: true,
 				reason: `${plugin}: cannot resolve the bash cwd (${String(input?.cwd)}); use a plain absolute or relative path.`,
 			};
-			let askReason: string | undefined;
+			const runs: Promise<Outcome>[] = [];
 			for (let index = first; index < config.PreToolUse.length; index++) {
 				const entry = config.PreToolUse[index]!;
 				if (entry.tool !== event.toolName) continue;
@@ -149,14 +172,20 @@ export function createClaudeHooks(root: string, config: HookConfig, options?: { 
 					session_id: ctx.sessionManager.getSessionId(), hook_event_name: "PreToolUse",
 					tool_name: entry.claudeTool, tool_input: event.input, tool_use_id: event.toolCallId, cwd,
 				})]);
-				const result = outcome(await runHook(root, entry, ctx.cwd, stdin, timeoutMs), entry, plugin);
+				runs.push(runHook(root, entry, ctx.cwd, stdin, timeoutMs).then(result => outcome(result, entry, plugin)));
+			}
+			let askReason: string | undefined;
+			// All hooks finish before deciding; config order selects the first deny or ask.
+			for (const result of await Promise.all(runs)) {
 				if (result.decision === "deny") return { block: true, reason: result.reason };
 				if (result.decision === "ask") askReason ??= result.reason;
 			}
 			if (askReason !== undefined) {
 				if (!ctx.hasUI) return { block: true, reason: `${askReason} Blocked: nobody can confirm it in this session.` };
-				const shown = typeof input?.command === "string" ? input.command : JSON.stringify(event.input);
-				if (await ctx.ui.confirm("Confirm command", `${askReason}\n\n${shown}`)) return undefined;
+				const lines = [typeof input?.command === "string" ? input.command : JSON.stringify(event.input)];
+				if (cwd !== ctx.cwd) lines.push(`cwd: ${cwd}`);
+				if (input?.env && typeof input.env === "object" && Object.keys(input.env).length > 0) lines.push(`env: ${JSON.stringify(input.env)}`);
+				if (await ctx.ui.confirm("Confirm command", `${askReason}\n\n${lines.join("\n")}`)) return undefined;
 				return { block: true, reason: `Not confirmed by the user. ${askReason}` };
 			}
 			return undefined;

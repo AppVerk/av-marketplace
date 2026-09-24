@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
@@ -16,7 +16,7 @@ let confirmCalls: [string, string][];
 let confirmAnswer: boolean;
 
 beforeEach(() => {
-	root = realpathSync(mkdtempSync(path.join(tmpdir(), "claude-hooks-")));
+	root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "claude-hooks-")));
 	cwd = path.join(root, "work");
 	mkdirSync(cwd);
 	writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "sample" }));
@@ -70,7 +70,7 @@ test("empty output allows, passing Claude stdin, env, and resolved cwd", async (
 	mkdirSync(path.join(cwd, "sub"));
 	const absolute = path.join(root, "absolute");
 	mkdirSync(absolute);
-	for (const [inputCwd, resolved] of [["sub", path.join(cwd, "sub")], [absolute, absolute], ["/", cwd], ["~", homedir()]]) {
+	for (const [inputCwd, resolved] of [["sub", path.join(cwd, "sub")], [absolute, absolute], ["/", cwd], ["~", os.homedir()]]) {
 		const input = { command: "echo hello", cwd: inputCwd };
 		expect(await call(hook, input)).toBeUndefined();
 		expect(JSON.parse(readFileSync(path.join(root, "stdin.json"), "utf8"))).toEqual({
@@ -78,6 +78,19 @@ test("empty output allows, passing Claude stdin, env, and resolved cwd", async (
 			tool_input: input, tool_use_id: "call-7", cwd: resolved,
 		});
 		expect(readFileSync(path.join(root, "env.txt"), "utf8")).toBe(`${root}\n${cwd}\n`);
+	}
+});
+
+test("tilde cwd uses project cwd when the home directory is only slashes", async () => {
+	const home = spyOn(os, "homedir").mockReturnValue("/");
+	try {
+		const hook = handler({ PreToolUse: [script("capture.sh", 'cat > "$CLAUDE_PLUGIN_ROOT/stdin.json"')] });
+		for (const inputCwd of ["~", "~/"]) {
+			expect(await call(hook, { command: "git push", cwd: inputCwd })).toBeUndefined();
+			expect(JSON.parse(readFileSync(path.join(root, "stdin.json"), "utf8")).cwd).toBe(cwd);
+		}
+	} finally {
+		home.mockRestore();
 	}
 });
 
@@ -89,16 +102,23 @@ test("nonexistent cwd blocks before running hooks", async () => {
 	expect(existsSync(path.join(root, "marker"))).toBe(false);
 });
 
-test("JSON allow allows; JSON deny stops before later hooks, with a fallback reason", async () => {
+test("JSON allow allows; all hooks run even after a deny, with a fallback reason", async () => {
 	const allow = script("allow.sh", decision("allow"));
 	const deny = script("deny.sh", decision("deny", "policy says no"));
 	const later = script("later.sh", 'touch "$CLAUDE_PLUGIN_ROOT/marker"');
 	expect(await call(handler({ PreToolUse: [allow] }))).toBeUndefined();
 	expect(await call(handler({ PreToolUse: [allow, deny, later] }))).toEqual({ block: true, reason: "policy says no" });
-	expect(existsSync(path.join(root, "marker"))).toBe(false);
+	expect(existsSync(path.join(root, "marker"))).toBe(true);
 	expect(await call(handler({ PreToolUse: [script("no-reason.sh", decision("deny"))] }))).toEqual({
 		block: true, reason: "sample hook no-reason.sh denied this call.",
 	});
+});
+
+test("concurrent hooks choose the first deny in config order, not completion order", async () => {
+	const first = script("first.sh", `until [ -e "$CLAUDE_PLUGIN_ROOT/second-started" ]; do sleep 0.01; done\n${decision("deny", "first deny")}`);
+	const second = script("second.sh", `touch "$CLAUDE_PLUGIN_ROOT/second-started"\n${decision("deny", "second deny")}`);
+	const hook = handler({ PreToolUse: [first, second] }, { timeoutMs: 2000 });
+	expect(await call(hook)).toEqual({ block: true, reason: "first deny" });
 });
 
 test("JSON ask prompts after hooks; accepted, declined, and headless paths", async () => {
@@ -114,6 +134,31 @@ test("JSON ask prompts after hooks; accepted, declined, and headless paths", asy
 	expect(await call(handler({ PreToolUse: [script("ask-default.sh", decision("ask"))] }))).toEqual({
 		block: true, reason: "sample hook ask-default.sh asks for confirmation. Blocked: nobody can confirm it in this session.",
 	});
+});
+
+test("concurrent asks keep the first reason in config order", async () => {
+	const first = script("first.sh", `until [ -e "$CLAUDE_PLUGIN_ROOT/second-started" ]; do sleep 0.01; done\n${decision("ask", "first ask")}`);
+	const second = script("second.sh", `touch "$CLAUDE_PLUGIN_ROOT/second-started"\n${decision("ask", "second ask")}`);
+	const hook = handler({ PreToolUse: [first, second] }, { timeoutMs: 2000 });
+	expect(await call(hook)).toBeUndefined();
+	expect(confirmCalls).toEqual([["Confirm command", "first ask\n\necho hello"]]);
+});
+
+test("ask confirmation shows the effective bash cwd and environment", async () => {
+	const hook = handler({ PreToolUse: [script("ask.sh", decision("ask", "confirm push"))] });
+	const otherRepo = path.join(root, "other-repo");
+	mkdirSync(otherRepo);
+	const env = { GIT_DIR: path.join(root, "override.git"), GIT_WORK_TREE: otherRepo };
+	expect(await call(hook, { command: "git push", cwd: otherRepo, env })).toBeUndefined();
+	expect(confirmCalls).toEqual([[
+		"Confirm command",
+		`confirm push\n\ngit push\ncwd: ${otherRepo}\nenv: ${JSON.stringify(env)}`,
+	]]);
+	expect(await call(hook, { command: "git push", cwd, env })).toBeUndefined();
+	expect(confirmCalls[1]).toEqual([
+		"Confirm command",
+		`confirm push\n\ngit push\nenv: ${JSON.stringify(env)}`,
+	]);
 });
 
 test("a later deny overrides an earlier ask, without prompting", async () => {
@@ -170,11 +215,38 @@ test("a child holding stdout open counts as a timeout", async () => {
 	expect(performance.now() - start).toBeLessThan(2000);
 });
 
-test("a successful hook clears its timeout timer", async () => {
+test("a successful hook never kills its process group later", async () => {
 	const hook = handler({ PreToolUse: [script("fast.sh", "exit 0")] }, { timeoutMs: 100 });
-	expect(await call(hook)).toBeUndefined();
-	// Deliberately let Bun's real timer fire if the extension forgot to clear it.
-	await Bun.sleep(300);
+	const kill = spyOn(process, "kill");
+	try {
+		expect(await call(hook)).toBeUndefined();
+		// Let Bun's real timer elapse after the spawned process exits; fake timers cannot drive its OS exit.
+		await Bun.sleep(300);
+		expect(kill).not.toHaveBeenCalled();
+	} finally {
+		kill.mockRestore();
+	}
+});
+
+test("stdout at the 1 MiB limit is accepted, but one extra byte fails before timeout", async () => {
+	const allow = JSON.stringify({ hookSpecificOutput: { permissionDecision: "allow" } });
+	const remaining = 1024 * 1024 - Buffer.byteLength(allow);
+	const exact = script("exact-output.sh", `printf '%s' '${allow}'; printf '%*s' ${remaining} ''`);
+	expect(await call(handler({ PreToolUse: [exact] }))).toBeUndefined();
+
+	const oversized = script("oversized-stdout.sh", `printf '%s' '${allow}'; printf '%*s' ${remaining + 1} ''; sleep 5`);
+	const start = performance.now();
+	expect(await call(handler({ PreToolUse: [oversized] }, { timeoutMs: 2000 }))).toEqual({
+		block: true, reason: "sample hook oversized-stdout.sh failed: output too large. The call is blocked.",
+	});
+	expect(performance.now() - start).toBeLessThan(1800);
+});
+
+test("stderr overflow fails even when the hook exits 2 with a blocking reason", async () => {
+	const oversized = script("oversized-stderr.sh", "printf '%*s' 1048577 '' >&2; exit 2");
+	expect(await call(handler({ PreToolUse: [oversized] }))).toEqual({
+		block: true, reason: "sample hook oversized-stderr.sh failed: output too large. The call is blocked.",
+	});
 });
 
 test("a hook exiting without reading large stdin does not cause EPIPE", async () => {

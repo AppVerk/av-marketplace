@@ -107,7 +107,12 @@ top-level command string):
 - **Secret leakage:** allowing feature-branch pushes means a branch containing
   accidentally-committed secrets can be published to `origin`. Content is not
   scanned. The non-origin/URL prompt mitigates exfiltration to other remotes.
-- **`jq` dependency:** both hooks parse their input with `jq`. Without `jq` on `PATH`, the `git commit` hook applies its rules to the raw hook input, so a direct `git commit` is still denied while `AV_COMMIT_SKILL=1` and `--amend` commits pass, and the `git push` hook asks for confirmation on every Bash call. The CI image provides `jq`; install it wherever you run Claude Code or OMP (see Prerequisites in `docs/installation.md`).
+- **`jq` dependency:** both hooks parse their input with `jq`. Without `jq`
+  on `PATH`, the `git commit` hook applies its rules to the raw hook input,
+  so a direct `git commit` is still denied while `AV_COMMIT_SKILL=1` and
+  `--amend` commits pass, and the `git push` hook asks for confirmation on
+  every Bash call. The CI image provides `jq`; install it wherever you run
+  Claude Code or OMP (see Prerequisites in `docs/installation.md`).
 
 Both hooks are registered automatically when the plugin is enabled. No configuration required.
 
@@ -117,7 +122,7 @@ Install with `omp plugin install commit@av-marketplace`. If you added the market
 
 In OMP, `/commit:commit` runs on the session's model because OMP commands have no model setting; the Claude Code edition runs on Haiku. OMP does not pre-fill context for the command, so the model gathers the status, diff, branch and recent commits with `bash`.
 
-The plugin's OMP extension runs the same two guard scripts before every agent `bash` call. An ask decision opens a confirmation dialog. Without a UI (print mode `omp -p` or subagents), every command the push guard would prompt for is blocked. This includes commands it cannot parse: a command containing `push` together with a quoted `git -C "<dir>"` or `git -c key="<value>"`, such as `git -C "$REPO" diff -- scripts/block-git-push.sh`. A guard that fails or runs longer than 10 s blocks the call.
+The plugin's OMP extension runs the same two guard scripts concurrently before every agent `bash` call. It waits for both and applies deny before ask before allow; if both deny, the first configured hook's reason is shown. An ask decision opens a confirmation dialog showing the command, a non-default resolved `cwd`, and any non-empty `env` supplied to `bash`. Without a UI (print mode `omp -p` or subagents), every command the push guard would prompt for is blocked. This includes commands it cannot parse: a command containing `push` together with a quoted `git -C "<dir>"` or `git -c key="<value>"`, such as `git -C "$REPO" diff -- scripts/block-git-push.sh`. A guard that fails, runs longer than 10 s, or writes more than 1 MiB to either stdout or stderr blocks the call. Before either guard runs, the extension blocks any `bash` call whose `cwd` does not resolve to an existing directory. It understands only `~`, absolute and relative paths: OMP-only forms that the `bash` tool itself accepts, such as `@/…` and `file://…`, are blocked too, so use a plain absolute or relative path. If the plugin's `extensions/claude-hooks.json` cannot be read or is invalid, the extension blocks every `bash` call; reinstall the plugin.
 
 `jq` is required: without it, the push guard asks on every `bash` call the commit guard lets through. With a UI this opens a dialog; in print mode and subagents the call is blocked.
 

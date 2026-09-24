@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -16,7 +17,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from build_omp_edition import BuildError, build, build_native, guarded, main
+from build_omp_edition import HOOK_TOOL_MAP, BuildError, build, build_native, guarded, main
 
 
 AGENT = "---\nname: worker\ndescription: Does work\ntools: Read, Bash\nskills: review\n---\n\nAgent body.\n"
@@ -93,6 +94,13 @@ class TestGenerated(unittest.TestCase):
             self.assertIn("Source: sample/commands/check.md", command)
             self.assertEqual((plugin / "scripts/utility.py").read_text(), "print('ok')\n")
             self.assertEqual(json.loads((plugin / ".omp-plugin/plugin.json").read_text()), MANIFEST)
+
+    def test_hookable_tools_match_generated_hook_targets(self) -> None:
+        source = (Path(__file__).resolve().parent.parent / "omp/claude-hooks/claude-hooks.ts").read_text()
+        match = re.search(r"\bconst HOOKABLE_TOOLS\s*=\s*(\[[^\]]*\])\s*;", source, re.S)
+        if match is None:
+            self.fail("HOOKABLE_TOOLS declaration not found")
+        self.assertEqual(json.loads(match.group(1)), sorted(set(HOOK_TOOL_MAP.values())))
 
     def test_hooks_become_the_claude_hooks_extension(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -203,6 +211,7 @@ class TestGenerated(unittest.TestCase):
             f"{HOOK_COMMAND} --dry-run",
             "${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json",
             "${CLAUDE_PLUGIN_ROOT}/scripts/../hooks/hooks.json",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/x/../guard.sh",
             "${CLAUDE_PLUGIN_ROOT}/scripts/missing.sh",
         )
         for command in commands:

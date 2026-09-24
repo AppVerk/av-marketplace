@@ -14,12 +14,15 @@ a corresponding plugins/<slug>/ directory.
 
 Optionally (with --check-regression) compares each plugin's version against the
 last commit on origin/master and fails if any plugin's version went backwards.
+With --check-hooks-version-bump BASE_REF, requires a version bump of every
+overlaid plugin with hooks when its previously shipped OMP hooks adapter changes.
 
 Exits 0 on success, 1 on any mismatch, missing version source, or orphan.
 
 Usage:
     python3 scripts/check_plugin_versions.py
     python3 scripts/check_plugin_versions.py --check-regression
+    python3 scripts/check_plugin_versions.py --check-hooks-version-bump BASE_REF
 
 Run from GitHub Actions on Ubuntu; only the Python 3 standard library is used.
 """
@@ -173,10 +176,10 @@ def _git(*args: str) -> str:
     return result.stdout.strip()
 
 
-def _master_plugin_version(slug: str) -> str | None:
-    """Return the plugin.json version for <slug> at origin/master, or None."""
+def _plugin_version_at_ref(slug: str, ref: str) -> str | None:
+    """Return the plugin.json version at ref, or None if absent or unreadable."""
     rel_path = f"plugins/{slug}/.claude-plugin/plugin.json"
-    blob = _git("show", f"origin/master:{rel_path}")
+    blob = _git("show", f"{ref}:{rel_path}")
     if not blob:
         return None
     try:
@@ -213,7 +216,7 @@ def _check_regressions(slugs: list[str]) -> list[str]:
         if not isinstance(current, str):
             continue  # parity check above already flags missing versions
 
-        previous = _master_plugin_version(slug)
+        previous = _plugin_version_at_ref(slug, "origin/master")
         if previous is None:
             # New plugin not yet on master, or unreadable on master — nothing to compare.
             continue
@@ -236,6 +239,52 @@ def _check_regressions(slugs: list[str]) -> list[str]:
     return errors
 
 
+def _check_hooks_version_bumps(slugs: list[str], base_ref: str) -> list[str]:
+    """Require bumped versions if an existing shared adapter changes."""
+    adapter = "omp/claude-hooks/claude-hooks.ts"
+    baseline = subprocess.run(
+        ["git", "ls-tree", base_ref, "--", adapter],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if baseline.returncode != 0:
+        return [f"[hooks-version-check] cannot inspect adapter at {base_ref}: {baseline.stderr.strip()}"]
+    if not baseline.stdout:
+        return []  # No installed OMP edition shipped this adapter at the base ref.
+
+    diff = subprocess.run(
+        ["git", "diff", "--quiet", base_ref, "--", adapter],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if diff.returncode == 0:
+        return []
+    if diff.returncode != 1:
+        return [f"[hooks-version-check] cannot compare adapter with {base_ref}: {diff.stderr.strip()}"]
+
+    errors: list[str] = []
+    for slug in slugs:
+        if not (REPO_ROOT / "omp" / "overlay" / f"{slug}.json").is_file():
+            continue
+        if not (PLUGINS_DIR / slug / "hooks" / "hooks.json").is_file():
+            continue
+        previous = _plugin_version_at_ref(slug, base_ref)
+        if previous is None:
+            continue  # New plugin: there is no prior installed version to update.
+        try:
+            current = _read_json(PLUGINS_DIR / slug / ".claude-plugin" / "plugin.json").get("version")
+        except (OSError, json.JSONDecodeError):
+            continue  # The parity check reports unreadable or malformed manifests.
+        if current == previous:
+            errors.append(
+                f"[{slug}] shared OMP hooks adapter changed, but version is still "
+                f"{previous} (same as {base_ref}); bump all four version sources"
+            )
+    return errors
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Check plugin version parity across the marketplace.",
@@ -247,6 +296,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "Also fetch origin/master and fail if any plugin's SemVer went "
             "backwards. Requires git access to the remote; opt-in only."
         ),
+    )
+    parser.add_argument(
+        "--check-hooks-version-bump",
+        metavar="BASE_REF",
+        help="Require hooked OMP plugin version bumps if the shared adapter changed since BASE_REF.",
     )
     return parser.parse_args(argv)
 
@@ -350,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check_regression:
         errors.extend(_check_regressions(slugs))
+    if args.check_hooks_version_bump:
+        errors.extend(_check_hooks_version_bumps(slugs, args.check_hooks_version_bump))
 
     if errors:
         print("\nVersion parity check FAILED:\n", file=sys.stderr)

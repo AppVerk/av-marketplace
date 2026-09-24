@@ -501,7 +501,6 @@ def build_generated(
     if "hooks" in manifest:
         raise BuildError(f"{manifest_path}: inline hooks are not mapped")
 
-
     for name in VERBATIM_DIRS:
         if (src_root / name).is_dir():
             for src in sorted((src_root / name).rglob("*")):
