@@ -50,6 +50,16 @@ def fixture(root: Path) -> None:
     put(plugin / "scripts/utility.py", "print('ok')\n")
 
 
+HOOK_COMMAND = "${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh"
+HOOK_GROUP = {"matcher": "Bash", "hooks": [{"type": "command", "command": HOOK_COMMAND}]}
+
+
+def hooks_fixture(root: Path) -> None:
+    put_json(root / "plugins/sample/hooks/hooks.json", {"hooks": {"PreToolUse": [HOOK_GROUP]}})
+    put(root / "plugins/sample/scripts/guard.sh", "#!/bin/bash\nexit 0\n")
+    put(root / "omp/claude-hooks/claude-hooks.ts", "// adapter\n")
+
+
 def native_fixture(root: Path) -> Path:
     native = root / "native"
     put_json(native / ".omp-plugin/plugin.json", {
@@ -83,6 +93,196 @@ class TestGenerated(unittest.TestCase):
             self.assertIn("Source: sample/commands/check.md", command)
             self.assertEqual((plugin / "scripts/utility.py").read_text(), "print('ok')\n")
             self.assertEqual(json.loads((plugin / ".omp-plugin/plugin.json").read_text()), MANIFEST)
+
+    def test_hooks_become_the_claude_hooks_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            hooks_fixture(source)
+
+            build(root / "output", source)
+            plugin = root / "output/plugins-omp/sample"
+            self.assertEqual(
+                (plugin / "extensions/claude-hooks.ts").read_text(),
+                (source / "omp/claude-hooks/claude-hooks.ts").read_text(),
+            )
+            self.assertEqual(json.loads((plugin / "extensions/claude-hooks.json").read_text()), {
+                "PreToolUse": [{
+                    "tool": "bash", "claudeTool": "Bash", "command": "scripts/guard.sh",
+                }],
+            })
+            self.assertEqual(json.loads((plugin / "package.json").read_text()), {
+                "name": "sample", "version": "1.2.3", "private": True, "type": "module",
+                "omp": {"extensions": ["./extensions/claude-hooks.ts"]},
+            })
+            self.assertFalse((plugin / "hooks").exists())
+
+            put(source / "plugins/sample/scripts/second.sh", "#!/usr/bin/env bash\nexit 0\n")
+            put_json(source / "plugins/sample/hooks/hooks.json", {
+                "$schema": "https://example.test/hooks.schema.json",
+                "description": "Sample hooks",
+                "hooks": {"PreToolUse": [
+                    HOOK_GROUP,
+                    {"matcher": "Bash", "hooks": [{
+                        "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/second.sh",
+                    }]},
+                ]},
+            })
+            build(root / "second-output", source)
+            config = json.loads(
+                (root / "second-output/plugins-omp/sample/extensions/claude-hooks.json").read_text()
+            )
+            self.assertEqual(config, {"PreToolUse": [
+                {"tool": "bash", "claudeTool": "Bash", "command": "scripts/guard.sh"},
+                {"tool": "bash", "claudeTool": "Bash", "command": "scripts/second.sh"},
+            ]})
+
+    def test_plugin_without_hooks_gets_no_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            self.assertFalse((source / "omp/claude-hooks").exists())
+
+            build(root / "output", source)
+            plugin = root / "output/plugins-omp/sample"
+            self.assertFalse((plugin / "package.json").exists())
+            self.assertFalse((plugin / "extensions").exists())
+
+    def test_unsupported_hooks_fail_closed(self) -> None:
+        def group(matcher: object = "Bash", hook: object = None) -> dict:
+            return {"matcher": matcher, "hooks": [hook if hook is not None else {
+                "type": "command", "command": HOOK_COMMAND,
+            }]}
+
+        cases = {
+            "missing hooks key": ({}, "malformed hooks.json"),
+            "top level list": ([], "malformed hooks.json"),
+            "unknown top-level key": ({"hooks": {"PreToolUse": [group()]}, "surprise": True}, "unknown hooks.json keys"),
+            "non-object hooks": ({"hooks": []}, "malformed hooks.json"),
+            "empty hooks": ({"hooks": {}}, "malformed hooks.json"),
+            "empty event": ({"hooks": {"PreToolUse": []}}, "malformed hooks.json"),
+            "group extra key": ({"hooks": {"PreToolUse": [{**group(), "surprise": True}]}}, "malformed hooks.json"),
+            "empty group hooks": ({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": []}]}}, "malformed hooks.json"),
+            "numeric matcher": ({"hooks": {"PreToolUse": [group(42)]}}, "malformed hooks.json"),
+            "hook without type": ({"hooks": {"PreToolUse": [group(hook={
+                "command": HOOK_COMMAND,
+            })]}}, "malformed hooks.json"),
+            "numeric command": ({"hooks": {"PreToolUse": [group(hook={
+                "type": "command", "command": 3,
+            })]}}, "malformed hooks.json"),
+            "unsupported event": ({"hooks": {"SessionStart": [group()]}}, "no OMP mapping for hook event"),
+            "missing matcher": ({"hooks": {"PreToolUse": [{"hooks": group()["hooks"]}]}}, "no OMP mapping for hook matcher"),
+            "skill matcher": ({"hooks": {"PreToolUse": [group("Skill")]}}, "no OMP mapping for hook matcher"),
+            "write matcher": ({"hooks": {"PreToolUse": [group("Write")]}}, "no OMP mapping for hook matcher"),
+            "webfetch matcher": ({"hooks": {"PreToolUse": [group("WebFetch")]}}, "no OMP mapping for hook matcher"),
+            "regex matcher": ({"hooks": {"PreToolUse": [group("Bash|Edit")]}}, "no OMP mapping for hook matcher"),
+            "prompt hook": ({"hooks": {"PreToolUse": [group(hook={
+                "type": "prompt", "prompt": "Is this safe?",
+            })]}}, "hook type"),
+            "timeout hook": ({"hooks": {"PreToolUse": [group(hook={
+                "type": "command", "command": HOOK_COMMAND, "timeout": 3,
+            })]}}, "unknown hook keys"),
+            "missing command": ({"hooks": {"PreToolUse": [group(hook={
+                "type": "command",
+            })]}}, "unknown hook keys"),
+        }
+        for label, (data, error) in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source"
+                fixture(source)
+                hooks_fixture(source)
+                put_json(source / "plugins/sample/hooks/hooks.json", data)
+                with self.assertRaisesRegex(BuildError, error):
+                    build(root / "output", source)
+
+        commands = (
+            "scripts/guard.sh",
+            f"{HOOK_COMMAND} --dry-run",
+            "${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/../hooks/hooks.json",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/missing.sh",
+        )
+        for command in commands:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source"
+                fixture(source)
+                hooks_fixture(source)
+                put_json(source / "plugins/sample/hooks/hooks.json", {
+                    "hooks": {"PreToolUse": [group(hook={
+                        "type": "command", "command": command,
+                    })]},
+                })
+                with self.assertRaisesRegex(BuildError, "hook command"):
+                    build(root / "output", source)
+
+        for first_line in ("#!/usr/bin/env python3\n", "#!/bin/sh\n", "#!/bin/bash -e\n", "#!/bin/bash\r\n"):
+            with self.subTest(first_line=first_line), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source"
+                fixture(source)
+                hooks_fixture(source)
+                (source / "plugins/sample/scripts/guard.sh").write_bytes(
+                    first_line.encode() + b"exit 0\n"
+                )
+                with self.assertRaisesRegex(BuildError, "not a shell script"):
+                    build(root / "output", source)
+
+        for invalid in ("extra file", "hooks is file", "hooks.json is directory"):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source"
+                fixture(source)
+                hooks_fixture(source)
+                hooks = source / "plugins/sample/hooks"
+                if invalid == "extra file":
+                    put(hooks / "extra.sh", "#!/bin/bash\n")
+                elif invalid == "hooks is file":
+                    (hooks / "hooks.json").unlink()
+                    hooks.rmdir()
+                    put(hooks, "invalid\n")
+                else:
+                    (hooks / "hooks.json").unlink()
+                    (hooks / "hooks.json").mkdir()
+                with self.assertRaisesRegex(BuildError, "no OMP mapping for"):
+                    build(root / "output", source)
+
+        with self.subTest(invalid="inline manifest hooks"), tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            hooks_fixture(source)
+            put_json(source / "plugins/sample/.claude-plugin/plugin.json", {
+                **MANIFEST, "hooks": {},
+            })
+            with self.assertRaisesRegex(BuildError, "inline hooks"):
+                build(root / "output", source)
+
+        with self.subTest(invalid="missing adapter"), tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            hooks_fixture(source)
+            (source / "omp/claude-hooks/claude-hooks.ts").unlink()
+            with self.assertRaisesRegex(BuildError, "missing"):
+                build(root / "output", source)
+            self.assertFalse((root / "output/plugins-omp/sample").exists())
+
+    def test_claude_hooks_adapter_rejects_source_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            adapter_dir = source / "omp/claude-hooks"
+            put(adapter_dir / "claude-hooks.ts", "// adapter\n")
+            external = root / "helper.ts"
+            external.write_text("// external\n")
+            (adapter_dir / "helper.ts").symlink_to(external)
+            with self.assertRaisesRegex(BuildError, "symlinks are not allowed"):
+                build(root / "output", source)
 
     def test_unknown_source_entries_and_overlay_entries_fail_closed(self):
         cases = {

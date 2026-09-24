@@ -13,6 +13,8 @@ overlay at `omp/overlay/<name>.json`, this script writes `plugins-omp/<name>/`:
   (`omp/preamble.md`) above the unchanged body;
 - `agents/*.md` get OMP frontmatter — `<plugin>:<agent>` names, OMP tool
   names, a role-routed `model` — and the preamble above the unchanged body;
+- `hooks/hooks.json` maps Bash PreToolUse command hooks to an OMP extension
+  and its `package.json`; unsupported hooks fail the build;
 - `.omp-plugin/plugin.json` mirrors the Claude manifest.
 
 `omp/native/<name>/` holds OMP-only plugins. They are copied as-is (minus
@@ -48,7 +50,7 @@ OUTPUT_DIR_NAME = "plugins-omp"
 OMP_CATALOG_REL = Path(".omp-plugin") / "marketplace.json"
 
 VERBATIM_DIRS = ("scripts",)
-KNOWN_ENTRIES = {".claude-plugin", "agents", "commands", "skills", *VERBATIM_DIRS}
+KNOWN_ENTRIES = {".claude-plugin", "agents", "commands", "skills", "hooks", *VERBATIM_DIRS}
 COMMAND_KEYS = ("description", "argument-hint")
 # OMP commands read only `description` and `argument-hint`; these Claude Code
 # keys are dropped on purpose.
@@ -96,6 +98,10 @@ TOOL_MAP: dict[str, str | None] = {
     "AskUserQuestion": "ask",
     "Skill": None,
 }
+# Add a tool only after checking its OMP input shape matches Claude's, and add
+# its OMP name to HOOKABLE_TOOLS in omp/claude-hooks/claude-hooks.ts, which
+# blocks these tools when the hook config cannot be read.
+HOOK_TOOL_MAP = {"Bash": "bash"}
 SCOPED_GRANT = re.compile(r"^(?P<tool>[A-Za-z]+)\(.*\)$")
 SKILL_NAME_LINE = re.compile(r"^name:.*$", re.MULTILINE)
 
@@ -387,8 +393,80 @@ def build_native(src_root: Path, out_root: Path, taken: set[str]) -> dict:
     }
 
 
+def map_hooks(path: Path, src_root: Path) -> dict:
+    """Map supported Claude command hooks to the OMP extension config."""
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        raise BuildError(f"{path}: malformed hooks.json") from error
+    if not isinstance(data, dict) or "hooks" not in data:
+        raise BuildError(f"{path}: malformed hooks.json")
+    unknown = set(data) - {"hooks", "$schema", "description"}
+    if unknown:
+        raise BuildError(f"{path}: unknown hooks.json keys {sorted(unknown)}")
+
+    events = data["hooks"]
+    if not isinstance(events, dict) or not events:
+        raise BuildError(f"{path}: malformed hooks.json")
+    for groups in events.values():
+        if not isinstance(groups, list) or not groups:
+            raise BuildError(f"{path}: malformed hooks.json")
+        for group in groups:
+            if (
+                not isinstance(group, dict)
+                or set(group) - {"matcher", "hooks"}
+                or ("matcher" in group and not isinstance(group["matcher"], str))
+                or not isinstance(group.get("hooks"), list)
+                or not group["hooks"]
+            ):
+                raise BuildError(f"{path}: malformed hooks.json")
+            for hook in group["hooks"]:
+                if (
+                    not isinstance(hook, dict)
+                    or not isinstance(hook.get("type"), str)
+                    or ("command" in hook and not isinstance(hook["command"], str))
+                ):
+                    raise BuildError(f"{path}: malformed hooks.json")
+
+    mapped = []
+    scripts_root = (src_root / "scripts").resolve()
+    for event, groups in events.items():
+        if event != "PreToolUse":
+            raise BuildError(f"{path}: no OMP mapping for hook event {event!r}")
+        for group in groups:
+            matcher = group.get("matcher")
+            if matcher not in HOOK_TOOL_MAP:
+                raise BuildError(f"{path}: no OMP mapping for hook matcher {matcher!r}")
+            for hook in group["hooks"]:
+                if hook["type"] != "command":
+                    raise BuildError(f"{path}: no OMP mapping for hook type {hook['type']!r}")
+                if set(hook) != {"type", "command"}:
+                    raise BuildError(f"{path}: unknown hook keys {sorted(hook)}")
+
+                command = hook["command"]
+                match = re.fullmatch(r"\$\{CLAUDE_PLUGIN_ROOT\}/(scripts/\S+)", command)
+                if match is None:
+                    raise BuildError(f"{path}: hook command {command}")
+                rel = Path(match.group(1))
+                script = (src_root / rel).resolve()
+                if ".." in rel.parts or not script.is_relative_to(scripts_root) or not script.is_file():
+                    raise BuildError(f"{path}: hook command {command}")
+                with script.open("rb") as source:
+                    first_line = source.readline().removesuffix(b"\n")
+                if first_line not in (b"#!/bin/bash", b"#!/usr/bin/env bash"):
+                    raise BuildError(
+                        f"{path}: hook command {command}: not a shell script bash can run as is; "
+                        "the first line must be exactly #!/bin/bash or #!/usr/bin/env bash"
+                    )
+                mapped.append({
+                    "tool": HOOK_TOOL_MAP[matcher], "claudeTool": matcher, "command": rel.as_posix(),
+                })
+
+    return {"PreToolUse": mapped}
+
+
 def build_generated(
-    src_root: Path, overlay_path: Path, entry: dict, out_root: Path, preamble: str
+    src_root: Path, overlay_path: Path, entry: dict, out_root: Path, preamble: str, adapter: Path
 ) -> dict:
     """Build one overlaid Claude plugin and return its OMP catalog entry."""
     reject_source_symlinks(src_root)
@@ -404,6 +482,25 @@ def build_generated(
     unknown = {path.name for path in src_root.iterdir()} - KNOWN_ENTRIES - {"tests"}
     if unknown:
         raise BuildError(f"{src_root}: no OMP mapping for {sorted(unknown)}")
+    hooks_root = src_root / "hooks"
+    hooks_path = hooks_root / "hooks.json"
+    hooks_config = None
+    if hooks_root.exists():
+        if (
+            not hooks_root.is_dir()
+            or {path.name for path in hooks_root.iterdir()} != {"hooks.json"}
+            or not hooks_path.is_file()
+        ):
+            raise BuildError(f"{hooks_root}: no OMP mapping for hooks other than hooks/hooks.json")
+        if not adapter.is_file():
+            raise BuildError(f"{adapter}: missing; {src_root.name} has hooks/hooks.json")
+        hooks_config = map_hooks(hooks_path, src_root)
+
+    manifest_path = src_root / ".claude-plugin" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text())
+    if "hooks" in manifest:
+        raise BuildError(f"{manifest_path}: inline hooks are not mapped")
+
 
     for name in VERBATIM_DIRS:
         if (src_root / name).is_dir():
@@ -443,7 +540,22 @@ def build_generated(
     if stale:
         raise BuildError(f"{overlay_path}: overlay names agents that do not exist: {sorted(stale)}")
 
-    manifest = json.loads((src_root / ".claude-plugin" / "plugin.json").read_text())
+    if hooks_config is not None:
+        extensions = dst_root / "extensions"
+        write(
+            extensions / "claude-hooks.json",
+            json.dumps(hooks_config, indent=2) + "\n",
+            out_root,
+        )
+        copy(adapter, extensions / "claude-hooks.ts", out_root)
+        package = {
+            "name": plugin,
+            "version": entry["version"],
+            "private": True,
+            "type": "module",
+            "omp": {"extensions": ["./extensions/claude-hooks.ts"]},
+        }
+        write(dst_root / "package.json", json.dumps(package, indent=2) + "\n", out_root)
     write(
         dst_root / ".omp-plugin" / "plugin.json",
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
@@ -465,6 +577,7 @@ def build(dest_repo: Path, source_repo: Path = REPO) -> None:
     reject_source_symlinks(source_repo / "plugins")
     reject_source_symlinks(source_repo / "omp" / "overlay")
     reject_source_symlinks(source_repo / "omp" / "native", NATIVE_SKIPPED_DIRS)
+    reject_source_symlinks(source_repo / "omp" / "claude-hooks", NATIVE_SKIPPED_DIRS)
     for path in (source_repo / "omp" / "preamble.md", source_repo / ".claude-plugin" / "marketplace.json"):
         if path.is_symlink():
             raise BuildError(f"{path}: symlinks are not allowed in plugin sources")
@@ -482,7 +595,8 @@ def build(dest_repo: Path, source_repo: Path = REPO) -> None:
             raise BuildError(f"{overlay_path}: {plugin!r} is not in the Claude catalog")
         omp_plugins.append(
             build_generated(
-                source_repo / "plugins" / plugin, overlay_path, entries[plugin], out_root, preamble
+                source_repo / "plugins" / plugin, overlay_path, entries[plugin], out_root,
+                preamble, source_repo / "omp" / "claude-hooks" / "claude-hooks.ts",
             )
         )
 
