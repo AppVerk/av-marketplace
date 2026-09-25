@@ -1,43 +1,44 @@
 #!/usr/bin/env bash
-# check_setup.sh - walidator setupu av-dev w repo (config, nakladki, role, skille rol).
+# check_setup.sh - validator of the av-dev setup in a repo (config, overlays, roles, role skills).
 #
-# Wynik: linie SETUP_<KOD> <szczegoly>, na koncu CHECKED n ERRORS e WARNINGS w.
-#   SETUP_CONFIG_MISSING      brak configu (ERROR)
-#   SETUP_CONFIG_INVALID      config nie jest poprawnym JSON (ERROR)
-#   SETUP_OVERLAY_MISSING     brak nakladki jednego z 5 skilli (WARNING)
-#   SETUP_OVERLAY_SECTION     nakladka bez wymaganej sekcji (WARNING)
-#   SETUP_ROLES_NONE          config bez "roles"; kazdy plik nalezy do implementer (WARNING)
-#   SETUP_ROLE_INVALID        rola bez name, skill albo globs (ERROR)
-#   SETUP_ROLE_SKILL_MISSING  brak .claude/skills/<skill>/SKILL.md (ERROR)
-#   SETUP_ROLE_OVERLAP        plik sledzony pasuje do globow 2 rol (ERROR)
-#   SETUP_ROLE_EMPTY          glob roli nie pasuje do zadnego pliku sledzonego (WARNING)
-#   SETUP_UNOWNED_DIR         katalog top-level z plikami zrodel bez wlasciciela (WARNING)
-#   SETUP_REF_MISSING         sciezka z backtickow w nakladce albo skillu nie istnieje (ERROR)
-#   SETUP_REF_SKIPPED         brak av-docs-sync/scripts/check_refs.sh (WARNING)
-#   SETUP_GATE_UNKNOWN        --gate X albo --only X spoza validation (ERROR)
-#   SETUP_GLOB_COPY           skill roli albo nakladka kopiuje 3+ globy roli (WARNING)
-#   SETUP_INTEGRATION_INVALID pole integracji niezgodne z manifestem szablonu (ERROR)
-#   SETUP_TEMPLATE_MISSING    szablon ma zastosowanie (applies), a pliku w repo brak (WARNING)
-#                             szablony: templates/<nazwa>/template.json albo AV_TEMPLATES_DIR
-#   SETUP_LOCAL_TRACKED       <config>.local jest sledzony przez git (ERROR)
-#   SETUP_LOCAL_IGNORE        .gitignore nie ignoruje <config>.local (WARNING)
-#   SETUP_LOCAL_USED          informacja: kontrola dziala na configu z nadpisaniem lokalnym
+# Output: lines SETUP_<CODE> <details>, then CHECKED n ERRORS e WARNINGS w at the end.
+#   SETUP_CONFIG_MISSING      no config (ERROR)
+#   SETUP_CONFIG_INVALID      config is not valid JSON (ERROR)
+#   SETUP_OVERLAY_MISSING     no overlay for one of the 5 skills (WARNING)
+#   SETUP_OVERLAY_SECTION     overlay without a required section (WARNING)
+#                             English name or Polish alias (references/localization.md)
+#   SETUP_ROLES_NONE          config without "roles"; every file belongs to implementer (WARNING)
+#   SETUP_ROLE_INVALID        role without name, skill or globs (ERROR)
+#   SETUP_ROLE_SKILL_MISSING  no .claude/skills/<skill>/SKILL.md (ERROR)
+#   SETUP_ROLE_OVERLAP        tracked file matches the globs of 2 roles (ERROR)
+#   SETUP_ROLE_EMPTY          role glob matches no tracked file (WARNING)
+#   SETUP_UNOWNED_DIR         top-level directory with source files and no owner (WARNING)
+#   SETUP_REF_MISSING         backtick path in an overlay or skill does not exist (ERROR)
+#   SETUP_REF_SKIPPED         no av-docs-sync/scripts/check_refs.sh (WARNING)
+#   SETUP_GATE_UNKNOWN        --gate X or --only X not in validation (ERROR)
+#   SETUP_GLOB_COPY           role skill or overlay copies 3+ role globs (WARNING)
+#   SETUP_INTEGRATION_INVALID integration field does not match the template manifest (ERROR)
+#   SETUP_TEMPLATE_MISSING    template applies, but its file is missing in the repo (WARNING)
+#                             templates: templates/<name>/template.json or AV_TEMPLATES_DIR
+#   SETUP_LOCAL_TRACKED       <config>.local is tracked by git (ERROR)
+#   SETUP_LOCAL_IGNORE        .gitignore does not ignore <config>.local (WARNING)
+#   SETUP_LOCAL_USED          info: the check runs on the config with a local override
 #
-# Config: efektywny (config zespolu z nadpisaniem <config>.local, skrypt
-# av-verify/scripts/config.sh). --no-local sprawdza sam config zespolu.
+# Config: effective (team config with the <config>.local override, script
+# av-verify/scripts/config.sh). --no-local checks the team config only.
 #
-# Tryb wlasciciela: dla kazdego pliku linia OWNER <plik> <wlasciciel>, gdzie
-# wlasciciel (ostatnie pole) to nazwa roli, generated, unowned albo implementer.
-# Kolejnosc: generatedPaths, potem roles (pierwsza wedlug order i kolejnosci
-# w configu), potem unownedPaths, w przeciwnym razie implementer.
-# Globy jak git pathspec :(glob): *, ?, **; sciezka bez gwiazdki pasuje tez
-# do zawartosci katalogu. Pliki nie musza istniec.
+# Owner mode: for each file a line OWNER <file> <owner>, where
+# owner (last field) is a role name, generated, unowned or implementer.
+# Order: generatedPaths, then roles (first by order and by position
+# in the config), then unownedPaths, otherwise implementer.
+# Globs as in git pathspec :(glob): *, ?, **; a path without a star also matches
+# the directory contents. Files do not have to exist.
 #
-# Uzycie:
-#   check_setup.sh [--root DIR] [--config PLIK] [--no-local]
-#   check_setup.sh [--root DIR] [--config PLIK] [--no-local] --owner <plik>...
-# Kod wyjscia: 0 brak ERROR, 1 sa ERROR (w --owner: blad configu), 2 blad uzycia.
-# Wymaga: bash 3.2+, git, jq, awk.
+# Usage:
+#   check_setup.sh [--root DIR] [--config FILE] [--no-local]
+#   check_setup.sh [--root DIR] [--config FILE] [--no-local] --owner <file>...
+# Exit code: 0 no ERROR, 1 ERROR found (in --owner: config error), 2 usage error.
+# Requires: bash 3.2+, git, jq, awk.
 
 set -uo pipefail
 
@@ -52,18 +53,18 @@ while [ $# -gt 0 ]; do
     --config) config="${2:-}"; shift ;;
     --owner) owner_mode=1 ;;
     --no-local) no_local=1 ;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
-    -*) echo "USAGE nieznana opcja: $1"; exit 2 ;;
-    *) if [ "$owner_mode" -eq 1 ]; then owner_files+=("$1"); else echo "USAGE nieznany argument: $1"; exit 2; fi ;;
+    -h|--help) sed -n '2,41p' "$0"; exit 0 ;;
+    -*) echo "USAGE unknown option: $1"; exit 2 ;;
+    *) if [ "$owner_mode" -eq 1 ]; then owner_files+=("$1"); else echo "USAGE unknown argument: $1"; exit 2; fi ;;
   esac
   shift
 done
-command -v jq >/dev/null 2>&1 || { echo "USAGE brak jq; zainstaluj jq (brew install jq)"; exit 2; }
-root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE brak katalogu root"; exit 2; }
-git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root nie jest repozytorium git"; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "USAGE jq not found; install jq (brew install jq)"; exit 2; }
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
+git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root is not a git repository"; exit 2; }
 [ -n "$config" ] || config="$root/.ai/av.config.json"
 case "$config" in /*) ;; *) [ -f "$config" ] || config="$root/$config" ;; esac
-if [ "$owner_mode" -eq 1 ] && [ "${#owner_files[@]}" -eq 0 ]; then echo "USAGE --owner wymaga listy plikow"; exit 2; fi
+if [ "$owner_mode" -eq 1 ] && [ "${#owner_files[@]}" -eq 0 ]; then echo "USAGE --owner requires a list of files"; exit 2; fi
 
 skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
 templates_dir="${AV_TEMPLATES_DIR:-$skill_dir/templates}"
@@ -90,16 +91,16 @@ if ! jq empty "$config" >/dev/null 2>&1; then
   err "CONFIG_INVALID ${config#$root/}"; finish
 fi
 
-# MARK: nadpisanie lokalne
+# MARK: local override
 
 team_config="$config"
 local_rel="${team_config#$root/}.local"
 case "$team_config" in
   "$root"/*)
     if git -C "$root" ls-files --error-unmatch -- "$local_rel" >/dev/null 2>&1; then
-      [ "$owner_mode" -eq 1 ] || err "LOCAL_TRACKED $local_rel jest w gicie; git rm --cached $local_rel"
+      [ "$owner_mode" -eq 1 ] || err "LOCAL_TRACKED $local_rel is tracked by git; git rm --cached $local_rel"
     elif ! git -C "$root" check-ignore -q --no-index -- "$local_rel" 2>/dev/null; then
-      [ "$owner_mode" -eq 1 ] || warn "LOCAL_IGNORE dopisz $local_rel do .gitignore"
+      [ "$owner_mode" -eq 1 ] || warn "LOCAL_IGNORE add $local_rel to .gitignore"
     fi
     ;;
 esac
@@ -114,7 +115,7 @@ if [ "$no_local" -eq 0 ] && [ -f "$team_config.local" ] && [ -f "$config_sh" ]; 
   fi
 fi
 
-# rules: kind TAB name TAB glob; role w kolejnosci order, potem kolejnosci w configu
+# rules: kind TAB name TAB glob; roles sorted by order, then by position in the config
 jq -r '
   ([.generatedPaths // [] | .[] | ["generated", "-", .]]
    + ([.roles // [] | to_entries[] | select(.value | type == "object")
@@ -122,7 +123,7 @@ jq -r '
        | map(.r as $r | ($r.globs // [])[] | ["role", ($r.name // "?"), .]))
    + [.unownedPaths // [] | .[] | ["unowned", "-", .]])[] | @tsv' "$config" >"$tmp/rules" 2>/dev/null
 
-# matcher: rules + lista sciezek -> F path roles gen unowned; na koncu G role glob hits
+# matcher: rules + list of paths -> F path roles gen unowned; at the end G role glob hits
 match_paths() {
   awk -F'\t' '
     function g2re(g,   r, i, n, c) {
@@ -161,7 +162,7 @@ match_paths() {
   ' "$tmp/rules" -
 }
 
-# MARK: tryb wlasciciela
+# MARK: owner mode
 
 if [ "$owner_mode" -eq 1 ]; then
   for f in "${owner_files[@]}"; do
@@ -169,7 +170,7 @@ if [ "$owner_mode" -eq 1 ]; then
     printf '%s\n' "$f"
   done | match_paths | awk -F'\t' '$1 == "F" {
     if ($4 == 1) o = "generated"
-    else if ($3 != "") { o = $3; if (index(o, ",")) { print "WARNING nakladanie rol dla " $2 ": " o > "/dev/stderr"; sub(/,.*/, "", o) } }
+    else if ($3 != "") { o = $3; if (index(o, ",")) { print "WARNING role overlap for " $2 ": " o > "/dev/stderr"; sub(/,.*/, "", o) } }
     else if ($5 == 1) o = "unowned"
     else o = "implementer"
     print "OWNER " $2 " " o
@@ -178,7 +179,7 @@ if [ "$owner_mode" -eq 1 ]; then
 fi
 
 rel() { printf '%s\n' "${1#$root/}"; }
-# MARK: szablony integracji
+# MARK: integration templates
 
 if [ "$owner_mode" -eq 0 ]; then
   docs_root="$(jq -r '.docs.root // ".ai"' "$config")"
@@ -199,22 +200,36 @@ if [ "$owner_mode" -eq 0 ]; then
       [ -n "$target" ] || continue
       target="${target//\{docs.root\}/${docs_root%/}}"
       target="${target//\{paths.scripts\}/${scripts_dir%/}}"
-      [ -e "$root/$target" ] || warn "TEMPLATE_MISSING $target (szablon $tname); utworz z templates/$tname"
+      [ -e "$root/$target" ] || warn "TEMPLATE_MISSING $target (template $tname); create it from templates/$tname"
     done < <(jq -r '(.files // {})[]' "$manifest")
   done
 fi
 
 overlays_dir="$(jq -r '.paths.overlays // ".ai/overlays"' "$config")"
 
-# MARK: nakladki
+# MARK: overlays
 
+# Each line: canonical English name, TAB, Polish alias (references/localization.md,
+# table "Overlay sections"). A header matches either name; a suffix after it is allowed.
+# Adding a language: add a column here.
 required_sections() {
   case "$1" in
-    av-plan) printf '%s\n' "Pliki do przeczytania przed planem" "Obowiązkowe sekcje planu" ;;
-    av-implement) printf '%s\n' "Role" "Obowiązkowe kroki" "Wybór trybu" "Bramki per etap" ;;
-    av-review) printf '%s\n' "Jak sprawdzać osie" ;;
-    av-verify) printf '%s\n' "Dobór bramki" "Interpretacja wyników" ;;
-    av-docs-sync) printf '%s\n' "Mapa kod -> docs" "Znane fałszywe nazwy" ;;
+    av-plan) printf '%s\t%s\n' \
+      "Files to read before planning" "Pliki do przeczytania przed planem" \
+      "Required plan sections" "Obowiązkowe sekcje planu" ;;
+    av-implement) printf '%s\t%s\n' \
+      "Roles" "Role" \
+      "Required steps" "Obowiązkowe kroki" \
+      "Mode selection" "Wybór trybu" \
+      "Gates per stage" "Bramki per etap" ;;
+    av-review) printf '%s\t%s\n' \
+      "How to check the axes" "Jak sprawdzać osie" ;;
+    av-verify) printf '%s\t%s\n' \
+      "Gate selection" "Dobór bramki" \
+      "Interpreting results" "Interpretacja wyników" ;;
+    av-docs-sync) printf '%s\t%s\n' \
+      "Code -> docs map" "Mapa kod -> docs" \
+      "Known false names" "Znane fałszywe nazwy" ;;
   esac
 }
 
@@ -224,10 +239,10 @@ for o in av-plan av-implement av-review av-verify av-docs-sync; do
   checked=$((checked + 1))
   if [ ! -f "$f" ]; then warn "OVERLAY_MISSING $overlays_dir/$o.md"; continue; fi
   rel "$f" >>"$tmp/docs"
-  while IFS= read -r sec; do
+  while IFS=$'\t' read -r sec sec_pl; do
     checked=$((checked + 1))
-    awk -v s="## $sec" 'index($0, s) == 1 { found = 1; exit } END { exit !found }' "$f" ||
-      warn "OVERLAY_SECTION $overlays_dir/$o.md \"$sec\""
+    awk -v s="## $sec" -v p="## $sec_pl" 'index($0, s) == 1 || index($0, p) == 1 { found = 1; exit } END { exit !found }' "$f" ||
+      warn "OVERLAY_SECTION $overlays_dir/$o.md: $sec (pl: $sec_pl)"
   done < <(required_sections "$o")
 done
 for f in "$root"/.claude/skills/*/SKILL.md; do [ -f "$f" ] && rel "$f" >>"$tmp/docs"; done
@@ -238,12 +253,12 @@ nroles="$(jq '(.roles // []) | length' "$config")"
 git -C "$root" -c core.quotepath=off ls-files >"$tmp/tracked"
 if [ "$nroles" -eq 0 ]; then
   checked=$((checked + 1))
-  warn 'ROLES_NONE brak "roles" w configu; kazdy plik nalezy do implementer'
+  warn 'ROLES_NONE no "roles" in config; every file belongs to implementer'
 else
   while IFS=$'\037' read -r idx name skill nglobs; do
     checked=$((checked + 1))
     if [ -z "$name" ] || [ -z "$skill" ] || [ "$nglobs" -eq 0 ]; then
-      err "ROLE_INVALID roles[$idx] wymaga name, skill i globs"; continue
+      err "ROLE_INVALID roles[$idx] requires name, skill and globs"; continue
     fi
     case "$skill" in *:*) continue ;; esac
     checked=$((checked + 1))
@@ -251,21 +266,21 @@ else
     if [ ! -f "$sk" ]; then err "ROLE_SKILL_MISSING $name .claude/skills/$skill/SKILL.md"; continue; fi
     checked=$((checked + 1))
     copies="$(jq -r --argjson i "$idx" '.roles[$i].globs[]' "$config" | while IFS= read -r g; do grep -qF -- "$g" "$sk" && echo x; done | wc -l | tr -d ' ')"
-    [ "$copies" -ge 3 ] && warn "GLOB_COPY .claude/skills/$skill/SKILL.md kopiuje $copies globy roli $name; zakres plikow nalezy do configu (roles)"
+    [ "$copies" -ge 3 ] && warn "GLOB_COPY .claude/skills/$skill/SKILL.md copies $copies globs of role $name; the file scope belongs in the config (roles)"
   done < <(jq -r '(.roles // []) | to_entries[] | [.key, (.value.name // ""), (.value.skill // ""), ((.value.globs // []) | length)] | map(tostring) | join("\u001f")' "$config")
 
   impl="$root/$overlays_dir/av-implement.md"
   if [ -f "$impl" ]; then
     checked=$((checked + 1))
     copies="$(jq -r '.roles[].globs // [] | .[]' "$config" | while IFS= read -r g; do grep -qF -- "$g" "$impl" && echo x; done | wc -l | tr -d ' ')"
-    [ "$copies" -ge 3 ] && warn "GLOB_COPY $overlays_dir/av-implement.md kopiuje $copies globy rol; tabela rol ma linkowac do configu (roles)"
+    [ "$copies" -ge 3 ] && warn "GLOB_COPY $overlays_dir/av-implement.md copies $copies role globs; the roles table should link to the config (roles)"
   fi
 
   match_paths <"$tmp/tracked" >"$tmp/match"
   while IFS=$'\t' read -r _ name g hits; do
     checked=$((checked + 1))
     if [ "$hits" -eq 0 ]; then
-      hint=""; case "$g" in *"{"*) hint=" (nawiasy {a,b} nieobslugiwane: kazdy wariant osobno)" ;; esac
+      hint=""; case "$g" in *"{"*) hint=" (braces {a,b} not supported: list each variant separately)" ;; esac
       warn "ROLE_EMPTY $name $g$hint"
     fi
   done < <(awk -F'\t' '$1 == "G"' "$tmp/match")
@@ -287,13 +302,13 @@ else
     awk '{ c = $1; sub(/^[ ]*[0-9]+ /, ""); split($0, a, "\t"); printf "%s\t%d\t%s\n", a[1], c, a[2] }' |
     LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2nr |
     awk -F'\t' '
-      $1 != top { if (top != "") printf "SETUP_UNOWNED_DIR %s %d plikow bez wlasciciela: %s\n", top, tot, d; top = $1; tot = 0; k = 0; d = "" }
+      $1 != top { if (top != "") printf "SETUP_UNOWNED_DIR %s %d files without owner: %s\n", top, tot, d; top = $1; tot = 0; k = 0; d = "" }
       { tot += $2; k++; if (k <= 5) d = d (k > 1 ? ", " : "") $3 " " $2 }
-      END { if (top != "") printf "SETUP_UNOWNED_DIR %s %d plikow bez wlasciciela: %s\n", top, tot, d }' >"$tmp/unowned"
+      END { if (top != "") printf "SETUP_UNOWNED_DIR %s %d files without owner: %s\n", top, tot, d }' >"$tmp/unowned"
   if [ -s "$tmp/unowned" ]; then warnings=$((warnings + $(wc -l <"$tmp/unowned"))); cat "$tmp/unowned"; fi
 fi
 
-# MARK: sciezki i bramki w nakladkach i skillach
+# MARK: paths and gates in overlays and skills
 
 refs="$skill_dir/../av-docs-sync/scripts/check_refs.sh"
 if [ ! -s "$tmp/docs" ]; then :
@@ -304,7 +319,7 @@ elif [ -f "$refs" ]; then
   (cd "$root" && bash "$refs" "${docs[@]}" --root "$root" --workspace "$ws" 2>/dev/null) | awk '$1 == "MISSING"' >"$tmp/missing"
   while IFS= read -r l; do err "REF_MISSING ${l#MISSING }"; done <"$tmp/missing"
 else
-  warn "REF_SKIPPED brak av-docs-sync/scripts/check_refs.sh obok av-setup"
+  warn "REF_SKIPPED no av-docs-sync/scripts/check_refs.sh next to av-setup"
 fi
 
 jq -r '(.validation.gates // {}) | keys[]' "$config" >"$tmp/gates"

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# scan.sh - deterministyczny skan repozytorium dla av-setup.
+# scan.sh - deterministic repository scan for av-setup.
 #
-# Zbiera fakty: stack, komendy walidacji, CI, narzedzia, uklad kodu, istniejacy
-# setup AI, git. Nie czyta wartosci sekretow ani plikow .env. Wypisuje JSON.
+# Collects facts: stack, validation commands, CI, tooling, code layout, existing
+# AI setup, git. Does not read secret values or .env files. Prints JSON.
 #
-# Uzycie:
+# Usage:
 #   scan.sh [ROOT] [--pretty]
-# Wymaga: bash 3.2+, git, jq, find, awk.
+# Requires: bash 3.2+, git, jq, find, awk.
 
 set -uo pipefail
 
@@ -19,8 +19,8 @@ for a in "$@"; do
     *) root="$a" ;;
   esac
 done
-command -v jq >/dev/null 2>&1 || { echo '{"error":"brak jq"}'; exit 2; }
-root="$(cd "$root" 2>/dev/null && pwd)" || { echo '{"error":"brak katalogu"}'; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo '{"error":"jq not found"}'; exit 2; }
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo '{"error":"directory not found"}'; exit 2; }
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -33,7 +33,7 @@ SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name D
   -o -name .next -o -name .nuxt -o -name Carthage -o -name test-reports -o -name workspace
   -o \( -name '.*' ! -name .ai ! -name .claude ! -name .github ! -name .agents ! -name .codex ! -name .husky \) )
 
-# walk DIR MAXDEPTH TYP(f|d) - pliki albo katalogi z pominieciem katalogow technicznych
+# walk DIR MAXDEPTH TYPE(f|d) - files or directories, skipping technical directories
 walk() {
   find "$1" -mindepth 1 -maxdepth "$(( $2 + 1 ))" -type d \( "${SKIP[@]}" \) -prune -o -type "$3" -print 2>/dev/null
 }
@@ -161,7 +161,7 @@ stacks_json() {
   jq -s -c . "$tmp/stacks"
 }
 
-# MARK: komendy i CI
+# MARK: commands and CI
 
 script_doc() {
   awk 'NR == 1 { next } NR > 15 { exit }
@@ -170,7 +170,9 @@ script_doc() {
     /^[ \t]*(#|\/\/)/ && !/^#!/ && !/-\*-/ { s = $0; gsub(/^[ \t]*(#+|\/\/+)[ \t]*/, "", s); if (length(s) > 3) { print substr(s, 1, 140); exit } }' "$1"
 }
 
-# script_meta PLIK - JSON {path, exit_codes_doc, status_tokens}; nic, gdy skrypt nie opisuje wyniku
+# script_meta FILE - JSON {path, exit_codes_doc, status_tokens}; nothing when the script does not describe its result
+# Exit code lines are matched in Polish ("Kod wyjscia") and English ("Exit code", "Exit status", "Exit 0:"),
+# because scripts in scanned repos are written in either language.
 script_meta() {
   local codes tokens
   codes="$(awk '
@@ -204,7 +206,7 @@ parse_ci() {
   awk '
     function redact(t) {
       if (t ~ /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/ || t ~ /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)
-        return "[pominieto: linia z identyfikatorem albo adresem e-mail]"
+        return "[skipped: line with an identifier or e-mail address]"
       return t
     }
     BEGIN { script_indent = -1; step = 0; section = "" }
@@ -316,7 +318,7 @@ tooling_json() {
     : >"$tmp/husky"
     for f in "$root"/.husky/*; do
       [ -f "$f" ] || continue
-      jq -n -c --arg k "$(basename "$f")" --argjson v "$(grep -v '^#' "$f" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//' | awk 'NR <= 30 { print } NR == 31 { print "[obcieto: hook ma wiecej linii]" }' | lines_to_json)" '{($k): $v}' >>"$tmp/husky"
+      jq -n -c --arg k "$(basename "$f")" --argjson v "$(grep -v '^#' "$f" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//' | awk 'NR <= 30 { print } NR == 31 { print "[truncated: the hook has more lines]" }' | lines_to_json)" '{($k): $v}' >>"$tmp/husky"
     done
     out="$(jq -c --argjson h "$(jq -s -c 'add // {}' "$tmp/husky")" '. + {husky_hooks: $h}' <<<"$out")"
   fi
@@ -341,7 +343,7 @@ tooling_json() {
   printf '%s\n' "$out"
 }
 
-# MARK: uklad kodu
+# MARK: code layout
 
 count_files() { walk "$1" "$2" f | wc -l | tr -d ' '; }
 
@@ -405,7 +407,7 @@ tests_json() {
   jq -n -c --argjson d "$(lines_to_json <"$tmp/testdirs")" --argjson s "$spec" '{dirs: $d, spec_ts_files: $s}'
 }
 
-# MARK: istniejacy setup AI
+# MARK: existing AI setup
 
 md_list() { [ -d "$root/$1" ] && find "$root/$1" -name "${2:-*.md}" -not -name .DS_Store 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort | head -$MAX_LIST | lines_to_json || echo null; }
 
@@ -481,6 +483,8 @@ secrets_json() {
   done | sort | head -40 | lines_to_json
 }
 
+# doc_language - "pl" when the docs contain many UTF-8 lead bytes \304 and \305 (most Polish
+# letters with diacritics), otherwise "en"; null without CLAUDE.md or README.
 doc_language() {
   local n
   n="$(cat "$root/CLAUDE.md" "$root/README.md" "$root/Readme.md" "$root/docs/project-context.md" "$root/.ai/README.md" 2>/dev/null | head -c 60000 | LC_ALL=C tr -cd '\304\305' | wc -c | tr -d ' ')"
@@ -489,7 +493,7 @@ doc_language() {
   else echo '"en"'; fi
 }
 
-# MARK: zlozenie
+# MARK: assembly
 
 layout="$(layout_json)"
 result="$(jq -n -c \

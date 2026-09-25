@@ -1,36 +1,36 @@
 #!/usr/bin/env bash
-# gate.sh - bramki walidacji av-dev.
+# gate.sh - av-dev validation gates.
 #
-# Uruchamia tylko komendy z .ai/av.config.json i zapisuje dowody z odciskiem
-# stanu drzewa roboczego. Dowod jest STALE, gdy kod zmienil sie po pomiarze.
+# Runs only commands from .ai/av.config.json and saves evidence with a fingerprint
+# of the working tree state. Evidence is STALE when the code changed after the check.
 #
-# Uzycie:
-#   gate.sh --list                          sprawdz config i wypisz bramki
-#   gate.sh --gate quick [--run-id ID]      uruchom bramke
-#   gate.sh --only lint,unit [--run-id ID]  uruchom wybrane komendy
-#   gate.sh --baseline --gate quick --run-id ID   pomiar przed zmianami
-#   gate.sh --status --run-id ID            FRESH/STALE dla zapisanych dowodow
-#   gate.sh --fingerprint                   odcisk biezacego stanu
-#   gate.sh --gate full --reuse-fresh --run-id ID   pomin komendy z PASS dla tego samego odcisku
-# Opcje wspolne:
-#   --root DIR            root repo (domyslnie repo z biezacego katalogu)
-#   --config PLIK         inny config, np. proponowany w dry-run
-#   --env KLUCZ=WARTOSC   parametr komend, powtarzalny (np. UI_SUITE=LoginTests)
-#   --no-local            pomin lokalne nadpisanie <config>.local
-# Config efektywny: config zespolu plus <config>.local (config.sh obok). --list
-#   wypisuje CONFIG_LOCAL i nadpisane klucze, bramka linie CONFIG_LOCAL.
+# Usage:
+#   gate.sh --list                          check the config and list the gates
+#   gate.sh --gate quick [--run-id ID]      run a gate
+#   gate.sh --only lint,unit [--run-id ID]  run selected commands
+#   gate.sh --baseline --gate quick --run-id ID   baseline before changes
+#   gate.sh --status --run-id ID            FRESH/STALE for saved evidence
+#   gate.sh --fingerprint                   fingerprint of the current state
+#   gate.sh --gate full --reuse-fresh --run-id ID   skip commands with PASS for the same fingerprint
+# Common options:
+#   --root DIR            repo root (default: the repo of the current directory)
+#   --config FILE         another config, e.g. a proposed one in a dry run
+#   --env KEY=VALUE       command parameter, repeatable (e.g. UI_SUITE=LoginTests)
+#   --no-local            skip the local override <config>.local
+# Effective config: team config plus <config>.local (config.sh next to this script).
+#   --list prints CONFIG_LOCAL and the overridden keys, a gate prints the CONFIG_LOCAL line.
 #
-# Pola komendy: run, expect, precheck, needs, timeoutSec, cwd,
+# Command fields: run, expect, precheck, needs, timeoutSec, cwd,
 #   notRunExitCodes, optional, covers, parallel.
-# parallel: true = komenda nie dzieli stanu z innymi; startuje w tle na poczatku
-#   bramki, obok reszty. Wyniki, logi i dowody wypisuje w kolejnosci bramki.
-#   Komenda z covers albo pokryta przez inna komende bramki idzie po kolei.
-# Kody wyjscia: 0 PASS, 1 FAIL, 2 blad configu, 3 niekompletne (NOT_RUN albo STALE:
-#   drzewo zmienilo sie w trakcie bramki), 4 inna bramka tego przebiegu jest w toku (BUSY).
-# Srodowisko komend: AV_SKILLS_DIR = katalog z av-* (rodzic katalogu av-verify).
-# Wersja: plik VERSION w katalogu skilla (brak = dev); config moze wymagac
+# parallel: true = the command shares no state with others; it starts in the background
+#   when the gate starts, next to the rest. Results, logs and evidence print in gate order.
+#   A command with covers, or covered by another command of the gate, runs in sequence.
+# Exit codes: 0 PASS, 1 FAIL, 2 config error, 3 incomplete (NOT_RUN or STALE:
+#   the tree changed during the gate), 4 another gate of this run is in progress (BUSY).
+# Command environment: AV_SKILLS_DIR = directory with the av-* skills (parent of av-verify).
+# Version: VERSION file in the skill directory (missing = dev); the config may require
 #   "requires": {"av-dev": ">=X.Y.Z"}.
-# Wymaga: bash 3.2+, git, jq.
+# Requires: bash 3.2+, git, jq.
 
 set -uo pipefail
 
@@ -43,8 +43,8 @@ config_error() {
   exit 2
 }
 
-command -v jq >/dev/null 2>&1 || config_error "brak jq; zainstaluj jq (brew install jq)"
-command -v git >/dev/null 2>&1 || config_error "brak git"
+command -v jq >/dev/null 2>&1 || config_error "jq missing; install jq (brew install jq)"
+command -v git >/dev/null 2>&1 || config_error "git missing"
 
 skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
 AV_SKILLS_DIR="$(cd "$skill_dir/.." && pwd)"
@@ -55,7 +55,7 @@ if [ -f "$skill_dir/VERSION" ]; then
   [ -n "$av_version" ] || av_version="dev"
 fi
 
-# MARK: argumenty
+# MARK: arguments
 
 mode=""
 gate_name=""
@@ -85,19 +85,19 @@ while [ $# -gt 0 ]; do
       kv="${2:-}"; shift
       case "$kv" in
         *=*) key="${kv%%=*}"; val="${kv#*=}" ;;
-        *) config_error "--env wymaga KLUCZ=WARTOSC, dostalem '$kv'" ;;
+        *) config_error "--env requires KEY=VALUE, got '$kv'" ;;
       esac
-      printf '%s' "$key" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$' || config_error "niepoprawna nazwa zmiennej '$key'"
+      printf '%s' "$key" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$' || config_error "invalid variable name '$key'"
       env_keys="${env_keys}${key}\n"
       export "$key=$val"
       ;;
     -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
-    *) config_error "nieznany argument '$1'" ;;
+    *) config_error "unknown argument '$1'" ;;
   esac
   shift
 done
 
-# MARK: repo i config
+# MARK: repo and config
 
 if [ -n "$root_arg" ]; then
   root="$(git -C "$root_arg" rev-parse --show-toplevel 2>/dev/null || (cd "$root_arg" && pwd))"
@@ -131,17 +131,17 @@ if [ "$mode" = "fingerprint" ]; then
 fi
 
 cfg="${config_arg:-$root/.ai/av.config.json}"
-[ -f "$cfg" ] || config_error "brak $cfg; uruchom skill av-setup"
-jq empty "$cfg" 2>/dev/null || config_error "niepoprawny JSON w $cfg"
-jq -e 'type == "object"' "$cfg" >/dev/null 2>&1 || config_error "config $cfg nie jest obiektem JSON"
+[ -f "$cfg" ] || config_error "config not found: $cfg; run the av-setup skill"
+jq empty "$cfg" 2>/dev/null || config_error "invalid JSON in $cfg"
+jq -e 'type == "object"' "$cfg" >/dev/null 2>&1 || config_error "config $cfg is not a JSON object"
 
 merged_cfg=""
 config_sources=""
 if [ "$no_local" -eq 0 ] && [ -f "$cfg.local" ]; then
-  merged_cfg="$(mktemp "${TMPDIR:-/tmp}/av-config.XXXXXX")" || config_error "nie moge utworzyc pliku tymczasowego"
+  merged_cfg="$(mktemp "${TMPDIR:-/tmp}/av-config.XXXXXX")" || config_error "cannot create a temporary file"
   trap 'rm -f "$merged_cfg"' EXIT
   merge_out="$(bash "$skill_dir/scripts/config.sh" --root "$root" --config "$cfg" --out "$merged_cfg")" || {
-    printf '%s\n' "$merge_out" | grep '^CONFIG_ERROR' || printf 'CONFIG_ERROR nie moge polaczyc %s.local\n' "$cfg"
+    printf '%s\n' "$merge_out" | grep '^CONFIG_ERROR' || printf 'CONFIG_ERROR cannot merge %s.local\n' "$cfg"
     exit 2
   }
   config_sources="$(bash "$skill_dir/scripts/config.sh" --root "$root" --config "$cfg" --sources | grep -v '^CONFIG ')"
@@ -156,20 +156,20 @@ validation_errors() {
     (.validation.commands // {}) as $c
     | ( $c | to_entries[]
         | select((.value | type) != "object" or ((.value.run // "") == ""))
-        | "komenda \($q)\(.key)\($q) nie ma pola run" ),
+        | "command \($q)\(.key)\($q) has no run field" ),
       ( $c | to_entries[] | select(.value | type == "object") | .key as $k
         | (.value.covers // [])[] | select($c[.] == null)
-        | "komenda \($q)\($k)\($q) pokrywa nieznana komende \($q)\(.)\($q)" ),
+        | "command \($q)\($k)\($q) covers unknown command \($q)\(.)\($q)" ),
       ( $c | to_entries[] | select(.value | type == "object")
         | select(.value | has("parallel") and (.parallel | type) != "boolean")
-        | "komenda \($q)\(.key)\($q): pole parallel musi byc true albo false" ),
+        | "command \($q)\(.key)\($q): field parallel must be true or false" ),
       ( (.validation.gates // {}) | to_entries[] | .key as $g | .value[]
         | select($c[.] == null)
-        | "bramka \($q)\($g)\($q) wskazuje nieznana komende \($q)\(.)\($q)" )
+        | "gate \($q)\($g)\($q) points to unknown command \($q)\(.)\($q)" )
   ' "$cfg"
 }
 
-# MARK: walidacja pol configu
+# MARK: config field validation
 
 schema_errors() {
   jq -r '
@@ -183,87 +183,87 @@ schema_errors() {
        codex: ["inherit", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]} as $efforts
     | ["on-request", "after-green-gate", "free"] as $commits
     | ["never", "on-request"] as $pushes
-    | ( if has("agents") and (.agents | type) != "object" then "agents: oczekiwany obiekt"
+    | ( if has("agents") and (.agents | type) != "object" then "agents: expected an object"
         elif (.agents | type) == "object" then
-          ( if (.agents | has("models")) and (.agents.models | type) != "object" then "agents.models: oczekiwany obiekt"
+          ( if (.agents | has("models")) and (.agents.models | type) != "object" then "agents.models: expected an object"
             elif (.agents | has("models")) then
               ( .agents.models | to_entries[] | .key as $k | .value as $v | "agents.models.\($k)" as $p
                 | if ($v | isstr) then
                     ( if ($v | claudemodel) then empty
-                      else "\($p): niedozwolona wartosc \($v | tojson); dozwolone: \($models | join(", ")), claude-<id> albo obiekt {provider, model, effort}" end )
-                  elif ($v | type) != "object" then "\($p): oczekiwany napis albo obiekt {provider, model, effort}"
+                      else "\($p): invalid value \($v | tojson); allowed: \($models | join(", ")), claude-<id> or an object {provider, model, effort}" end )
+                  elif ($v | type) != "object" then "\($p): expected a string or an object {provider, model, effort}"
                   else
                     ( $v | keys[] | select(IN("provider", "model", "effort") | not)
-                      | "\($p): nieznane pole \(tojson); dozwolone: provider, model, effort" ),
+                      | "\($p): unknown field \(tojson); allowed: provider, model, effort" ),
                     ( ($v.provider // "claude") as $pr
-                      | if ($pr | isstr | not) or ($efforts[$pr] == null) then "\($p).provider: niedozwolona wartosc \($pr | tojson); dozwolone: claude, codex"
+                      | if ($pr | isstr | not) or ($efforts[$pr] == null) then "\($p).provider: invalid value \($pr | tojson); allowed: claude, codex"
                         else
                           ( if $pr == "claude" and (($v.model // "inherit") | claudemodel | not)
-                            then "\($p).model: niedozwolony model claude \($v.model | tojson); dozwolone: \($models | join(", ")) albo claude-<id>"
+                            then "\($p).model: invalid claude model \($v.model | tojson); allowed: \($models | join(", ")) or claude-<id>"
                             elif $pr == "codex" and ((($v.model // "inherit") | isstr | not) or (($v.model // "inherit") | test("^[A-Za-z0-9][A-Za-z0-9._:-]*$") | not))
-                            then "\($p).model: niepoprawna nazwa modelu codex \($v.model | tojson)"
+                            then "\($p).model: invalid codex model name \($v.model | tojson)"
                             else empty end ),
                           ( ($v.effort // "inherit") as $e
                             | if ($e | isstr | not) or ($efforts[$pr] | index([$e]) == null)
-                              then "\($p).effort: niedozwolona wartosc \($e | tojson) dla \($pr); dozwolone: \($efforts[$pr] | join(", "))"
+                              then "\($p).effort: invalid value \($e | tojson) for \($pr); allowed: \($efforts[$pr] | join(", "))"
                               else empty end )
                         end )
                   end ),
               ( if (.agents.models.review // null) != null and (.agents.models.review | slot | .provider == "claude" and .model == "haiku")
-                then "agents.models.review: haiku nie moze robic review; uzyj opus, sonnet, fable, inherit albo modelu codex"
+                then "agents.models.review: haiku cannot do review; use opus, sonnet, fable, inherit or a codex model"
                 else empty end )
             else empty end ),
           ( if (.agents | has("crossVendor")) and (.agents.crossVendor | type) != "boolean"
-            then "agents.crossVendor: oczekiwane true albo false"
+            then "agents.crossVendor: expected true or false"
             elif .agents.crossVendor == true then
               ((.agents.models // {}) as $m
                | def prov($s): ($m[$s] // "inherit") | slot | .provider;
                  ( if prov("review") == prov("implement")
-                   then "agents.crossVendor: review i implement maja tego samego dostawce \(prov("review") | tojson); kod ma sprawdzac inny dostawca niz go napisal"
+                   then "agents.crossVendor: review and implement have the same provider \(prov("review") | tojson); code must be checked by a different provider than the one that wrote it"
                    else empty end ),
                  ( (if $m.planReview != null then "planReview" else "review" end) as $pr
                    | if prov($pr) == prov("plan")
-                     then "agents.crossVendor: \($pr) i plan maja tego samego dostawce \(prov("plan") | tojson); ustaw agents.models.planReview na innego dostawce"
+                     then "agents.crossVendor: \($pr) and plan have the same provider \(prov("plan") | tojson); set agents.models.planReview to a different provider"
                      else empty end ))
             else empty end ),
           ( if (.agents | has("timeoutSec")) and ((.agents.timeoutSec | type) != "number" or .agents.timeoutSec < 1 or (.agents.timeoutSec | floor) != .agents.timeoutSec)
-            then "agents.timeoutSec: oczekiwana dodatnia liczba calkowita"
+            then "agents.timeoutSec: expected a positive integer"
             else empty end )
         else empty end ),
-      ( if has("git") and (.git | type) != "object" then "git: oczekiwany obiekt"
+      ( if has("git") and (.git | type) != "object" then "git: expected an object"
         elif (.git | type) == "object" then
           ( if (.git | has("commit")) and (.git.commit as $v | $commits | index([$v]) == null)
-            then "git.commit: niedozwolona wartosc \(.git.commit | tojson); dozwolone: \($commits | join(", "))"
+            then "git.commit: invalid value \(.git.commit | tojson); allowed: \($commits | join(", "))"
             else empty end ),
           ( if (.git | has("push")) and (.git.push as $v | $pushes | index([$v]) == null)
-            then "git.push: niedozwolona wartosc \(.git.push | tojson); dozwolone: \($pushes | join(", "))"
+            then "git.push: invalid value \(.git.push | tojson); allowed: \($pushes | join(", "))"
             else empty end )
         else empty end ),
       ( if has("roles") | not then empty
-        elif (.roles | type) != "array" then "roles: oczekiwana tablica obiektow"
+        elif (.roles | type) != "array" then "roles: expected an array of objects"
         else
           .roles | to_entries[] | .value as $r
           | "roles[\(.key)]" as $p
-          | if ($r | type) != "object" then "\($p): oczekiwany obiekt"
+          | if ($r | type) != "object" then "\($p): expected an object"
             else
-              ( if ($r.name | isstr | not) or $r.name == "" then "\($p).name: oczekiwany niepusty napis" else empty end ),
-              ( if ($r.skill | isstr | not) or $r.skill == "" then "\($p).skill: oczekiwany niepusty napis" else empty end ),
-              ( if ($r.order | type) != "number" or ($r.order | floor) != $r.order then "\($p).order: oczekiwana liczba calkowita" else empty end ),
-              ( if ($r.globs | type) != "array" or ($r.globs | length) == 0 then "\($p).globs: oczekiwana niepusta tablica napisow"
+              ( if ($r.name | isstr | not) or $r.name == "" then "\($p).name: expected a non-empty string" else empty end ),
+              ( if ($r.skill | isstr | not) or $r.skill == "" then "\($p).skill: expected a non-empty string" else empty end ),
+              ( if ($r.order | type) != "number" or ($r.order | floor) != $r.order then "\($p).order: expected an integer" else empty end ),
+              ( if ($r.globs | type) != "array" or ($r.globs | length) == 0 then "\($p).globs: expected a non-empty array of strings"
                 else
                   $r.globs[]
-                  | if isstr | not then "\($p).globs: element \(tojson) nie jest napisem"
-                    elif test("[{}]") then "\($p).globs: glob \(tojson) ma nawias klamrowy; wypisz kazdy wariant osobno"
+                  | if isstr | not then "\($p).globs: element \(tojson) is not a string"
+                    elif test("[{}]") then "\($p).globs: glob \(tojson) has a curly brace; list each variant separately"
                     else empty end
                 end )
             end
         end ),
       ( ("generatedPaths", "unownedPaths") as $k
         | select(has($k) and (.[$k] | strarr | not))
-        | "\($k): oczekiwana tablica napisow" ),
-      ( if has("requires") and (.requires | type) != "object" then "requires: oczekiwany obiekt"
+        | "\($k): expected an array of strings" ),
+      ( if has("requires") and (.requires | type) != "object" then "requires: expected an object"
         elif (.requires | type) == "object" and (.requires | has("av-dev")) and (.requires["av-dev"] | isstr | not)
-        then "requires.av-dev: oczekiwany napis w formacie >=X.Y.Z"
+        then "requires.av-dev: expected a string in the format >=X.Y.Z"
         else empty end )
   ' "$cfg"
 }
@@ -287,13 +287,13 @@ required="$(jq -r 'if (.requires | type) == "object" and (.requires["av-dev"] | 
 if [ -n "$required" ]; then
   semver_re='^[0-9]+\.[0-9]+\.[0-9]+$'
   if ! printf '%s' "${required#>=}" | grep -Eq "$semver_re" || [ "${required#>=}" = "$required" ]; then
-    version_error="requires.av-dev: obslugiwany tylko format >=X.Y.Z, dostalem '$required'"
+    version_error="requires.av-dev: only the format >=X.Y.Z is supported, got '$required'"
   elif [ "$av_version" = "dev" ]; then
-    version_warning="wersja av-dev nieznana (dev), wymagane $required"
+    version_warning="av-dev version unknown (dev), required $required"
   elif ! printf '%s' "${av_version%%[-+]*}" | grep -Eq "$semver_re"; then
-    version_warning="wersja av-dev '$av_version' w nieznanym formacie, wymagane $required"
+    version_warning="av-dev version '$av_version' has an unknown format, required $required"
   elif semver_lt "${av_version%%[-+]*}" "${required#>=}"; then
-    version_error="requires.av-dev: zainstalowana wersja av-dev $av_version, wymagane $required; zaktualizuj skille av-*"
+    version_error="requires.av-dev: installed av-dev version $av_version, required $required; update the av-* skills"
   fi
 fi
 config_problems="$(schema_errors)"
@@ -324,20 +324,20 @@ $errors}"
     [ -n "$name" ] || continue
     if ! bash -n -c "$text" 2>/dev/null; then
       errors="${errors:+$errors
-}komenda '$name': blad skladni w polu $field"
+}command '$name': syntax error in field $field"
     fi
     rest_cmd="$text"
     while printf '%s' "${rest_cmd%% *}" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; do rest_cmd="${rest_cmd#* }"; done
     first="${rest_cmd%% *}"
     case "$first" in
       */*) [ -e "$root/$(jq -r --arg n "$name" '.validation.commands[$n].cwd // "."' "$cfg")/$first" ] ||
-             printf 'WARNING komenda %s: brak pliku %s\n' "$name" "$first" ;;
+             printf 'WARNING command %s: file %s not found\n' "$name" "$first" ;;
     esac
   done < <(jq -r '(.validation.commands // {}) | to_entries[] | select(.value | type == "object")
                  | .key as $k | (["run", "precheck"][] as $f | select(.value[$f] != null) | [$k, $f, .value[$f]] | @tsv)' "$cfg")
   count="$(jq '(.validation.commands // {}) | length' "$cfg")"
   [ -n "$errors" ] && printf '%s\n' "$errors" | sed 's/^/CONFIG_ERROR /'
-  [ "$count" -eq 0 ] && echo "CONFIG_ERROR brak validation.commands"
+  [ "$count" -eq 0 ] && echo "CONFIG_ERROR validation.commands missing"
   if [ -n "$errors" ] || [ "$count" -eq 0 ]; then exit 2; fi
   exit 0
 fi
@@ -364,11 +364,11 @@ if [ "$mode" = "status" ]; then
     label="CHECK"; [ "$fname" = "baseline.json" ] && label="BASELINE"
     while IFS=$'\t' read -r name status recstale recfp log rechead; do
       if [ "$label" = "BASELINE" ]; then
-        printf 'BASELINE %s %s pomiar-bazowy head=%s %s\n' "$name" "$status" "$(printf '%s' "$rechead" | cut -c1-8)" "$log"
+        printf 'BASELINE %s %s baseline head=%s %s\n' "$name" "$status" "$(printf '%s' "$rechead" | cut -c1-8)" "$log"
         continue
       fi
       fresh="STALE"; [ "$recfp" = "$fp" ] && [ "$recstale" = "0" ] && fresh="FRESH"
-      note=""; [ "$recstale" = "1" ] && note=" (drzewo zmienilo sie w trakcie bramki)"
+      note=""; [ "$recstale" = "1" ] && note=" (tree changed during the gate)"
       printf '%s %s %s %s %s%s\n' "$label" "$name" "$status" "$fresh" "$log" "$note"
       if [ "$label" = "CHECK" ] && { [ "$fresh" = "STALE" ] || { [ "$status" != "PASS" ] && [ "$status" != "SKIPPED" ]; }; }; then
         code=1
@@ -379,33 +379,33 @@ if [ "$mode" = "status" ]; then
   done
   printf 'FINGERPRINT %s\n' "$fp"
   if [ -d "$out_dir/.lock" ]; then
-    printf 'BUSY bramka w toku: %s\n' "$(cat "$out_dir/.lock/owner" 2>/dev/null)"
+    printf 'BUSY gate in progress: %s\n' "$(cat "$out_dir/.lock/owner" 2>/dev/null)"
     exit 4
   fi
   exit "$code"
 fi
 
-# MARK: wybor komend
+# MARK: command selection
 
 errors="$(validation_errors)"
 [ -n "$errors" ] && printf '%s\n' "$errors" | sed 's/^/WARNING /'
 
 if [ -n "$gate_name" ]; then
   jq -e --arg g "$gate_name" '.validation.gates[$g] != null' "$cfg" >/dev/null ||
-    config_error "nieznana bramka '$gate_name'; dostepne: $(jq -r '(.validation.gates // {}) | keys | join(", ")' "$cfg")"
+    config_error "unknown gate '$gate_name'; available: $(jq -r '(.validation.gates // {}) | keys | join(", ")' "$cfg")"
   names_json="$(jq -c --arg g "$gate_name" '.validation.gates[$g]' "$cfg")"
   label="$gate_name"
 elif [ -n "$only" ]; then
   names_json="$(printf '%s' "$only" | jq -R -c 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')"
   label="$(printf '%s' "$names_json" | jq -r 'join("+")')"
 else
-  config_error "podaj --gate, --only, --list, --status albo --fingerprint"
+  config_error "pass --gate, --only, --list, --status or --fingerprint"
 fi
 
 bad="$(jq -r --argjson n "$names_json" '[ $n[] as $x | select((.validation.commands[$x].run // "") == "") | $x ] | join(", ")' "$cfg")"
 if [ -n "$bad" ]; then
-  if [ -n "$gate_name" ]; then config_error "bramka '$gate_name' ma niepoprawne komendy: $bad"; fi
-  config_error "nieznane komendy: $bad"
+  if [ -n "$gate_name" ]; then config_error "gate '$gate_name' has invalid commands: $bad"; fi
+  config_error "unknown commands: $bad"
 fi
 
 ordered="$(jq -r --argjson n "$names_json" '
@@ -413,7 +413,7 @@ ordered="$(jq -r --argjson n "$names_json" '
   | ($n | map(select(($c[.].covers // []) | length > 0))) + ($n | map(select(($c[.].covers // []) | length == 0)))
   | .[]' "$cfg")"
 
-# MARK: uruchomienie
+# MARK: execution
 
 cmd_field() {
   jq -r --arg n "$1" --arg f "$2" '.validation.commands[$n][$f] // empty | if type == "array" then join(" ") else tostring end' "$cfg"
@@ -441,7 +441,7 @@ run_timed() {
 
 lock="$out_dir/.lock"
 if ! mkdir "$lock" 2>/dev/null; then
-  printf 'BUSY inna bramka przebiegu %s jest w toku (%s); poczekaj na jej koniec\n' "$run_id" "$(cat "$lock/owner" 2>/dev/null)"
+  printf 'BUSY another gate of run %s is in progress (%s); wait for it to finish\n' "$run_id" "$(cat "$lock/owner" 2>/dev/null)"
   exit 4
 fi
 printf '%s pid %s\n' "$label" "$$" >"$lock/owner"
@@ -485,9 +485,9 @@ reused_log() {
   jq -r --arg n "$1" --arg fp "$fp_before" --arg invocation "$(invocation_fingerprint "$1")" '.checks[$n] | select(.status == "PASS" and .fingerprint == $fp and .invocationFingerprint == $invocation and (.stale != true)) | .log // "x"' "$out_dir/evidence.json" 2>/dev/null
 }
 
-# MARK: komendy w tle
-# Wynik komendy w tle: plik <nazwa>.result z polami pre, rc, timed_out, duration,
-# started. Petla ponizej czeka na nia w kolejnosci bramki.
+# MARK: background commands
+# Background command result: file <name>.result with fields pre, rc, timed_out,
+# duration, started. The loop below waits for it in gate order.
 
 bg_names="$(jq -r --argjson n "$names_json" '
   .validation.commands as $c
@@ -519,11 +519,12 @@ for name in $bg_names; do
   printf '%s\n' "$!" >"$bg_dir/$name.pid"
   bg_started="$bg_started $name"
 done
-[ -n "$bg_started" ] && printf 'PARALLEL%s (w tle obok reszty bramki)\n' "$bg_started"
+[ -n "$bg_started" ] && printf 'PARALLEL%s (in the background next to the rest of the gate)\n' "$bg_started"
 
-# MARK: jedna komenda
-# check_one NAZWA wypisuje linie RUN i CHECK komendy, dopisuje rekord do pliku
-# REKORD i dodaje nazwe do $passed przy PASS. Komende z tla tylko odbiera.
+# MARK: single command
+# check_one NAME RECORD prints the RUN and CHECK lines of the command, writes a
+# record to file RECORD and adds the name to $passed on PASS. It only collects a
+# background command.
 check_one() {
   local name="$1" rec="$2"
   started="$(date +%Y-%m-%dT%H:%M:%S)"
@@ -544,11 +545,11 @@ check_one() {
   case " $bg_started " in *" $name "*) in_bg=1 ;; esac
   if [ -n "$covered_by" ]; then
     status="PASS"
-    printf 'CHECK %s PASS 0s (pokryte przez %s)\n' "$name" "$covered_by"
+    printf 'CHECK %s PASS 0s (covered by %s)\n' "$name" "$covered_by"
   elif [ -n "$reused" ]; then
     status="PASS"
     log_rel="$reused"
-    printf 'CHECK %s PASS 0s (dowod FRESH uzyty ponownie: %s)\n' "$name" "$reused"
+    printf 'CHECK %s PASS 0s (FRESH evidence reused: %s)\n' "$name" "$reused"
   else
     cwd="$root/$(cmd_field "$name" cwd)"
     limit="$(cmd_field "$name" timeoutSec)"; limit="${limit:-$DEFAULT_TIMEOUT}"
@@ -561,7 +562,7 @@ check_one() {
         read -r pre rc timed_out duration started <"$bg_dir/$name.result"
       else
         pre=1; rc=1; timed_out=0; duration=0
-        printf '\n[komenda w tle zakonczyla sie bez wyniku]\n' >>"$log"
+        printf '\n[background command ended without a result]\n' >>"$log"
       fi
     elif [ -n "$precheck" ] && ! ( cd "$cwd" && bash -x -c "$precheck" ) >"$log" 2>&1; then
       pre=0
@@ -569,7 +570,7 @@ check_one() {
     if [ "$pre" -eq 0 ]; then
       status="NOT_RUN"
       failed_step="$(grep '^+' "$log" | tail -1 | sed 's/^+* *//' | cut -c1-120)"
-      reason="precheck nie przeszedl na: ${failed_step:-$precheck}; wymaga: ${needs:-$precheck}"
+      reason="precheck failed at: ${failed_step:-$precheck}; requires: ${needs:-$precheck}"
     else
       printf 'RUN %s: %s\n' "$name" "$run"
       if [ "$in_bg" -eq 0 ]; then
@@ -581,15 +582,15 @@ check_one() {
       expect="$(cmd_field "$name" expect)"
       if [ "$timed_out" -eq 1 ]; then
         status="FAIL"; reason="timeout ${limit}s"; rc=124
-        printf '\n[timeout po %ss]\n' "$limit" >>"$log"
+        printf '\n[timeout after %ss]\n' "$limit" >>"$log"
       elif [ "$rc" -ne 0 ]; then
         if jq -e --arg n "$name" --argjson rc "$rc" '(.validation.commands[$n].notRunExitCodes // []) | index($rc) != null' "$cfg" >/dev/null; then
-          status="NOT_RUN"; reason="kod wyjscia $rc oznacza brak srodowiska; wymaga: ${needs:-zobacz log}"
+          status="NOT_RUN"; reason="exit code $rc means the environment is missing; requires: ${needs:-see the log}"
         else
-          status="FAIL"; reason="kod wyjscia $rc"
+          status="FAIL"; reason="exit code $rc"
         fi
       elif [ -n "$expect" ] && ! grep -qF -- "$expect" "$log"; then
-        status="FAIL"; reason="brak oczekiwanego napisu '$expect'"
+        status="FAIL"; reason="expected text '$expect' not found"
       else
         status="PASS"
       fi
@@ -601,7 +602,7 @@ check_one() {
     [ -n "$reason" ] && line="$line ($reason)"
     printf '%s\n' "$line"
     if [ "$status" = "FAIL" ]; then
-      echo "  --- koniec logu ---"
+      echo "  --- end of log ---"
       tail -n "$TAIL_LINES" "$log" | sed 's/^/  /'
     fi
   fi
@@ -622,11 +623,11 @@ check_one() {
      + (if ($tail | length) > 0 then {tail: $tail} else {} end)' >"$rec"
 }
 
-# MARK: kolejnosc
-# Pierwsze przejscie uruchamia komendy po kolei i pomija komendy z tla, drugie
-# odbiera komendy z tla. Komenda, przed ktora wszystko jest juz wypisane, pisze
-# od razu; pozostale pisza do pliku z numerem i sa wypisywane w kolejnosci
-# bramki, gdy wszystkie wczesniejsze sa gotowe. Rekordy ida w tej samej kolejnosci.
+# MARK: order
+# The first pass runs commands in sequence and skips background commands. The
+# second pass collects background commands. A command whose predecessors are all
+# printed writes directly. The others write to a numbered file and print in gate
+# order once all earlier ones are done. Records follow the same order.
 next_out=1
 flush_ready() {
   while [ -f "$bg_dir/$next_out.out" ]; do
@@ -658,7 +659,7 @@ fp_after="$(fingerprint)"
 stale=0
 if [ "$fp_after" != "$fp_before" ]; then
   stale=1
-  echo "WARNING drzewo zmienilo sie w trakcie bramki; dowod oznaczony STALE, powtorz bramke po zakonczeniu edycji"
+  echo "WARNING tree changed during the gate; evidence marked STALE, rerun the gate after editing is done"
 fi
 
 evidence_name="evidence.json"; [ "$baseline" -eq 1 ] && evidence_name="baseline.json"

@@ -26,7 +26,7 @@ The global skills hold general rules and templates only. Problems of one stack o
 | `av-verify` | Runs the configured gates and records evidence with a code fingerprint: FRESH or STALE |
 | `av-docs-sync` | Keeps AI docs in sync with the code; audit mode reports DOCS_OK or DOCS_DRIFT |
 
-Skill instructions are written in Polish. Generated docs follow `project.language` in the config.
+The plugin is written in English. Files it generates in a repo (docs, overlays, role skills, plans, reports) use `project.language` from the config, for example Polish. Section names and modes have a canonical English name and localized equivalents (`av-setup/references/localization.md`); skills and scripts accept both, so repos set up in another language keep working.
 
 ## How It Works
 
@@ -111,4 +111,4 @@ Then run `av-setup` in the repo.
 bash plugins/av-dev/tests/run.sh
 ```
 
-527 script tests: gates, config merge, slot executor, setup validator, repo scan, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.
+548 script tests: gates, config merge, slot executor, setup validator, repo scan, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.

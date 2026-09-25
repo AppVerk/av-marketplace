@@ -1,68 +1,68 @@
-# Profil: Angular
+# Profile: Angular
 
-## Wykrywanie
-- `angular.json` i `@angular/core` w `package.json`. Wersję weź ze skanu.
-- Standalone vs NgModule: `bootstrapApplication` w `main.ts` albo `standalone: true` w komponentach. Od Angular 19 standalone jest domyślny, więc sprawdź też brak `@NgModule`.
-- Sygnały: `signal(`, `computed(`, `input(` w kodzie. Stan: `@ngrx/*` albo własne fasady i serwisy.
-- Testy: `unit_test` ze skanu (karma/jasmine, jest, vitest). E2E: playwright albo cypress.
-- i18n: `@ngx-translate/core`, transloco albo `@angular/localize`. Pliki tłumaczeń zwykle w `src/assets/i18n/*.json`.
+## Detection
+- `angular.json` and `@angular/core` in `package.json`. Take the version from the scan.
+- Standalone vs NgModule: `bootstrapApplication` in `main.ts` or `standalone: true` in components. Since Angular 19 standalone is the default, so also check for the absence of `@NgModule`.
+- Signals: `signal(`, `computed(`, `input(` in the code. State: `@ngrx/*` or custom facades and services.
+- Tests: `unit_test` from the scan (karma/jasmine, jest, vitest). E2E: playwright or cypress.
+- i18n: `@ngx-translate/core`, transloco or `@angular/localize`. Translation files are usually in `src/assets/i18n/*.json`.
 
-## Komendy i bramki
-- Źródło prawdy: skrypty `package.json` i kroki CI. Runner z lockfile (`npm run`, `yarn`, `pnpm`).
-- Testy tylko w trybie bez watch: szukaj skryptu z `--no-watch` albo `--watch=false` i przeglądarką headless. Skrypt z watch zawiesi bramkę.
-- `precheck` dla każdej komendy npm: `test -d node_modules`. Bez niego brak zależności daje FAIL zamiast NOT_RUN.
-- `precheck` dla karma: dostępny Chrome lub Chromium (`CHROME_BIN`).
-- Typowo: `quick` = lint + prettier check + stylelint (jeśli jest) + docs + testy headless; `full` = quick + build developerski.
-- `docs`: komenda z `references/config-schema.md` (`check_refs.sh` i `check_linerefs.sh` z `--strict`). Trwa sekundy i łapie rozjazdy docs z kodem przy każdej zmianie.
-- Build produkcyjny zostaw poza bramkami, chyba że CI go wymaga.
-- `expect` dla skryptów npm zwykle pomiń. Kod wyjścia `ng lint`, `ng test --no-watch` i `ng build` jest wiarygodny. Napis dodaj tylko, gdy widzisz go w logu CI.
-- Hooki husky (`tooling.husky_hooks` w skanie) pokazują, co zespół uważa za bramkę przed commitem. Zwykle to dobry kandydat na `quick`.
-- Gdy zespół budował aplikację w trakcie pracy (np. żeby łapać błędy szablonów typu NG8002, których nie widzi lint), zachowaj build w `quick`. To zasada "ostrzejsza reguła wygrywa" z adopcji.
+## Commands and gates
+- Source of truth: `package.json` scripts and CI steps. Runner from the lockfile (`npm run`, `yarn`, `pnpm`).
+- Tests only in no-watch mode: look for a script with `--no-watch` or `--watch=false` and a headless browser. A script with watch will hang the gate.
+- `precheck` for every npm command: `test -d node_modules`. Without it, missing dependencies give FAIL instead of NOT_RUN.
+- `precheck` for karma: Chrome or Chromium available (`CHROME_BIN`).
+- Typically: `quick` = lint + prettier check + stylelint (if present) + docs + headless tests; `full` = quick + development build.
+- `docs`: the command from `references/config-schema.md` (`check_refs.sh` and `check_linerefs.sh` with `--strict`). It takes seconds and catches docs drift from code on every change.
+- Keep the production build out of the gates, unless CI requires it.
+- Usually skip `expect` for npm scripts. The exit code of `ng lint`, `ng test --no-watch` and `ng build` is reliable. Add a string only when you see it in the CI log.
+- Husky hooks (`tooling.husky_hooks` in the scan) show what the team treats as a pre-commit gate. That is usually a good candidate for `quick`.
+- When the team built the app during work (e.g. to catch template errors like NG8002 that lint does not see), keep the build in `quick`. This is the "stricter rule wins" principle from adoption.
 
 ## Docs
-Aplikacje Angular często trzymają docs w `docs/` (np. `docs/standards/*.md`, `docs/project-context.md`). Uszanuj ten układ. Ustaw `docs.root: "docs"`. Brakujące tematy dodaj w konwencji zespołu.
+Angular apps often keep docs in `docs/` (e.g. `docs/standards/*.md`, `docs/project-context.md`). Respect this layout. Set `docs.root: "docs"`. Add missing topics in the team's convention.
 
-Tematy specyficzne:
-- `angular-patterns.md`: komponenty, szablony, DTO vs model, serwisy, RxJS, style.
-- `architecture.md`: podział na feature'y, lazy loading, fasady, routing.
-- `testing.md`: wzorzec testów (np. bez TestBed), mockowanie, fakeAsync.
-- `translations.md`: przepływ kluczy, liczba języków, zasady placeholderów, narzędzie typu Lokalise.
+Specific topics:
+- `angular-patterns.md`: components, templates, DTO vs model, services, RxJS, styles.
+- `architecture.md`: split into features, lazy loading, facades, routing.
+- `testing.md`: test pattern (e.g. without TestBed), mocking, fakeAsync.
+- `translations.md`: key flow, number of languages, placeholder rules, a tool like Lokalise.
 
-## Moduły
-Kandydaci: `src/app/*` (feature'y). Pomiń katalogi techniczne (`core`, `shared`, `layout`, `i18n`), ale opisz je w `architecture.md`. Szablon: Cel, Routing, Komponenty, Serwisy i fasady, Modele i DTO, API, Klucze tłumaczeń, Testy, Pułapki.
+## Modules
+Candidates: `src/app/*` (features). Skip technical directories (`core`, `shared`, `layout`, `i18n`), but describe them in `architecture.md`. Template: Purpose, Routing, Components, Services and facades, Models and DTOs, API, Translation keys, Tests, Pitfalls.
 
-## Osie review
-| Oś | Co sprawdzić |
+## Review axes
+| Axis | What to check |
 |---|---|
-| Subskrypcje i pamięć | `async` pipe, `takeUntilDestroyed` albo wzorzec projektu; brak ręcznych `subscribe` bez sprzątania |
-| Change detection | `OnPush`, sygnały, brak ciężkich funkcji w szablonie, `track` w pętlach |
-| Typy | bez `any`, DTO vs model zgodnie z konwencją, strict templates |
-| Architektura | podział na feature'y, lazy loading, brak importów w poprzek feature'ów |
-| i18n | nowy klucz we wszystkich plikach języków, zgodnie z regułą zespołu |
-| Bezpieczeństwo | `innerHTML` i `bypassSecurityTrust*`, tokeny w storage, interceptory i guardy |
-| Testy | spec dla nowej logiki; asercje także w `subscribe` |
-| Style | tokeny i zmienne SCSS zamiast wartości wpisanych na sztywno |
+| Subscriptions and memory | `async` pipe, `takeUntilDestroyed` or the project pattern; no manual `subscribe` without cleanup |
+| Change detection | `OnPush`, signals, no heavy functions in the template, `track` in loops |
+| Types | no `any`, DTO vs model per the convention, strict templates |
+| Architecture | split into features, lazy loading, no imports across features |
+| i18n | new key in all language files, per the team rule |
+| Security | `innerHTML` and `bypassSecurityTrust*`, tokens in storage, interceptors and guards |
+| Tests | spec for new logic; assertions also inside `subscribe` |
+| Styles | tokens and SCSS variables instead of hard-coded values |
 
-## Role dla av-implement
-Zwykle jedna rola `angular`. Przy dużych zmianach: `feature` (komponenty, serwisy, routing), `i18n` (klucze we wszystkich językach), `tests` (spec). Tłumaczenia jako osobna rola, gdy języków jest dużo. Istniejące skille projektu (np. `angular-templates`, `writing-tests`, `writing-i18n-keys`) wskazuj jako skille ról zamiast tworzyć nowe.
+## Roles for av-implement
+Usually one role `angular`. For large changes: `feature` (components, services, routing), `i18n` (keys in all languages), `tests` (spec). Translations as a separate role when there are many languages. Point to existing project skills (e.g. `angular-templates`, `writing-tests`, `writing-i18n-keys`) as role skills instead of creating new ones.
 
-## Wysokie ryzyko (domyślne)
-Uwierzytelnianie (interceptory, guardy, przechowywanie tokenów), konfiguracje środowisk, płatności, masowe zmiany plików tłumaczeń, zmiany w `core`/`shared` używanych przez wiele feature'ów.
+## High risk (default)
+Authentication (interceptors, guards, token storage), environment configs, payments, bulk changes to translation files, changes in `core`/`shared` used by many features.
 
-## Mapa docs-sync
-| Zmiana w | Docs |
+## Docs-sync map
+| Change in | Docs |
 |---|---|
-| nowy katalog w `src/app/` | nowy moduł, indeks modułów |
-| routing | `architecture.md`, moduł |
-| `package.json` zależności | `tech-stack.md` |
-| pliki tłumaczeń (struktura) | `translations.md` |
+| new directory in `src/app/` | new module, module index |
+| routing | `architecture.md`, module |
+| `package.json` dependencies | `tech-stack.md` |
+| translation files (structure) | `translations.md` |
 
-## Defekty do evalu
-Zestaw dla `references/eval.md`.
-| # | Defekt | Oś |
+## Eval defects
+The set for `references/eval.md`.
+| # | Defect | Axis |
 |---|---|---|
-| 1 | `subscribe` w komponencie bez `takeUntilDestroyed` ani `async` pipe | Subskrypcje i pamięć |
-| 2 | `[innerHTML]` z danymi z API albo `bypassSecurityTrustHtml` bez sanitizacji | Bezpieczeństwo |
-| 3 | nowy klucz tłumaczenia tylko w jednym pliku języka | i18n |
-| 4 | typ `any` w nowym DTO albo serwisie | Typy |
-| 5 | import z wnętrza innego feature'a zamiast z jego publicznego API | Architektura |
+| 1 | `subscribe` in a component without `takeUntilDestroyed` or `async` pipe | Subscriptions and memory |
+| 2 | `[innerHTML]` with API data or `bypassSecurityTrustHtml` without sanitization | Security |
+| 3 | new translation key in only one language file | i18n |
+| 4 | `any` type in a new DTO or service | Types |
+| 5 | import from inside another feature instead of its public API | Architecture |

@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# config.sh - efektywny config av-dev: config zespolu z lokalnym nadpisaniem.
+# config.sh - av-dev effective config: the team config with a local override.
 #
-# Config zespolu: .ai/av.config.json (commitowany).
-# Nadpisanie lokalne: <config>.local, domyslnie .ai/av.config.json.local
-#   (gitignorowany, ustawienia jednej osoby albo jednej maszyny).
-# Laczenie: obiekty rekurencyjnie, tablice i wartosci proste zastepuja,
-#   null usuwa klucz.
+# Team config: .ai/av.config.json (committed).
+# Local override: <config>.local, default .ai/av.config.json.local
+#   (gitignored, settings of one person or one machine).
+# Merge: objects merge recursively, arrays and scalar values replace,
+#   null removes the key.
 #
-# Uzycie:
-#   config.sh [--root DIR] [--config PLIK]            efektywny config (JSON)
-#   config.sh --sources [--root DIR] [--config PLIK]  pliki, klucze nadpisane, ostrzezenia
-# Opcje:
-#   --no-local   pomin nadpisanie lokalne
-#   --out PLIK   zapisz efektywny config do pliku zamiast na stdout
-# Wynik --sources: CONFIG <plik>, CONFIG_LOCAL <plik>|none, OVERRIDE <klucz>,
-#   REMOVE <klucz>, WARNING <tekst>.
-# Kody: 0 OK, 2 blad (brak configu, zly JSON, zle wywolanie).
-# Wymaga: bash 3.2+, git, jq.
+# Usage:
+#   config.sh [--root DIR] [--config FILE]            effective config (JSON)
+#   config.sh --sources [--root DIR] [--config FILE]  files, overridden keys, warnings
+# Options:
+#   --no-local   skip the local override
+#   --out FILE   write the effective config to a file instead of stdout
+# --sources output: CONFIG <file>, CONFIG_LOCAL <file>|none, OVERRIDE <key>,
+#   REMOVE <key>, WARNING <text>.
+# Codes: 0 OK, 2 error (config missing, bad JSON, bad invocation).
+# Requires: bash 3.2+, git, jq.
 
 set -uo pipefail
 
@@ -25,7 +25,7 @@ fail() {
   exit 2
 }
 
-command -v jq >/dev/null 2>&1 || fail "brak jq; zainstaluj jq (brew install jq)"
+command -v jq >/dev/null 2>&1 || fail "jq missing; install jq (brew install jq)"
 
 root_arg=""
 config_arg=""
@@ -41,7 +41,7 @@ while [ $# -gt 0 ]; do
     --sources) sources=1 ;;
     --no-local) no_local=1 ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
-    *) fail "nieznany argument '$1'" ;;
+    *) fail "unknown argument '$1'" ;;
   esac
   shift
 done
@@ -51,23 +51,23 @@ if [ -n "$root_arg" ]; then
 else
   root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
-[ -n "$root" ] || fail "brak katalogu root"
+[ -n "$root" ] || fail "root directory missing"
 
 cfg="${config_arg:-$root/.ai/av.config.json}"
 case "$cfg" in /*) ;; *) [ -f "$cfg" ] || cfg="$root/$cfg" ;; esac
-[ -f "$cfg" ] || fail "brak $cfg; uruchom skill av-setup"
-jq empty "$cfg" 2>/dev/null || fail "niepoprawny JSON w $cfg"
-jq -e 'type == "object"' "$cfg" >/dev/null 2>&1 || fail "config $cfg nie jest obiektem JSON"
+[ -f "$cfg" ] || fail "config not found: $cfg; run the av-setup skill"
+jq empty "$cfg" 2>/dev/null || fail "invalid JSON in $cfg"
+jq -e 'type == "object"' "$cfg" >/dev/null 2>&1 || fail "config $cfg is not a JSON object"
 
 local_cfg="$cfg.local"
 use_local=0
 if [ "$no_local" -eq 0 ] && [ -f "$local_cfg" ]; then
-  jq empty "$local_cfg" 2>/dev/null || fail "niepoprawny JSON w $local_cfg"
-  jq -e 'type == "object"' "$local_cfg" >/dev/null 2>&1 || fail "config $local_cfg nie jest obiektem JSON"
+  jq empty "$local_cfg" 2>/dev/null || fail "invalid JSON in $local_cfg"
+  jq -e 'type == "object"' "$local_cfg" >/dev/null 2>&1 || fail "config $local_cfg is not a JSON object"
   use_local=1
 fi
 
-# MARK: zrodla
+# MARK: sources
 
 if [ "$sources" -eq 1 ]; then
   printf 'CONFIG %s\n' "${cfg#$root/}"
@@ -85,16 +85,16 @@ if [ "$sources" -eq 1 ]; then
   case "$local_cfg" in
     "$root"/*)
       if git -C "$root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then
-        printf 'WARNING %s jest sledzony przez git; usun go z repo (git rm --cached) i dopisz do .gitignore\n' "$rel"
+        printf 'WARNING %s is tracked by git; remove it from the repo (git rm --cached) and add it to .gitignore\n' "$rel"
       elif ! git -C "$root" check-ignore -q -- "$rel" 2>/dev/null; then
-        printf 'WARNING %s nie jest w .gitignore; dopisz go, zeby nie trafil do commita\n' "$rel"
+        printf 'WARNING %s is not in .gitignore; add it so it does not end up in a commit\n' "$rel"
       fi
       ;;
   esac
   exit 0
 fi
 
-# MARK: laczenie
+# MARK: merge
 
 emit() {
   if [ "$use_local" -eq 0 ]; then
@@ -112,7 +112,7 @@ emit() {
 }
 
 if [ -n "$out" ]; then
-  emit > "$out" || fail "nie moge zapisac $out"
+  emit > "$out" || fail "cannot write $out"
 else
   emit
 fi

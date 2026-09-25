@@ -1,33 +1,33 @@
-# Profil: ogólny
+# Profile: generic
 
-Użyj, gdy żaden profil nie pasuje (Python, Go, Node backend, Android) albo jako uzupełnienie.
+Use it when no profile fits (Python, Go, Node backend, Android) or as a supplement.
 
-## Komendy i bramki
-Kolejność zaufania źródeł:
-1. Kroki CI (`bitbucket-pipelines.yml`, `.github/workflows/*`, `.gitlab-ci.yml`).
-2. Skrypty w `scripts/`.
-3. `package.json` (runner z lockfile), `composer.json`, `Makefile`.
-4. Konwencje języka: `pyproject.toml` -> `pytest` i skonfigurowany linter; `go.mod` -> `go test ./...`, `go vet ./...`; `Cargo.toml` -> `cargo test`, `cargo clippy`; Gradle -> `./gradlew test lint`.
+## Commands and gates
+Order of source trust:
+1. CI steps (`bitbucket-pipelines.yml`, `.github/workflows/*`, `.gitlab-ci.yml`).
+2. Scripts in `scripts/`.
+3. `package.json` (runner from the lockfile), `composer.json`, `Makefile`.
+4. Language conventions: `pyproject.toml` -> `pytest` and the configured linter; `go.mod` -> `go test ./...`, `go vet ./...`; `Cargo.toml` -> `cargo test`, `cargo clippy`; Gradle -> `./gradlew test lint`.
 
-`quick` = szybkie i bez środowiska (lint, typy, docs, unit). `full` = quick + build + testy integracyjne.
-- `docs`: komenda z `references/config-schema.md` (`check_refs.sh` i `check_linerefs.sh` z `--strict`). Trwa sekundy i łapie rozjazdy docs z kodem przy każdej zmianie.
+`quick` = fast and without an environment (lint, types, docs, unit). `full` = quick + build + integration tests.
+- `docs`: the command from `references/config-schema.md` (`check_refs.sh` and `check_linerefs.sh` with `--strict`). It takes seconds and catches docs drift from code on every change.
 
-## Moduły
-Katalogi pierwszego lub drugiego poziomu pod `src/` (albo odpowiednikiem) z co najmniej kilkoma plikami. Szablon ze wspólnego szkieletu w `doc-set.md`.
+## Modules
+First- or second-level directories under `src/` (or its equivalent) with at least a few files. Template from the common skeleton in `doc-set.md`.
 
-## Osie review
-Poprawność, bezpieczeństwo na granicach zaufania, kontrakty z `contracts.md`, testy dla nowej logiki i regresji, konwencje repo.
+## Review axes
+Correctness, security at trust boundaries, contracts from `contracts.md`, tests for new logic and regressions, repo conventions.
 
-## Role
-Jedna rola `developer`, chyba że układ repo wyraźnie dzieli warstwy.
+## Roles
+One role `developer`, unless the repo layout clearly splits layers.
 
-## Wysokie ryzyko
-Uwierzytelnianie, autoryzacja, migracje danych, publiczne API, płatności, współbieżność, usuwanie danych.
+## High risk
+Authentication, authorization, data migrations, public API, payments, concurrency, data deletion.
 
-## Defekty do evalu
-Zestaw dla `references/eval.md`, gdy profil stacku nie ma własnego. Uzupełnij 2 defektami z historii repo.
-| # | Defekt | Oś |
+## Eval defects
+The set for `references/eval.md` when the stack profile has none of its own. Add 2 defects from the repo history.
+| # | Defect | Axis |
 |---|---|---|
-| 1 | fikcyjny sekret wpisany w kodzie | Bezpieczeństwo |
-| 2 | dane wejściowe użytkownika bez walidacji na granicy zaufania | Bezpieczeństwo |
-| 3 | nowa logika bez testu albo test bez asercji | Testy |
+| 1 | fake secret hard-coded in the code | Security |
+| 2 | user input without validation at a trust boundary | Security |
+| 3 | new logic without a test, or a test without assertions | Tests |

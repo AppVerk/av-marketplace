@@ -1,6 +1,7 @@
 #!/bin/bash
-# Testy czarnej skrzynki dla scan.sh.
-# Buduje trzy male repo (iOS, Symfony z frontendem, Angular) i sprawdza pola JSON.
+# Black box tests for scan.sh.
+# Builds small repos (iOS, Symfony with a frontend, Angular, extras) and checks the JSON fields.
+# The iOS repo has Polish docs and a Polish exit code comment: they test Polish detection.
 set -u
 SCAN="$(cd "$(dirname "$0")/.." && pwd)/scripts/scan.sh"
 PASS=0; FAIL=0
@@ -31,21 +32,21 @@ printf '{}' >"$IOS/App/Firebase/test/GoogleService-Info.plist"
 printf '# CLAUDE.md\n\nZasady pracy z repozytorium w języku polskim: żółć, ćma, łódź, źrebię, ślimak, gęś, pąk. Każdy moduł ma opis. Zależności są w pliku. Reguły są krótkie i jasne. Gałąź bazowa to develop.\n\n## Git\n\n```sh\nscripts/build.sh\n```\n\n```swift\nlet x = 1\n```\n' >"$IOS/CLAUDE.md"
 ln -s CLAUDE.md "$IOS/AGENTS.md"
 printf -- '---\nname: reviewer\n---\n' >"$IOS/.claude/agents/reviewer.md"
-printf '#!/bin/bash\n# Buduje aplikacje.\n' >"$IOS/scripts/build.sh"
+printf '#!/bin/bash\n# Builds the app.\n' >"$IOS/scripts/build.sh"
 cat >"$IOS/scripts/unit_test.sh" <<'EOF'
 #!/bin/bash
-# Uruchamia testy.
+# Runs the tests.
 #
 # Kod wyjscia: 0 gdy zielone, 1 gdy test czerwony,
 # 2 przy niedostepnym srodowisku.
 #
-# Brama przy kazdej zmianie.
+# Gate for every change.
 set -u
-exit 0 # Exit 5 w kodzie nie jest opisem
+exit 0 # Exit 5 in code is not a description
 echo "  STATUS: ENV_DOWN"
 echo "  STATUS: UNIT_OK"
 EOF
-printf '"""Nagrywa fixtures.\n\nExit codes: 0 ok, 2 brak sieci.\n"""\nprint("REC_OK")\n' >"$IOS/scripts/rec.py"
+printf '"""Records fixtures.\n\nExit codes: 0 ok, 2 no network.\n"""\nprint("REC_OK")\n' >"$IOS/scripts/rec.py"
 printf '.ai/workspace/\n.env\n' >"$IOS/.gitignore"
 printf 'SECRET=1\n' >"$IOS/.env"
 commit "$IOS" "NKR-1 add login"
@@ -58,26 +59,26 @@ git -C "$IOS" merge -q --no-ff feature/NFI-2-home -m "Merged in feature/NFI-2-ho
 out="$TMP/ios.json"
 bash "$SCAN" "$IOS" >"$out"
 check "$out" '.stacks[0].id == "ios-uikit" and .stacks[0].cocoapods and (.stacks[0].xcode_synchronized_groups | not)' "ios: stack"
-check "$out" '.git.base_branch_guess == "develop"' "ios: baza develop"
-check "$out" '.git.ticket_prefixes.NFI >= 1 and .git.ticket_prefixes.NKR >= 1' "ios: prefiksy"
-check "$out" '.git.merged_branch_names | index("feature/NFI-2-home") != null' "ios: scalona galaz"
-check "$out" '.git.branch_types_seen == ["feature"]' "ios: typy galezi"
-check "$out" '.doc_language_guess == "pl"' "ios: jezyk"
-check "$out" '.module_candidates | map(select(.pattern == "*/Domains/*")) | .[0].count == 3' "ios: moduly"
-check "$out" '.tests.dirs == ["AppTests"]' "ios: katalogi testow bez Firebase/test"
+check "$out" '.git.base_branch_guess == "develop"' "ios: base develop"
+check "$out" '.git.ticket_prefixes.NFI >= 1 and .git.ticket_prefixes.NKR >= 1' "ios: prefixes"
+check "$out" '.git.merged_branch_names | index("feature/NFI-2-home") != null' "ios: merged branch"
+check "$out" '.git.branch_types_seen == ["feature"]' "ios: branch types"
+check "$out" '.doc_language_guess == "pl"' "ios: language pl"
+check "$out" '.module_candidates | map(select(.pattern == "*/Domains/*")) | .[0].count == 3' "ios: modules"
+check "$out" '.tests.dirs == ["AppTests"]' "ios: test dirs without Firebase/test"
 check "$out" '.ai_setup["AGENTS.md"].symlink_to == "CLAUDE.md"' "ios: symlink AGENTS"
-check "$out" '.ai_setup.orchestration == true' "ios: orkiestracja z agentow"
-check "$out" '.ai_setup.gitignore_ai == [".ai/workspace/"]' "ios: wzorce gitignore"
-check "$out" '.secret_like_files == [".env"]' "ios: plik sekretow"
-check "$out" '.commands.scripts_dir[0].doc == "Buduje aplikacje."' "ios: opis skryptu"
-check "$out" '.commands.scripts_meta | map(select(.path == "scripts/unit_test.sh")) | .[0] | .exit_codes_doc == "Kod wyjscia: 0 gdy zielone, 1 gdy test czerwony, 2 przy niedostepnym srodowisku." and .status_tokens == ["ENV_DOWN", "UNIT_OK"]' "ios: kody wyjscia i statusy skryptu"
-check "$out" '.commands.scripts_meta | map(select(.path == "scripts/rec.py")) | .[0] | .exit_codes_doc == "Exit codes: 0 ok, 2 brak sieci." and .status_tokens == ["REC_OK"]' "ios: docstring pythona"
-check "$out" '.commands.scripts_meta | map(.path) | index("scripts/build.sh") == null' "ios: skrypt bez opisu wyniku pominiety"
-check "$out" '.commands.documented_commands == [{"doc": "CLAUDE.md", "cmd": "scripts/build.sh"}]' "ios: komendy z docs bez bloku swift"
-check "$out" '.source_files >= 4' "ios: pliki zrodlowe"
-grep -q 'SECRET=1' "$out" && fail "ios: wartosc sekretu w wyniku" || ok
+check "$out" '.ai_setup.orchestration == true' "ios: orchestration from agents"
+check "$out" '.ai_setup.gitignore_ai == [".ai/workspace/"]' "ios: gitignore patterns"
+check "$out" '.secret_like_files == [".env"]' "ios: secrets file"
+check "$out" '.commands.scripts_dir[0].doc == "Builds the app."' "ios: script description"
+check "$out" '.commands.scripts_meta | map(select(.path == "scripts/unit_test.sh")) | .[0] | .exit_codes_doc == "Kod wyjscia: 0 gdy zielone, 1 gdy test czerwony, 2 przy niedostepnym srodowisku." and .status_tokens == ["ENV_DOWN", "UNIT_OK"]' "ios: script exit codes and statuses (Polish)"
+check "$out" '.commands.scripts_meta | map(select(.path == "scripts/rec.py")) | .[0] | .exit_codes_doc == "Exit codes: 0 ok, 2 no network." and .status_tokens == ["REC_OK"]' "ios: python docstring"
+check "$out" '.commands.scripts_meta | map(.path) | index("scripts/build.sh") == null' "ios: script without result description skipped"
+check "$out" '.commands.documented_commands == [{"doc": "CLAUDE.md", "cmd": "scripts/build.sh"}]' "ios: commands from docs without swift block"
+check "$out" '.source_files >= 4' "ios: source files"
+grep -q 'SECRET=1' "$out" && fail "ios: secret value in output" || ok
 
-# MARK: Symfony z frontendem
+# MARK: Symfony with a frontend
 PHP="$TMP/php"
 init_repo "$PHP"
 mkdir -p "$PHP/src/Orders/Domain" "$PHP/src/Orders/Application" "$PHP/templates" "$PHP/metronic" "$PHP/tests/Unit"
@@ -106,18 +107,18 @@ commit "$PHP" "feat: init"
 
 out="$TMP/php.json"
 bash "$SCAN" "$PHP" >"$out"
-check "$out" '.stacks | map(.id) == ["php-symfony", "node"]' "php: stacki"
-check "$out" '.stacks[0].ddd_layout == ["Application", "Domain"] and .stacks[0].messenger' "php: DDD i messenger"
-check "$out" '.stacks[1].dir == "metronic" and (.stacks[1].frontend_hints | index("tailwindcss") != null)' "php: frontend w podkatalogu"
-check "$out" '.commands.composer | has("analyse") and (has("post-install-cmd") | not)' "php: skrypty composera"
-check "$out" '.commands["package.json:metronic"].runner == "yarn"' "php: runner z lockfile"
-check "$out" '.commands.ci[0].steps[0] == {"section": "pull-requests:**", "name": "Analyse", "commands": ["composer install", "composer analyse"]}' "php: krok CI PR"
-check "$out" '.commands.ci[0].steps[1].section == "custom:deploy"' "php: sekcja custom"
+check "$out" '.stacks | map(.id) == ["php-symfony", "node"]' "php: stacks"
+check "$out" '.stacks[0].ddd_layout == ["Application", "Domain"] and .stacks[0].messenger' "php: DDD and messenger"
+check "$out" '.stacks[1].dir == "metronic" and (.stacks[1].frontend_hints | index("tailwindcss") != null)' "php: frontend in a subdirectory"
+check "$out" '.commands.composer | has("analyse") and (has("post-install-cmd") | not)' "php: composer scripts"
+check "$out" '.commands["package.json:metronic"].runner == "yarn"' "php: runner from lockfile"
+check "$out" '.commands.ci[0].steps[0] == {"section": "pull-requests:**", "name": "Analyse", "commands": ["composer install", "composer analyse"]}' "php: CI PR step"
+check "$out" '.commands.ci[0].steps[1].section == "custom:deploy"' "php: custom section"
 check "$out" '.commands.docker_compose == ["docker-compose.yml"]' "php: compose"
-check "$out" '.git.remote_host == "bitbucket"' "php: host z pliku CI"
+check "$out" '.git.remote_host == "bitbucket"' "php: host from CI file"
 check "$out" '.git.conventional_commits_ratio == "1/1"' "php: conventional commits"
-check "$out" '.ai_setup.orchestration == false' "php: brak orkiestracji"
-check "$out" '.ai_setup.agents_ignored == false' "php: .agents nieignorowany"
+check "$out" '.ai_setup.orchestration == false' "php: no orchestration"
+check "$out" '.ai_setup.agents_ignored == false' "php: .agents not ignored"
 
 # MARK: Angular
 NG="$TMP/ng"
@@ -129,7 +130,7 @@ printf 'import { bootstrapApplication } from "@angular/platform-browser";\n' >"$
 touch "$NG/src/app/auth/a.spec.ts" "$NG/src/app/orders/o.ts" "$NG/src/app/shared/s.ts"
 printf 'npm run lint\n' >"$NG/.husky/pre-commit"
 printf '22.12\n' >"$NG/.nvmrc"
-mkdir -p "$NG/tools" && printf '#!/bin/sh\n# CI. Exit 0: ok; 1: blad.\necho CI_OK\n' >"$NG/tools/ci.sh"
+mkdir -p "$NG/tools" && printf '#!/bin/sh\n# CI. Exit 0: ok; 1: error.\necho CI_OK\n' >"$NG/tools/ci.sh"
 printf 'module.exports = { coverageReporter: { check: { global: { statements: 75 } } } };\n' >"$NG/karma.conf.js"
 printf '# Standard\n' >"$NG/docs/standards/testing.md"
 printf '{"includeCoAuthoredBy": false}\n' >"$NG/.claude-settings.tmp"
@@ -140,16 +141,16 @@ out="$TMP/ng.json"
 bash "$SCAN" "$NG" >"$out"
 check "$out" '.stacks[0].id == "angular" and .stacks[0].unit_test == "karma" and .stacks[0].i18n == "@ngx-translate/core" and .stacks[0].bootstrap == "standalone"' "ng: stack"
 check "$out" '.tooling.husky_hooks["pre-commit"] == ["npm run lint"]' "ng: husky"
-check "$out" '.tooling.versions[".nvmrc"] == ["22.12"] and .tooling.versions.engines.node == ">=22"' "ng: wersje"
-check "$out" '.tooling.coverage_thresholds["karma.conf.js"] | test("statements: 75")' "ng: prog pokrycia"
-check "$out" '.tests.spec_ts_files == 1' "ng: pliki spec"
-check "$out" '.commands.scripts_meta == [{"path": "tools/ci.sh", "exit_codes_doc": "CI. Exit 0: ok; 1: blad.", "status_tokens": ["CI_OK"]}]' "ng: skrypt z package.json"
+check "$out" '.tooling.versions[".nvmrc"] == ["22.12"] and .tooling.versions.engines.node == ">=22"' "ng: versions"
+check "$out" '.tooling.coverage_thresholds["karma.conf.js"] | test("statements: 75")' "ng: coverage threshold"
+check "$out" '.tests.spec_ts_files == 1' "ng: spec files"
+check "$out" '.commands.scripts_meta == [{"path": "tools/ci.sh", "exit_codes_doc": "CI. Exit 0: ok; 1: error.", "status_tokens": ["CI_OK"]}]' "ng: script from package.json"
 check "$out" '.ai_setup.docs == ["docs/standards/testing.md"]' "ng: docs"
 check "$out" '.ai_setup[".claude"].co_authored_setting == false' "ng: includeCoAuthoredBy false"
-check "$out" '.git.ticket_prefixes.CC == 1' "ng: prefiks CC"
-check "$out" '.module_candidates | map(select(.pattern == "src/app/*")) | .[0].count == 3' "ng: moduly src/app"
+check "$out" '.git.ticket_prefixes.CC == 1' "ng: prefix CC"
+check "$out" '.module_candidates | map(select(.pattern == "src/app/*")) | .[0].count == 3' "ng: modules src/app"
 
-# MARK: dane osobowe, README, bloki bez jezyka, husky, githooks
+# MARK: personal data, README, blocks without language, husky, githooks
 EXTRA="$TMP/extra"
 init_repo "$EXTRA"
 mkdir -p "$EXTRA/.husky" "$EXTRA/.githooks" "$EXTRA/scripts/claude"
@@ -167,7 +168,7 @@ printf '# Readme
 
 ```
 npm run build
-src/  kod aplikacji
+src/  app code
 $ make test
 ```
 ' >"$EXTRA/README.md"
@@ -175,21 +176,24 @@ for i in 1 2 3 4 5 6 7; do printf 'npm run step%s
 ' "$i"; done >"$EXTRA/.husky/pre-commit"
 printf '#!/bin/sh
 ' >"$EXTRA/.githooks/pre-commit"
-printf '// Guard hooka PreToolUse.
+printf '// PreToolUse hook guard.
 ' >"$EXTRA/scripts/claude/guard.mjs"
+printf '#!/bin/bash\n# Runs the tests.\n#\n# Exit code: 0 when green, 1 when a test fails,\n# 2 when the environment is down.\n#\n# Gate for every change.\necho "UNIT_OK"\n' >"$EXTRA/scripts/unit.sh"
 commit "$EXTRA" "chore: init"
 git -C "$EXTRA" commit -q --allow-empty -m "feat: x" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
 out="$TMP/extra.json"
 bash "$SCAN" "$EXTRA" >"$out"
-grep -q 'Kowalski\|1b4e28ba\|jan.kowalski@' "$out" && fail "extra: dane osobowe w wyniku" || ok
-check "$out" '.commands.ci[0].steps[0].commands | index("echo \"build ok\"") != null' "extra: cudzyslow zachowany"
-check "$out" '[.commands.documented_commands[].cmd] == ["npm run build", "make test"]' "extra: komendy z bloku bez jezyka"
-check "$out" '.tooling.husky_hooks["pre-commit"] | length == 7' "extra: pelny hook husky"
+grep -q 'Kowalski\|1b4e28ba\|jan.kowalski@' "$out" && fail "extra: personal data in output" || ok
+check "$out" '.commands.ci[0].steps[0].commands | index("echo \"build ok\"") != null' "extra: quote kept"
+check "$out" '[.commands.documented_commands[].cmd] == ["npm run build", "make test"]' "extra: commands from a block without language"
+check "$out" '.tooling.husky_hooks["pre-commit"] | length == 7' "extra: full husky hook"
 check "$out" '.ai_setup.githooks | index(".githooks/pre-commit") != null' "extra: githooks"
-check "$out" '.commands.scripts_dir | map(.file) | index("scripts/claude/guard.mjs") != null' "extra: zagniezdzony skrypt"
-check "$out" '.git.ai_signature_commits == "1/2"' "extra: podpis AI w ostatnich commitach"
+check "$out" '.commands.scripts_dir | map(.file) | index("scripts/claude/guard.mjs") != null' "extra: nested script"
+check "$out" '.git.ai_signature_commits == "1/2"' "extra: AI signature in recent commits"
+check "$out" '.doc_language_guess == "en"' "extra: language en"
+check "$out" '.commands.scripts_meta | map(select(.path == "scripts/unit.sh")) | .[0] | .exit_codes_doc == "Exit code: 0 when green, 1 when a test fails, 2 when the environment is down." and .status_tokens == ["UNIT_OK"]' "extra: script exit codes and statuses (English)"
 
-# MARK: warstwy zamiast modulow, .agents ignorowany
+# MARK: layers instead of modules, .agents ignored
 LAY="$TMP/layers"
 init_repo "$LAY"
 for d in Controller Form Enum Service Orders; do mkdir -p "$LAY/src/$d" && printf '<?php\n' >"$LAY/src/$d/A.php"; done
@@ -198,12 +202,12 @@ printf '{"require":{"symfony/framework-bundle":"7"}}\n' >"$LAY/composer.json"
 commit "$LAY" "init"
 out="$TMP/lay.json"
 bash "$SCAN" "$LAY" >"$out"
-check "$out" '.module_candidates | map(select(.pattern == "src/*")) | .[0].looks_like_layers == true' "layers: wykryte warstwy"
-check "$out" '.ai_setup.agents_ignored == true' "layers: .agents ignorowany"
+check "$out" '.module_candidates | map(select(.pattern == "src/*")) | .[0].looks_like_layers == true' "layers: layers detected"
+check "$out" '.ai_setup.agents_ignored == true' "layers: .agents ignored"
 
-# MARK: bledy
-out="$(bash "$SCAN" "$TMP/nie-ma")"; rc=$?
-[ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q '"error"' && ok || fail "brak katalogu: kod $rc"
+# MARK: errors
+out="$(bash "$SCAN" "$TMP/missing")"; rc=$?
+[ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q '"error"' && ok || fail "missing directory: code $rc"
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -1,21 +1,21 @@
-// miro-frames.js - zapis na tablicy Miro z karty w tle (av-dev).
+// miro-frames.js - writing to a Miro board from a background tab (av-dev).
 //
-// Strona tablicy (https://miro.com/app/board/<id>/) wystawia window.miro.board
-// (Web SDK Miro). Odczyt (get, getById, getInfo) dziala na nieaktywnej karcie.
-// Zapis (create*, sync, remove) czeka na requestAnimationFrame, a Chrome nie
-// odpala rAF na ukrytej karcie: obietnica wisi bez konca. withFrames podmienia
-// rAF na czas jednej operacji na pompe MessageChannel (~60 klatek/s), potem
-// przywraca oryginal. Poza operacja karta w tle nie zuzywa CPU.
+// The board page (https://miro.com/app/board/<id>/) exposes window.miro.board
+// (Miro Web SDK). Reads (get, getById, getInfo) work in an inactive tab.
+// Writes (create*, sync, remove) wait for requestAnimationFrame, and Chrome does
+// not fire rAF in a hidden tab: the promise hangs forever. withFrames replaces
+// rAF for the duration of one operation with a MessageChannel pump (~60 frames/s),
+// then restores the original. Outside the operation the background tab uses no CPU.
 //
-// Plik trafia do repo przez av-setup (<paths.scripts>/miro-frames.js); opis w
-// <docs.root>/miro.md.
-// Uzycie: wklej ten plik na poczatek kodu w javascript_tool (claude-in-chrome),
-// potem:
+// av-setup copies this file into the repo (<paths.scripts>/miro-frames.js);
+// description in <docs.root>/miro.md.
+// Usage: paste this file at the start of the code in javascript_tool
+// (claude-in-chrome), then:
 //   await withFrames(async () => { item.content = '...'; await item.sync(); });
-// Wynik 'TIMEOUT' po limitMs znaczy, ze zapis nie przeszedl; odczytaj element
-// jeszcze raz i sprawdz stan, zanim powtorzysz.
-// Nie uzywaj setTimeout do limitow: na ukrytej karcie Chrome dlawi timery
-// (do 1 wywolania na minute), a narzedzie konczy sie po 45 s.
+// A 'TIMEOUT' result after limitMs means the write did not go through; read the
+// element again and check its state before you retry.
+// Do not use setTimeout for limits: in a hidden tab Chrome throttles timers
+// (down to 1 call per minute), and the tool ends after 45 s.
 
 async function withFrames(fn, limitMs = 20000) {
   const origR = window.requestAnimationFrame;

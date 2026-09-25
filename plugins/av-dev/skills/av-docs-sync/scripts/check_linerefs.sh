@@ -1,34 +1,34 @@
 #!/usr/bin/env bash
-# check_linerefs.sh - sprawdza odwolania plik:linia w dokumentacji.
+# check_linerefs.sh - checks file:line references in the docs.
 #
-# Dla kazdego odwolania `sciezka/plik.ext:12` albo `plik.ext:12-20` w backtickach
-# (sciezka moze miec spacje, np. `App/Login & Registration_/X.swift:3`;
-# `:40-42` po odwolaniu w tej samej linii dziedziczy jego plik):
-#   - sprawdza, czy plik istnieje i czy numer linii miesci sie w pliku,
-#   - ustala commit, w ktorym powstala linia docs (git blame),
-#   - gdy plik kodu zmienil sie od tego commitu, sprawdza tresc: bierze
-#     identyfikatory z backtickow tej samej linii docs (bez sciezek) i szuka
-#     ich (jak grep -F) we wskazanym zakresie linii.
+# For each reference `path/file.ext:12` or `file.ext:12-20` in backticks
+# (the path may have spaces, e.g. `App/Login & Registration_/X.swift:3`;
+# `:40-42` after a reference on the same line inherits its file):
+#   - checks that the file exists and the line number fits in the file,
+#   - finds the commit that created the docs line (git blame),
+#   - when the code file changed since that commit, checks the content: takes
+#     identifiers from backticks on the same docs line (without paths) and looks
+#     for them (like grep -F) in the given line range.
 #
-# Wynik:
-#   LINEREF_OK       (nie wypisywany, tylko liczony) identyfikator jest w zakresie
-#   LINEREF_MOVED    identyfikator jest w pliku gdzie indziej; podaje nowy zakres
-#                    przesuniety do najblizszego trafienia
-#   LINEREF_GONE     zadnego identyfikatora nie ma w pliku ani w innym pliku
-#                    z tej samej linii docs
-#   LINEREF_CHANGED  plik zmienil sie, a nie da sie sprawdzic tresci: linia nie
-#                    ma identyfikatorow, sa one w innym pliku z tej linii, linia
-#                    ma odwolanie bez rozszerzenia (alias, np. `UserVM:12`) albo
-#                    mowi o usunieciu (wtedy brak identyfikatora nie jest GONE)
-#   LINEREF_RANGE    numer linii wykracza poza dlugosc pliku
-#   LINEREF_NOFILE   pliku nie ma (sprawdz tez check_refs.sh)
-# Sciezki szuka wzgledem root, a gdy nie istnieje, po sufiksie w `git ls-files`.
+# Output:
+#   LINEREF_OK       (not printed, only counted) an identifier is in the range
+#   LINEREF_MOVED    an identifier is elsewhere in the file; gives a new range
+#                    shifted to the nearest hit
+#   LINEREF_GONE     no identifier is in the file or in another file
+#                    from the same docs line
+#   LINEREF_CHANGED  the file changed and the content cannot be checked: the line
+#                    has no identifiers, they are in another file from the line, the line
+#                    has a reference without an extension (alias, e.g. `UserVM:12`) or
+#                    talks about removal, in Polish or English (then a missing identifier is not GONE)
+#   LINEREF_RANGE    the line number is beyond the file length
+#   LINEREF_NOFILE   the file does not exist (also run check_refs.sh)
+# Paths are resolved relative to root, and if missing, by suffix in `git ls-files`.
 #
-# Uzycie:
-#   check_linerefs.sh <plik.md|katalog> [...] [--root DIR] [--strict]
-# Kod wyjscia: 0 brak trafien, 1 sa trafienia (CHANGED, MOVED, GONE, RANGE,
-#   NOFILE), 2 blad uzycia. Z --strict kod 1 tylko przy RANGE, NOFILE albo GONE.
-# Wymaga: bash 3.2+, git, awk.
+# Usage:
+#   check_linerefs.sh <file.md|dir> [...] [--root DIR] [--strict]
+# Exit code: 0 no hits, 1 hits found (CHANGED, MOVED, GONE, RANGE,
+#   NOFILE), 2 usage error. With --strict code 1 only for RANGE, NOFILE or GONE.
+# Requires: bash 3.2+, git, awk.
 
 set -uo pipefail
 
@@ -44,9 +44,9 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ -n "$paths" ] || { echo "USAGE check_linerefs.sh <plik.md|katalog> [...] [--root DIR] [--strict]"; exit 2; }
-root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE brak katalogu root"; exit 2; }
-git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root nie jest repo git"; exit 2; }
+[ -n "$paths" ] || { echo "USAGE check_linerefs.sh <file.md|dir> [...] [--root DIR] [--strict]"; exit 2; }
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
+git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root is not a git repo"; exit 2; }
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -82,7 +82,7 @@ printf '%s' "$paths" | while IFS= read -r p; do
   elif [ -f "$abs" ]; then
     printf '%s\n' "$abs"
   else
-    printf 'WARNING brak pliku albo katalogu: %s\n' "$p" >&2
+    printf 'WARNING file or directory not found: %s\n' "$p" >&2
   fi
 done | sort -u >"$tmp/docs"
 
@@ -100,9 +100,9 @@ resolve() {
   grep -E "(^|/)$(printf '%s' "$ref" | sed 's/[].[\*^$+?(){}|]/\\&/g')$" "$tmp/files" | head -2
 }
 
-# MARK: tresc zakresu
-# scan_ids <plik> <od> <do> <identyfikatory>
-# Wypisuje OK, MOVED<TAB>linia<TAB>identyfikator albo NONE.
+# MARK: range content
+# scan_ids <file> <from> <to> <identifiers>
+# Prints OK, MOVED<TAB>line<TAB>identifier or NONE.
 scan_ids() {
   awk -v a="$2" -v b="$3" -v ids="$4" '
     BEGIN { n = split(ids, id, " ") }
@@ -124,8 +124,9 @@ scan_ids() {
 
 while IFS= read -r doc; do
   rel_doc="${doc#$root/}"
-  # Wiersz: linia_docs<TAB>odwolanie<TAB>identyfikatory (spacja, "-" gdy brak)<TAB>
-  # 1 gdy linia ma odwolanie bez rozszerzenia (alias) albo mowi o usunieciu
+  # Row: docs_line<TAB>reference<TAB>identifiers (space separated, "-" when none)<TAB>
+  # 1 when the line has a reference without an extension (alias) or talks about removal
+  # (neg matches Polish and English words: repos keep their own language)
   awk '
     BEGIN {
       ref_re = "^[A-Za-z0-9_.\\/+-][A-Za-z0-9_.\\/+& -]*\\.[A-Za-z0-9]+:[0-9]+(-[0-9]+)?$"
@@ -196,7 +197,7 @@ while IFS= read -r doc; do
     case "$target" in *$'\n'*) continue ;; esac
     len="$(wc -l <"$root/$target" 2>/dev/null | tr -d ' ')"
     if [ -n "$len" ] && [ "$last" -gt "$len" ]; then
-      printf 'LINEREF_RANGE %s:%s %s (plik ma %s linii)\n' "$rel_doc" "$ln" "$ref" "$len"
+      printf 'LINEREF_RANGE %s:%s %s (file has %s lines)\n' "$rel_doc" "$ln" "$ref" "$len"
       range=$((range + 1))
       continue
     fi
@@ -208,9 +209,9 @@ while IFS= read -r doc; do
     fi
     why=""
     if [ "$since" != "HEAD" ] && changed_since "$since" "$target"; then
-      why="plik zmieniony od $(printf '%s' "$since" | cut -c1-8)"
+      why="file changed since $(printf '%s' "$since" | cut -c1-8)"
     elif dirty "$target"; then
-      why="plik zmieniony w drzewie roboczym"
+      why="file changed in the working tree"
     fi
     [ -n "$why" ] || continue
     if [ -z "$ids" ]; then
@@ -227,7 +228,7 @@ while IFS= read -r doc; do
         id="$(printf '%s' "$res" | cut -f3)"
         if [ "$at" -lt "$first" ]; then delta=$((at - first)); else delta=$((at - last)); fi
         if [ "$first" = "$last" ]; then new="$((first + delta))"; else new="$((first + delta))-$((last + delta))"; fi
-        printf 'LINEREF_MOVED %s:%s %s -> %s:%s (%s w linii %s)\n' "$rel_doc" "$ln" "$ref" "$path" "$new" "$id" "$at"
+        printf 'LINEREF_MOVED %s:%s %s -> %s:%s (%s on line %s)\n' "$rel_doc" "$ln" "$ref" "$path" "$new" "$id" "$at"
         moved=$((moved + 1)) ;;
       *)
         elsewhere=0
@@ -240,11 +241,11 @@ while IFS= read -r doc; do
         done <"$tmp/refs"
         [ "$elsewhere" -ne 0 ] || [ "$unsure" != "1" ] || elsewhere=2
         if [ "$elsewhere" -ne 0 ]; then
-          if [ "$elsewhere" -eq 1 ]; then note="identyfikatory z linii sa w innym pliku"; else note="linia ma alias albo mowi o usunieciu"; fi
+          if [ "$elsewhere" -eq 1 ]; then note="identifiers from the line are in another file"; else note="the line has an alias or talks about removal"; fi
           printf 'LINEREF_CHANGED %s:%s %s (%s; %s)\n' "$rel_doc" "$ln" "$ref" "$why" "$note"
           changed=$((changed + 1))
         else
-          printf 'LINEREF_GONE %s:%s %s (brak w pliku: %s)\n' "$rel_doc" "$ln" "$ref" "$ids"
+          printf 'LINEREF_GONE %s:%s %s (not in the file: %s)\n' "$rel_doc" "$ln" "$ref" "$ids"
           gone=$((gone + 1))
         fi ;;
     esac

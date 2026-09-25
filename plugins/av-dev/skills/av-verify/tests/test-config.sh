@@ -1,5 +1,5 @@
 #!/bin/bash
-# Testy czarnej skrzynki dla config.sh i lokalnego nadpisania w gate.sh.
+# Black-box tests for config.sh and the local override in gate.sh.
 set -u
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="$DIR/scripts/config.sh"
@@ -32,85 +32,85 @@ cat >.ai/av.config.json <<'EOF'
 EOF
 git add -A && git commit -qm init
 
-# --- 1. bez pliku lokalnego: config zespolu bez zmian
+# --- 1. no local file: team config unchanged
 out="$(bash "$CONFIG")"; rc=$?
-[ "$rc" -eq 0 ] && ok || fail "bez local: kod $rc"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "codex" ] && ok || fail "bez local: zly review"
+[ "$rc" -eq 0 ] && ok || fail "no local: code $rc"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "codex" ] && ok || fail "no local: wrong review"
 out="$(bash "$CONFIG" --sources)"
-has "$out" "CONFIG .ai/av.config.json" && ok || fail "sources: brak CONFIG"
-has "$out" "CONFIG_LOCAL none" && ok || fail "sources: brak CONFIG_LOCAL none"
+has "$out" "CONFIG .ai/av.config.json" && ok || fail "sources: CONFIG missing"
+has "$out" "CONFIG_LOCAL none" && ok || fail "sources: CONFIG_LOCAL none missing"
 
-# --- 2. nadpisanie: obiekty rekurencyjnie, tablice zastepuja, null usuwa
+# --- 2. override: objects merge recursively, arrays replace, null removes
 cat >.ai/av.config.json.local <<'EOF'
 {"agents":{"models":{"review":{"provider":"claude","model":"opus"}}},
  "validation":{"commands":{"unit":{"timeoutSec":999},"fixtures":null}},
  "git":{"ticketPrefixes":["C"]}}
 EOF
 out="$(bash "$CONFIG")"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "claude" ] && ok || fail "merge: provider nie nadpisany"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.review.effort')" = "xhigh" ] && ok || fail "merge: effort zgubiony"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.implement.model')" = "opus" ] && ok || fail "merge: implement zgubiony"
-[ "$(printf '%s' "$out" | jq -r '.validation.commands.unit.timeoutSec')" = "999" ] && ok || fail "merge: timeout nie nadpisany"
-[ "$(printf '%s' "$out" | jq -r '.validation.commands.unit.expect')" = "UNIT_OK" ] && ok || fail "merge: expect zgubiony"
-[ "$(printf '%s' "$out" | jq -r '.validation.commands | has("fixtures")')" = "false" ] && ok || fail "merge: null nie usunal klucza"
-[ "$(printf '%s' "$out" | jq -c '.git.ticketPrefixes')" = '["C"]' ] && ok || fail "merge: tablica nie zastapiona"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "claude" ] && ok || fail "merge: provider not overridden"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.review.effort')" = "xhigh" ] && ok || fail "merge: effort lost"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.implement.model')" = "opus" ] && ok || fail "merge: implement lost"
+[ "$(printf '%s' "$out" | jq -r '.validation.commands.unit.timeoutSec')" = "999" ] && ok || fail "merge: timeout not overridden"
+[ "$(printf '%s' "$out" | jq -r '.validation.commands.unit.expect')" = "UNIT_OK" ] && ok || fail "merge: expect lost"
+[ "$(printf '%s' "$out" | jq -r '.validation.commands | has("fixtures")')" = "false" ] && ok || fail "merge: null did not remove the key"
+[ "$(printf '%s' "$out" | jq -c '.git.ticketPrefixes')" = '["C"]' ] && ok || fail "merge: array not replaced"
 
 out="$(bash "$CONFIG" --no-local)"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "codex" ] && ok || fail "--no-local: uzyl local"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "codex" ] && ok || fail "--no-local: used local"
 
-# --- 3. --sources: klucze i ostrzezenie o braku w .gitignore
+# --- 3. --sources: keys and the warning about a missing .gitignore entry
 out="$(bash "$CONFIG" --sources)"
-has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "sources: brak sciezki local"
-has "$out" "OVERRIDE agents.models.review.provider" && ok || fail "sources: brak OVERRIDE provider"
-has "$out" "REMOVE validation.commands.fixtures" && ok || fail "sources: brak REMOVE"
-has "$out" "OVERRIDE git.ticketPrefixes" && ok || fail "sources: tablica jako jeden klucz"
-has "$out" "WARNING .ai/av.config.json.local nie jest w .gitignore" && ok || fail "sources: brak ostrzezenia gitignore"
+has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "sources: local path missing"
+has "$out" "OVERRIDE agents.models.review.provider" && ok || fail "sources: OVERRIDE provider missing"
+has "$out" "REMOVE validation.commands.fixtures" && ok || fail "sources: REMOVE missing"
+has "$out" "OVERRIDE git.ticketPrefixes" && ok || fail "sources: array as one key"
+has "$out" "WARNING .ai/av.config.json.local is not in .gitignore" && ok || fail "sources: gitignore warning missing"
 printf '.ai/av.config.json.local\n' >>.gitignore
 out="$(bash "$CONFIG" --sources)"
-has "$out" "WARNING" && fail "sources: ostrzezenie mimo gitignore" || ok
+has "$out" "WARNING" && fail "sources: warning despite gitignore" || ok
 
-# --- 4. plik lokalny sledzony przez git
+# --- 4. local file tracked by git
 git add -f .ai/av.config.json.local >/dev/null 2>&1
 out="$(bash "$CONFIG" --sources)"
-has "$out" "jest sledzony przez git" && ok || fail "sources: brak ostrzezenia o sledzeniu"
+has "$out" "WARNING .ai/av.config.json.local is tracked by git" && ok || fail "sources: tracking warning missing"
 git rm -q --cached .ai/av.config.json.local
 
-# --- 5. zly JSON w local to blad configu
-printf '{zly' >"$TMP/bad"; cp .ai/av.config.json.local "$TMP/good"; cp "$TMP/bad" .ai/av.config.json.local
+# --- 5. bad JSON in local is a config error
+printf '{bad' >"$TMP/bad"; cp .ai/av.config.json.local "$TMP/good"; cp "$TMP/bad" .ai/av.config.json.local
 out="$(bash "$CONFIG")"; rc=$?
-[ "$rc" -eq 2 ] && ok || fail "zly local: kod $rc"
-has "$out" "CONFIG_ERROR niepoprawny JSON" && ok || fail "zly local: brak komunikatu"
+[ "$rc" -eq 2 ] && ok || fail "bad local: code $rc"
+has "$out" "CONFIG_ERROR invalid JSON" && ok || fail "bad local: message missing"
 out="$(bash "$GATE" --list)"; rc=$?
-[ "$rc" -eq 2 ] && ok || fail "gate zly local: kod $rc"
+[ "$rc" -eq 2 ] && ok || fail "gate bad local: code $rc"
 printf '[1]' >.ai/av.config.json.local
 out="$(bash "$CONFIG")"; rc=$?
-[ "$rc" -eq 2 ] && ok || fail "local tablica: kod $rc"
+[ "$rc" -eq 2 ] && ok || fail "local array: code $rc"
 cp "$TMP/good" .ai/av.config.json.local
 
-# --- 6. gate.sh: --list pokazuje nadpisanie, walidacja dziala na efektywnym configu
+# --- 6. gate.sh: --list shows the override, validation runs on the effective config
 out="$(bash "$GATE" --list)"; rc=$?
-has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "gate list: brak CONFIG_LOCAL"
-has "$out" "OVERRIDE agents.models.review.provider" && ok || fail "gate list: brak OVERRIDE"
-has "$out" "CONFIG_ERROR agents.crossVendor" && ok || fail "gate list: crossVendor nie sprawdzony po merge"
-[ "$rc" -eq 2 ] && ok || fail "gate list crossVendor: kod $rc"
+has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "gate list: CONFIG_LOCAL missing"
+has "$out" "OVERRIDE agents.models.review.provider" && ok || fail "gate list: OVERRIDE missing"
+has "$out" "CONFIG_ERROR agents.crossVendor" && ok || fail "gate list: crossVendor not checked after merge"
+[ "$rc" -eq 2 ] && ok || fail "gate list crossVendor: code $rc"
 out="$(bash "$GATE" --list --no-local)"; rc=$?
-[ "$rc" -eq 0 ] && ok || fail "gate list --no-local: kod $rc"
-has "$out" "CONFIG_LOCAL" && fail "gate --no-local pokazal local" || ok
+[ "$rc" -eq 0 ] && ok || fail "gate list --no-local: code $rc"
+has "$out" "CONFIG_LOCAL" && fail "gate --no-local showed local" || ok
 
-# --- 7. gate.sh: bramka biegnie na efektywnym configu
+# --- 7. gate.sh: the gate runs on the effective config
 cat >.ai/av.config.json.local <<'EOF'
 {"validation":{"commands":{"fixtures":null},"gates":{"quick":["unit"]}}}
 EOF
 out="$(bash "$GATE" --gate quick --run-id l1)"; rc=$?
-[ "$rc" -eq 0 ] && ok || fail "gate quick local: kod $rc"
-has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "gate quick: brak CONFIG_LOCAL"
-has "$out" "CHECK fixtures" && fail "gate quick: fixtures mimo usuniecia" || ok
-ls "${TMPDIR:-/tmp}"/av-config.* >/dev/null 2>&1 && fail "gate: zostal plik tymczasowy" || ok
+[ "$rc" -eq 0 ] && ok || fail "gate quick local: code $rc"
+has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "gate quick: CONFIG_LOCAL missing"
+has "$out" "CHECK fixtures" && fail "gate quick: fixtures despite removal" || ok
+ls "${TMPDIR:-/tmp}"/av-config.* >/dev/null 2>&1 && fail "gate: temporary file left behind" || ok
 
-# --- 8. --config z innym plikiem bierze jego .local
+# --- 8. --config with another file takes its own .local
 cp .ai/av.config.json "$TMP/prop.json"
 out="$(bash "$CONFIG" --config "$TMP/prop.json" --sources)"
-has "$out" "CONFIG_LOCAL none" && ok || fail "--config: wzial local zespolu"
+has "$out" "CONFIG_LOCAL none" && ok || fail "--config: took the team local"
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

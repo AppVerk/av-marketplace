@@ -1,71 +1,71 @@
-# Format planu av-setup
+# av-setup plan format
 
-Jeden format dla trybów NOWY, UZUPEŁNIENIE, ADOPCJA i ODŚWIEŻENIE. Sekcje oznaczone "(ADOPCJA)" dodaj tylko w tym trybie.
+One format for NEW, COMPLETION, ADOPTION and REFRESH modes. Add sections marked "(ADOPTION)" only in that mode.
 
 ```markdown
-# av-setup: <projekt> (<tryb>)
+# av-setup: <project> (<mode>)
 
-## Werdykt
-<1-2 zdania: ile plików tworzymy, aktualizujemy, zostawiamy, konwertujemy, usuwamy.>
+## Verdict
+<1-2 sentences: how many files we create, update, keep, convert, delete.>
 
-## Decyzje
-| Plik | Akcja | Cel | Źródło faktów / uzasadnienie |
+## Decisions
+| File | Action | Target | Source of facts / reason |
 |---|---|---|---|
 
 ## Config
-<kluczowe wartości: bramki quick/full, ryzyko, git, modele; pełny JSON w sekcji "Załącznik: config" na końcu planu>
+<key values: quick/full gates, risk, git, models; the full JSON in the "Appendix: config" section at the end of the plan>
 
-## Wiedza przenoszona do nakładek (ADOPCJA)
-| Źródło (plik:zakres linii) | Reguły (skrót) | Cel |
+## Knowledge moved to overlays (ADOPTION)
+| Source (file:line range) | Rules (summary) | Target |
 
-## Wiedza, która ginie (ADOPCJA)
-<wynik `adoption_diff.sh`: TOKENS n LOST m FILTERED f>
-<orkiestracja, formaty handoff, statusy; każdy punkt ze źródłem i tym, co go zastępuje. Każda grupa tokenów LOST ma cel w "Wiedza przenoszona do nakładek" albo wiersz tutaj.>
+## Knowledge that gets lost (ADOPTION)
+<output of `adoption_diff.sh`: TOKENS n LOST m FILTERED f>
+<orchestration, handoff formats, statuses; each item with its source and what replaces it. Each LOST token group has a target in "Knowledge moved to overlays" or a row here.>
 
-## Mapowanie trybów (ADOPCJA, gdy repo miało własne tryby)
-| Stary tryb | Warunki | Nowy tryb | Zaostrzenia w nakładce |
+## Mode mapping (ADOPTION, when the repo had its own modes)
+| Old mode | Conditions | New mode | Stricter rules in the overlay |
 
-## Nieprzeniesione celowo (ADOPCJA)
-<reguły ze starego setupu, których nie przenosimy, bo są nieaktualne albo sprzeczne z kodem; każda z dowodem>
+## Deliberately not moved (ADOPTION)
+<rules from the old setup that we do not move because they are outdated or contradict the code; each with evidence>
 
-## Rozjazdy docs z kodem
-<audyt z kroku 3 SKILL.md: suma i liczby per plik; pełna lista w pliku roboczym>
-| Plik docs | MISSING | NAME po triage | LINEREF | Usunięte nazwy | Razem |
+## Docs drift from code
+<audit from step 3 of SKILL.md: total and counts per file; the full list in a working file>
+| Docs file | MISSING | NAME after triage | LINEREF | Removed names | Total |
 |---|---|---|---|---|---|
 
-<rozjazdy, które zmieniają decyzje planu:>
-| plik:linia | docs mówi | kod mówi |
+<drift that changes plan decisions:>
+| file:line | docs say | code says |
 
-<przy ponad 10 rozjazdach: krok "av-docs-sync audit --fix" przed nakładkami, do zatwierdzenia; w Decyzjach jako osobny wiersz>
+<with more than 10 drift items: an "av-docs-sync audit --fix" step before the overlays, for approval; a separate row in Decisions>
 
 
-## Decyzje domyślne
-<wartości przyjęte bez pytania, np. przy --defaults; każda z powodem>
+## Default decisions
+<values taken without asking, e.g. with --defaults; each with a reason>
 
 ## TODO
-<rzeczy, których nie da się ustalić z repo>
+<things that cannot be determined from the repo>
 
-## Załącznik: config
-<pełny proponowany `.ai/av.config.json` w bloku json>
+## Appendix: config
+<the full proposed `.ai/av.config.json` in a json block>
 ```
 
-## Akcje
+## Actions
 
-| Akcja | Znaczenie |
+| Action | Meaning |
 |---|---|
-| UTWÓRZ | nowy plik |
-| UPDATE | edycja istniejącego pliku, zakres zmian w kolumnie "Cel" |
-| KEEP | bez zmian |
-| CONVERT | treść przechodzi do nakładki, configu albo docs; plik potem do usunięcia |
-| MERGE | łączy się z innym plikiem |
-| DROP | usunięcie bez przenoszenia treści (nieaktualne, zdublowane) |
-| MOVE | przeniesienie pliku (`git mv`) z poprawą odwołań; ścieżka docelowa w kolumnie "Cel" |
-| MAP | istniejący plik zespołu pokrywa temat z zestawu docs; nowego pliku nie tworzymy, `README.md` docs linkuje do istniejącego |
+| CREATE | new file |
+| UPDATE | edit of an existing file; the change scope goes in the "Target" column |
+| KEEP | no change |
+| CONVERT | content moves to an overlay, the config or docs; the file is deleted afterwards |
+| MERGE | merges with another file |
+| DROP | deletion without moving content (outdated, duplicated) |
+| MOVE | file move (`git mv`) with fixed references; the target path goes in the "Target" column |
+| MAP | an existing team file covers a topic from the docs set; we create no new file, the docs `README.md` links to the existing one |
 
-UPDATE obejmuje też "KEEP z poprawką odwołań": plik zostaje, zmieniają się tylko nazwy usuniętych agentów i komend. Zakres zmiany wpisz w kolumnie "Cel", np. "tylko sekcja Pipeline" albo "tylko odwołania".
+UPDATE also covers "KEEP with a reference fix": the file stays, only the names of removed agents and commands change. Write the change scope in the "Target" column, e.g. "only the Pipeline section" or "only references".
 
-## Szczegółowość
+## Level of detail
 
-- Źródła reguł podawaj jako `plik:zakres` na grupę reguł, np. `swift-reviewer.md:20-58 -> osie 1-4`. Nie potrzeba wiersza na każdą regułę.
-- Pozycje grupuj: "skrypty `scripts/*_test.sh` (4 pliki) KEEP" zamiast 4 wierszy.
-- Plan ma być czytelny w 5 minut. Sekcja "Decyzje" zwykle mieści się w 40 wierszach.
+- Give rule sources as `file:range` per rule group, e.g. `swift-reviewer.md:20-58 -> axes 1-4`. No row per rule is needed.
+- Group items: "scripts `scripts/*_test.sh` (4 files) KEEP" instead of 4 rows.
+- The plan must be readable in 5 minutes. The "Decisions" section usually fits in 40 rows.

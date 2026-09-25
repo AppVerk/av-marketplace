@@ -1,68 +1,68 @@
-# Profil: iOS (Swift, UIKit lub SwiftUI)
+# Profile: iOS (Swift, UIKit or SwiftUI)
 
-## Wykrywanie
-- `*.xcworkspace` albo `*.xcodeproj` w root. `Podfile` oznacza CocoaPods, `Package.swift` albo `Package.resolved` oznacza SPM.
-- `xcode_synchronized_groups` ze skanu: `false` oznacza klasyczne grupy. Wtedy nowy plik trzeba dodać do targetu. Bez tego build nie przejdzie.
-- UIKit vs SwiftUI: policz `import SwiftUI` i `UIViewController` w kodzie.
+## Detection
+- `*.xcworkspace` or `*.xcodeproj` in the root. `Podfile` means CocoaPods, `Package.swift` or `Package.resolved` means SPM.
+- `xcode_synchronized_groups` from the scan: `false` means classic groups. Then a new file must be added to the target. Without that the build fails.
+- UIKit vs SwiftUI: count `import SwiftUI` and `UIViewController` in the code.
 
-## Komendy i bramki
-- Schematy i konfiguracje: `xcodebuild -list -json -workspace <ws>` (albo `-project`).
+## Commands and gates
+- Schemes and configurations: `xcodebuild -list -json -workspace <ws>` (or `-project`).
 - Build: `xcodebuild -workspace <ws> -scheme <scheme> -destination "generic/platform=iOS Simulator" -configuration <Debug-*> build`, `expect: "BUILD SUCCEEDED"`.
-- Nie dodawaj `CODE_SIGNING_ALLOWED=NO`, gdy aplikacja używa Keychain. Bez podpisu Keychain nie działa i testy dają fałszywe wyniki.
-- Testy jednostkowe: `xcodebuild test -scheme <scheme> -destination "platform=iOS Simulator,name=<model>" -only-testing:<Target>`. Gdy repo ma skrypt z czytelnym statusem, użyj skryptu.
-- `precheck` dla testów: dostępny symulator (`xcrun simctl list devices available`).
-- `DEVELOPER_DIR` ustaw, gdy w systemie jest kilka Xcode. Najlepiej w `env` w `.claude/settings.json`, wtedy komendy w configu zostają krótkie. Alternatywa: prefiks w `run`, np. `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild ...`.
-- Nie proponuj `pod update` w bramkach. Tylko `pod install`, gdy `Podfile.lock` różni się od `Pods/Manifest.lock`.
-- Typowo: `quick` = lint + docs + unit, `full` = quick + build; testy UI jako osobna bramka `ui` z `covers: ["build"]`.
-- `docs`: komenda z `references/config-schema.md` (`check_refs.sh` i `check_linerefs.sh` z `--strict`). Trwa sekundy i łapie rozjazdy docs z kodem przy każdej zmianie.
-- Testy jednostkowe przez `xcodebuild test` kompilują aplikację, więc trwają minuty. Gdy `unit` trwa ponad 2 minuty, zapytaj, czy trzymać go w `quick`, czy przenieść do `full`. `quick` jest uruchamiany po każdej rundzie poprawek. Z `--defaults`: zachowaj wybór zespołu (np. skrypt opisany w docs jako bramka przy każdej zmianie), a bez takiego opisu przenieś `unit` do `full`.
-- `precheck` dla testów i builda: `test -d Pods` (przy CocoaPods) i dostępny symulator.
-- Pewny `expect` dla xcodebuild: `** BUILD SUCCEEDED **` (build) i `** TEST SUCCEEDED **` (test).
-- Cykl czerwony-zielony potrzebuje szybkiego testu jednej suity. Dodaj komendę poza bramkami, np. `unit_one` z `run: "scripts/unit_test.sh \"$UNIT_SUITE\""` i `precheck: "test -n \"$UNIT_SUITE\""`. Wywołanie: `gate.sh --only unit_one --env UNIT_SUITE=StringValidationTests`.
+- Do not add `CODE_SIGNING_ALLOWED=NO` when the app uses Keychain. Without signing, Keychain does not work and tests give false results.
+- Unit tests: `xcodebuild test -scheme <scheme> -destination "platform=iOS Simulator,name=<model>" -only-testing:<Target>`. When the repo has a script with a readable status, use the script.
+- `precheck` for tests: an available simulator (`xcrun simctl list devices available`).
+- Set `DEVELOPER_DIR` when the system has several Xcode versions. Best in `env` in `.claude/settings.json`; then the config commands stay short. Alternative: a prefix in `run`, e.g. `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild ...`.
+- Do not propose `pod update` in gates. Only `pod install`, when `Podfile.lock` differs from `Pods/Manifest.lock`.
+- Typically: `quick` = lint + docs + unit, `full` = quick + build; UI tests as a separate `ui` gate with `covers: ["build"]`.
+- `docs`: the command from `references/config-schema.md` (`check_refs.sh` and `check_linerefs.sh` with `--strict`). It takes seconds and catches docs drift from code on every change.
+- Unit tests through `xcodebuild test` compile the app, so they take minutes. When `unit` takes over 2 minutes, ask whether to keep it in `quick` or move it to `full`. `quick` runs after each fix round. With `--defaults`: keep the team's choice (e.g. a script described in the docs as the gate for every change); without such a description, move `unit` to `full`.
+- `precheck` for tests and build: `test -d Pods` (with CocoaPods) and an available simulator.
+- Reliable `expect` for xcodebuild: `** BUILD SUCCEEDED **` (build) and `** TEST SUCCEEDED **` (test).
+- The red-green cycle needs a fast test of one suite. Add a command outside the gates, e.g. `unit_one` with `run: "scripts/unit_test.sh \"$UNIT_SUITE\""` and `precheck: "test -n \"$UNIT_SUITE\""`. Call: `gate.sh --only unit_one --env UNIT_SUITE=StringValidationTests`.
 
-## Dodatkowe docs
-- `networking.md`: warstwa sieci, środowiska API, nagłówki, obsługa błędów i 401.
-- `navigation.md`: nawigacja, deep linki, push.
-- `ui-reference.md`: kolory, fonty, komponenty, helpery.
-- `known-issues.md`: dług techniczny, gdy zespół go śledzi.
+## Additional docs
+- `networking.md`: network layer, API environments, headers, error handling and 401.
+- `navigation.md`: navigation, deep links, push.
+- `ui-reference.md`: colors, fonts, components, helpers.
+- `known-issues.md`: technical debt, when the team tracks it.
 
-## Moduły
-Kandydaci: katalogi ekranów lub feature'ów (np. `*/Domains/*`, `*/Features/*`, `*/Scenes/*`). Szablon modułu: Pliki (Warstwa | Plik), Stan (enum), Endpointy, Nawigacja, Lokalizacja, Pułapki.
+## Modules
+Candidates: screen or feature directories (e.g. `*/Domains/*`, `*/Features/*`, `*/Scenes/*`). Module template: Files (Layer | File), State (enum), Endpoints, Navigation, Localization, Pitfalls.
 
-## Osie review
-| Oś | Co sprawdzić |
+## Review axes
+| Axis | What to check |
 |---|---|
-| Warstwy i DI | przepływ VC -> VM -> manager -> API; rejestracje w kontenerze; brak skrótów przez singletony |
-| Pamięć i wątki | `[weak self]` w closure'ach i `sink`; UI tylko na main; `store(in:)` dla subskrypcji |
-| Lokalizacja | teksty UI przez klucze; klucz we wszystkich plikach języków |
-| Konwencje UI | kolory i fonty z rozszerzeń projektu, bez hexów i `systemFont` |
-| Regresja stylu | nowy kod w aktualnym wzorcu, nie w starym |
-| Bezpieczeństwo | Keychain zamiast UserDefaults dla sekretów; ATS; walidacja deep linków; brak logowania danych osobowych; uprawnienia w Info.plist |
-| Projekt Xcode | nowe pliki w targecie; brak przypadkowych zmian w `project.pbxproj`, entitlements, plistach |
+| Layers and DI | VC -> VM -> manager -> API flow; registrations in the container; no shortcuts through singletons |
+| Memory and threads | `[weak self]` in closures and `sink`; UI only on main; `store(in:)` for subscriptions |
+| Localization | UI texts through keys; key in all language files |
+| UI conventions | colors and fonts from project extensions, no hex values and no `systemFont` |
+| Style regression | new code in the current pattern, not the old one |
+| Security | Keychain instead of UserDefaults for secrets; ATS; deep link validation; no logging of personal data; permissions in Info.plist |
+| Xcode project | new files in the target; no accidental changes in `project.pbxproj`, entitlements, plists |
 
-## Role dla av-implement
-- `data` (skill `<prefiks>-data`): modele odpowiedzi, endpointy, managery domenowe, rejestracje DI.
-- `ui` (skill `<prefiks>-ui`): ViewModel, ViewController, komórki, nawigacja, tłumaczenia, testy UI.
-Tryb DUŻY dzieli pracę na te role z rozłącznymi plikami. Kontrakt między nimi to lista typów i metod warstwy danych.
+## Roles for av-implement
+- `data` (skill `<prefix>-data`): response models, endpoints, domain managers, DI registrations.
+- `ui` (skill `<prefix>-ui`): ViewModel, ViewController, cells, navigation, translations, UI tests.
+LARGE mode splits the work into these roles with disjoint files. The contract between them is the list of data layer types and methods.
 
-## Wysokie ryzyko (domyślne)
-Uwierzytelnianie i token, Keychain, sesja i wylogowanie, konfiguracja API (`clientId`, wersja API), płatności, deep linki i push, migracje danych lokalnych, entitlements i Info.plist.
+## High risk (default)
+Authentication and token, Keychain, session and logout, API configuration (`clientId`, API version), payments, deep links and push, local data migrations, entitlements and Info.plist.
 
-## Mapa docs-sync
-| Zmiana w | Docs |
+## Docs-sync map
+| Change in | Docs |
 |---|---|
-| endpointy API | `networking.md`, moduł |
-| managery domenowe, DI | `architecture.md`, moduł |
-| nawigacja, deep linki | `navigation.md` |
-| nowy katalog ekranu | nowy `modules/<Moduł>.md`, `modules/README.md` |
+| API endpoints | `networking.md`, module |
+| domain managers, DI | `architecture.md`, module |
+| navigation, deep links | `navigation.md` |
+| new screen directory | new `modules/<Module>.md`, `modules/README.md` |
 | Podfile, Package.resolved | `tech-stack.md` |
 
-## Defekty do evalu
-Zestaw dla `references/eval.md`. Wzór: pomiar pipeline'u nfamily-ios z 18-19.09.2026.
-| # | Defekt | Oś |
+## Eval defects
+The set for `references/eval.md`. Based on: the nfamily-ios pipeline measurement from 18-19.09.2026.
+| # | Defect | Axis |
 |---|---|---|
-| 1 | fikcyjny klucz API albo `clientSecret` wpisany w kodzie klienta sieci | Bezpieczeństwo |
-| 2 | `sink { self.… }` bez `[weak self]` w nowym ViewModelu | Pamięć i wątki |
-| 3 | nowy klucz tłumaczenia tylko w części plików `Localizable.strings` | Lokalizacja |
-| 4 | `UIColor(hex:)` albo `UIFont.systemFont` zamiast rozszerzeń projektu | Konwencje UI |
-| 5 | pełny model użytkownika (e-mail, telefon) w `print` albo w `UserDefaults` | Bezpieczeństwo |
+| 1 | fake API key or `clientSecret` hard-coded in the network client | Security |
+| 2 | `sink { self.… }` without `[weak self]` in a new ViewModel | Memory and threads |
+| 3 | new translation key in only some `Localizable.strings` files | Localization |
+| 4 | `UIColor(hex:)` or `UIFont.systemFont` instead of project extensions | UI conventions |
+| 5 | full user model (e-mail, phone) in `print` or in `UserDefaults` | Security |

@@ -1,90 +1,90 @@
-# Skille ról
+# Role skills
 
-Skill roli to project skill z wiedzą jednej warstwy repo: backend, widoki, TS, testy E2E, warstwa danych iOS i tak dalej. Leży w `.claude/skills/<prefiks>-<rola>/SKILL.md` i jest commitowany.
+A role skill is a project skill with the knowledge of one repo layer: backend, views, TS, E2E tests, the iOS data layer and so on. It lives in `.claude/skills/<prefix>-<role>/SKILL.md` and is committed.
 
-## Po co
+## Why
 
-`av-implement` nie zna warstw. Gdyby reguły wszystkich warstw siedziały w jednej nakładce, każdy agent czytałby całość, choć potrzebuje jednej części. Skill roli rozwiązuje to na 3 sposoby:
-- subagent roli w trybie DUŻY ładuje tylko swój skill,
-- w trybach MAŁY i STANDARD sesja ładuje tylko skille warstw, których dotyka zmiana,
-- skill działa też poza `av-implement`: Claude użyje go sam przy zwykłej pracy nad plikami warstwy, a Codex widzi go przez `.agents/skills`.
+`av-implement` does not know the layers. If the rules of all layers sat in one overlay, every agent would read all of it, though it needs one part. A role skill solves this in 3 ways:
+- in LARGE mode, a role subagent loads only its own skill,
+- in SMALL and STANDARD modes, the session loads only the skills of the layers the change touches,
+- the skill also works outside `av-implement`: Claude uses it by itself during normal work on the layer's files, and Codex sees it through `.agents/skills`.
 
-## Kiedy tworzyć
+## When to create
 
-- Repo ma co najmniej 2 role w `roles` w configu (np. backend i widoki, warstwa danych i prezentacja): jeden skill na rolę.
-- Repo ma 1 rolę: skill roli jest opcjonalny. Tworzysz go, gdy reguły warstwy mają ponad 40 linii. Mniejsze zostają w nakładce.
-- Istnieje już dobry skill projektu dla tej warstwy (np. `angular-templates`): nie duplikuj. Rola wskazuje istniejący skill.
-- Warstwę pokrywa plugin z marketplace (np. `phpstorm-plugin:php-project-guide`): rola może wskazać jego skill albo agenta. Reguły tego repo, których plugin nie zna, i tak dostają skill roli, tylko krótszy.
+- The repo has at least 2 roles in `roles` in the config (e.g. backend and views, data layer and presentation): one skill per role.
+- The repo has 1 role: a role skill is optional. Create it when the layer rules exceed 40 lines. Smaller rules stay in the overlay.
+- A good project skill for this layer already exists (e.g. `angular-templates`): do not duplicate it. The role points to the existing skill.
+- A marketplace plugin covers the layer (e.g. `phpstorm-plugin:php-project-guide`): the role can point to its skill or agent. Rules of this repo that the plugin does not know still get a role skill, only a shorter one.
 
-## Nazwa
+## Name
 
-`<prefiks>-<rola>`, np. `admin-backend`, `admin-twig`, `admin-ts`, `admin-e2e`, `ios-data`, `ios-ui`. Prefiks pochodzi z `project.skillPrefix` w configu. Domyślnie bierzesz go z nazwy projektu, a nie z nazwy katalogu (klon albo worktree może mieć inną): najpierw `name` z `composer.json` albo `package.json`, potem nazwa repo z adresu `origin`, potem nazwa głównego pliku projektu, który wykrył profil stacku. Gdy żadne źródło nie istnieje (klon bez `origin`, repo bez manifestu), zapytaj w wywiadzie; z `--defaults` weź nazwę katalogu i zapisz to w "Decyzje domyślne". Z nazwy weź ostatni człon bez prefiksu firmy, np. `nfamily-admin` daje `admin`.
+`<prefix>-<role>`, e.g. `admin-backend`, `admin-twig`, `admin-ts`, `admin-e2e`, `ios-data`, `ios-ui`. The prefix comes from `project.skillPrefix` in the config. By default, take it from the project name, not the directory name (a clone or worktree may have a different one): first `name` from `composer.json` or `package.json`, then the repo name from the `origin` URL, then the name of the main project file that the stack profile detected. When no source exists (a clone without `origin`, a repo without a manifest), ask in the interview; with `--defaults`, take the directory name and record it in "Default decisions". From the name, take the last part without the company prefix, e.g. `nfamily-admin` gives `admin`.
 
-Nazwa roli jest taka sama w configu (`roles[].name`), w planie (`av-plan`, kolumna "Rola") i w nazwie skilla.
+The role name is the same in the config (`roles[].name`), in the plan (`av-plan`, "Role" column) and in the skill name.
 
 ## Format
 
 ```markdown
 ---
 name: admin-twig
-description: Reguły warstwy widoków nfamily-admin (Twig, CSS, menu, tłumaczenia widoczne w Twig). Użyj przy każdej zmianie w katalogu templates, w metronic/src/css/custom/nfamily.css, sekcji menu w config/services.yaml albo kluczy tłumaczeń używanych w Twig, także gdy zadanie tylko wspomina widok, listę, formularz albo modal.
+description: View layer rules for nfamily-admin (Twig, CSS, menu, translations visible in Twig). Use for any change in the templates directory, in metronic/src/css/custom/nfamily.css, the menu section in config/services.yaml or translation keys used in Twig, also when the task only mentions a view, list, form or modal.
 ---
 
-# admin-twig: widoki
+# admin-twig: views
 
-## Zakres plików
-Zakres plików tej roli to rola `twig` w `roles` w `.ai/av.config.json`.
-<opcjonalnie: pliki poza zakresem, które rola czyta albo zgłasza innej roli; bez globów z configu>
+## File scope
+The file scope of this role is the `twig` role in `roles` in `.ai/av.config.json`.
+<optional: files outside the scope that the role reads or reports to another role; no globs from the config>
 
-## Czytaj najpierw
-<ścieżki docs, bez przepisywania ich treści>
+## Read first
+<docs paths, without copying their content>
 
-## Wzorce
-| Przypadek | Plik wzorcowy |
+## Patterns
+| Case | Reference file |
 
-## Obowiązkowe kroki
-<reguły, których złamanie psuje build, bezpieczeństwo albo spójność; krótko, z powodem w pół zdania>
+## Required steps
+<rules whose violation breaks the build, security or consistency; short, with the reason in half a sentence>
 
-## Sprawdzenie warstwy
-<szybkie komendy na plikach tej warstwy w trakcie pracy, np. phpstan tylko na zmienionych plikach. To pomoc dla roli, nie dowód. Dowodem są wyłącznie bramki z validation.commands, które uruchamia av-verify. Gdy komenda istnieje w configu, podaj jej nazwę (`gate.sh --only <nazwa>`) zamiast ją przepisywać.>
+## Layer check
+<quick commands on this layer's files during work, e.g. phpstan only on changed files. This helps the role; it is not evidence. Evidence comes only from gates in validation.commands, which av-verify runs. When the command exists in the config, give its name (`gate.sh --only <name>`) instead of copying it.>
 
-## Przekazanie
-- Dostajesz: <od której roli i co, np. tabela route od admin-backend>
-- Oddajesz: <komu i co, np. lista data-testid dla admin-ts>
+## Handoff
+- You receive: <from which role and what, e.g. a route table from admin-backend>
+- You hand off: <to whom and what, e.g. a list of data-testid for admin-ts>
 
-To jedyne miejsce opisu przekazania. Kolejność ról jest w configu (`order`).
+This is the only place that describes the handoff. The role order is in the config (`order`).
 
-## Pułapki
-<rzeczy nieoczywiste, potwierdzone w kodzie>
+## Pitfalls
+<non-obvious things, confirmed in the code>
 ```
 
-Zasady:
-- Opis (`description`) wymienia katalogi (nazwy, bez `/**`) i słowa, po których Claude rozpozna warstwę. Globy w opisie liczy `SETUP_GLOB_COPY`. Pisz go szeroko, bo zbyt wąski opis sprawia, że skill się nie uruchamia. Długość do około 300 znaków.
-- Treść: 40-150 linii. Wiedza, która jest normą dla ludzi (architektura, konwencje), zostaje w docs; skill tylko do niej linkuje.
-- Fakty z kodu, jak w całym setupie. Każdą ścieżkę i komendę sprawdź przed zapisem.
-- Skill roli nie orkiestruje. Nie mówi o bramkach całego repo, review ani commitach. To robi `av-implement`.
-- Skill nie kopiuje globów roli. Globy żyją tylko w configu. `check_setup.sh` zgłasza kopię 3 lub więcej globów jako `SETUP_GLOB_COPY`.
+Rules:
+- The `description` lists directories (names, without `/**`) and words by which Claude recognizes the layer. `SETUP_GLOB_COPY` counts globs in the description. Write it broadly, because a too narrow description keeps the skill from triggering. Length up to about 300 characters.
+- Content: 40-150 lines. Knowledge that is a norm for people (architecture, conventions) stays in the docs; the skill only links to it.
+- Facts from the code, as in the whole setup. Check every path and command before writing it.
+- A role skill does not orchestrate. It does not talk about whole-repo gates, review or commits. `av-implement` does that.
+- The skill does not copy the role's globs. Globs live only in the config. `check_setup.sh` reports a copy of 3 or more globs as `SETUP_GLOB_COPY`.
 
-## Pliki wspólne dla kilku warstw
+## Files shared by several layers
 
-Jeden plik ma jednego właściciela, czyli jedną rolę. Plik dzielony po treści (np. tłumaczenia z kluczami dla Twig i dla TS, `services.yaml` z menu i serwisami) dostaje rola, która zmienia go najczęściej. Pozostałe role przekazują jej potrzebne wpisy przez kontrakt w planie i sekcję "Przekazanie". Globy ról nie mogą się nakładać. `check_setup.sh` zgłasza nakładanie jako `SETUP_ROLE_OVERLAP`.
+One file has one owner, that is one role. A file split by content (e.g. translations with keys for Twig and for TS, `services.yaml` with the menu and services) goes to the role that changes it most often. Other roles hand it the entries they need through the contract in the plan and the "Handoff" section. Role globs must not overlap. `check_setup.sh` reports an overlap as `SETUP_ROLE_OVERLAP`.
 
-Pliki generowane przez build (np. `public/build/**`) nie należą do żadnej roli. Wpisz je do `generatedPaths` w configu. Narzędzia repo (np. `scripts/**`) wpisz do `unownedPaths`.
+Files generated by the build (e.g. `public/build/**`) belong to no role. Put them in `generatedPaths` in the config. Put repo tools (e.g. `scripts/**`) in `unownedPaths`.
 
-## Skąd brać treść
+## Where content comes from
 
-1. W ADOPCJI: prompty starych agentów implementujących (`backend-php`, `frontend-designer`, `js-specialist`, `ios-data-layer`, `ios-presentation`, `angular-developer`) oraz fazy pipeline'u, w których pracę robił sam orkiestrator (np. "2.4 E2E"). Reguły merytoryczne przechodzą do skilla roli prawie dosłownie. Orkiestracja (fazy, statusy, formaty handoff) nie przechodzi.
-2. Profil stacku, sekcja "Role dla av-implement".
-3. Kod: moduł referencyjny i 3-5 plików warstwy.
+1. In ADOPTION: the prompts of old implementing agents (`backend-php`, `frontend-designer`, `js-specialist`, `ios-data-layer`, `ios-presentation`, `angular-developer`) and the pipeline phases where the orchestrator did the work itself (e.g. "2.4 E2E"). Substantive rules move to the role skill almost word for word. Orchestration (phases, statuses, handoff formats) does not move.
+2. The stack profile, section "Roles for av-implement".
+3. The code: the reference module and 3-5 files of the layer.
 
-## Nakładka a skill roli
+## Overlay vs role skill
 
-Mapa ról (nazwa, skill, kolejność, globy) żyje w `roles` w configu. Nakładka `av-implement.md`, sekcja "Role", tylko do niej linkuje.
+The role map (name, skill, order, globs) lives in `roles` in the config. The `av-implement.md` overlay, section "Roles", only links to it.
 
-Reguły wspólne dla wszystkich warstw (np. "nowy klucz tłumaczenia w obu plikach") zostają w nakładce, w "Obowiązkowe kroki". Reguły jednej warstwy idą do skilla roli.
+Rules common to all layers (e.g. "a new translation key in both files") stay in the overlay, in "Required steps". Rules of one layer go to the role skill.
 
-## ODŚWIEŻENIE
+## REFRESH
 
-Nakładka z regułami warstw wpisanymi bezpośrednio w tabelę ról albo w "Obowiązkowe kroki" to stary format. Zaproponuj wydzielenie ich do skilli ról. Treść przenieś bez zmian merytorycznych.
+An overlay with layer rules written directly in the roles table or in "Required steps" is the old format. Propose moving them to role skills. Move the content without substantive changes.
 
-Tabela ról z globami w nakładce albo sekcja "Zakres plików" z globami w skillu roli to też stary format. Zaproponuj przeniesienie globów do `roles` w configu. Nawiasy `{a,b}` rozpisz na osobne globy. Potem uruchom `check_setup.sh` i popraw `SETUP_ROLE_OVERLAP` oraz `SETUP_ROLE_EMPTY`.
+A roles table with globs in the overlay, or a "File scope" section with globs in a role skill, is also the old format. Propose moving the globs to `roles` in the config. Expand `{a,b}` braces into separate globs. Then run `check_setup.sh` and fix `SETUP_ROLE_OVERLAP` and `SETUP_ROLE_EMPTY`.

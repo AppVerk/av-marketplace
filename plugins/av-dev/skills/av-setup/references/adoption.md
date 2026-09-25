@@ -1,125 +1,125 @@
-# Tryb adopcji
+# Adoption mode
 
-Adopcja przenosi istniejący ręczny setup (pipeline, agenci, komendy) na skille `av-*` z nakładkami. Wiedza zostaje, znika tylko własna orkiestracja.
+Adoption moves an existing manual setup (pipeline, agents, commands) to the `av-*` skills with overlays. The knowledge stays; only the custom orchestration goes away.
 
-Adopcja uruchamia się, gdy skan zwraca `ai_setup.orchestration: true`, a repo nie ma `.ai/av.config.json`. Repo z samymi docs, bez agentów, komend i pipeline'u, idzie trybem UZUPEŁNIENIE, a nie adopcją.
+Adoption starts when the scan returns `ai_setup.orchestration: true` and the repo has no `.ai/av.config.json`. A repo with docs only, without agents, commands and a pipeline, goes through COMPLETION mode, not adoption.
 
-## Zasada
+## Principle
 
-Zachowaj wiedzę, zamień orkiestrację.
-- Wiedza to reguły, konwencje, osie review, pułapki, skrypty i progi.
-- Orkiestracja to fazy, statusy, przekazywanie między agentami i formaty handoffów. Ogólne skille robią ją same.
+Keep the knowledge, replace the orchestration.
+- Knowledge is rules, conventions, review axes, pitfalls, scripts and thresholds.
+- Orchestration is phases, statuses, handoffs between agents and handoff formats. The generic skills do it themselves.
 
-**Ostrzejsza reguła wygrywa.** Gdy stary setup był ostrzejszy od domyślnych zachowań `av-*`, zachowaj to jako zaostrzenie w nakładce. Przykład: "przy wysokim ryzyku plan jest obowiązkowy", choć domyślnie plan wymaga dopiero tryb DUŻY. Adopcja nie może po cichu osłabić procesu zespołu.
+**The stricter rule wins.** When the old setup was stricter than the default `av-*` behavior, keep that as a tightening in the overlay. Example: "with high risk, a plan is required", although by default only LARGE mode requires a plan. Adoption must not quietly weaken the team's process.
 
-## Krok 1: Inwentarz
+## Step 1: Inventory
 
-Z wyniku skanu weź `ai_setup`: agenci, komendy, skille, prompty, `pipeline_docs`, `.codex`, `.agents/skills`, `githooks`, `claude_other`, hooki i `enabled_plugins`. Przeczytaj każdy plik. Czytaj sam, dopóki pliki mają razem poniżej około 5000 linii: nakładki potrzebują reguł niemal dosłownie, a przekazanie ich przez subagenta nie oszczędza kontekstu. Powyżej rozdziel lekturę na subagentów. Każdy zapisuje wyciąg reguł z zakresami linii (`plik:od-do`) do pliku w `<tmp>/` i zwraca tylko ścieżkę i spis treści. Czytaj wyciągi wybiórczo.
+From the scan result, take `ai_setup`: agents, commands, skills, prompts, `pipeline_docs`, `.codex`, `.agents/skills`, `githooks`, `claude_other`, hooks and `enabled_plugins`. Read every file. Read them yourself while the files total below about 5000 lines: overlays need the rules almost verbatim, and passing them through a subagent saves no context. Above that, split the reading across subagents. Each writes a rule extract with line ranges (`file:from-to`) to a file in `<tmp>/` and returns only the path and a table of contents. Read the extracts selectively.
 
-Znajdź też pliki, które **odwołują się** do orkiestracji:
+Also find the files that **refer to** the orchestration:
 
 ```bash
-grep -rlwE "<nazwy agentów>|<nazwy komend>|<nazwy project skilli>|implementation-pipeline|pipeline_state|orkiestrator|orchestrator|BOUNDED|FULL|SELF_CHECK" \
+grep -rlwE "<agent names>|<command names>|<project skill names>|implementation-pipeline|pipeline_state|orkiestrator|orchestrator|BOUNDED|FULL|SELF_CHECK" \
   --include='*.md' --include='*.html' --include='*.json' --include='*.toml' . | grep -v -e workspace/ -e sessions/
 grep -rlnE "[Ff]az[aeiy] [0-9]|[Pp]hase [0-9]" --include='*.md' . | grep -v -e workspace/ -e sessions/
 ```
 
-Wzorce w cudzysłowach, bo bez nich zsh rozwija `*.md`. `-w` chroni przed trafieniami typu `architect` w słowie "architecture". Nazwy, które są zwykłymi słowami (np. skill `translate`), dają trafienia w kodzie i przykładach. Każde trafienie przejrzyj; to tylko kandydat na UPDATE.
+The patterns are quoted, because zsh expands `*.md` without quotes. `-w` protects against hits like `architect` in the word "architecture". Names that are ordinary words (e.g. the `translate` skill) give hits in code and examples. Review every hit; it is only a candidate for UPDATE.
 
-**Sprawdź aktualność reguł**, które przenosisz. Reguła o znanym długu albo znanym fałszywym alarmie mogła się zdezaktualizować (np. dług naprawiony w ostatnich commitach). Sprawdź ją w kodzie. Nieaktualną wpisz do "Nieprzeniesione celowo".
+**Check that the rules you move are still current.** A rule about known debt or a known false alarm may be outdated (e.g. the debt was fixed in recent commits). Check it in the code. Put an outdated rule into "Deliberately not moved".
 
-## Krok 2: Klasyfikacja
+## Step 2: Classification
 
-Akcje z `references/plan-format.md`. Klasyfikuj po treści, nie po nazwie. Agent o nazwie "reviewer" może zawierać reguły implementacji, a skill o nazwie "lint-gate" może być wrapperem pipeline'u.
+Actions come from `references/plan-format.md`. Classify by content, not by name. An agent named "reviewer" may contain implementation rules, and a skill named "lint-gate" may be a pipeline wrapper.
 
-Typowe mapowanie:
+Typical mapping:
 
-| Artefakt | Akcja | Cel |
+| Artifact | Action | Target |
 |---|---|---|
-| dokument pipeline'u (np. `.ai/implementation-pipeline.md`, `docs/pipeline.md`) | CONVERT | tryby i progi -> `av-implement.md`; format findings -> `av-review.md`; bramki -> `validation`; reszta do "Wiedza, która ginie" |
-| komenda planu (`feature_plan`, `/architect`) | CONVERT | wymagane sekcje planu -> `av-plan.md` |
-| komendy implementacji i wznowienia (`feature_implement`, `feature_continue`) | CONVERT | reguły -> `av-implement.md` |
-| komendy docs (`docs_update`, `docs_audit`) | CONVERT | mapa kod->docs, perspektywy audytu -> `av-docs-sync.md` |
-| komenda builda (`build`) | CONVERT | komenda -> `validation.commands.build` |
-| agent implementujący (`backend-php`, `frontend-designer`, `js-specialist`, `ios-data-layer`, `ios-presentation`, `angular-developer`) | CONVERT | zakres plików -> rola w `roles` w configu; reguły warstwy -> skill roli `.claude/skills/<prefiks>-<rola>/` (`references/role-skills.md`) |
-| agent review (`swift-reviewer`, `code-reviewer`, `view-reviewer`, `angular-reviewer`) | CONVERT | osie i checklisty -> `code-review.md`; narzędzia sprawdzania i właściciele -> `av-review.md` |
-| agent bezpieczeństwa (`security-reviewer`, `security-auditor`) | CONVERT | reguły -> oś bezpieczeństwa w `code-review.md` |
-| agent weryfikujący komendami (`build-verifier`, `test-runner`, `simulator-verifier`, `e2e-test-runner`) | CONVERT | komendy -> `validation`; interpretacja wyników -> `av-verify.md` |
-| agent weryfikujący narzędziami MCP (`visual-verifier` z Playwright, porównanie z Figmą) | CONVERT | procedura -> `av-verify.md`, sekcja "Kontrole narzędziowe", z warunkiem, kiedy jest obowiązkowa. Nie da dowodu `gate.sh`, ale `av-implement` musi ją wykonać i zaraportować |
-| reguły sprzątania środowiska po nazwie kontenera albo procesu | przenieś z filtrem | tylko z filtrem po katalogu tego checkoutu; inaczej trafiają w cudze środowiska |
-| agent akceptacji względem planu (`acceptance-verifier`) | CONVERT | kryteria -> oś "Zgodność z planem" w `code-review.md`; `av-review` sprawdza ją przy `--run` |
+| pipeline document (e.g. `.ai/implementation-pipeline.md`, `docs/pipeline.md`) | CONVERT | modes and thresholds -> `av-implement.md`; findings format -> `av-review.md`; gates -> `validation`; the rest to "Knowledge that gets lost" |
+| plan command (`feature_plan`, `/architect`) | CONVERT | required plan sections -> `av-plan.md` |
+| implementation and resume commands (`feature_implement`, `feature_continue`) | CONVERT | rules -> `av-implement.md` |
+| docs commands (`docs_update`, `docs_audit`) | CONVERT | code->docs map, audit perspectives -> `av-docs-sync.md` |
+| build command (`build`) | CONVERT | command -> `validation.commands.build` |
+| implementing agent (`backend-php`, `frontend-designer`, `js-specialist`, `ios-data-layer`, `ios-presentation`, `angular-developer`) | CONVERT | file scope -> role in `roles` in the config; layer rules -> role skill `.claude/skills/<prefix>-<role>/` (`references/role-skills.md`) |
+| review agent (`swift-reviewer`, `code-reviewer`, `view-reviewer`, `angular-reviewer`) | CONVERT | axes and checklists -> `code-review.md`; check tools and owners -> `av-review.md` |
+| security agent (`security-reviewer`, `security-auditor`) | CONVERT | rules -> security axis in `code-review.md` |
+| agent that verifies with commands (`build-verifier`, `test-runner`, `simulator-verifier`, `e2e-test-runner`) | CONVERT | commands -> `validation`; result interpretation -> `av-verify.md` |
+| agent that verifies with MCP tools (`visual-verifier` with Playwright, comparison with Figma) | CONVERT | procedure -> `av-verify.md`, section "Tool checks", with the condition for when it is required. It gives no `gate.sh` evidence, but `av-implement` must run it and report it |
+| environment cleanup rules by container or process name | move with a filter | only with a filter on this checkout's directory; otherwise they hit other people's environments |
+| acceptance agent against the plan (`acceptance-verifier`) | CONVERT | criteria -> "Plan compliance" axis in `code-review.md`; `av-review` checks it with `--run` |
 | `docs-keeper`, `docs-auditor` | CONVERT | -> `av-docs-sync.md` |
-| agent tłumaczeń (`i18n-guardian`) | KEEP albo CONVERT | KEEP, gdy wykonuje pracę (dopisuje klucze w wielu plikach języków, synchronizuje z narzędziem typu Lokalise); CONVERT, gdy tylko sprawdza reguły; wtedy reguły -> `code-review.md` i obowiązkowe kroki |
-| agenci narzędziowi (`miro-reader`, `figma-reader`) | KEEP albo UPDATE | nie są częścią pipeline'u; UPDATE, gdy odwołują się do usuniętych agentów, faz albo komend |
-| project skille narzędziowe (`translate`, `read-miro`, `writing-tests`, `angular-templates`) | KEEP albo UPDATE | nakładki mogą je wskazywać; UPDATE odwołań jak wyżej |
-| project skille-wrappery pipeline'u (odwołują się do RUN_ID, faz, manifestu) | CONVERT | reguły -> nakładka; wrapper DROP albo UPDATE, gdy zawiera też narzędzie |
-| prompt podsumowania sesji (`.claude/prompts/post-session-review.md`) | KEEP, gdy używa go hook; w przeciwnym razie CONVERT | -> nakładka `av-implement.md`, sekcja "Wnioski" (czyta ją krok 10 `av-implement`) |
-| skrypty pipeline'u (`pipeline_state.py`, `pipeline_check.py`) i ich testy | DROP albo TODO | zastępuje je `gate.sh`; usunięcie wymaga zgody; bez zgody wpisz do TODO |
-| skrypty narzędziowe powstałe dla pracy z agentem, poza `paths.scripts` (sprawdź: `git log --diff-filter=A` i brak pliku na `git.baseBranch`) | MOVE | przenieś `git mv` do `paths.scripts`; popraw ustalanie root w skrypcie (`dirname "$0"`, `__file__`, `__dir__`) i wszystkie odwołania w docs, configu, testach, także formy `./scripts/` i `. ./scripts/` (source); po przeniesieniu uruchom bramkę `quick`; skrypty w Pythonie zaproponuj do przepisania na bash (`references/config-schema.md`, pole `paths.scripts`) |
-| skrypty narzędziowe (`project_lint.sh`, `verify.sh`, `ui_test.sh`) | KEEP | trafiają do `validation` |
-| `.ai/agents.md` albo `docs/agents.md` | UPDATE | opis skilli av-* i nakładek zamiast rosteru agentów |
-| docs z odwołaniami do agentów i komend (`README.md`, `feature-checklist.md`, `code-templates.md`, `commands.md`) | UPDATE | podmień nazwy na skille av-*; lista plików z grepa w kroku 1 |
-| sekcja pipeline'u w `CLAUDE.md` | UPDATE | -> sekcja "Praca z agentem" |
-| reguły krytyczne i styl odpowiedzi w `CLAUDE.md` | KEEP | to decyzje zespołu |
-| `.codex/agents/*.toml` | DROP | Codex dostaje skille przez `.agents/skills` |
-| `.codex/config.toml`, `.mcp.json`, `settings.json` | KEEP | środowisko i MCP |
-| `.agents/skills/*` | MERGE | unikalne skille -> `.claude/skills/`, potem symlink |
-| `sessions/learnings.md`, pliki w `workspace/` | KEEP | historia zespołu |
-| `workspace/README.md` | UPDATE | opis katalogów `runs/`, `plans/`, `reports/` zamiast faz starego pipeline'u |
-| pusty katalog `.claude/skills/` po konwersji | DROP | bez skilli projektu nie ma symlinku `.agents/skills` |
-| sekcje docs z linkami przychodzącymi (np. `agents.md#sekcja`) | przenieś, nie usuwaj | przenieś sekcję do pliku-właściciela tematu i popraw linki |
-| `docs/onboarding.html` i inne materiały HTML | UPDATE albo TODO | odwołania do starego procesu; duże pliki generowane zostaw jako TODO z komendą regeneracji |
+| translation agent (`i18n-guardian`) | KEEP or CONVERT | KEEP when it does work (adds keys in many language files, syncs with a tool like Lokalise); CONVERT when it only checks rules; then rules -> `code-review.md` and required steps |
+| tool agents (`miro-reader`, `figma-reader`) | KEEP or UPDATE | not part of the pipeline; UPDATE when they refer to deleted agents, phases or commands |
+| tool project skills (`translate`, `read-miro`, `writing-tests`, `angular-templates`) | KEEP or UPDATE | overlays may point to them; UPDATE references as above |
+| project skills that wrap the pipeline (refer to RUN_ID, phases, a manifest) | CONVERT | rules -> overlay; the wrapper DROP, or UPDATE when it also contains a tool |
+| session summary prompt (`.claude/prompts/post-session-review.md`) | KEEP when a hook uses it; otherwise CONVERT | -> `av-implement.md` overlay, section "Learnings" (step 10 of `av-implement` reads it) |
+| pipeline scripts (`pipeline_state.py`, `pipeline_check.py`) and their tests | DROP or TODO | `gate.sh` replaces them; deleting needs approval; without approval, put them into TODO |
+| tool scripts created for work with the agent, outside `paths.scripts` (check: `git log --diff-filter=A` and no file on `git.baseBranch`) | MOVE | move with `git mv` to `paths.scripts`; fix the root detection in the script (`dirname "$0"`, `__file__`, `__dir__`) and all references in docs, config and tests, including the forms `./scripts/` and `. ./scripts/` (source); after the move, run the `quick` gate; propose rewriting Python scripts in bash (`references/config-schema.md`, field `paths.scripts`) |
+| tool scripts (`project_lint.sh`, `verify.sh`, `ui_test.sh`) | KEEP | they go to `validation` |
+| `.ai/agents.md` or `docs/agents.md` | UPDATE | description of the av-* skills and overlays instead of the agent roster |
+| docs that refer to agents and commands (`README.md`, `feature-checklist.md`, `code-templates.md`, `commands.md`) | UPDATE | replace the names with av-* skills; list of files from the grep in step 1 |
+| pipeline section in `CLAUDE.md` | UPDATE | -> "Working with the agent" section |
+| critical rules and response style in `CLAUDE.md` | KEEP | these are team decisions |
+| `.codex/agents/*.toml` | DROP | Codex gets skills through `.agents/skills` |
+| `.codex/config.toml`, `.mcp.json`, `settings.json` | KEEP | environment and MCP |
+| `.agents/skills/*` | MERGE | unique skills -> `.claude/skills/`, then a symlink |
+| `sessions/learnings.md`, files in `workspace/` | KEEP | team history |
+| `workspace/README.md` | UPDATE | description of the `runs/`, `plans/`, `reports/` directories instead of the old pipeline phases |
+| empty `.claude/skills/` directory after conversion | DROP | without project skills there is no `.agents/skills` symlink |
+| docs sections with incoming links (e.g. `agents.md#section`) | move, do not delete | move the section to the topic owner file and fix the links |
+| `docs/onboarding.html` and other HTML materials | UPDATE or TODO | references to the old process; leave large generated files as TODO with the regeneration command |
 
-## Mapowanie trybów
+## Mode mapping
 
-Gdy stary pipeline miał własne tryby, rozpisz je w planie (sekcja "Mapowanie trybów"). Typowo:
+When the old pipeline had its own modes, map them in the plan (section "Mode mapping"). Typically:
 
-| Stary | Nowy | Uwagi |
+| Old | New | Notes |
 |---|---|---|
-| tryb bez reviewera z deterministycznym testem (np. SELF_CHECK) | MAŁY | warunki wejścia starego trybu -> "Warunki trybu MAŁY"; gdy stary tryb pomijał review, w "Review w trybie MAŁY" wpisz "nie" |
-| jeden implementer + reviewer (np. BOUNDED) | STANDARD | |
-| "pełen pipeline" z jednym implementerem, testami, review bezpieczeństwa i obowiązkowym planem | STANDARD z zaostrzeniami | w "Wybór trybu": plan obowiązkowy, bramka `full` przed raportem, oś bezpieczeństwa zawsze. Nie mapuj na DUŻY, bo DUŻY oznacza kilka ról, a wtedy STANDARD nigdy nie byłby używany |
-| "pełen pipeline" z kilkoma rolami (backend, frontend, js, e2e) | DUŻY | STANDARD może wtedy zostać prawie pusty; to poprawne, gdy stary proces nie miał trybu pośredniego. Zapisz to w planie wprost |
-| specjaliści równolegle, podział review (np. FULL) | DUŻY | przenieś kryteria wejścia do "Wybór trybu" |
-| "wysokie ryzyko wymusza pełny tryb" | zaostrzenie | w `av-implement.md`, sekcja "Wybór trybu": przy wysokim ryzyku plan obowiązkowy (poza domyślnym review, `full` i osią bezpieczeństwa). Nie mapuj na DUŻY, bo DUŻY oznacza kontrakt albo kilka ról |
+| mode without a reviewer, with a deterministic test (e.g. SELF_CHECK) | SMALL | entry conditions of the old mode -> "SMALL mode conditions"; when the old mode skipped review, write "no" in "Review in SMALL mode" |
+| one implementer + reviewer (e.g. BOUNDED) | STANDARD | |
+| "full pipeline" with one implementer, tests, security review and a required plan | STANDARD with tightenings | in "Mode selection": plan required, `full` gate before the report, security axis always. Do not map to LARGE, because LARGE means several roles, and then STANDARD would never be used |
+| "full pipeline" with several roles (backend, frontend, js, e2e) | LARGE | STANDARD may then stay almost empty; that is correct when the old process had no middle mode. Say so explicitly in the plan |
+| specialists in parallel, split review (e.g. FULL) | LARGE | move the entry criteria to "Mode selection" |
+| "high risk forces the full mode" | tightening | in `av-implement.md`, section "Mode selection": with high risk, a plan is required (on top of the default review, `full` and the security axis). Do not map to LARGE, because LARGE means a contract or several roles |
 
-Gdy docs zespołu podają sprzeczne progi trybów (np. "od 2 warstw" i "od 3 warstw"), weź ostrzejszy i zapisz sprzeczność w "Rozjazdy docs z kodem".
+When the team docs give conflicting mode thresholds (e.g. "from 2 layers" and "from 3 layers"), take the stricter one and record the conflict in "Docs drift from code".
 
-## Krok 3: Plan
+## Step 3: Plan
 
-Według `references/plan-format.md`. Sekcja "Wiedza, która ginie" jest obowiązkowa. Pozwala zespołowi zaprotestować, zanim coś zniknie.
+Follow `references/plan-format.md`. The "Knowledge that gets lost" section is required. It lets the team object before something disappears.
 
-**Detektor utraty wiedzy.** Porównaj pliki CONVERT i DROP z docs, które zostają:
+**Knowledge loss detector.** Compare the CONVERT and DROP files with the docs that stay:
 
 ```bash
-bash <katalog-skilla>/scripts/adoption_diff.sh --root <root-repo> \
-  --old <pliki CONVERT i DROP> --new CLAUDE.md <katalog-docs> \
-  --noise '<nazwy starych agentów i komend, np. swift-reviewer|feature_plan>'
+bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> \
+  --old <CONVERT and DROP files> --new CLAUDE.md <docs-dir> \
+  --noise '<names of old agents and commands, e.g. swift-reviewer|feature_plan>'
 ```
 
-- Wynik: `LOST <stary-plik> <token>` dla tokenu w backtickach bez śladu w nowym korpusie. Na końcu `TOKENS n LOST m FILTERED f`.
-- Filtr pomija orkiestrację: RUN_ID, CHECK_ID, EVIDENCE, `$ARGUMENTS`, `pipeline_state`, `pipeline_check`, ścieżki `.claude/agents` i `.claude/commands`. `--noise` (ERE) dodaje nazwy starych agentów i komend.
-- Każdy `LOST` dostaje w planie miejsce. Reguła merytoryczna (kategoria findings, próg, skrypt, pułapka) idzie do "Wiedza przenoszona do nakładek" z celem. Orkiestracja idzie do "Wiedza, która ginie" z tym, co ją zastępuje.
-- Grupuj: jeden wiersz na grupę tokenów, nie na token. Liczby `TOKENS`, `LOST` i `FILTERED` wpisz do planu.
+- Result: `LOST <old-file> <token>` for a backtick token with no trace in the new corpus. At the end: `TOKENS n LOST m FILTERED f`.
+- The filter skips orchestration: RUN_ID, CHECK_ID, EVIDENCE, `$ARGUMENTS`, `pipeline_state`, `pipeline_check`, the paths `.claude/agents` and `.claude/commands`. `--noise` (ERE) adds the names of old agents and commands.
+- Every `LOST` gets a place in the plan. A substantive rule (findings category, threshold, script, pitfall) goes to "Knowledge moved to overlays" with a target. Orchestration goes to "Knowledge that gets lost" with what replaces it.
+- Group them: one row per group of tokens, not per token. Write the `TOKENS`, `LOST` and `FILTERED` counts into the plan.
 
-Bez zatwierdzenia (poza `--defaults`) nic nie usuwaj ani nie edytuj. Wolno tylko zapisać plan.
+Without approval (except `--defaults`), delete or edit nothing. You may only write the plan.
 
-## Krok 4: Wykonanie
+## Step 4: Execution
 
-Nowe pliki powstają przed usunięciem starych. W każdej chwili repo ma działający setup.
+New files are created before old ones are deleted. At every moment, the repo has a working setup.
 
-1. `.ai/av.config.json`. Potem `av-docs-sync audit --fix`, gdy plan go zawiera (SKILL.md, krok 3).
-2. Nakładki i `code-review.md`.
-3. Pozostałe docs: `contracts.md` i inne brakujące tematy.
-4. `CLAUDE.md` i pliki z listy UPDATE.
-5. Codex według `references/codex.md`.
-6. Usunięcia: `git rm` tylko plików, których usunięcie użytkownik wprost zatwierdził. `--defaults` nie jest taką zgodą: bez niej zostaw pliki CONVERT i DROP na miejscu, a w raporcie podaj gotową komendę `git rm` z listą. Historia zostaje w git, więc powrót jest możliwy.
+1. `.ai/av.config.json`. Then `av-docs-sync audit --fix`, when the plan contains it (SKILL.md, step 3).
+2. Overlays and `code-review.md`.
+3. Other docs: `contracts.md` and other missing topics.
+4. `CLAUDE.md` and the files from the UPDATE list.
+5. Codex according to `references/codex.md`.
+6. Deletions: `git rm` only for files whose deletion the user explicitly approved. `--defaults` is not such an approval: without it, leave the CONVERT and DROP files in place, and give a ready `git rm` command with the list in the report. The history stays in git, so going back is possible.
 
-## Krok 5: Kontrola po migracji
+## Step 5: Post-migration check
 
-- Powtórz grep z kroku 1. Każde trafienie poza `workspace/` i `sessions/` popraw albo zgłoś.
-- `check_refs.sh` dla zmienionych docs i nakładek.
-- `adoption_diff.sh` ponownie, na nowym setupie. Po usunięciach: `--old-rev HEAD --deleted --new CLAUDE.md <katalog-docs> .claude/skills` z tym samym `--noise`. Przed usunięciami: `--old <pliki CONVERT i DROP>`. `LOST` spoza "Wiedza, która ginie" to luka: dopisz regułę do nakładki albo skilla roli, a gdy się nie da, zgłoś w raporcie.
-- `check_setup.sh`: nakładki, role, odwołania i nazwy bramek. `ERROR` popraw przed raportem.
-- Bramka `quick` na samym końcu, według SKILL.md, krok 10, punkt 5. Sprawdza, że komendy z configu naprawdę działają.
-- Każda grupa reguł z sekcji "Wiedza przenoszona do nakładek" ma miejsce docelowe. Brak miejsca to luka w raporcie.
+- Repeat the grep from step 1. Fix or report every hit outside `workspace/` and `sessions/`.
+- `check_refs.sh` for changed docs and overlays.
+- `adoption_diff.sh` again, on the new setup. After deletions: `--old-rev HEAD --deleted --new CLAUDE.md <docs-dir> .claude/skills` with the same `--noise`. Before deletions: `--old <CONVERT and DROP files>`. A `LOST` outside "Knowledge that gets lost" is a gap: add the rule to an overlay or a role skill, and when that is not possible, report it.
+- `check_setup.sh`: overlays, roles, references and gate names. Fix `ERROR` before the report.
+- The `quick` gate at the very end, according to SKILL.md, step 10, point 5. It checks that the commands from the config really work.
+- Every group of rules from the "Knowledge moved to overlays" section has a target place. A missing place is a gap in the report.

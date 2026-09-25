@@ -1,6 +1,7 @@
 #!/bin/bash
-# Testy czarnej skrzynki dla check_setup.sh.
-# Buduje male repo z rolami, nakladkami i skillami rol w mktemp.
+# Black box tests for check_setup.sh.
+# Builds a small repo with roles, overlays and role skills in mktemp.
+# Overlays use Polish headers (aliases); the "English headers" block checks the canonical names.
 set -u
 CS="$(cd "$(dirname "$0")/.." && pwd)/scripts/check_setup.sh"
 REFS="$(cd "$(dirname "$0")/../.." && pwd)/av-docs-sync/scripts/check_refs.sh"
@@ -45,161 +46,181 @@ cat >"$R/.claude/skills/app-data/SKILL.md" <<'EOF'
 ---
 name: app-data
 ---
-## Zakres plików
+## File scope
 `App/Data/**`, `App/Shared/**`, `App/?1.swift`
-Uruchom `gate.sh --only unit` albo `gate.sh --only ghost`.
+Run `gate.sh --only unit` or `gate.sh --only ghost`.
 EOF
-printf -- '---\nname: app-ui\n---\n## Zakres plików\nRola `ui` w `.ai/av.config.json`.\n' >"$R/.claude/skills/app-ui/SKILL.md"
+printf -- '---\nname: app-ui\n---\n## File scope\nRole `ui` in `.ai/av.config.json`.\n' >"$R/.claude/skills/app-ui/SKILL.md"
 
-printf '## Pliki do przeczytania przed planem\nx\n## Obowiązkowe sekcje planu\nx\nSkrypt `scripts/absent_tool.sh`.\n' >"$R/.ai/overlays/av-plan.md"
-printf '## Role\nRole w `.ai/av.config.json`.\n## Obowiązkowe kroki\nx\n## Wybór trybu\nx\n## Bramki per etap\n`gate.sh --gate quick`, `gate.sh --gate nope`, `gate.sh --only lint,unit`.\n' >"$R/.ai/overlays/av-implement.md"
+printf '## Pliki do przeczytania przed planem\nx\n## Obowiązkowe sekcje planu\nx\nScript `scripts/absent_tool.sh`.\n' >"$R/.ai/overlays/av-plan.md"
+printf '## Role\nRoles in `.ai/av.config.json`.\n## Obowiązkowe kroki\nx\n## Wybór trybu\nx\n## Bramki per etap\n`gate.sh --gate quick`, `gate.sh --gate nope`, `gate.sh --only lint,unit`.\n' >"$R/.ai/overlays/av-implement.md"
 printf '## Dobór bramki\nx\n' >"$R/.ai/overlays/av-verify.md"
 printf '## Mapa kod -> docs\nx\n## Znane fałszywe nazwy\n- `Foo`\n' >"$R/.ai/overlays/av-docs-sync.md"
 git -C "$R" add -A && git -C "$R" commit -qm init
 
-# MARK: kontrola
+# MARK: check
 out="$TMP/out.txt"
 bash "$CS" --root "$R" >"$out"; rc=$?
-[ "$rc" -eq 1 ] && ok || fail "kod wyjscia z ERROR: $rc"
-has "$out" "SETUP_OVERLAY_MISSING .ai/overlays/av-review.md" "brak nakladki av-review"
-has "$out" 'SETUP_OVERLAY_SECTION .ai/overlays/av-verify.md "Interpretacja wyników"' "brak sekcji av-verify"
-hasnt "$out" 'SETUP_OVERLAY_SECTION .ai/overlays/av-implement.md' "sekcje av-implement kompletne"
-has "$out" "SETUP_ROLE_SKILL_MISSING net .claude/skills/app-net/SKILL.md" "brak skilla roli"
-hasnt "$out" "php-developer" "skill z pluginu pomijany"
-has "$out" "SETUP_ROLE_OVERLAP data,ui 1: App/Shared/Both.swift" "nakladanie rol"
-has "$out" "SETUP_ROLE_EMPTY ui App/Nope/**" "pusty glob"
-has "$out" "SETUP_ROLE_EMPTY ui App/{A,B}/** (nawiasy" "podpowiedz dla nawiasow"
-hasnt "$out" "SETUP_ROLE_EMPTY ui My Dir/**" "glob ze spacja pasuje"
-hasnt "$out" "SETUP_ROLE_EMPTY data App/?1.swift" "glob ze znakiem zapytania"
-has "$out" "SETUP_UNOWNED_DIR Other 3 plikow bez wlasciciela: Other/Lib 2, Other/Tools 1" "katalog bez wlasciciela"
-has "$out" "SETUP_UNOWNED_DIR App 1 plikow bez wlasciciela: App 1" "plik App/Q12.swift bez wlasciciela"
-hasnt "$out" "SETUP_UNOWNED_DIR Pods" "generowane pominiete"
-has "$out" "SETUP_GLOB_COPY .claude/skills/app-data/SKILL.md kopiuje 3" "kopia globow w skillu roli"
-hasnt "$out" "SETUP_GLOB_COPY .claude/skills/app-ui" "skill linkujacy do configu"
-has "$out" "SETUP_GATE_UNKNOWN .ai/overlays/av-implement.md:8 --gate nope" "nieznana bramka"
-has "$out" "SETUP_GATE_UNKNOWN .claude/skills/app-data/SKILL.md:6 --only ghost" "nieznana komenda"
-hasnt "$out" "--gate quick" "znana bramka"
-hasnt "$out" "--only lint" "znana komenda z listy"
-hasnt "$out" "--only unit" "znana komenda"
+[ "$rc" -eq 1 ] && ok || fail "exit code with ERROR: $rc"
+has "$out" "SETUP_OVERLAY_MISSING .ai/overlays/av-review.md" "missing overlay av-review"
+has "$out" 'SETUP_OVERLAY_SECTION .ai/overlays/av-verify.md: Interpreting results (pl: Interpretacja wyników)' "missing section av-verify"
+hasnt "$out" 'SETUP_OVERLAY_SECTION .ai/overlays/av-verify.md: Gate selection' "Polish alias Dobór bramki accepted"
+hasnt "$out" 'SETUP_OVERLAY_SECTION .ai/overlays/av-implement.md' "av-implement sections complete"
+has "$out" "SETUP_ROLE_SKILL_MISSING net .claude/skills/app-net/SKILL.md" "missing role skill"
+hasnt "$out" "php-developer" "plugin skill skipped"
+has "$out" "SETUP_ROLE_OVERLAP data,ui 1: App/Shared/Both.swift" "role overlap"
+has "$out" "SETUP_ROLE_EMPTY ui App/Nope/**" "empty glob"
+has "$out" "SETUP_ROLE_EMPTY ui App/{A,B}/** (braces" "hint for braces"
+hasnt "$out" "SETUP_ROLE_EMPTY ui My Dir/**" "glob with a space matches"
+hasnt "$out" "SETUP_ROLE_EMPTY data App/?1.swift" "glob with a question mark"
+has "$out" "SETUP_UNOWNED_DIR Other 3 files without owner: Other/Lib 2, Other/Tools 1" "directory without owner"
+has "$out" "SETUP_UNOWNED_DIR App 1 files without owner: App 1" "file App/Q12.swift without owner"
+hasnt "$out" "SETUP_UNOWNED_DIR Pods" "generated skipped"
+has "$out" "SETUP_GLOB_COPY .claude/skills/app-data/SKILL.md copies 3" "glob copy in role skill"
+hasnt "$out" "SETUP_GLOB_COPY .claude/skills/app-ui" "skill linking to the config"
+has "$out" "SETUP_GATE_UNKNOWN .ai/overlays/av-implement.md:8 --gate nope" "unknown gate"
+has "$out" "SETUP_GATE_UNKNOWN .claude/skills/app-data/SKILL.md:6 --only ghost" "unknown command"
+hasnt "$out" "--gate quick" "known gate"
+hasnt "$out" "--only lint" "known command from a list"
+hasnt "$out" "--only unit" "known command"
 if [ -f "$REFS" ]; then
-  has "$out" "SETUP_REF_MISSING .ai/overlays/av-plan.md:5 scripts/absent_tool.sh" "brakujacy skrypt"
+  has "$out" "SETUP_REF_MISSING .ai/overlays/av-plan.md:5 scripts/absent_tool.sh" "missing script"
 else
-  has "$out" "SETUP_REF_SKIPPED" "brak check_refs"
+  has "$out" "SETUP_REF_SKIPPED" "no check_refs"
 fi
-tail -1 "$out" | grep -qE '^CHECKED [0-9]+ ERRORS [0-9]+ WARNINGS [0-9]+$' && ok || fail "linia podsumowania"
+tail -1 "$out" | grep -qE '^CHECKED [0-9]+ ERRORS [0-9]+ WARNINGS [0-9]+$' && ok || fail "summary line"
 
-# MARK: wlasciciel
+# MARK: owner
 own="$TMP/own.txt"
 bash "$CS" --root "$R" --owner App/Data/deep/New.swift Pods/P.swift scripts/t.sh README.md "My Dir/Sub Dir/x.swift" \
   App/Q1.swift App/Q12.swift "$R/App/UI/V.swift" App/UI/b.generated.swift App/Shared/Both.swift >"$own" 2>"$TMP/own.err"
 rc=$?
-[ "$rc" -eq 0 ] && ok || fail "owner: kod $rc"
-has "$own" "OWNER App/Data/deep/New.swift data" "owner: nowy plik roli"
+[ "$rc" -eq 0 ] && ok || fail "owner: code $rc"
+has "$own" "OWNER App/Data/deep/New.swift data" "owner: new role file"
 has "$own" "OWNER Pods/P.swift generated" "owner: generated"
 has "$own" "OWNER scripts/t.sh unowned" "owner: unowned"
 has "$own" "OWNER README.md implementer" "owner: implementer"
-has "$own" "OWNER My Dir/Sub Dir/x.swift ui" "owner: sciezka ze spacja"
-has "$own" "OWNER App/Q1.swift data" "owner: znak zapytania"
-has "$own" "OWNER App/Q12.swift implementer" "owner: znak zapytania to jeden znak"
-has "$own" "OWNER App/UI/V.swift ui" "owner: sciezka absolutna"
-has "$own" "OWNER App/UI/b.generated.swift generated" "owner: **/ w srodku globu"
-has "$own" "OWNER App/Shared/Both.swift data" "owner: nakladanie wybiera role wedlug order"
-has "$TMP/own.err" "nakladanie rol" "owner: ostrzezenie o nakladaniu"
+has "$own" "OWNER My Dir/Sub Dir/x.swift ui" "owner: path with a space"
+has "$own" "OWNER App/Q1.swift data" "owner: question mark"
+has "$own" "OWNER App/Q12.swift implementer" "owner: question mark is one character"
+has "$own" "OWNER App/UI/V.swift ui" "owner: absolute path"
+has "$own" "OWNER App/UI/b.generated.swift generated" "owner: **/ inside a glob"
+has "$own" "OWNER App/Shared/Both.swift data" "owner: overlap picks the role by order"
+has "$TMP/own.err" "role overlap" "owner: overlap warning"
 
-# MARK: czysty setup
+# MARK: clean setup
 C="$TMP/clean"
 cp -R "$R" "$C"
 printf '## Jak sprawdzać osie\nx\n' >"$C/.ai/overlays/av-review.md"
 printf '## Dobór bramki\nx\n## Interpretacja wyników\nx\n' >"$C/.ai/overlays/av-verify.md"
 printf '## Pliki do przeczytania przed planem\nx\n## Obowiązkowe sekcje planu\nx\n' >"$C/.ai/overlays/av-plan.md"
-printf -- '---\nname: app-data\n---\n## Zakres plików\nRola `data` w configu.\n' >"$C/.claude/skills/app-data/SKILL.md"
+printf -- '---\nname: app-data\n---\n## File scope\nRole `data` in the config.\n' >"$C/.claude/skills/app-data/SKILL.md"
 sed -i '' 's/, `gate.sh --gate nope`//' "$C/.ai/overlays/av-implement.md" 2>/dev/null || sed -i 's/, `gate.sh --gate nope`//' "$C/.ai/overlays/av-implement.md"
 jq '.roles = [{"name": "data", "skill": "app-data", "order": 1, "globs": ["App/**"]}, {"name": "ui", "skill": "app-ui", "order": 1, "globs": ["My Dir/**", "Other/**"]}]' \
   "$R/.ai/av.config.json" >"$C/.ai/av.config.json"
 bash "$CS" --root "$C" >"$out"; rc=$?
-has "$out" "SETUP_LOCAL_IGNORE dopisz .ai/av.config.json.local do .gitignore" "local: brak wpisu w .gitignore"
+has "$out" "SETUP_LOCAL_IGNORE add .ai/av.config.json.local to .gitignore" "local: no entry in .gitignore"
 printf '.ai/av.config.json.local\n' >>"$C/.gitignore"
 bash "$CS" --root "$C" >"$out"; rc=$?
-[ "$rc" -eq 0 ] && ok || { fail "czysty setup: kod $rc"; cat "$out" >&2; }
-has "$out" "ERRORS 0 WARNINGS 0" "czysty setup bez uwag"
-hasnt "$out" "SETUP_LOCAL_USED" "local: informacja bez pliku"
+[ "$rc" -eq 0 ] && ok || { fail "clean setup: code $rc"; cat "$out" >&2; }
+has "$out" "ERRORS 0 WARNINGS 0" "clean setup without findings"
+hasnt "$out" "SETUP_LOCAL_USED" "local: info without a file"
 
-# MARK: nadpisanie lokalne
+# MARK: local override
 printf '{"roles": null}\n' >"$C/.ai/av.config.json.local"
 bash "$CS" --root "$C" >"$out"; rc=$?
-has "$out" "SETUP_LOCAL_USED .ai/av.config.json.local" "local: brak informacji o nadpisaniu"
-has "$out" "SETUP_ROLES_NONE" "local: kontrola nie uzyla efektywnego configu"
+has "$out" "SETUP_LOCAL_USED .ai/av.config.json.local" "local: no info about the override"
+has "$out" "SETUP_ROLES_NONE" "local: check did not use the effective config"
 bash "$CS" --root "$C" --no-local >"$out"; rc=$?
-hasnt "$out" "SETUP_ROLES_NONE" "local: --no-local uzyl nadpisania"
+hasnt "$out" "SETUP_ROLES_NONE" "local: --no-local used the override"
 bash "$CS" --root "$C" --owner App/Data/A.swift >"$out"; rc=$?
-has "$out" "OWNER App/Data/A.swift implementer" "local: --owner bez efektywnego configu"
-hasnt "$out" "SETUP_LOCAL_USED" "local: --owner drukuje informacje"
+has "$out" "OWNER App/Data/A.swift implementer" "local: --owner without the effective config"
+hasnt "$out" "SETUP_LOCAL_USED" "local: --owner prints the info"
 git -C "$C" add -f .ai/av.config.json.local
 bash "$CS" --root "$C" >"$out"; rc=$?
-has "$out" "SETUP_LOCAL_TRACKED" "local: brak bledu sledzenia"
-[ "$rc" -eq 1 ] && ok || fail "local sledzony: kod $rc"
+has "$out" "SETUP_LOCAL_TRACKED" "local: no tracking error"
+[ "$rc" -eq 1 ] && ok || fail "local tracked: code $rc"
 git -C "$C" rm -q --cached .ai/av.config.json.local
-printf '{zly' >"$C/.ai/av.config.json.local"
+printf '{bad' >"$C/.ai/av.config.json.local"
 bash "$CS" --root "$C" >"$out"; rc=$?
-has "$out" "SETUP_CONFIG_INVALID .ai/av.config.json.local" "local: zly JSON"
+has "$out" "SETUP_CONFIG_INVALID .ai/av.config.json.local" "local: bad JSON"
 rm -f "$C/.ai/av.config.json.local"
 
-# MARK: integracje
+# MARK: English headers
+E="$TMP/english"
+cp -R "$C" "$E"
+printf '## Files to read before planning\nx\n## Required plan sections\nx\n' >"$E/.ai/overlays/av-plan.md"
+printf '## Roles\nRoles in `.ai/av.config.json`.\n## Required steps\nx\n## Mode selection\nx\n## Gates per stage\n`gate.sh --gate quick`, `gate.sh --only lint,unit`.\n' >"$E/.ai/overlays/av-implement.md"
+printf '## How to check the axes\nx\n' >"$E/.ai/overlays/av-review.md"
+printf '## Gate selection\nx\n## Interpreting results (and flaky tests)\nx\n' >"$E/.ai/overlays/av-verify.md"
+printf '## Code -> docs map\nx\n## Known false names\n- `Foo`\n' >"$E/.ai/overlays/av-docs-sync.md"
+bash "$CS" --root "$E" >"$out"; rc=$?
+[ "$rc" -eq 0 ] && ok || { fail "English headers: code $rc"; cat "$out" >&2; }
+has "$out" "ERRORS 0 WARNINGS 0" "English headers without findings"
+printf '## Gate selection\nx\n' >"$E/.ai/overlays/av-verify.md"
+printf '## Code -> docs map\nx\n' >"$E/.ai/overlays/av-docs-sync.md"
+bash "$CS" --root "$E" >"$out"; rc=$?
+has "$out" "SETUP_OVERLAY_SECTION .ai/overlays/av-verify.md: Interpreting results (pl: Interpretacja wyników)" "English: missing section av-verify"
+has "$out" "SETUP_OVERLAY_SECTION .ai/overlays/av-docs-sync.md: Known false names (pl: Znane fałszywe nazwy)" "English: missing section av-docs-sync"
+hasnt "$out" "Gate selection" "English: Gate selection accepted"
+hasnt "$out" "Code -> docs map" "English: Code -> docs map accepted"
+
+# MARK: integrations
 miro_cfg() { jq --argjson m "$1" '.integrations = {miro: $m}' "$C/.ai/av.config.json" >"$TMP/miro.json"; bash "$CS" --root "$C" --config "$TMP/miro.json" >"$out"; }
 miro_cfg '{"via":"api"}'
-has "$out" "SETUP_INTEGRATION_INVALID integrations.miro.via" "miro: via api przeszlo"
+has "$out" "SETUP_INTEGRATION_INVALID integrations.miro.via" "miro: via api passed"
 miro_cfg '{"boards":{"x":"http://example.com"}}'
-has "$out" "SETUP_INTEGRATION_INVALID integrations.miro.boards" "miro: zly adres przeszedl"
+has "$out" "SETUP_INTEGRATION_INVALID integrations.miro.boards" "miro: bad address passed"
 miro_cfg '"browser"'
-has "$out" "SETUP_INTEGRATION_INVALID integrations.miro: oczekiwany obiekt" "miro: napis przeszedl"
+has "$out" "SETUP_INTEGRATION_INVALID integrations.miro: " "miro: string passed"
 miro_cfg '{"via":"browser","boards":{"docs":"https://miro.com/app/board/abc=/"}}'
-hasnt "$out" "SETUP_INTEGRATION_INVALID" "miro: poprawny wpis odrzucony"
-has "$out" "SETUP_TEMPLATE_MISSING .ai/miro.md" "miro: brak ostrzezenia o docs"
-has "$out" "SETUP_TEMPLATE_MISSING .ai/scripts/miro-frames.js" "miro: brak ostrzezenia o skrypcie"
+hasnt "$out" "SETUP_INTEGRATION_INVALID" "miro: valid entry rejected"
+has "$out" "SETUP_TEMPLATE_MISSING .ai/miro.md" "miro: no warning about docs"
+has "$out" "SETUP_TEMPLATE_MISSING .ai/scripts/miro-frames.js" "miro: no warning about the script"
 mkdir -p "$C/.ai/scripts"; : >"$C/.ai/miro.md"; : >"$C/.ai/scripts/miro-frames.js"
 miro_cfg '{"via":"browser"}'
-hasnt "$out" "SETUP_TEMPLATE_MISSING" "miro: ostrzezenie mimo plikow"
+hasnt "$out" "SETUP_TEMPLATE_MISSING" "miro: warning despite files"
 miro_cfg '{"via":"mcp"}'
-hasnt "$out" "SETUP_INTEGRATION" "miro: mcp nie wymaga plikow"
+hasnt "$out" "SETUP_INTEGRATION" "miro: mcp requires no files"
 rm -rf "$C/.ai/miro.md" "$C/.ai/scripts"
 
-# MARK: szablony: mechanizm ogolny
+# MARK: templates: generic mechanism
 TD="$TMP/templates"; mkdir -p "$TD/demo"
 cat >"$TD/demo/template.json" <<'EOF2'
 {"name": "demo", "applies": ".integrations.demo == true",
- "validate": "if (.integrations.demo // null) == null or (.integrations.demo | type) == \"boolean\" then empty else \"integrations.demo: oczekiwane true albo false\" end",
+ "validate": "if (.integrations.demo // null) == null or (.integrations.demo | type) == \"boolean\" then empty else \"integrations.demo: expected true or false\" end",
  "files": {"demo.md": "{docs.root}/demo.md", "demo.sh": "{paths.scripts}/demo.sh"}}
 EOF2
 demo_cfg() { jq --argjson d "$1" '.integrations = {demo: $d}' "$C/.ai/av.config.json" >"$TMP/demo.json"; AV_TEMPLATES_DIR="$TD" bash "$CS" --root "$C" --config "$TMP/demo.json" >"$out"; }
 demo_cfg 'true'
-has "$out" "SETUP_TEMPLATE_MISSING .ai/demo.md (szablon demo)" "szablon: brak pliku docs"
-has "$out" "SETUP_TEMPLATE_MISSING .ai/scripts/demo.sh (szablon demo)" "szablon: brak skryptu"
-demo_cfg '"tak"'
-has "$out" "SETUP_INTEGRATION_INVALID integrations.demo: oczekiwane true albo false" "szablon: walidacja z manifestu"
+has "$out" "SETUP_TEMPLATE_MISSING .ai/demo.md (template demo)" "template: missing docs file"
+has "$out" "SETUP_TEMPLATE_MISSING .ai/scripts/demo.sh (template demo)" "template: missing script"
+demo_cfg '"yes"'
+has "$out" "SETUP_INTEGRATION_INVALID integrations.demo: expected true or false" "template: validation from the manifest"
 demo_cfg 'false'
-hasnt "$out" "SETUP_TEMPLATE_MISSING" "szablon: applies false wymaga plikow"
-hasnt "$out" "miro" "szablon: AV_TEMPLATES_DIR nie zastapil katalogu"
+hasnt "$out" "SETUP_TEMPLATE_MISSING" "template: applies false requires files"
+hasnt "$out" "miro" "template: AV_TEMPLATES_DIR did not replace the directory"
 
-# MARK: bez rol, bledy configu, uzycie
+# MARK: no roles, config errors, usage
 jq 'del(.roles)' "$R/.ai/av.config.json" >"$TMP/noroles.json"
 bash "$CS" --root "$C" --config "$TMP/noroles.json" >"$out"; rc=$?
-[ "$rc" -eq 0 ] && ok || fail "bez rol: kod $rc"
-has "$out" "SETUP_ROLES_NONE" "bez rol: ostrzezenie"
+[ "$rc" -eq 0 ] && ok || fail "no roles: code $rc"
+has "$out" "SETUP_ROLES_NONE" "no roles: warning"
 bash "$CS" --root "$C" --config "$TMP/noroles.json" --owner App/UI/V.swift Pods/P.swift >"$own"
-has "$own" "OWNER App/UI/V.swift implementer" "bez rol: implementer"
-has "$own" "OWNER Pods/P.swift generated" "bez rol: generated nadal dziala"
+has "$own" "OWNER App/UI/V.swift implementer" "no roles: implementer"
+has "$own" "OWNER Pods/P.swift generated" "no roles: generated still works"
 
-printf '{zly json' >"$TMP/bad.json"
+printf '{bad json' >"$TMP/bad.json"
 bash "$CS" --root "$C" --config "$TMP/bad.json" >"$out"; rc=$?
-[ "$rc" -eq 1 ] && grep -q SETUP_CONFIG_INVALID "$out" && ok || fail "zly JSON: kod $rc"
-bash "$CS" --root "$C" --config "$TMP/brak.json" >"$out"; rc=$?
-[ "$rc" -eq 1 ] && grep -q SETUP_CONFIG_MISSING "$out" && ok || fail "brak configu: kod $rc"
-bash "$CS" --root "$C" --nieznana >/dev/null; rc=$?
-[ "$rc" -eq 2 ] && ok || fail "nieznana opcja: kod $rc"
+[ "$rc" -eq 1 ] && grep -q SETUP_CONFIG_INVALID "$out" && ok || fail "bad JSON: code $rc"
+bash "$CS" --root "$C" --config "$TMP/missing.json" >"$out"; rc=$?
+[ "$rc" -eq 1 ] && grep -q SETUP_CONFIG_MISSING "$out" && ok || fail "missing config: code $rc"
+bash "$CS" --root "$C" --unknown >/dev/null; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "unknown option: code $rc"
 bash "$CS" --root "$C" --owner >/dev/null; rc=$?
-[ "$rc" -eq 2 ] && ok || fail "--owner bez plikow: kod $rc"
+[ "$rc" -eq 2 ] && ok || fail "--owner without files: code $rc"
 bash "$CS" --root "$TMP" >/dev/null; rc=$?
-[ "$rc" -eq 2 ] && ok || fail "root bez git: kod $rc"
+[ "$rc" -eq 2 ] && ok || fail "root without git: code $rc"
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

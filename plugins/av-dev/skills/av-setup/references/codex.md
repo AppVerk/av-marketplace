@@ -1,35 +1,35 @@
-# Claude Code i Codex z jednego źródła
+# Claude Code and Codex from one source
 
-Cel: jedna kopia instrukcji i skilli. Porty ręczne (np. `.codex/agents/*.toml`) rozjeżdżają się z oryginałem po kilku tygodniach.
+Goal: one copy of instructions and skills. Manual ports (e.g. `.codex/agents/*.toml`) drift from the original within a few weeks.
 
-## Instrukcje
+## Instructions
 
-- Źródło: `CLAUDE.md`.
-- `AGENTS.md` to symlink: `ln -s CLAUDE.md AGENTS.md`.
-- Gdy `AGENTS.md` istnieje jako zwykły plik z inną treścią, nie nadpisuj. Pokaż diff i zapytaj, która wersja jest źródłem. Treść drugiej scal w źródło, potem utwórz symlink.
-- Importy w stylu `@docs/plik.md` działają w Claude Code. Codex ich nie rozwija. Gdy `CLAUDE.md` opiera się na importach, dodaj obok zwykły link markdown albo tabelę routingu ze ścieżkami. Wtedy oba narzędzia trafią do pliku.
+- Source: `CLAUDE.md`.
+- `AGENTS.md` is a symlink: `ln -s CLAUDE.md AGENTS.md`.
+- When `AGENTS.md` exists as a regular file with different content, do not overwrite it. Show the diff and ask which version is the source. Merge the other one's content into the source, then create the symlink.
+- Imports like `@docs/file.md` work in Claude Code. Codex does not expand them. When `CLAUDE.md` relies on imports, add a plain markdown link next to them or a routing table with paths. Then both tools reach the file.
 
-## Project skille
+## Project skills
 
-- Źródło: `.claude/skills/`.
-- Codex czyta project skille z `.agents/skills/`. Utwórz symlink katalogu z root repo: `mkdir -p .agents && ln -s ../.claude/skills .agents/skills`. Cel symlinku jest liczony względem `.agents/`, więc `../.claude/skills` jest poprawny.
-- Symlink powstaje dopiero wtedy, gdy w `.claude/skills/` są skille do zachowania: skille ról z `av-setup` albo skille KEEP i UPDATE. Gdy wszystkie są CONVERT i czekają na zgodę na usunięcie, nie twórz symlinku, bo Codex dostałby wrappery starego pipeline'u. Utwórz go po usunięciu, jeśli coś zostanie.
-- Repo bez `.claude/skills/` nie dostaje symlinku. Wisiałby w próżni. Raport mówi wtedy "Codex: AGENTS.md; skille projektu brak".
-- Sprawdź `git check-ignore -q .agents/skills` (skan: `ai_setup.agents_ignored`). Gdy zespół celowo ignoruje `.agents/`, nie twórz symlinku i nie zmieniaj `.gitignore`. Zapisz to w raporcie jako decyzję zespołu.
-- Gdy `.agents/skills/` istnieje jako katalog z plikami:
-  1. Skille obecne w obu miejscach porównaj. Identyczne usuń z `.agents/skills/`.
-  2. Unikalne przenieś do `.claude/skills/`.
-  3. Skille-porty komend (np. `source-command-*`) oznacz jako DROP w planie. Ich rolę przejmują skille `av-*`.
-  4. Dopiero pusty katalog zamień na symlink.
+- Source: `.claude/skills/`.
+- Codex reads project skills from `.agents/skills/`. Create a directory symlink from the repo root: `mkdir -p .agents && ln -s ../.claude/skills .agents/skills`. The symlink target is resolved relative to `.agents/`, so `../.claude/skills` is correct.
+- Create the symlink only when `.claude/skills/` has skills to keep: role skills from `av-setup` or KEEP and UPDATE skills. When all of them are CONVERT and wait for approval to delete, do not create the symlink, because Codex would get old pipeline wrappers. Create it after the deletion, if anything remains.
+- A repo without `.claude/skills/` gets no symlink. It would point at nothing. The report then says "Codex: AGENTS.md; no project skills".
+- Check `git check-ignore -q .agents/skills` (scan: `ai_setup.agents_ignored`). When the team deliberately ignores `.agents/`, do not create the symlink and do not change `.gitignore`. Record it in the report as a team decision.
+- When `.agents/skills/` exists as a directory with files:
+  1. Compare skills present in both places. Delete identical ones from `.agents/skills/`.
+  2. Move unique ones to `.claude/skills/`.
+  3. Mark command-port skills (e.g. `source-command-*`) as DROP in the plan. The `av-*` skills take over their job.
+  4. Replace the directory with a symlink only when it is empty.
 
-## Globalne skille av-*
+## Global av-* skills
 
-Skille `av-*` żyją poza repo: w `~/.claude/skills/` albo w pluginie `av-dev`. Codex potrzebuje ich osobnej instalacji. Lokalizację skilli użytkownika Codex sprawdź w jego aktualnej dokumentacji. Nie zgaduj ścieżki. W raporcie podaj komendę symlinku, gdy lokalizacja jest znana.
+The `av-*` skills live outside the repo: in `~/.claude/skills/` or in the `av-dev` plugin. Codex needs a separate install of them. Check the location of Codex user skills in its current documentation. Do not guess the path. In the report, give the symlink command when the location is known.
 
-Wykonawca slotu na Codex (`agent.sh`, `provider: codex`) nie potrzebuje tej instalacji. Działa w sandboksie z `~/.codex/config.toml` (domyślnie `workspace-write`); brakujące uprawnienia przyznaje człowiek przez orkiestratora. `agent.sh` podaje mu ścieżkę katalogu skilli w nagłówku promptu, a Codex czyta `SKILL.md` wprost z dysku. Instalacja jest potrzebna tylko wtedy, gdy człowiek uruchamia skille av-* bezpośrednio w Codex.
+A slot executor on Codex (`agent.sh`, `provider: codex`) does not need this install. It runs in a sandbox from `~/.codex/config.toml` (default `workspace-write`); a human grants missing permissions through the orchestrator. `agent.sh` gives it the skills directory path in the prompt header, and Codex reads `SKILL.md` straight from disk. The install is needed only when a human runs av-* skills directly in Codex.
 
-## Czego nie ruszać
+## What not to touch
 
-- `.codex/config.toml`: środowisko i serwery MCP dla Codex. Zostaje.
-- `.codex/hooks.json`: zostaje. Zgłoś, gdy zawiera ścieżki absolutne z nazwą użytkownika, bo nie zadziała u innych osób.
-- `.codex/agents/*.toml`: w adopcji DROP po zatwierdzeniu.
+- `.codex/config.toml`: environment and MCP servers for Codex. It stays.
+- `.codex/hooks.json`: it stays. Report it when it contains absolute paths with a user name, because it will not work for other people.
+- `.codex/agents/*.toml`: DROP in adoption after approval.

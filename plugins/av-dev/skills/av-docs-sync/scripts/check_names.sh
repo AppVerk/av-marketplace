@@ -1,34 +1,36 @@
 #!/usr/bin/env bash
-# check_names.sh - sprawdza, czy nazwy z dokumentacji istnieja w kodzie.
+# check_names.sh - checks that names from the docs exist in the code.
 #
-# Wyciaga z plikow markdown identyfikatory w backtickach: nazwy klas i typow
-# (CamelCase), metod (camelCase z wielka litera w srodku), stalych i kluczy
-# (SNAKE_CASE, snake_case z podkresleniem). Porownuje je ze slownikiem slow
-# z plikow sledzonych przez git (i nowych, nieignorowanych), poza dokumentacja
-# (*.md), oraz z nazwami plikow i katalogow. Pliki *.strings i *.stringsdict
-# w UTF-16 (z BOM) sa przed tym konwertowane do UTF-8, wiec ich klucze tez licza sie
-# jako znalezione.
+# Extracts backtick identifiers from markdown files: class and type names
+# (CamelCase), methods (camelCase with an uppercase letter inside), constants and keys
+# (SNAKE_CASE, snake_case with an underscore). Compares them with a dictionary of words
+# from files tracked by git (and new, not ignored ones), except docs
+# (*.md), and with file and directory names. *.strings and *.stringsdict files
+# in UTF-16 (with BOM) are converted to UTF-8 first, so their keys also count
+# as found.
 #
-# Wynik:
-#   NAME_MISSING plik:linia nazwa   nazwy nie ma w kodzie (kandydat na rozjazd)
+# Output:
+#   NAME_MISSING file:line name     the name is not in the code (drift candidate)
 #
-# Pomija:
-#   - linie, ktore same mowia o braku lub usunieciu, i bloki kodu,
-#   - nazwy w przekresleniu ~~...~~ (historia),
-#   - placeholdery: Foo/foo jako czlon nazwy (openFoo, fooViewModel, foo_title),
-#     Xxx, koncowe pojedyncze X (NovolApiX), nazwy stykajace sie z { } < > *
+# Skips:
+#   - lines that themselves talk about absence or removal, and code blocks
+#     (negation words in Polish and English),
+#   - names in strikethrough ~~...~~ (history),
+#   - placeholders: Foo/foo as a name part (openFoo, fooViewModel, foo_title),
+#     Xxx, a single trailing X (NovolApiX), names touching { } < > *
 #     (novolApi{Feature}, Request<T>, NS*UsageDescription, account_error*),
-#     My<Nazwa> w linii z "np.", "przyklad", "example" albo "e.g.",
-#   - nazwy krotsze niz 4 znaki,
-#   - nazwy z listy ignorowanych: sekcja "## Znane falszywe nazwy" w nakladce
-#     <paths.overlays>/av-docs-sync.md (domyslnie .ai/overlays), linie
-#     "- `Nazwa`" (dokladnie) albo "- `Prefiks*`" (prefiks). --ignore-file
-#     zastepuje nakladke; plik moze miec te sekcje albo same linie z nazwami.
+#     My<Name> on a line with "np.", "przyklad", "example" or "e.g.",
+#   - names shorter than 4 characters,
+#   - names from the ignore list: section "## Known false names" (Polish alias
+#     "## Znane falszywe nazwy", with or without diacritics) in the overlay
+#     <paths.overlays>/av-docs-sync.md (default .ai/overlays), lines
+#     "- `Name`" (exact) or "- `Prefix*`" (prefix). --ignore-file
+#     replaces the overlay; the file may have that section or just lines with names.
 #
-# Uzycie:
-#   check_names.sh <plik.md|katalog> [...] [--root DIR] [--ignore-file PLIK]...
-# Kod wyjscia: 0 brak kandydatow, 1 sa kandydaci, 2 blad uzycia.
-# Wymaga: bash 3.2+, git, awk, grep, sort, comm; iconv dla UTF-16; jq opcjonalnie.
+# Usage:
+#   check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE]...
+# Exit code: 0 no candidates, 1 candidates found, 2 usage error.
+# Requires: bash 3.2+, git, awk, grep, sort, comm; iconv for UTF-16; jq optional.
 
 set -uo pipefail
 
@@ -39,19 +41,19 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --root) root="${2:-}"; shift ;;
     --ignore-file) ignore_files="$ignore_files${2:-}"$'\n'; shift ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
 done
-[ -n "$paths" ] || { echo "USAGE check_names.sh <plik.md|katalog> [...] [--root DIR] [--ignore-file PLIK]"; exit 2; }
-root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE brak katalogu root"; exit 2; }
-git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root nie jest repo git"; exit 2; }
+[ -n "$paths" ] || { echo "USAGE check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE]"; exit 2; }
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
+git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root is not a git repo"; exit 2; }
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# MARK: lista ignorowanych nazw
+# MARK: ignored names list
 
 need_section=0
 if [ -z "$ignore_files" ]; then
@@ -71,7 +73,7 @@ if [ -z "$ignore_files" ]; then
   [ -f "$root/${overlays%/}/av-docs-sync.md" ] && ignore_files="$root/${overlays%/}/av-docs-sync.md"$'\n'
 else
   printf '%s' "$ignore_files" | while IFS= read -r f; do
-    [ -f "$f" ] || [ -f "$root/$f" ] || { printf 'USAGE brak pliku --ignore-file: %s\n' "$f" >&2; echo x; }
+    [ -f "$f" ] || [ -f "$root/$f" ] || { printf 'USAGE --ignore-file not found: %s\n' "$f" >&2; echo x; }
   done | grep -q x && exit 2
 fi
 
@@ -89,7 +91,8 @@ printf '%s' "$ignore_files" | while IFS= read -r f; do
       if (t ~ /^[A-Za-z_][A-Za-z0-9_]*\*?$/) print t
     }
     { lines[NR] = $0 }
-    /^#+[ \t]+Znane fa(ł|l)szywe nazwy/ { sec = NR }
+    # Section header: canonical English name or the Polish alias (references/localization.md).
+    /^#+[ \t]+(Known false names|Znane fa(ł|l)szywe nazwy)/ { sec = NR }
     END {
       if (sec) {
         for (i = sec + 1; i <= NR && lines[i] !~ /^#/; i++) take(lines[i])
@@ -99,7 +102,7 @@ printf '%s' "$ignore_files" | while IFS= read -r f; do
     }' "$f"
 done >"$tmp/ignore"
 
-# MARK: slownik nazw z kodu
+# MARK: dictionary of names from the code
 
 git -C "$root" grep -I -h -o -w -E --untracked '[A-Za-z_][A-Za-z0-9_]{3,}' -- . ':(exclude)*.md' ':(exclude)*.lock' \
   ':(exclude)*.svg' ':(exclude)*.pbxproj' 2>/dev/null >"$tmp/code_words_raw"
@@ -116,7 +119,7 @@ git -C "$root" ls-files --cached --others --exclude-standard 2>/dev/null |
   awk -F/ '{ for (i = 1; i < NF; i++) print $i; n = $NF; sub(/\.[^.]+$/, "", n); print n }' | LC_ALL=C sort -u >"$tmp/file_names"
 LC_ALL=C sort -u "$tmp/code_words" "$tmp/file_names" >"$tmp/known"
 
-# MARK: dokumenty
+# MARK: documents
 
 printf '%s' "$paths" | while IFS= read -r p; do
   [ -n "$p" ] || continue
@@ -130,19 +133,20 @@ printf '%s' "$paths" | while IFS= read -r p; do
   elif [ -f "$abs" ]; then
     printf '%s\n' "$abs"
   else
-    printf 'WARNING brak pliku albo katalogu: %s\n' "$p" >&2
+    printf 'WARNING file or directory not found: %s\n' "$p" >&2
   fi
 done | sort -u >"$tmp/docs"
 
 [ -s "$tmp/docs" ] || { echo "CHECKED 0 NAME_MISSING 0"; exit 0; }
 
-# MARK: ekstrakcja nazw
+# MARK: name extraction
 
 (
   IFS=$'\n'
   set -f
   # shellcheck disable=SC2046
   awk -v ignore_file="$tmp/ignore" '
+    # neg, example and placeholder words match docs in Polish and English: repos keep their own language.
     BEGIN {
       neg = "(^|[^A-Za-z])(brak|nie istnieje|nie ma|nigdy|never|usuni(e|ę)t[a-z]*|usun(a|ą)(c|ć)|relokow[a-z]*|przeniesion[a-z]*|dawn(y|a|e|iej)|zamiast|removed|deleted|renamed|moved|formerly|previously|no longer|does not exist|instead of)([^A-Za-z]|$)"
       example = "(np\\.|przyk(ł|l)ad|example|e\\.g\\.)"

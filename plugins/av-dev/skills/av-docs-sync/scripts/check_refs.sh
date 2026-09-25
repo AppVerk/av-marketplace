@@ -1,28 +1,29 @@
 #!/usr/bin/env bash
-# check_refs.sh - sprawdza, czy sciezki wymienione w dokumentacji istnieja w repo.
+# check_refs.sh - checks that paths named in the docs exist in the repo.
 #
-# Wyciaga z plikow markdown linki [tekst](sciezka) i fragmenty w backtickach,
-# ktore wygladaja na sciezke (rozszerzenie pliku albo koncowy "/").
-# Sciezka istnieje, gdy istnieje wzgledem root repo, wzgledem katalogu dokumentu
-# albo jako sufiks sciezki w repo (docs czesto pisza sciezki od katalogu zrodel).
+# Extracts [text](path) links and backtick fragments that look like a path
+# (file extension or trailing "/") from markdown files.
+# A path exists when it exists relative to the repo root, relative to the document
+# directory, or as a suffix of a repo path (docs often write paths from the source directory).
 #
-# Wynik:
-#   MISSING     sciezka z katalogiem albo link, ktorej nie ma (pewny rozjazd),
-#   UNRESOLVED  gola nazwa pliku bez katalogu, ktorej nie znaleziono (do oceny),
-#   EXTERNAL    sciezka poza repo (../inne-repo/...) albo w linii o innym repo;
-#               istniejaca obok root nie jest zglaszana,
-#   WORKSPACE   odwolanie do pliku roboczego (--workspace, domyslnie .ai/workspace);
-#               docs nie powinny linkowac planow i raportow.
-# Pomija placeholdery (YYYY, <x>, [x], {x}, Foo), nazwy pakietow z manifestow,
-# sciezki ignorowane przez git i linie, ktore same mowia o braku pliku.
-# Indeks repo zawiera pakiety *.xcresult bez ich wnetrza (setki tysiecy plikow).
+# Output:
+#   MISSING     path with a directory, or a link, that does not exist (certain drift),
+#   UNRESOLVED  bare file name without a directory that was not found (to review),
+#   EXTERNAL    path outside the repo (../other-repo/...) or on a line about another repo;
+#               one that exists next to root is not reported,
+#   WORKSPACE   reference to a working file (--workspace, default .ai/workspace);
+#               docs should not link plans and reports.
+# Skips placeholders (YYYY, <x>, [x], {x}, Foo), package names from manifests,
+# paths ignored by git and lines that themselves say the file is missing
+# (negation words in Polish and English).
+# The repo index includes *.xcresult bundles without their contents (hundreds of thousands of files).
 #
-# Uzycie:
-#   check_refs.sh <plik.md|katalog> [...] [--root DIR] [--workspace DIR] [--strict]
-# Kod wyjscia: 0 brak MISSING, 1 sa MISSING, 2 blad uzycia. UNRESOLVED, EXTERNAL
-#   i WORKSPACE nie zmieniaja kodu. --strict (dla bramek) daje ten sam kontrakt
-#   jawnie: kod 1 tylko przy MISSING.
-# Wymaga: bash 3.2+, git, awk, find; jq opcjonalnie (nazwy pakietow).
+# Usage:
+#   check_refs.sh <file.md|dir> [...] [--root DIR] [--workspace DIR] [--strict]
+# Exit code: 0 no MISSING, 1 MISSING found, 2 usage error. UNRESOLVED, EXTERNAL
+#   and WORKSPACE do not change the code. --strict (for gates) makes the same contract
+#   explicit: code 1 only with MISSING.
+# Requires: bash 3.2+, git, awk, find; jq optional (package names).
 
 set -uo pipefail
 
@@ -39,19 +40,19 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ -n "$paths" ] || { echo "USAGE check_refs.sh <plik.md|katalog> [...] [--root DIR]"; exit 2; }
-root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE brak katalogu root"; exit 2; }
+[ -n "$paths" ] || { echo "USAGE check_refs.sh <file.md|dir> [...] [--root DIR]"; exit 2; }
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# MARK: indeks sciezek repo
+# MARK: repo path index
 
 find "$root" \( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData \
   -o -name build -o -name dist -o -name .angular -o -name coverage -o -name __pycache__ -o -name .venv \) -prune \
   -o -name '*.xcresult' -prune -print -o -print 2>/dev/null | sed "s|^$root/||" | grep -v "^$root\$" >"$tmp/index"
 
-# MARK: nazwy pakietow
+# MARK: package names
 
 : >"$tmp/packages"
 if command -v jq >/dev/null 2>&1; then
@@ -61,7 +62,7 @@ if command -v jq >/dev/null 2>&1; then
   [ -f "$root/composer.json" ] && jq -r '(.require // {}), (."require-dev" // {}) | keys[]' "$root/composer.json" 2>/dev/null >>"$tmp/packages"
 fi
 
-# MARK: lista dokumentow (wzgledem root)
+# MARK: document list (relative to root)
 
 : >"$tmp/docs"
 printf '%s' "$paths" | while IFS= read -r p; do
@@ -76,14 +77,14 @@ printf '%s' "$paths" | while IFS= read -r p; do
   elif [ -f "$abs" ]; then
     case "$abs" in *.md) printf '%s\n' "$abs" ;; esac
   else
-    printf 'WARNING brak pliku albo katalogu: %s\n' "$p" >&2
+    printf 'WARNING file or directory not found: %s\n' "$p" >&2
   fi
 done | while IFS= read -r f; do
   d="$(cd "$(dirname "$f")" && pwd)"
   printf '%s\n' "${d#$root/}/$(basename "$f")" | sed "s|^$root/||; s|^\\./||"
 done | sed "s|^$root\$||" | sort -u >"$tmp/docs"
 
-# MARK: ekstrakcja i sprawdzenie
+# MARK: extraction and check
 
 if [ ! -s "$tmp/docs" ]; then
   echo "CHECKED 0 MISSING 0 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0"
@@ -173,6 +174,7 @@ fi
         for (i = n; i >= 1; i--) { s = (s == "" ? parts[i] : parts[i] "/" s); suffix[s] = 1 }
       }
       while ((getline line < pkg_file) > 0) pkg[line] = 1
+      # neg and other_repo match docs in Polish and English: repos keep their own language.
       neg = "(^|[^A-Za-z])(brak|nie istnieje|nie ma|nigdy|never|usuni(e|ę)t[a-z]*|usun(a|ą)(c|ć)|relokow[a-z]*|przeniesion[a-z]*|dawn(y|a|e|iej)|nie w|not in|removed|deleted|moved|formerly|previously|no longer|does not exist|missing)([^A-Za-z]|$)"
       other_repo = "(repozytori|repository|w repo |in repo |sibling)"
     }
