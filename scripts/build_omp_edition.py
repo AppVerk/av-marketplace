@@ -59,7 +59,7 @@ COMMAND_KEYS = ("description", "argument-hint")
 COMMAND_DROPPED_KEYS = {"allowed-tools", "model"}
 AGENT_SOURCE_KEYS = {"name", "description", "tools", "disallowedTools", "model", "skills"}
 OVERLAY_KEYS = {"plugin", "agents", "fallback_model"}
-AGENT_SPEC_KEYS = {"role", "add_tools", "thinking", "autoload"}
+AGENT_SPEC_KEYS = {"role", "add_tools", "thinking", "autoload", "description"}
 
 NATIVE_MANIFEST_KEYS = {"name", "version", "description", "category"}
 NATIVE_AGENT_KEYS = {
@@ -237,6 +237,10 @@ def build_agent(
         not isinstance(spec["thinking"], str) or spec["thinking"] not in THINKING_LEVELS
     ):
         raise BuildError(f"{src}: unknown thinking level {spec['thinking']!r} in omp/overlay/{plugin}.json")
+    if "description" in spec and (
+        not isinstance(spec["description"], str) or not spec["description"].strip()
+    ):
+        raise BuildError(f"{src}: description must be a non-empty string in omp/overlay/{plugin}.json")
 
     # `todo` is parent-owned in OMP: the task executor strips it from every
     # subagent, so granting it would only mislead a reader of the frontmatter.
@@ -271,7 +275,10 @@ def build_agent(
 
     out: list[tuple[str, str]] = [
         ("name", yaml_str(f"{plugin}:{name}")),
-        ("description", scalar(fields["description"])),
+        (
+            "description",
+            yaml_str(spec["description"]) if "description" in spec else scalar(fields["description"]),
+        ),
     ]
     if tools:
         out.append(("tools", ", ".join(tools)))

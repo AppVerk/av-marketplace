@@ -21,6 +21,7 @@
 ## Issues
 
 ### [LOW] SEC-001: User docs understate the QA testers' MCP access in OMP [verified]
+**Status:** ✅ Fixed (2026-09-25)
 
 **ID:** SEC-001
 **Location:** `README.md:31`
@@ -39,6 +40,7 @@ A user with a write-capable MCP server (issue tracker, production database) who 
 In `README.md:31` and `docs/plugins/qa.md:421`, replace the database sentence with: "OMP gives every subagent all MCP servers configured for the session, so both `qa:fe-tester` and `qa:be-tester` can call any of them (a `tools:` list cannot narrow this). Before running `/qa:run` or `/qa:loop` against code you do not trust, remove write-capable MCP servers from the OMP config."
 
 ### [LOW] SEC-002: FE tests can run in the user's own or an attached browser instead of OMP's managed Chromium [verified]
+**Status:** ✅ Fixed (2026-09-25)
 
 **ID:** SEC-002
 **Location:** `omp/preamble.md:14`
@@ -57,6 +59,7 @@ The preamble bullet and `README.md:31` / `docs/plugins/qa.md:421` say FE scenari
 `app={"relay": False}` alone does not bypass a configured `browser.cdpUrl`, and it does not cover cmux selection. State in `README.md:31`, `docs/plugins/qa.md:421` and `omp/preamble.md:14` that FE scenarios run in the browser OMP's settings select and that `browser.relay`, `browser.cdpUrl` and cmux should be off for QA runs; in the preamble's `browser.open` call also pass `app={"relay": False}`. Regenerate with `python3 scripts/build_omp_edition.py`.
 
 ### [LOW] MAINT-001: Slash-command bullet leaves out /analyze-feedback [verified]
+**Status:** ✅ Fixed (2026-09-25)
 
 **ID:** MAINT-001
 **Location:** `omp/preamble.md:15`
@@ -73,6 +76,7 @@ The OMP edition can tell the user to run a command that does not exist, and the 
 Add `/analyze-feedback` → `/code-review:analyze-feedback` to the bullet (optionally: "any other command named without a prefix is `/{plugin}:<name>`"), then regenerate with `python3 scripts/build_omp_edition.py`.
 
 ### [LOW] MAINT-002: Preamble's screenshot mapping yields downscaled, often WebP evidence files [verified]
+**Status:** ✅ Fixed (2026-09-25)
 
 **ID:** MAINT-002
 **Location:** `omp/preamble.md:14`
@@ -89,6 +93,7 @@ Failure evidence has reduced resolution and a file type that depends on the test
 Map to `path = await tab.screenshot(format="png")` in `omp/preamble.md:14` and regenerate. The cmux backend does not honour this for full resolution (`src/tools/browser/cmux/cmux-tab.ts:1177-1194`); the default backend does.
 
 ### [LOW] MAINT-003: Generated fe-tester description still advertises Playwright MCP
+**Status:** ✅ Fixed (2026-09-25)
 
 **ID:** MAINT-003
 **Location:** `plugins-omp/qa/agents/fe-tester.md:3`
@@ -105,6 +110,12 @@ The parent agent choosing a tester, and any user reading the agent list, is told
 Do not edit the generated file. Either add a `description` key to the overlay agent spec (`AGENT_SPEC_KEYS` plus a test in `scripts/test_build_omp_edition.py`) and set an OMP description for `fe-tester` in `omp/overlay/qa.json`, or reword `plugins/qa/agents/fe-tester.md:3` edition-neutrally (that changes the Claude edition and needs a `qa` version bump in all four places). Regenerate with `python3 scripts/build_omp_edition.py`.
 
 ### [LOW] DOC-001: Preamble says screenshots always land in the OS temp directory
+**Status:** ✅ Fixed (2026-09-25)
+**Verification:** advisory — Grep old claim in omp/preamble.md and plugins-omp: no match, Grep OS temp directory|screenshotDir in omp/preamble.md: no match, Grep new wording in plugins-omp: 26 files total, python3 scripts/build_omp_edition.py --check: OMP edition is up to date, Read omp/preamble.md:14 (soft): ends with the decided wording
+**Decision:** B — In omp/preamble.md:14 replace the closing text "returns a file in the OS temp directory: copy it with `bash` to the path the instructions name." with "returns the saved file's path: copy it with `bash` to the path the instructions name." so the bullet states no screenshot location at all, change nothing else on that line, adding no `{` or `}` because omp/preamble.md is a str.format template, then run python3 scripts/build_omp_edition.py to regenerate the 26 files under plugins-omp/ that carry the bullet, editing none of those generated files by hand. [user, 2026-09-25]
+**Verification-plan:** tool: Grep pattern=`returns a file in the OS temp directory` path=omp/preamble.md;plugins-omp case=true gitignore=true → no match in any file (empty result); tool: Grep pattern=`OS temp directory|screenshotDir` path=omp/preamble.md case=true gitignore=true → no match (empty result), so the template states no screenshot location; tool: Grep pattern=`returns the saved file's path: copy it with` path=plugins-omp case=true gitignore=true skip=26 → output reports 26 files total, so every generated copy carries the new wording; `python3 scripts/build_omp_edition.py --check` [outside the read-only boundary: executes a repository script, needs the user's explicit approval before it runs] → stdout reads `OMP edition is up to date`; tool: Read path=omp/preamble.md:raw:14-14 → the excerpt quoted from omp/preamble.md:14 ends with "returns the saved file's path: copy it with `bash` to the path the instructions name." (soft)
+**Decision-pin:** block=940ab9ce84217d609699980f9e9ec86680ab1d970bf79ce8afb9963420c1c413 | omp/preamble.md=0424eece0c61fa181a80863263a44de5748d711d:edit | str.format=absent:ref | scripts/build_omp_edition.py=6f86687203be2054c74cce72886b4432e2a8c392:ref | plugins-omp/=unpinnable:edit
+**Dispatch:** attempt 1 dispatched 2026-09-25
 
 **ID:** DOC-001
 **Location:** `omp/preamble.md:14`

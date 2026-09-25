@@ -95,6 +95,27 @@ class TestGenerated(unittest.TestCase):
             self.assertEqual((plugin / "scripts/utility.py").read_text(), "print('ok')\n")
             self.assertEqual(json.loads((plugin / ".omp-plugin/plugin.json").read_text()), MANIFEST)
 
+    def test_overlay_description_replaces_claude_capability_in_generated_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            agent_path = source / "plugins/sample/agents/worker.md"
+            put(agent_path, AGENT.replace("Does work", "Runs tests using Playwright MCP"))
+            put_json(source / "omp/overlay/sample.json", {
+                "plugin": "sample",
+                "agents": {
+                    "worker": {"role": "tester", "description": "Runs tests with OMP's built-in browser"},
+                },
+            })
+
+            build(root / "output", source)
+            agent = (root / "output/plugins-omp/sample/agents/worker.md").read_text()
+            frontmatter = agent.split("---", 2)[1]
+            self.assertIn('description: "Runs tests with OMP\'s built-in browser"', frontmatter)
+            self.assertNotIn("Playwright MCP", frontmatter)
+            self.assertIn("Playwright MCP", agent_path.read_text())
+
     def test_hookable_tools_match_generated_hook_targets(self) -> None:
         source = (Path(__file__).resolve().parent.parent / "omp/claude-hooks/claude-hooks.ts").read_text()
         match = re.search(r"\bconst HOOKABLE_TOOLS\s*=\s*(\[[^\]]*\])\s*;", source, re.S)
@@ -381,7 +402,7 @@ class TestGenerated(unittest.TestCase):
             with self.assertRaisesRegex(BuildError, "declared tools map to no usable OMP tools"):
                 build(root / "output", source)
 
-    def test_rejects_invalid_overlay_role_tools_and_thinking(self):
+    def test_rejects_invalid_overlay_role_tools_thinking_and_description(self):
         cases = {
             "misspelled role": ({"role": "exector"}, "unknown role.*allowed project roles:.*README.md.*MODEL_ROLES"),
             "non-string role": ({"role": True}, "unknown role"),
@@ -390,6 +411,8 @@ class TestGenerated(unittest.TestCase):
             "non-string tool": ({"role": "executor", "add_tools": [True]}, "unknown OMP tool"),
             "boolean thinking": ({"role": "executor", "thinking": True}, "unknown thinking level"),
             "misspelled thinking": ({"role": "executor", "thinking": "hgh"}, "unknown thinking level"),
+            "non-string description": ({"role": "executor", "description": True}, "description must be a non-empty string"),
+            "blank description": ({"role": "executor", "description": "  "}, "description must be a non-empty string"),
         }
         for label, (spec, error) in cases.items():
             with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:

@@ -28,7 +28,7 @@ With Commit installed, Delivery 0.4.0 and older stop at their first commit. If y
 
 Delivery needs Python 3.9 or newer, available as `python3` on `PATH`: its plan check, task router and preflight run Python. Without it, approving a plan does not start a delivery and the plan runs as usual.
 
-In OMP, QA's FE scenarios run in OMP's built-in browser (`eval`'s `browser` global, a managed Chromium downloaded on first use) instead of Playwright MCP. While `browser.enabled` is on, OMP removes Playwright MCP servers from the session, so no MCP setup is needed and a configured `@playwright/mcp` server is not used. BE scenarios use the same CLI clients as in Claude Code; database MCP servers configured for OMP are available to the tester without any grant. `/qa:loop` dispatches `code-review:fix-auto`, so it needs Code Review installed. Screenshots of failed FE scenarios land in `docs/testing/reports/screenshots/` as in Claude Code.
+In OMP, QA's FE scenarios use `eval`'s `browser` global instead of Playwright MCP; they run in the browser OMP's settings select (managed Chromium only when no relay, CDP URL, or cmux browser is selected). For QA runs, set `browser.relay` and `browser.cmux` to `false` and unset `browser.cdpUrl` so scenarios do not use your own or an attached browser. While `browser.enabled` is on, OMP removes Playwright MCP servers from the session, so no MCP setup is needed and a configured `@playwright/mcp` server is not used. BE scenarios use the same CLI clients as in Claude Code. OMP gives every subagent all MCP servers configured for the session, so both `qa:fe-tester` and `qa:be-tester` can call any of them (a `tools:` list cannot narrow this). Before running `/qa:run` or `/qa:loop` against code you do not trust, remove write-capable MCP servers from the OMP config. `/qa:loop` dispatches `code-review:fix-auto`, so it needs Code Review installed. Screenshots of failed FE scenarios land in `docs/testing/reports/screenshots/` as in Claude Code.
 
 Delivery runs approved plans end to end, without slash commands. Plan in OMP plan mode (`/plan`). In a git repository the plan's Approach is written as `### Task N:` blocks, each listing its files; proposing a plan whose task mixes stacks, lists no files or has a malformed `### Task` heading is rejected with the reason. Before creating a branch or committing the plan, delivery stops if the working tree has changes other than the plan itself, or if the plan check finds a problem. Approving a plan that has tasks starts the delivery:
 
@@ -54,6 +54,8 @@ modelRoles:
 
 An unmapped role falls back to the model the Claude Code edition names (`opus`), or to the session model where that edition inherits one.
 The generator accepts only these documented project roles in overlays; to introduce another user-configured role, document it here and add it to `MODEL_ROLES` in `scripts/build_omp_edition.py`.
+
+An overlay agent spec can also set `description` to replace the Claude Code description in generated OMP frontmatter. Without an override, the generator preserves the source description. Use an override when the editions use different tools, since OMP shows agent descriptions before loading their instructions.
 
 ## Workflow
 
