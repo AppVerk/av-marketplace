@@ -1,0 +1,7 @@
+{
+  "plugin": "qa",
+  "agents": {
+    "fe-tester": { "role": "tester", "add_tools": ["eval"] },
+    "be-tester": { "role": "tester" }
+  }
+}
