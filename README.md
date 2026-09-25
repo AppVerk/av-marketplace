@@ -15,11 +15,11 @@ After installation, verify with `/help` — you should see the new commands list
 
 ### Oh My Pi (OMP)
 
-An OMP edition is generated from the same sources: Code Review, Commit and the Frontend, PHP and Python developer plugins. It adds two OMP-only plugins, **Delivery** and **Plan Review**:
+An OMP edition is generated from the same sources: Code Review, Commit, QA and the Frontend, PHP and Python developer plugins. It adds two OMP-only plugins, **Delivery** and **Plan Review**:
 
 ```bash
 omp plugin marketplace add AppVerk/av-marketplace
-for p in code-review commit delivery plan-review python-developer frontend-developer php-developer; do
+for p in code-review commit delivery plan-review qa python-developer frontend-developer php-developer; do
   omp plugin install "$p@av-marketplace"
 done
 ```
@@ -27,6 +27,8 @@ done
 With Commit installed, Delivery 0.4.0 and older stop at their first commit. If you added the marketplace earlier, run `omp plugin marketplace update av-marketplace` before installing Commit, and upgrade an installed Delivery with `omp plugin upgrade delivery@av-marketplace`. Commit's git guards need `jq` on `PATH`: without it, every `bash` call they do not deny asks for confirmation, and in print mode and subagents, Delivery's agents included, such calls are blocked.
 
 Delivery needs Python 3.9 or newer, available as `python3` on `PATH`: its plan check, task router and preflight run Python. Without it, approving a plan does not start a delivery and the plan runs as usual.
+
+In OMP, QA's FE scenarios run in OMP's built-in browser (`eval`'s `browser` global, a managed Chromium downloaded on first use) instead of Playwright MCP. While `browser.enabled` is on, OMP removes Playwright MCP servers from the session, so no MCP setup is needed and a configured `@playwright/mcp` server is not used. BE scenarios use the same CLI clients as in Claude Code; database MCP servers configured for OMP are available to the tester without any grant. `/qa:loop` dispatches `code-review:fix-auto`, so it needs Code Review installed. Screenshots of failed FE scenarios land in `docs/testing/reports/screenshots/` as in Claude Code.
 
 Delivery runs approved plans end to end, without slash commands. Plan in OMP plan mode (`/plan`). In a git repository the plan's Approach is written as `### Task N:` blocks, each listing its files; proposing a plan whose task mixes stacks, lists no files or has a malformed `### Task` heading is rejected with the reason. Before creating a branch or committing the plan, delivery stops if the working tree has changes other than the plan itself, or if the plan check finds a problem. Approving a plan that has tasks starts the delivery:
 
@@ -38,13 +40,14 @@ A plan without `### Task` headings runs as usual. `/delivery:execute <plan>` res
 
 Plan Review has a second model check every plan-mode plan before it reaches the approval dialog. The agent sends the plan to `xd://plan_review`; the reviewer (the `advisor` model role, with read-only tools) reports blockers, concerns and nits, and `xd://propose` stays blocked until a review approves the current plan text or 3 review rounds are used. See the [Plan Review guide](docs/plugins/plan-review.md).
 
-Agents route through model roles instead of a fixed model: reviewers use `code_review`, fixers and developers `executor`, adversarial verification `challenger`, finding analysis (composite grouping, needs-decision findings, PR feedback) `analyst`, plan mode `plan`, and Plan Review's reviewer `advisor`. Map each role in `~/.omp/agent/config.yml`, for example:
+Agents route through model roles instead of a fixed model: reviewers use `code_review`, fixers and developers `executor`, QA testers `tester`, adversarial verification `challenger`, finding analysis (composite grouping, needs-decision findings, PR feedback) `analyst`, plan mode `plan`, and Plan Review's reviewer `advisor`. Map each role in `~/.omp/agent/config.yml`, for example:
 
 ```yaml
 modelRoles:
   code_review: anthropic/claude-opus-5-5
   analyst: anthropic/claude-opus-5-5
   executor: openai-codex/gpt-5.5
+  tester: openai-codex/gpt-5.5
   challenger: openai-codex/gpt-5.5
   advisor: openai-codex/gpt-5.5
 ```

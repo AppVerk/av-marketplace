@@ -409,5 +409,15 @@ Where the state does arise — a `/review` report fed through the decision stage
 
 - **Server must be running** — the plugin does not start/stop application servers
 - **Database must be accessible** — for DB verification scenarios
-- **Playwright MCP** — required for FE testing (FE scenarios are skipped without it)
+- **Playwright MCP** — required for FE testing in Claude Code (FE scenarios are skipped without it); Oh My Pi uses its built-in browser instead, see [Oh My Pi](#oh-my-pi)
 - **HTTP client** — at least `curl` or `httpie` for BE testing (BE scenarios are skipped without either)
+
+## Oh My Pi
+
+Install with `omp plugin install qa@av-marketplace`. If you added the marketplace earlier, first run `omp plugin marketplace update av-marketplace`. The commands are `/qa:create-plan`, `/qa:run`, and `/qa:loop`.
+
+Both `qa:fe-tester` and `qa:be-tester` run through the `tester` model role (`modelRoles.tester` in `~/.omp/agent/config.yml`). Without that mapping, OMP falls back to the `opus` selector, then to the session model.
+
+In OMP, FE scenarios use the built-in browser (`eval`'s `browser` global, a managed Chromium downloaded on first use), not Playwright MCP. FE testing needs `browser.enabled` in place of Playwright MCP: with it off, `eval` has no `browser` global and the FE tester reports every FE scenario as SKIP with the reason "Playwright MCP unavailable". With `browser.enabled` (on by default), OMP removes Playwright MCP servers from the session; no Playwright MCP setup is needed, and a configured `@playwright/mcp` server is not used. BE scenarios use the same CLI clients as in Claude Code; database MCP servers configured for OMP are available to the tester without a grant. Screenshots of failed FE scenarios go to `docs/testing/reports/screenshots/`.
+
+`/qa:loop` dispatches `code-review:fix-auto` and requires `code-review@av-marketplace` to be installed. In OMP, `/fix QA-001` is `/code-review:fix QA-001`, and `/fix-report` is `/code-review:fix-report`.

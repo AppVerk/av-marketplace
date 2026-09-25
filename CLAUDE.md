@@ -48,8 +48,16 @@ the script, commit both. CI runs it with `--check`.
 A plugin gets an OMP edition by adding `omp/overlay/<name>.json`. Its mappings
 are total: an agent without an overlay entry, a tool without a `TOOL_MAP` entry,
 or an agent frontmatter key the script does not know fails the build rather
-than being dropped. Versions are copied from `.claude-plugin/marketplace.json`,
-so the four-place versioning rule above is unchanged.
+than being dropped. The one prefix rule is `mcp__`: MCP grants in an agent's
+`tools:` are dropped, because an OMP subagent receives the session's MCP tools
+whatever its `tools:` says, and the preamble tells the model so; an agent
+whose `tools:` holds only MCP grants still fails the build, and MCP entries
+in `disallowedTools` fail the build because their denial cannot be enforced
+in OMP. Versions are copied from `.claude-plugin/marketplace.json`, so the
+four-place versioning rule above is unchanged.
+
+Overlay roles must be members of `MODEL_ROLES` in the generator and documented
+in the README's model-roles paragraph; `tester` is the QA testers' role.
 
 A generated plugin's `hooks/hooks.json` becomes an OMP extension. The
 generator copies `omp/claude-hooks/claude-hooks.ts` to `extensions/`, writes
