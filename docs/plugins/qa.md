@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.6.0
+**Version:** 2.7.0
 
 ## Commands
 
@@ -31,13 +31,15 @@ Analyze code changes and generate a detailed test plan with FE and BE scenarios,
 ```
 
 The command:
-1. Resolves the diff source (PR, branch, commits, or staged changes)
-2. Classifies changed files as FE or BE based on file extensions and paths
-3. Reads related files for context (routers, models, schemas, docs, OpenAPI specs)
-4. Detects available testing tools (Playwright MCP, curl/httpie, psql/sqlite3/mysql, database MCP servers)
-5. Generates the test plan using scenario conventions (`FE-XX` for frontend, `BE-XX` for backend)
-6. Saves the plan to `docs/testing/plans/YYYY-MM-DD-<topic>-test-plan.md`
-7. Proposes running `/qa:run` to execute the plan
+1. Resolves the diff source (PR, branch, commits, or staged changes) and pins the intended success and error-path contract before observing runtime behavior
+2. Classifies changed files as FE or BE and reads related producers (routers, models, schemas, docs, OpenAPI specs and installed framework behavior) to ground each assertion
+3. Scans for contract blockers and records them in mandatory `## Blockers / Findings` (`None found.` if none); affected scenarios retain their intended expectation and carry `**Blocked-by:** BLK-NN`
+4. Grounds `## Setup` (base URL, required environment-variable names, services and database connections) from the repository at plan-authoring time; credentials are `$NAME` references, not literal values
+5. Detects testing tools (Playwright MCP, curl/httpie, psql/sqlite3/mysql, database MCP servers); an available MCP server is not assumed to point to the test DB
+6. Limits scenario steps to browser actions, HTTP requests and DB queries against an already-running app; human bring-up belongs under Required services and unobservable checks under `## Out of harness scope`
+7. When behavior depends on at least two independent booleans, loads `state-combination-planning` and records every row of the $2^N$ combination table with a scenario or justified disposition
+8. Generates `FE-XX`/`BE-XX` scenarios whose expected results and edge cases carry `(path:line)` or `(unverified — confirm at run time)` tags; refutes unsupported assertions before saving to `docs/testing/plans/YYYY-MM-DD-<topic>-test-plan.md`
+9. Proposes running `/qa:run` to execute the plan
 
 ### `/qa:run`
 
@@ -52,14 +54,13 @@ Execute a test plan by launching FE and BE testing agents in parallel and genera
 ```
 
 The command:
-1. Loads and parses the test plan
-2. Re-validates tool availability (tools may have changed since plan creation)
-3. Launches testing agents in parallel:
-   - **fe-tester** — executes FE scenarios via Playwright MCP (navigation, clicks, form fills, snapshot verification)
-   - **be-tester** — executes BE scenarios via HTTP clients and database queries
-4. Collects results from all agents
-5. Generates a report with `QA-XXX` issue IDs and severity levels
-6. Saves the report to `docs/testing/reports/YYYY-MM-DD-<topic>-report.md`
+1. Loads the plan (including `## Setup` and each assertion's grounding tag), re-validates tools and checks declared environment-variable **presence only** before dispatch. If any are missing, it aborts: `⚠️ Cannot start QA — <N> required value(s) missing:` followed by their names and advice to export them in the shell that launches the harness, restart it, then re-run; values are never printed.
+2. Resolves the Base URL from `## Setup`, then the first URL in `## Source` or a scenario heading/bullet, then `QA_BASE_URL`; no URL means a fail-closed abort. It does not read project config at run time.
+3. Launches **fe-tester** (browser actions) and **be-tester** (HTTP requests and declared DB connections) in parallel. A missing prerequisite returns `NEED_INFO` with kind `credentials`, `service`, `fixture` or `tool`; an assertion mismatch returns FAIL.
+4. Before reporting any FAIL, testers refute it with a single read-only re-verification, check prerequisites and scope, and distinguish harness failures from app defects. A mutating action (POST, submit or write-triggering click) is **never replayed**; when its outcome remains unknown after one read of resulting state, the scenario is SKIP rather than a fabricated failure.
+5. Derives one scenario verdict: `fail` for a failed main flow or edge; otherwise `need-info` for any missing prerequisite; otherwise `skip` for an unrunnable main flow or edge; otherwise `pass`. A skipped DB check alone does not downgrade the HTTP result. Only failing assertions mint `QA-XXX` issues; gaps appear under conditional `## Setup gaps` with names/URLs, never secret values.
+6. BE responses are inspected and persisted only after fail-closed redaction of listed sensitive headers, sensitive JSON keys, Bearer/query tokens and declared environment values of at least four characters; non-JSON and bare-string bodies are withheld. It does not claim to catch undeclared secrets in arbitrary non-sensitive free text. Failed FE screenshots use `docs/testing/reports/screenshots/<ID>-fail.png` (edge n: `<ID>-edge<n>-fail.png`); BE dumps use `docs/testing/reports/responses/<ID>-body.json` (edge n: `<ID>-edge<n>-body.json`), never QA issue IDs or timestamps.
+7. Saves the report to `docs/testing/reports/YYYY-MM-DD-<topic>-report.md` with severity per assertion (unverified mismatch: LOW unless HTTP ≥ 500 or crash/stack trace).
 
 ### `/qa:loop`
 
@@ -111,7 +112,7 @@ Close a test → fix → retest loop: run a QA plan, auto-fix failures via `code
 | `--max-dispatches` | Maximum fix-auto + tester launches combined | 50 | Must be positive integer; soft limit at iteration boundaries; final run always runs (not gated) |
 | `--time-budget` | Wall-clock seconds before timeout | 1800 | Must be positive integer; error on invalid |
 | `--severity` | Minimum severity to credit as fixed: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` | (none = all) | Case-insensitive; unknown value → error |
-| `--allow-mutations` | Permit state-changing BE scenarios (POST/PUT/PATCH/DELETE, DB writes) | (off) | Present → on; absent → off; no value needed; **note: test DB must be disposable (no rollback)** |
+| `--allow-mutations` | Permit state-changing BE scenarios (POST/PUT/PATCH/DELETE, DB writes) beyond the expected-rejection exemption | (off) | Present → on; absent → off; no value needed; **test DB must be disposable (no rollback)** |
 | `--allow-host` | Whitelist additional hosts beyond loopback | (loopback only) | Repeatable; each invocation appends; format: hostname or IP |
 | `--auto-plan` | Force auto-plan generation ON when no plan exists (required to enable it in `--mode auto`) | on in approve/step, off in auto | Valueless presence flag; mutually exclusive with `--no-auto-plan` |
 | `--no-auto-plan` | Force auto-plan OFF — restore the 2.1.0 dead-stop when no plan exists | — | Valueless presence flag; mutually exclusive with `--auto-plan` |
@@ -156,9 +157,9 @@ When no plan exists, instead of dead-stopping, `/qa:loop` can generate one for t
 **Graceful, reason-aware thin-plan exit:** an **auto-generated** plan with nothing executable exits **successfully** (the unit/integration suite is the real coverage there), not as an error:
 
 - **Empty plan** (zero `FE-NN` and zero `BE-NN` scenarios — e.g. a change with no testable UI/API surface) → graceful success before any tester launches.
-- **All scenarios SKIP, all under the mutation guard** (the legitimate backend-write-only case) → graceful success; rely on the unit/integration suite.
-- **All scenarios SKIP, but any for tooling/parse reasons** (`tool-unavailable` / `cannot-confirm` / parse failure) → graceful exit **with a coverage-zero warning** — so a broken generation isn't laundered into "success."
-- A **user-provided** all-SKIP plan still **errors** (`No executable verifier — cannot gate`): an operator-supplied plan that cannot gate is worth flagging.
+- **All verdicts `skip` or `need-info`, all under the mutation guard** (the legitimate backend-write-only case) → graceful success; rely on the unit/integration suite.
+- **All verdicts `skip` or `need-info`, with any setup/tooling/parse gap** → graceful exit **with a coverage-zero warning** — no missing prerequisite is laundered into "success."
+- A **user-provided** all-`skip`/`need-info` plan still **errors** (`No executable verifier — cannot gate`), with setup gaps listed.
 
 A *malformed* generated plan (missing the always-present `## Source` / `## Changes Summary` / `## Detected Tools` headers) is a different case — it **aborts**, never falls through to a stale plan.
 
@@ -170,9 +171,9 @@ A *malformed* generated plan (missing the always-present `## Source` / `## Chang
 | Dirty tree | abort unless `--allow-dirty` | warn + confirm (before the generate confirm) |
 | After generation | pre-baseline banner (path + FE/BE counts) → continue | pre-baseline banner → continue |
 | Empty plan (0 FE + 0 BE) | graceful success | graceful success |
-| All-SKIP, auto-generated, mutation-guard only | graceful success | graceful success |
-| All-SKIP, auto-generated, tooling/parse reasons | graceful exit + coverage-zero warning | graceful exit + warning |
-| All-SKIP, user-provided plan | existing error | existing error |
+| All skip/need-info, auto-generated, mutation-guard only | graceful success | graceful success |
+| All skip/need-info, auto-generated, setup/tooling/parse reasons | graceful exit + coverage-zero warning | graceful exit + warning |
+| All skip/need-info, user-provided plan | existing error + setup gaps | existing error + setup gaps |
 
 > [!IMPORTANT]
 > **Behavior changes for all `/qa:loop` users (2.3.0).** The no-plan default in `auto` **stays a no-op stop** unless you add `--auto-plan`, so existing CI invocations are unaffected. The **interactive default** (`approve`/`step`), however, changes from "stop" to "**confirm, then generate**" — a prompted action, not a silent one. Pass `--no-auto-plan` to restore the 2.1.0 dead-stop in any mode.
@@ -183,26 +184,24 @@ A *malformed* generated plan (missing the always-present `## Source` / `## Chang
 
 **Algorithm summary:**
 
-1. **Resolve & Validate** — Parse arguments, resolve base URL with fail-closed safety, enforce environment guard (loopback-only unless `--allow-host`), hash the plan
-2. **Baseline Run** — Execute all FE and BE scenarios (mutation guard skips state-changing scenarios unless `--allow-mutations`); render QA-XXX report
+1. **Resolve & Validate** — Parse arguments; resolve the base URL from `## Setup`, then plan URLs, then `QA_BASE_URL` (never project config at run time); enforce the loopback-only guard unless `--allow-host`; preflight declared env-var names before dispatch; hash the plan
+2. **Baseline Run** — Execute FE and BE scenarios with the mutation guard (expected-rejection BE exemption below), derive the full main-flow-plus-edge verdict, render `QA-XXX` report and `## Setup gaps` for missing prerequisites; in `approve`/`step` ask whether to re-run affected sections once, continue or abort when gaps exist (`auto` continues)
 3. **Loop Iterations** — For each iteration (bounded by `--max-iterations`, `--max-dispatches`, `--time-budget`):
-   - Select failing scenarios at/above `--severity` threshold
-   - Pre-filter the fix-set — drop findings already rejected by you (`rejected by user`), findings whose Location value is unusable (`needs manual location`), and findings missing required fields (`incomplete fields`); each is recorded under that reason and never dispatched
+   - Select failing scenarios at/above `--severity`; never treat `need-info` or `auth-unverified` as fix candidates
+   - Pre-filter issues rejected by the user, without usable Location or required fields; exclude auth-gated **main-flow** QA IDs in all modes even if an independent edge FAIL keeps their scenario failing
+   - Flag each issue whose assertion is `(unverified — confirm at run time)` as plan-suspect; in `auto` do not fix that issue, but grounded failures of the same scenario remain eligible
    - HITL gate per `--mode` (approve: one batch; step: per re-test; auto: no gate)
-   - Auto-fix each selected issue via `code-review:fix-auto` (source-only constraint injected)
-   - Anti-hardcoding warning: flag added literals matching scenario request-payloads (human-review only; not a credit block)
-   - Re-run the affected FE and/or BE section(s) (dependency-safe; whole section per section)
-   - Update sidecar with iteration results and append Loop History row
+   - Auto-fix eligible issues via `code-review:fix-auto`, warn on request-payload-literal hardcoding, re-run affected whole sections, update sidecar and Loop History
    - Stop if: no scenario newly passed, oscillation detected (regression), or any budget exhausted
-4. **Final Run** — Unless zero-failure exit fired: re-run the entire plan once (authoritative source of truth)
-   - Write `**Status:** ✅ Fixed (YYYY-MM-DD)` on QA-XXX issues from scenarios that pass
-   - Report any regressions (scenarios that passed at baseline but failed in final run) as new QA-XXX IDs
-5. **Summary** — Loop History table, final pass/fail counts, fixed/remaining/warnings/regressions, dispatch & time budget used
+4. **Final Run** — Unless zero-failure exit fired: re-run the entire plan once (authoritative source of truth); write `**Status:** ✅ Fixed (YYYY-MM-DD)` only when the **entire** scenario's final verdict is `pass`, including all edges. A passing main flow with an edge `NEED_INFO`, `SKIP` or `FAIL` keeps its issues open.
+5. **Summary** — Loop History, final Pass/Fail/Skip/Need info counts, Coverage and names-only need-info unlock hints, fixed/remaining/warnings/regressions, dispatch & time budget used
+
+`/qa:loop` derives a verdict per scenario in this order: `fail` when the main flow or any edge FAILs; otherwise `need-info` when either has a missing prerequisite; otherwise `auth-unverified` for a BE feature main flow reclassified from a 401/403 instead of its expected 2xx; otherwise `skip` when main flow or edge SKIPs; otherwise `pass`. A `**DB check:** SKIP` alone does not count as an edge SKIP. `## Setup gaps` lists edge gaps even when an independent failure wins the scenario verdict.
 
 **Safety guards (all modes):**
 
-- **Environment guard:** base URL must resolve to loopback (`localhost`, `127.0.0.1`, `::1`, `*.localhost`) or be in `--allow-host`, else **abort**
-- **Mutation guard:** state-changing BE scenarios (HTTP POST/PUT/PATCH/DELETE or DB-write checks) SKIP with reason `mutation-guard` unless `--allow-mutations` is set; their issues reported as "needs --allow-mutations"; never counted as fixed. Classification is syntactic/best-effort (case-insensitive verbs); it does **not** detect GET-with-side-effects or FE UI actions that trigger writes (e.g. a Delete button) — keep the test database disposable
+- **Environment guard:** base URL must resolve to loopback (`localhost`, `127.0.0.1`, `::1`, `*.localhost`) or be in `--allow-host`, else **abort**; no config file is read for a runtime base URL
+- **Mutation guard:** without `--allow-mutations`, state-changing BE scenarios SKIP unless the first status on `**Expected:**` and every edge's expected status are ≥ 400, an optional `**DB Check:**` is read-only and no other bullet describes a write (`create`/`delete`/`update`/`insert`/`seed`). Unclassifiable actions remain guarded. An unexpected 2xx on an exempt request lands a write **once**, so keep the test DB disposable. This static guard does not detect GET side effects or write-triggering FE UI actions.
 - **Fix-set pre-filter:** three classes of issue are dropped from the fix-set and never dispatched, each recorded under its own reason:
   - a `**Status:**` line beginning `🚫 Rejected` — reason `rejected by user`. The status is terminal, so the finding never re-enters the fix-set on this or any later run. Matched **by prefix**, never by whole-line equality: a rejected line carries a ` — <reason>` tail that is not this loop's to control
   - a location-less `**Location:**` field — reason `needs manual location`. The field's **value** is what is tested, read by a two-clause rule: the first backticked token, ignoring any trailing parenthetical; or, where the line carries no backticked token, the first whitespace-delimited token after the field name. That value is location-less when it is `—`, `unknown:0`, absent, or anything that does not parse as `path:line` or `path:line-range`. **Never test the whole line** — a repaired finding reading `` **Location:** `src/a.py:12` (was: `unknown:0`) `` still contains `unknown:0` in its preserved tail, yet is perfectly dispatchable
@@ -216,11 +215,13 @@ The command owns a machine-state JSON file: `docs/testing/reports/<topic>-loop-s
 Contains:
 - `plan_sha256` — fingerprint to detect plan tampering (cross-run or mid-run)
 - `scenario_issues` — scenario-id → [QA-IDs] map
-- `baseline` — baseline pass/fail for each scenario
-- `auto_generated` — `true` iff this run generated the plan via auto-plan (drives the graceful thin/all-SKIP exit vs. error)
-- `fix_touched_files` — tracked paths the loop's own fixes edited (post-fix tracked-modified minus pre-loop dirt); the set scoped recovery restores
-- `iterations[]` — per-iteration results (attempted fixes, now-passing, still-failing, warnings, dispatches)
-- `dispatch_count` — running total
+- `baseline` / `current` — full scenario verdicts (`pass`, `fail`, `skip`, `auth-unverified`, `need-info`), after edge aggregation
+- `need_info` — current names-only missing prerequisites by scenario ID and `<ID> (edge n)`; refreshed for re-run sections
+- `unverified_issues` — QA IDs for individually unverified assertions; per-issue plan-suspect guard
+- `auth_gated_issues` — auth-unverified **main-flow** QA IDs; excluded from every fix dispatch while independent failing edges remain eligible
+- `auto_generated` — whether this run generated the plan (drives the graceful thin/coverage-zero exit vs. error)
+- `fix_touched_files` — tracked paths the loop's own fixes edited (post-fix modified minus pre-loop dirt); the set scoped recovery restores
+- `iterations[]` and `dispatch_count` — iteration results and running dispatch total
 
 The human-facing **Loop History** section is appended to the report (one row per iteration); the sidecar is the authoritative machine state.
 
@@ -254,13 +255,13 @@ Before integrating, verify these five manual checks:
 ```
 ## Coverage
 - Exercised: <N> feature · <M> sanity · <K> enforcement
-- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
+- Not verified: auth-unverified <N> · need-info <M> · mutation-guard SKIP <K> · tool-unavailable <J> · …
 - Confidence: high | low — <reason>
 ```
 
 "Exercised" (not "Verified") because a feature PASS means the endpoint was reached and returned a non-4xx — an upper bound on true verification (see `auth-unverified` below).
 
-**Shallow-coverage WARNING.** When no feature scenario passed (every feature scenario was `auth-unverified`, skipped, or failed) but ≥1 feature scenario existed, the loop emits:
+**Shallow-coverage WARNING.** When no feature scenario passed (every feature scenario was `auth-unverified`, `need-info`, skipped, or failed) but ≥1 feature scenario existed, the loop emits:
 
 > Warning: shallow coverage — no feature behavior was exercised (N feature scenarios were auth-unverified/skipped/unreachable). This green reflects infrastructure and enforcement checks only.
 
@@ -272,24 +273,19 @@ This WARNING is **provenance-independent**: it fires in `--mode approve`, `--mod
 
 The exit is still success; only the wording changes. A user-authored plan keeps the plain "All passing" message alongside the Coverage block.
 
-**`auth-unverified` outcome.** When a BE feature scenario gets HTTP 401 or 403 (instead of the expected 2xx), the orchestrator reclassifies it as `auth-unverified` at ingest — meaning the app is auth-gated and the feature path was never exercised (no token was available). An `auth-unverified` scenario is:
-- Counted and surfaced in the Coverage block under "Not verified"
-- **Never** credited as PASS
-- Excluded from the fix-set (never sent to `fix-auto`)
-- Not a regression trigger
+**`auth-unverified` outcome.** When a BE feature scenario gets HTTP 401 or 403 (instead of the expected 2xx), the orchestrator reclassifies its **main flow** as `auth-unverified` at ingest: that feature path was gated rather than exercised. Its main-flow QA issue stays in the report but its ID enters `auth_gated_issues`, so **no mode** dispatches it to `fix-auto`. An independent edge FAIL still takes precedence over the gated main flow, mints its own issue and can reach the fixer; an edge `NEED_INFO` takes precedence over `auth-unverified` too. A scenario that expected 401 and got 401 stays a normal enforcement PASS. Full `auth-unverified` verdicts appear under Not verified in Coverage, never earn PASS or trigger regressions, and appear in the report's Skip count solely as a presentation bucket.
 
-A scenario that *expected* 401 and got 401 stays a normal enforcement PASS.
-
-**Unlock-hints.** When scenarios are blocked or unverified, the Loop Summary shows a "Next steps to widen coverage" list keyed by reason:
+**Unlock hints.** When scenarios are blocked or unverified, the Loop Summary shows "Next steps to widen coverage" keyed by reason:
 
 - `mutation-guard` (N): re-run with `--allow-mutations` (test DB must be disposable)
-- `auth-unverified` (N): the app is auth-gated; `/qa:loop` verifies enforcement only; exercise authenticated behavior via the project's integration/e2e suite (no `--auth-token` intake in this version)
-- `tool-unavailable` (N): install/enable the missing tool (Playwright / curl / DB client)
+- `auth-unverified` (N): the app is auth-gated; exercise authenticated behavior via the project's integration/e2e suite (no `--auth-token` intake)
+- `need-info` (N): names/hosts from the current gap map by kind — set/start them, restart the harness, re-run
+- `tool-unavailable` (N): install/enable the missing tool
 - `dispatch-exhausted`: raise `--max-dispatches`
 
-**Reactive suggestions.** Post-baseline, if every BE scenario failed with a transport reason (connection refused / timeout), the loop prints: "no BE scenario returned an HTTP status at `<host:port>` — the dev stack may be down (or every endpoint is 5xx'ing)."
+**Reactive suggestions.** Post-baseline, when every BE scenario has `need-info kind=service` for its main flow, or every BE scenario failed with a transport reason and no response status, the loop suggests checking reachability without claiming an app crash.
 
-**T3 provisional guard.** Auto-generated plans now bias assertions toward observable invariants (non-5xx, no secret leak, auth-gate present). Where an exact value must be asserted that the generator could not observe, the scenario is marked **provisional**. In `--mode auto`, a failing provisional scenario is excluded from the fix-set (logged as "auto-generated assertion suspected; not auto-fixing — verify the plan") rather than driving `fix-auto` to edit correct source. In `approve`/`step`, it appears in the HITL gate flagged `⚠ auto-generated assertion — verify before fixing`.
+**Plan-suspect guards.** Auto-generated plans bias assertions toward observable invariants. A guessed-exact scenario remains provisional: its failures are flagged for human review and excluded from automatic fixes. Independently, an issue from any plan whose *failing assertion* is `(unverified — confirm at run time)` is flagged `⚠ unverified assertion — verify before fixing` in `approve`/`step`; `auto` excludes only that QA ID, leaving grounded issues in the same scenario eligible.
 
 **Deliberate split with `/qa:run`.** These coverage-honesty mechanisms are `/qa:loop`-only — `/qa:run` is a single-shot executor with no fix loop, so a wrong auto-generated assertion has no code to "fix" there. The split is intentional and accepted.
 
@@ -306,28 +302,42 @@ This allows reviewing and adjusting the test plan before execution.
 
 Plans are saved as Markdown with the following structure:
 
+- **Setup** (optional, directly after the title) — `**Base URL:**`, required environment-variable names, services to start manually and database connections; first backticked token on a line/bullet is the value the runner reads. Declare only names actually used by scenarios, never a credential or DSN value.
 - **Source** — diff origin (PR, branch, commits)
 - **Changes Summary** — what changed and what needs testing
+- **Blockers / Findings** — mandatory in generated plans, `None found.` if none; blocked scenarios may carry `**Blocked-by:** BLK-NN`, keeping their contract-correct expectation
 - **Detected Tools** — available testing tools (Playwright, curl, psql, MCP servers, etc.)
 - **FE Test Scenarios** (`FE-01`, `FE-02`, ...) — UI steps, expected results, edge cases
 - **BE Test Scenarios** (`BE-01`, `BE-02`, ...) — endpoint, method, payload, expected response, DB checks, edge cases
+- **Out of harness scope** (optional) — bullet-only unobservable checks with one-clause harness reasons, not FE/BE scenarios; code defects belong in Blockers
+
+Each main `**Expected:**` and edge-case expectation carries its own `(path:line)` citation for a producer that was read or `(unverified — confirm at run time)` when it could not be read. `(exact text — brittle)` asks the tester to match quoted text as a substring. Credentials in headers and steps are `$NAME` references declared under `## Setup → **Required environment variables:**`; never use a literal credential or a `TOKEN` placeholder. `**Required databases:**` lists env var names (including `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE`, `MYSQL_PWD` when using MySQL), or a human-declared `mcp__` server known to point to the test DB. `/qa:create-plan` does not invent an `mcp__` connection.
 
 ## Report Format
 
-Reports use the same issue format as the code-review plugin (`### [SEVERITY] QA-NNN: Title` heading with required fields `ID`, `Location`, `Category: Testing`, `Problem`, `Remediation`). This means `/fix QA-001` and `/fix-report` from the code-review plugin work directly on QA reports.
+Reports use the same issue format as the code-review plugin (`### [SEVERITY] QA-NNN: Title` heading with required fields `ID`, `Location`, `Category: Testing`, `Problem`, `Remediation`). This means `/fix QA-001` and `/fix-report` from the code-review plugin work directly on QA reports. The Summary counts `Total | Pass | Fail | Skip | Need info` by full scenario verdict. Conditional `## Setup gaps` (after Summary) lists missing names/URLs by kind and scenario ID, including edge gaps, with no issues minted for missing prerequisites.
+
+```markdown
+## Summary
+- Total: N | Pass: N | Fail: N | Skip: N | Need info: N
+
+## Setup gaps
+- credentials: `QA_API_TOKEN` — BE-03 (edge 1)
+```
 
 Example issue:
 
 ```markdown
-### [HIGH] QA-001: POST /api/users returns 500 instead of 201
+### [CRITICAL] QA-001: POST /api/users returns 500 instead of 201
 
 **ID:** QA-001
 **Location:** `src/api/users.py:45`
 **Category:** Testing
 
 **Problem:**
-- Expected: POST /api/users with valid body should return 201 and create the user.
+- Expected: POST /api/users with valid body should return 201 and create the user. (src/api/users.py:45)
 - Actual: Endpoint returns 500 with `KeyError: 'email'` raised in `users.py:48`.
+- Refutation: re-verified: yes (state re-read, no re-fire); env: n/a; scope: in; harness: ok
 
 **Impact:**
 Blocks new account creation.
@@ -345,10 +355,12 @@ QA-specific extras (`Scenario`, `Response`, `Screenshot`) are kept for testing c
 
 | Severity | Criteria |
 |----------|----------|
-| CRITICAL | Server crash, data loss, security bypass |
+| CRITICAL | HTTP 500, server crash, data loss, security bypass |
 | HIGH | Wrong status code, incorrect data returned |
 | MEDIUM | Degraded UX, missing validation feedback |
 | LOW | Cosmetic issues, minor text problems |
+
+An issue whose failing assertion is tagged `(unverified — confirm at run time)` is LOW unless an observed HTTP status ≥ 500 or a crash/stack trace invokes the normal severity rules. The issue's Expected bullet retains the plan's tag verbatim; when a scenario has `**Blocked-by:** BLK-NN`, Location is the blocker's `(file:line)` and Actual identifies the blocker.
 
 ## Synergy with code-review
 
@@ -378,16 +390,17 @@ The plugin detects available tools at plan creation and re-validates before exec
 | Playwright MCP | FE testing (navigation, clicks, forms) | MCP tool availability |
 | curl / httpie | API requests | `command -v` |
 | psql / sqlite3 / mysql | Database verification (CLI) | `command -v` |
-| Database MCP servers | Database verification (pre-configured) | MCP tool availability |
+| Database MCP servers | DB verification only if declared in `## Setup → **Required databases:**` as bound to the test DB | MCP tool availability |
+| perl with `JSON::PP` | Fail-closed BE response sanitiser | `perl -MJSON::PP -e 1` |
 | jq | JSON response parsing | `command -v` |
 
-**Database access priority:** MCP server > CLI client > SKIP
+**Database access:** a tester uses only a connection named under `## Setup → **Required databases:**` — a declared `mcp__` server, or declared env-var connection names with the corresponding CLI client. A preconfigured but undeclared MCP server is never selected. With no declared connection or an unavailable DB client, only the `**DB check:**` field is SKIP; a runnable HTTP request still executes.
 
-If a required tool is unavailable, affected scenarios are marked as SKIP (not FAIL).
+If a required browser, HTTP client or `perl`/`JSON::PP` is unavailable at run time, affected scenarios return `NEED_INFO kind=tool` and appear under `## Setup gaps`, not SKIP. An unavailable tool is recorded under `## Detected Tools` during plan authoring; plans do not label their scenarios `(skip — <tool> unavailable)`.
 
 ## Skills
 
-The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, `report-format`, and `test-plan-format` load with the plugin; `fe-testing` and `be-testing` are scoped to the `qa:fe-tester` and `qa:be-tester` agents and load on demand inside them (declared via `skills:` in each agent's frontmatter), not ambiently across the plugin.
+The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, `report-format`, and `test-plan-format` load with the plugin; `state-combination-planning` is loaded conditionally in `/qa:create-plan` for two or more independent boolean inputs. `fe-testing` and `be-testing` are scoped to the `qa:fe-tester` and `qa:be-tester` agents and load on demand inside them (declared via `skills:` in each agent's frontmatter), not ambiently across the plugin.
 
 | Skill | Loaded | Purpose |
 |-------|--------|---------|
@@ -395,11 +408,14 @@ The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, 
 | `reader-context-hygiene` | With plugin | Doctrine for authoring fan-out reader/scout agents — bulk evidence to disk, decision-relevant signals inline, fail-closed on access failure, declared truncation. |
 | `report-format` | With plugin | Test report format with `QA-XXX` issue IDs, compatible with the code-review plugin. |
 | `test-plan-format` | With plugin | Test plan structure produced by `/qa:create-plan` and consumed by `/qa:run` and `/qa:loop`. |
+| `state-combination-planning` | `/qa:create-plan` on demand | Enumerates the $2^N$ combinations of independent boolean inputs and records a scenario or disposition for each row. |
 | `fe-testing` | `qa:fe-tester` agent | Frontend test-execution guidance using Playwright MCP — navigation, interaction, assertions, and screenshots on failure. |
 | `be-testing` | `qa:be-tester` agent | Backend test-execution guidance — API request construction, response verification, database state checks, error-path testing, and adaptive CLI/MCP tool detection. |
 
 <a id="upgrade-notes"></a>
 ## Upgrade Notes
+
+**`qa` 2.7.0:** Runtime base URLs no longer come from `.env` or project config: declare `**Base URL:**` under `## Setup`, provide a URL in the plan's Source/scenarios, or set `QA_BASE_URL`. Declare credentials under `## Setup` and reference them as `$NAME` in scenarios; testers no longer read `.env` or mint tokens outside explicit scenario steps. Export declared env vars in the shell that **launches** the harness; missing ones abort before tester dispatch, and changes require a restart. DB checks use only declared connections — an available MCP server is no longer picked up automatically, and MySQL needs `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE` and `MYSQL_PWD`. A missing browser or HTTP client now returns `NEED_INFO kind=tool` rather than SKIP, and reports count Need info separately with a conditional `## Setup gaps` section. Screenshots are `<ID>-fail.png`; backend response dumps are `<ID>-body.json`. BE responses pass through a fail-closed sanitiser that withholds non-JSON and bare-string bodies; `perl` with `JSON::PP` is now required for BE testing. The loop prompts to retry/continue/abort on baseline setup gaps in interactive modes, and does not auto-fix unverified assertions or auth-gated main-flow issues.
 
 **`qa` 2.6.0 pairs with `code-review` ≥ 2.0.0 wherever a shared report carries a decision-stage rejection.** That is the precondition, and it is worth stating plainly: `**Fix-policy:** needs-decision` is emitted by `code-review`'s own producers alone — today, reports written by `/review` — while `/qa:run` and `/qa:loop` never write the field, and an absent field is `auto` by both fix commands' fail-safe. A report this plugin produces therefore cannot presently reach the decision gate, and cannot acquire a `🚫 Rejected` status or any of the loop-written decision fields. `qa` 2.6.0's handling of them is **forward compatibility** for a schema the QA producers do not yet emit.
 
@@ -407,10 +423,12 @@ Where the state does arise — a `/review` report fed through the decision stage
 
 ## Prerequisites
 
-- **Server must be running** — the plugin does not start/stop application servers
-- **Database must be accessible** — for DB verification scenarios
-- **Playwright MCP** — required for FE testing in Claude Code (FE scenarios are skipped without it); Oh My Pi uses its built-in browser instead, see [Oh My Pi](#oh-my-pi)
-- **HTTP client** — at least `curl` or `httpie` for BE testing (BE scenarios are skipped without either)
+- **Server must be running** — the plugin does not start/stop application servers; declare bring-up under `## Setup → **Required services:**`
+- **Declared env vars** — export names under `## Setup` in the shell that launches the harness; restart the harness after changing them
+- **Database connection** — for DB verification, declare its env var names or test-DB-bound `mcp__` server under `## Setup → **Required databases:**`; otherwise the DB check is SKIP
+- **Playwright MCP** — required for FE testing in Claude Code (without it FE scenarios return `NEED_INFO kind=tool`); Oh My Pi uses its built-in browser instead, see [Oh My Pi](#oh-my-pi)
+- **HTTP client** — at least `curl` or `httpie` for BE testing (without either BE scenarios return `NEED_INFO kind=tool`)
+- **perl with `JSON::PP`** — required by the fail-closed BE response sanitiser (without it BE scenarios return `NEED_INFO kind=tool`)
 
 ## Oh My Pi
 
@@ -418,6 +436,6 @@ Install with `omp plugin install qa@av-marketplace`. If you added the marketplac
 
 Both `qa:fe-tester` and `qa:be-tester` run through the `tester` model role (`modelRoles.tester` in `~/.omp/agent/config.yml`). Without that mapping, OMP falls back to the `opus` selector, then to the session model.
 
-In OMP, FE scenarios use `eval`'s `browser` global, which runs in the browser OMP's settings select (managed Chromium only when no relay, CDP URL, or cmux browser is selected), not Playwright MCP. For QA runs, set `browser.relay` and `browser.cmux` to `false` and unset `browser.cdpUrl` so scenarios do not use your own or an attached browser. FE testing needs `browser.enabled` in place of Playwright MCP: with it off, `eval` has no `browser` global and the FE tester reports every FE scenario as SKIP with the reason "Playwright MCP unavailable". With `browser.enabled` (on by default), OMP removes Playwright MCP servers from the session; no Playwright MCP setup is needed, and a configured `@playwright/mcp` server is not used. BE scenarios use the same CLI clients as in Claude Code. OMP gives every subagent all MCP servers configured for the session, so both `qa:fe-tester` and `qa:be-tester` can call any of them (a `tools:` list cannot narrow this). Before running `/qa:run` or `/qa:loop` against code you do not trust, remove write-capable MCP servers from the OMP config. Screenshots of failed FE scenarios go to `docs/testing/reports/screenshots/`.
+In OMP, FE scenarios use `eval`'s `browser` global, which runs in the browser OMP's settings select (managed Chromium only when no relay, CDP URL, or cmux browser is selected), not Playwright MCP. For QA runs, set `browser.relay` and `browser.cmux` to `false` and unset `browser.cdpUrl` so scenarios do not use your own or an attached browser. FE testing needs `browser.enabled` in place of Playwright MCP: with it off, `eval` has no `browser` global and the FE tester returns `NEED_INFO` (kind `tool`) for every FE scenario. With `browser.enabled` (on by default), OMP removes Playwright MCP servers from the session; no Playwright MCP setup is needed, and a configured `@playwright/mcp` server is not used. Credential fields are filled from `process.env` inside a JavaScript `eval` cell, keeping the values out of the tester's output; OMP's Python eval kernel allow-lists its environment and does not carry `QA_*` names. BE scenarios use the same CLI clients as in Claude Code. OMP gives every subagent all MCP servers configured for the session, so both `qa:fe-tester` and `qa:be-tester` can call any of them (a `tools:` list cannot narrow this); the BE tester uses only DB connections declared in `## Setup`. Before running `/qa:run` or `/qa:loop` against code you do not trust, remove write-capable MCP servers from the OMP config. Screenshots of failed FE scenarios go to `docs/testing/reports/screenshots/`.
 
 `/qa:loop` dispatches `code-review:fix-auto` and requires `code-review@av-marketplace` to be installed. In OMP, `/fix QA-001` is `/code-review:fix QA-001`, and `/fix-report` is `/code-review:fix-report`.
