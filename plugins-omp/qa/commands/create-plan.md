@@ -33,8 +33,8 @@ Parse the argument to determine the source of changes:
 |----------|---------------|
 | (empty) | Default: check for open PR on current branch, fallback to branch diff |
 | `#123` or `PR #123` | Diff from PR #123 |
-| `feature/xyz` | Diff of branch `feature/xyz` vs main |
-| `ten branch` / `this branch` / `current branch` | Diff of current branch vs main |
+| `feature/xyz` | Diff of branch `feature/xyz` vs resolved base branch |
+| `ten branch` / `this branch` / `current branch` | Diff of current branch vs resolved base branch |
 | `last N commits` / `ostatnie N commitów` | Diff of last N commits |
 | `staged` / `staged changes` | Staged changes only |
 
@@ -59,6 +59,19 @@ Create the following tasks immediately:
 
 **Task Update:** Mark task 1 as `in_progress`.
 
+Resolve the base branch **once** before either diff path (including when an argument is supplied):
+
+```bash
+BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+BASE=${BASE#origin/}
+if [ -z "$BASE" ]; then
+  if git show-ref --verify --quiet refs/heads/main; then BASE=main
+  elif git show-ref --verify --quiet refs/heads/master; then BASE=master
+  else BASE=main
+  fi
+fi
+```
+
 **Default behavior (no argument):**
 
 1. Check if current branch has an open PR:
@@ -73,14 +86,13 @@ gh pr diff <number>
 
 3. If no PR, get branch diff:
 ```bash
-MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
-git diff $MAIN_BRANCH...HEAD
+git diff "$BASE"...HEAD
 ```
 
 **With argument:**
 
 - PR number: `gh pr diff <number>`
-- Branch name: `git diff $MAIN_BRANCH...<branch>`
+- Branch name: `git diff "$BASE"...<branch>` (including `this branch` / `current branch` as `HEAD`)
 - Last N commits: `git diff HEAD~N...HEAD`
 - Staged changes: `git diff --staged`
 
@@ -90,7 +102,9 @@ Also get the list of changed files:
 gh pr diff <number> --name-only
 
 # For branch
-git diff --name-only $MAIN_BRANCH...HEAD
+git diff --name-only "$BASE"...HEAD
+# For a named branch argument
+git diff --name-only "$BASE"...<branch>
 
 # For last N commits
 git diff --name-only HEAD~N...HEAD
@@ -100,6 +114,10 @@ git diff --name-only --staged
 ```
 
 **Task Update:** Mark task 1 as `completed`, task 2 as `in_progress`.
+
+### Step 2.5: Pin the intended contract
+
+Under progress task 2 (Analyze changes), before observing runtime behavior, list the intended success path and **every declared error path**, including the status each should return. Derive this contract only from specification sources: PR/issue text, docstrings, declared error types and route decorators in the changed code, and linked design docs. Read what the code is trying to express; never turn a live call's observed status into its intended expectation. If the code or runtime later contradicts this contract, record a Blocker in Step 4.5 rather than rewriting the expectation.
 
 ### Step 3: Analyze Changes
 
@@ -135,6 +153,21 @@ Read related files to understand the full picture:
    - OpenAPI/Swagger spec: look for `openapi.json`, `openapi.yaml`, `swagger.json`, `swagger.yaml` in root or `docs/`
    - README files in affected directories
 5. **Check existing tests** — understand what's already tested and what's missing
+6. **Grounding precondition:** cite `(path:line)` only for a file actually read in this working tree. If the producer is not on disk (foreign PR, pasted diff), tag the assertion `(unverified — confirm at run time)` instead. When the source is on disk, read it; an unverified assertion on readable source is a defect. Verify framework defaults the change touches (auth statuses, rate-limit semantics, error-to-status mapping) against the installed dependency version in the tree, never from memory. Tests corroborate only what they actually assert, not adjacent response details.
+
+### Step 4.5: Scan for blockers
+
+Under progress task 3 (Gather context), compare the intended contract from Step 2.5 with the changed code and its dependencies. Scan for:
+- Debug/test artifacts: unconditional `sleep`, `if True:` short-circuits, hardcoded returns, and `TODO`/`DEBUG`/`HACK`/`FIXME` markers.
+- Disabled or commented-out auth, entitlement or ownership guards, **even without a marker word**.
+- Contract contradictions: a path that cannot return its declared result.
+- Shippability hazards: leaked secrets and disabled authentication.
+
+Emit `## Blockers / Findings` after `## Changes Summary`, with `None found.` if none. A reversible blocker becomes a human prerequisite under `## Setup → **Required services:**` (or the applicable human Setup prerequisite); affected scenarios carry `**Blocked-by:** BLK-NN` directly below their headings and retain their contract-correct `**Expected:**`. Never call a code defect out of harness scope merely because it currently obstructs observation.
+
+### Step 4.6: Ground the test environment
+
+Still under progress task 3, read repository config **at plan-authoring time** to ground the base URL: a dev-server port in `vite.config.*`, `package.json` scripts, `docker-compose*.yml`, `Makefile`, README run instructions or the server entry point's bind address. Omit `**Base URL:**` if none is grounded; never guess a live endpoint. Read the project's test settings to identify **only the name** of a DB connection env var (`DATABASE_URL`, `SQLITE_DB` or the framework equivalent; MySQL requires `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE` and `MYSQL_PWD`). Never copy values from `.env` or emit an `mcp__` bullet; only a human who knows its target DB can declare an MCP connection. For authenticated scenarios, read the middleware/dependency that checks credentials, declare each required credential as a `$NAME` under Setup and use that name in the scenario. An existing test account is a human Setup prerequisite, not a value to put in the plan.
 
 **Task Update:** Mark task 3 as `completed`, task 4 as `in_progress`.
 
@@ -162,7 +195,11 @@ command -v mysql >/dev/null 2>&1 && echo "mysql: available" || echo "mysql: unav
 ```
 
 **Database MCP servers:**
-Check the available tools list for MCP servers that provide database access (e.g., `mcp__postgres`, `mcp__supabase`, `mcp__neon`, `mcp__mysql`, `mcp__mongodb`, `mcp__redis`). MCP servers are preferred over CLI clients — they're pre-configured with connection details.
+Check the available tools list for database MCP servers (e.g., `mcp__postgres`, `mcp__supabase`, `mcp__neon`, `mcp__mysql`, `mcp__mongodb`, `mcp__redis`) and record availability under `## Detected Tools`. A tester uses an MCP server **only** if a human declared that exact server under `## Setup → **Required databases:**` as bound to the test DB; otherwise it uses a declared env-var connection and CLI client, or skips only the DB check. Never prefer an undeclared MCP server merely because it is available.
+
+### Step 5.5: Conditional skill
+
+Under progress task 4 (Detect available tools), when the change's behavior is driven by ≥2 independent boolean inputs (feature flags, permissions, connection/loading states), load `Skill(skill: "state-combination-planning")` and apply it in Step 6. Put its full 2^N table above the affected scenarios with a disposition for every row.
 
 **Task Update:** Mark task 4 as `completed`, task 5 as `in_progress`.
 
@@ -176,18 +213,22 @@ Skill(skill: "test-plan-format")
 
 Using the skill's format, generate the test plan:
 
-1. Fill in the **Source** section with the resolved diff source
-2. Write the **Changes Summary** based on the analysis
-3. Fill in **Detected Tools** based on tool detection results
-4. Generate **FE Test Scenarios** (if FE changes detected):
-   - One scenario per changed component/page/feature
-   - Include concrete steps using actual UI element names from the code
-   - Include at least 2 edge cases per scenario
-5. Generate **BE Test Scenarios** (if BE changes detected):
-   - One scenario per changed endpoint
-   - Include actual API paths, methods, and payload structures from the code
-   - Include DB checks with actual table/column names
-   - Include at least 2 edge cases per scenario (error handling, auth, validation)
+1. Fill `## Setup` with the grounded Base URL, every env var name referenced by a scenario, human-required services and declared DB connections; omit unused labels or the whole section when unneeded. Never write a literal token, DSN or credential value.
+2. Fill in the **Source** section with the resolved diff source.
+3. Write the **Changes Summary** based on the analysis, then `## Blockers / Findings` from Step 4.5 (`None found.` if none).
+4. Fill in **Detected Tools** based on tool detection results, noting any available database MCP server without declaring its connection.
+5. Generate **FE Test Scenarios** (if FE changes detected):
+   - One scenario per changed component/page/feature; include concrete steps using actual UI element names from the code and at least 2 relevant edge cases.
+   - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag from Step 4 item 6. Credentials in form steps are declared `$NAME` references.
+6. Generate **BE Test Scenarios** (if BE changes detected):
+   - One scenario per changed endpoint; use actual API paths, methods, payloads and (where a connection is declared) DB checks with actual table/column names. Include at least 2 relevant edge cases (error handling, auth, validation).
+   - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag. Credentials in headers and payloads are declared `$NAME` references.
+7. Keep every step to browser actions / HTTP requests / DB queries against an already-running app. Bring-up belongs under `**Required services:**`; unobservable checks belong under `## Out of harness scope` with a one-clause harness reason and no FE/BE scenario heading. A code defect is a Blocker, not an out-of-scope check.
+8. For ≥2 independent boolean inputs, place the `state-combination-planning` 2^N table above the affected scenarios, with a scenario or a justified disposition for every row.
+
+### Step 6.5: Refute pass
+
+Under progress task 5 (Generate test plan), re-read every auth/status/rate-limit/error-mapping assertion, every `(unverified — confirm at run time)` tag and each `## Out of harness scope` bullet with intent to disprove it. Is the cited line the actual producer? Does the installed framework version behave as asserted? Can browser/HTTP/DB observe this effect after all? Correct false citations, unjustified guesses and harness-scope mistakes **before** saving the plan.
 
 **Task Update:** Mark task 5 as `completed`, task 6 as `in_progress`.
 
