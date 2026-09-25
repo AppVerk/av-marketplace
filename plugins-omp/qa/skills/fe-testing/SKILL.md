@@ -1,7 +1,7 @@
 ---
 name: "qa:fe-testing"
 description: Frontend testing patterns using Playwright MCP — navigation, interaction, assertions, screenshots on failure, and common UI testing scenarios.
-allowed-tools: mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_hover, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_navigate_back, mcp__plugin_playwright_playwright__browser_tabs, mcp__plugin_playwright_playwright__browser_handle_dialog, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_drag, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_file_upload, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, Write, Read, Bash(mkdir:*)
+allowed-tools: mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_hover, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_navigate_back, mcp__plugin_playwright_playwright__browser_tabs, mcp__plugin_playwright_playwright__browser_handle_dialog, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_drag, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_file_upload, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_run_code, Write, Read, Bash(mkdir:*), Bash(printf:*)
 ---
 
 # Frontend Testing Patterns
@@ -14,7 +14,12 @@ For each FE scenario from the test plan:
 2. **Execute main flow** — follow steps using Playwright MCP tools
 3. **Verify result** — take snapshot, check for expected elements/text
 4. **Execute edge cases** — run each edge case as a sub-test
-5. **Record result** — pass/fail with details
+5. **Record result** — PASS/FAIL/SKIP/NEED_INFO with details
+
+---
+## Tag handling (plan grounding tags)
+
+Handle `**Expected:**` and each edge-case expectation separately. Ignore `(path:line)` source citations when matching. `(unverified — confirm at run time)` still requires a `FAIL` on mismatch; carry the tag in the result so an issue minted from it is `LOW` unless a status ≥ 500 or a crash/stack trace was observed. `(exact text — brittle)` means quoted text is matched as a substring, not as equality.
 
 ---
 
@@ -45,8 +50,8 @@ browser_click(element: "Navigation menu item 'Settings'")
 **Filling forms:**
 ```
 browser_fill_form(formData: [
-  { ref: "email input", value: "test@example.com" },
-  { ref: "password input", value: "TestPass123!" }
+  { ref: "search input", value: "release notes" },
+  { ref: "category input", value: "docs" }
 ])
 ```
 
@@ -67,6 +72,15 @@ browser_press_key(key: "Enter")
 browser_press_key(key: "Escape")
 browser_press_key(key: "Tab")
 ```
+
+## Credentials in FE steps
+
+Never print env var values, headers, cookies or tokens in output, snapshots quoted in results, screenshots' descriptions or files. For presence, use the declared name literally: `[ -n "${QA_USER_PASSWORD:-}" ] && printf 'QA_USER_PASSWORD: OK\n' || printf 'QA_USER_PASSWORD: MISSING\n'`. Do not read `.env`, `.env.*`, `docker-compose*.yml` or framework config for values; do not call a login endpoint to mint credentials unless the scenario itself says to.
+
+- **OMP browser:** Fill credential fields inside a **JavaScript** `eval` cell using the inherited process environment, e.g. `await tab.fill(selector, process.env.QA_USER_PASSWORD)`. Never use a Python `eval` cell for credentials: its environment is allow-listed and may not contain `QA_*` values. Keep the value out of cell output.
+- **Claude Code Playwright MCP:** Read the value once with `printf '%s' "$QA_USER_PASSWORD"` and pass it straight to the fill tool; never echo it, quote it in Details or persist it. Prefer non-secret test accounts in FE plans.
+
+---
 
 ### Verification
 
@@ -108,7 +122,7 @@ browser_wait_for(selector: ".loading-spinner", state: "hidden", timeout: 10000)
 When a scenario fails (expected element not found, wrong text, error state):
 
 ```
-browser_take_screenshot()
+browser_take_screenshot(filename: "docs/testing/reports/screenshots/FE-02-fail.png")
 ```
 
 Save the screenshot:
@@ -116,8 +130,7 @@ Save the screenshot:
 mkdir -p docs/testing/reports/screenshots
 ```
 
-The screenshot is automatically captured by the tool. Reference it in your results as:
-`docs/testing/reports/screenshots/qa-<NNN>.png`
+The screenshot is automatically captured by the tool. Save it under the scenario ID exactly as written in the plan: `docs/testing/reports/screenshots/<ID>-fail.png` (for edge case n: `<ID>-edge<n>-fail.png`), e.g. `docs/testing/reports/screenshots/FE-02-fail.png`. Never use a timestamp or a QA issue number.
 
 **Do NOT take screenshots for passing tests** — they waste tokens and storage.
 
@@ -171,17 +184,44 @@ For each scenario, return results in this format:
 ### FE-XX: <scenario name>
 - **Status:** PASS / FAIL / SKIP
 - **Details:** <what was verified / what went wrong>
-- **Screenshot:** <path, only if FAIL>
+- **Refutation:** <required directly after Details if Status is FAIL; e.g. re-verified: yes (fresh snapshot, same result); env: n/a; scope: in; harness: ok>
+- **Screenshot:** docs/testing/reports/screenshots/FE-02-fail.png (only if FAIL)
 - **Edge cases:**
-  - <edge case 1>: PASS / FAIL — <details>
-  - <edge case 2>: PASS / FAIL — <details>
+  - <edge case 1>: PASS / FAIL / SKIP — <details; if FAIL, include refutation trace here>
+  - <edge case 2>: NEED_INFO — <kind>: <identifiers>
 ```
+
+If a missing prerequisite blocks the main flow, do not run edge cases; return exactly this block after the heading:
+
+```
+### FE-XX: <scenario name>
+- **Status:** NEED_INFO
+- **Kind:** credentials | service | fixture | tool
+- **Missing:** <comma-separated env var names, base URL/host, fixture table/row or file, or binary names; never values>
+- **Details:** <one line: what was attempted and what was absent; never a secret value>
+```
+
+An edge-only gap stays on the edge line; never change the main-flow status because of an edge-only gap. `SKIP` covers scenarios inapplicable to this stack, mutation-guard marks, out-of-harness steps, or harness errors with unknown outcomes.
+
+---
+
+## FAIL refutation battery (before returning any FAIL)
+
+A FAIL is a claim — refute it before reporting ANY scenario-level or edge-case `FAIL`.
+
+1. **Re-verify the observation — once, deterministically, observation-only.** Take one fresh `browser_snapshot()` or `browser_wait_for` for the expected text, then re-read. Never re-perform the action: no re-submit, no re-click through the flow. One re-check, not retry-until-pass. If the first read failed and the fresh snapshot passes, record both in Details and report `PASS` with `re-verified: first read stale`. **Carve-out:** an explicitly timing-sensitive Expected ("appears immediately", "without reload"), or a mismatch recurring on an edge-case interaction, remains `FAIL` because the discrepancy itself matters.
+2. **Environment artifact?** A required env var missing → `NEED_INFO kind=credentials`; the app never reachable in this scenario → `NEED_INFO kind=service, Missing: <base URL>`; missing seed/file → `NEED_INFO kind=fixture`; unavailable browser → `NEED_INFO kind=tool, Missing: playwright`. If the app loaded earlier in this same scenario and then died, report genuine `FAIL` (crash under test). An edge-only prerequisite gap stays on its edge line, leaving the main-flow PASS/FAIL untouched. Inapplicable scenario → `SKIP`. A wrong status or failed assertion → `FAIL`, not NEED_INFO.
+3. **Deliberate omission / scope mismatch?** An observed defect outside the scenario's Expected, while Expected itself is met, is `PASS` with the out-of-scope observation noted in Details. A missing prerequisite instead uses check 2.
+4. **Harness error?** A browser tool failure or timeout permits one retry **only** of a failed navigation, snapshot or browser-open step, and only if check 1 has not already rerun it: one rerun total per failing observation. Never replay a form submit or a write-triggering click. After an ambiguous action failure, read resulting state once (snapshot, GET or DB check); grade if the outcome is established, otherwise `SKIP` with `harness error: <detail>; outcome unknown, action not replayed`. If a read-only harness step fails again, report `SKIP — harness error: <detail>`, not application FAIL.
+
+**Disposition:** A surviving scenario FAIL carries `- **Refutation:** <trace>` directly after Details; an edge FAIL carries its trace inside that edge line's details clause. Example: `re-verified: yes (fresh snapshot, same result); env: n/a; scope: in; harness: ok`. Refuted FAILs become PASS, SKIP or NEED_INFO as the evidence demands. No branch replays a mutating action.
 
 ---
 
 ## Error Handling
 
-- If Playwright MCP is unavailable: mark ALL FE scenarios as SKIP with reason "Playwright MCP unavailable"
-- If a page doesn't load (timeout): mark scenario as FAIL, take screenshot, note the URL
-- If an element is not found: take snapshot, report what elements ARE visible, mark as FAIL
-- If the application shows an error page (500, crash): take screenshot, mark as FAIL with error details
+- Browser tool unavailable when FE scenarios apply → every scenario `NEED_INFO kind=tool, Missing: playwright`.
+- Page does not load → battery checks 1–2: never reachable in this scenario → `NEED_INFO kind=service, Missing: <base URL>`; loaded earlier then died → `FAIL`, screenshot and URL.
+- Element not found → one fresh snapshot, still missing → report visible elements and `FAIL` with a screenshot.
+- Error page / HTTP 500 → `FAIL` with screenshot; the app answered, so this is an app defect, not an absent service.
+- Starting/building the app, editing files, migrations and infrastructure inspection are out of harness scope. A step requiring them → `SKIP — out of harness scope: <step>`; only browser actions against an already-running app are executable.
