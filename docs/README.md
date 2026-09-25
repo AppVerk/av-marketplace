@@ -14,6 +14,7 @@
 - [QA](plugins/qa.md) — Automated QA testing: code-change analysis, FE/BE test plans, Playwright + API/DB execution, code-review-compatible reports
 - [Security Pipeline](plugins/security-pipeline.md) — CI/CD security scanning setup (Semgrep SAST + TruffleHog)
 - [Simple Language](plugins/simple-language.md) — Scannable, plain-language replies and documents, active from session start
+- [AV Dev](plugins/av-dev.md) — Repo-configured agent workflow: setup, plan, implement, review, verify, docs sync
 - [Superutils](plugins/superutils.md) — Bounded spec triage: lens panel, challengers for criticals, approve-gated fix batches, verification of applied edits
 - [Web Auditor](plugins/web-auditor.md) — Comprehensive web audit: security, SEO, performance, compliance
 

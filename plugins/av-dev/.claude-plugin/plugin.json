@@ -1,0 +1,5 @@
+{
+  "name": "av-dev",
+  "description": "Agent workflow for any repo: av-setup scans the repo and writes a team config, AI docs, per-skill overlays and role skills; av-plan, av-implement, av-review, av-verify and av-docs-sync then plan, implement, review and verify with evidence-backed gates. Pipeline slots run on Claude or Codex models with per-slot effort; a gitignored local config overrides team settings per machine.",
+  "version": "0.2.0"
+}
