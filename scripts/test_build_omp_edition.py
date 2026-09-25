@@ -321,6 +321,13 @@ class TestGenerated(unittest.TestCase):
             "agent missing description": (AGENT.replace("description: Does work\n", ""), "agent needs name and description"),
             "denied tool": (AGENT.replace("skills: review", "disallowedTools: Bash\nskills: review"), "are in disallowedTools"),
             "unknown denied tool": (AGENT.replace("skills: review", "disallowedTools: Mystery\nskills: review"), "no OMP mapping for tool"),
+            "MCP denial": (
+                AGENT.replace(
+                    "skills: review",
+                    "disallowedTools: mcp__postgres, mcp__postgres__query\nskills: review",
+                ),
+                "MCP entries in disallowedTools cannot be enforced in OMP",
+            ),
             "unknown autoload skill": (AGENT.replace("skills: review", "skills: gone"), "autoload skills"),
             "missing frontmatter": ("name: worker\n", "missing frontmatter"),
             "unterminated frontmatter": ("---\nname: worker\n", "unterminated frontmatter"),
@@ -349,6 +356,30 @@ class TestGenerated(unittest.TestCase):
                 put_json(source / "omp/overlay/sample.json", {"plugin": "sample", "agents": agents})
                 with self.assertRaisesRegex(BuildError, error):
                     build(root / "output", source)
+
+    def test_drops_mcp_grants_from_agent_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            agent_path = source / "plugins/sample/agents/worker.md"
+            put(
+                agent_path,
+                AGENT.replace(
+                    "tools: Read, Bash",
+                    "tools: Read, mcp__postgres, mcp__postgres__*, "
+                    "mcp__plugin_playwright_playwright__browser_navigate, Bash",
+                ),
+            )
+
+            build(root / "output", source)
+            agent = (root / "output/plugins-omp/sample/agents/worker.md").read_text()
+            self.assertIn("tools: read, bash\n", agent)
+            self.assertNotIn("mcp__", agent)
+
+            put(agent_path, AGENT.replace("tools: Read, Bash", "tools: mcp__postgres, mcp__postgres__*"))
+            with self.assertRaisesRegex(BuildError, "declared tools map to no usable OMP tools"):
+                build(root / "output", source)
 
     def test_rejects_invalid_overlay_role_tools_and_thinking(self):
         cases = {
@@ -386,6 +417,19 @@ class TestGenerated(unittest.TestCase):
             self.assertIn('model: "@executor"', agent)
             self.assertIn("tools: read, bash, ast_edit", agent)
             self.assertIn("thinking-level: high", agent)
+
+    def test_accepts_tester_role(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            put_json(source / "omp/overlay/sample.json", {
+                "plugin": "sample", "agents": {"worker": {"role": "tester"}},
+            })
+
+            build(root / "output", source)
+            agent = (root / "output/plugins-omp/sample/agents/worker.md").read_text()
+            self.assertIn('model: "@tester"', agent)
 
     def test_rejects_agent_restrictions_that_would_become_unrestricted(self):
         cases = {

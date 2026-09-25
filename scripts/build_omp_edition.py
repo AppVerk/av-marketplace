@@ -27,6 +27,8 @@ catalog.
 
 Every mapping is total: an unknown source entry, tool, frontmatter key, or an
 agent without an overlay entry fails the build instead of disappearing silently.
+The one prefix rule is `mcp__`: MCP grants in an agent's `tools:` are dropped,
+because an OMP subagent receives the session's MCP tools whatever its `tools:` says.
 
 Usage:
     python3 scripts/build_omp_edition.py          # (re)generate
@@ -64,9 +66,10 @@ NATIVE_AGENT_KEYS = {
     "name", "description", "tools", "spawns", "model", "thinking-level", "output",
     "blocking", "autoloadSkills", "read-summarize", "prewalk", "advisor",
 }
-# Project model roles documented in README (including the plan-mode role).
-# These are user-configurable OMP aliases, not a list of OMP built-in models.
-MODEL_ROLES = {"code_review", "executor", "challenger", "analyst", "plan"}
+# Project model roles documented in README (including the plan-mode role);
+# `tester` runs the QA testers. These are user-configurable OMP aliases, not
+# a list of OMP built-in models.
+MODEL_ROLES = {"code_review", "executor", "challenger", "analyst", "plan", "tester"}
 # OMP_TOOLS mirrors OMP's tools/builtin-names.ts; scripts/check_omp_tools.py
 # verifies the names against an installed OMP package in CI.
 OMP_TOOLS = {
@@ -78,6 +81,13 @@ OMP_TOOLS = {
 }
 # OMP parses these values via parseConfiguredThinkingLevel.
 THINKING_LEVELS = {"inherit", "off", "min", "low", "medium", "high", "xhigh", "max", "auto"}
+
+# Claude MCP grants (`mcp__<server>`, `mcp__<server>__*`,
+# `mcp__<server>__<tool>`) are dropped: OMP task-spawned subagents receive
+# every session MCP tool regardless of `tools:` (OMP src/sdk.ts, custom tools
+# are always included), so a grant cannot be expressed there. The preamble
+# tells the model.
+MCP_GRANT_PREFIX = "mcp__"
 
 # Claude Code tool name -> OMP tool name. None = no equivalent; dropped on
 # purpose (the preamble tells the model what replaces it).
@@ -177,6 +187,8 @@ def map_tools(raw: str, origin: Path) -> list[str]:
             continue
         scoped = SCOPED_GRANT.match(token)
         name = scoped.group("tool") if scoped else token
+        if name.startswith(MCP_GRANT_PREFIX):
+            continue
         if name not in TOOL_MAP:
             raise BuildError(f"{origin}: no OMP mapping for tool {token!r}")
         target = TOOL_MAP[name]
@@ -238,6 +250,14 @@ def build_agent(
             tools.append(extra)
     # OMP's `tools:` is an allowlist, so `disallowedTools` has nothing to say
     # there — but the denial must still hold after mapping and overlay extras.
+    if any(
+        token.strip().startswith(MCP_GRANT_PREFIX)
+        for token in fields.get("disallowedTools", "").split(",")
+    ):
+        raise BuildError(
+            f"{src}: MCP entries in disallowedTools cannot be enforced in OMP "
+            "(subagents receive every session MCP tool)"
+        )
     denied = set(map_tools(fields.get("disallowedTools", ""), src)) & set(tools)
     if denied:
         raise BuildError(f"{src}: granted tools {sorted(denied)} are in disallowedTools")
