@@ -67,4 +67,4 @@ The set for `references/eval.md`.
 | 2 | DQL or SQL query concatenated with a request parameter instead of a bound parameter | Security |
 | 3 | `flush()` in a loop or a query in a loop (N+1) over a list of entities | Doctrine and data |
 | 4 | internal entity field added to an API response serialization group | API contract |
-| 5 | Messenger handler that awards points a second time on retry | Asynchrony |
+| 5 | Messenger handler that applies a side effect (e.g. a credit or an e-mail) a second time on retry | Asynchrony |

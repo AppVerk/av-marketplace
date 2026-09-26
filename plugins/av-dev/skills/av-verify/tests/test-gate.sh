@@ -163,9 +163,9 @@ good="$TMP/good.json"
 jq 'del(.validation.gates.broken)
     | .agents = {"models": {"plan": "inherit", "implement": "opus", "review": "sonnet", "verify": "fable"}}
     | .git = {"commit": "on-request", "push": "never"}
-    | .roles = [{"name": "data", "skill": "ios-data", "order": 1, "globs": ["src/api/**", "src/db/*.swift"]},
-                {"name": "ui", "skill": "ios-ui", "order": 2, "globs": ["src/ui/**"]}]
-    | .generatedPaths = ["Pods/**"] | .unownedPaths = ["scripts/**"]' .ai/av.config.json >"$good"
+    | .roles = [{"name": "data", "skill": "backend-data", "order": 1, "globs": ["src/api/**", "src/db/*.py"]},
+                {"name": "ui", "skill": "web-ui", "order": 2, "globs": ["src/ui/**"]}]
+    | .generatedPaths = ["vendor/**"] | .unownedPaths = ["scripts/**"]' .ai/av.config.json >"$good"
 out="$(bash "$GATE" --config "$good" --list)"; rc=$?
 has "$out" "CONFIG_ERROR" && fail "validation: valid config rejected: $out" || ok
 has "$out" "AV_DEV " && ok || fail "validation: AV_DEV line missing"
@@ -188,7 +188,7 @@ bad_case '.roles[0].globs = ["a", 3]' "roles[0].globs: element 3 is not a string
 bad_case 'del(.roles[1].skill)' "roles[1].skill: expected a non-empty string" "skill missing"
 bad_case '.roles[0].name = 7' "roles[0].name: expected a non-empty string" "name not a string"
 bad_case '.roles = {"a": 1}' "roles: expected an array of objects" "roles not an array"
-bad_case '.generatedPaths = "Pods/**"' "generatedPaths: expected an array of strings" "generatedPaths"
+bad_case '.generatedPaths = "vendor/**"' "generatedPaths: expected an array of strings" "generatedPaths"
 bad_case '.unownedPaths = [1]' "unownedPaths: expected an array of strings" "unownedPaths"
 bad_case '.agents.models.review = {"provider": "claude", "model": "haiku"}' "agents.models.review: haiku cannot do review" "review haiku in an object"
 bad_case '.agents.models.plan = {"provider": "gemini", "model": "x"}' "agents.models.plan.provider: invalid value \"gemini\"" "unknown provider"

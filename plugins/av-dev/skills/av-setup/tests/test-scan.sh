@@ -22,14 +22,18 @@ commit() {
 # MARK: iOS
 IOS="$TMP/ios app"
 init_repo "$IOS"
-mkdir -p "$IOS/App.xcodeproj" "$IOS/App.xcworkspace" "$IOS/App/Domains/Login_" "$IOS/App/Domains/Home_" \
-  "$IOS/App/Domains/Rewards_" "$IOS/AppTests" "$IOS/App/Firebase/test" "$IOS/.ai/workspace" "$IOS/.claude/agents" "$IOS/scripts"
-printf 'objects = { PBXGroup };\n' >"$IOS/App.xcodeproj/project.pbxproj"
+# Stack markers for iOS detection: Demo.xcodeproj, Demo.xcworkspace, Podfile, src/Demo/Main.swift.
+mkdir -p "$IOS/Demo.xcodeproj" "$IOS/Demo.xcworkspace" "$IOS/src/Demo" "$IOS/core/Modules/Billing" "$IOS/core/Modules/Orders" \
+  "$IOS/core/Modules/Profile" "$IOS/DemoTests" "$IOS/config/env/test" "$IOS/.ai/workspace" "$IOS/.claude/agents" "$IOS/scripts"
+printf 'objects = { PBXGroup };\n' >"$IOS/Demo.xcodeproj/project.pbxproj"
 printf "platform :ios, '15.0'\n" >"$IOS/Podfile"
-for m in Login_ Home_ Rewards_; do printf 'import UIKit\n' >"$IOS/App/Domains/$m/V.swift"; done
-printf 'import XCTest\n' >"$IOS/AppTests/T.swift"
-printf '{}' >"$IOS/App/Firebase/test/GoogleService-Info.plist"
-printf '# CLAUDE.md\n\nZasady pracy z repozytorium w języku polskim: żółć, ćma, łódź, źrebię, ślimak, gęś, pąk. Każdy moduł ma opis. Zależności są w pliku. Reguły są krótkie i jasne. Gałąź bazowa to develop.\n\n## Git\n\n```sh\nscripts/build.sh\n```\n\n```swift\nlet x = 1\n```\n' >"$IOS/CLAUDE.md"
+printf 'let x = 1\n' >"$IOS/src/Demo/Main.swift"
+printf 'package billing\n' >"$IOS/core/Modules/Billing/invoice.go"
+printf 'export const list = [];\n' >"$IOS/core/Modules/Orders/list.ts"
+printf 'def load():\n    pass\n' >"$IOS/core/Modules/Profile/service.py"
+printf 'def test_load():\n    pass\n' >"$IOS/DemoTests/test_service.py"
+printf '{}' >"$IOS/config/env/test/settings.json"
+printf '# CLAUDE.md\n\nZasady pracy z repozytorium w języku polskim: żółć, ćma, łódź, źrebię, ślimak, gęś, pąk. Każdy moduł ma opis. Zależności są w pliku. Reguły są krótkie i jasne. Gałąź bazowa to develop.\n\n## Git\n\n```sh\nscripts/build.sh\n```\n\n```python\nx = 1\n```\n' >"$IOS/CLAUDE.md"
 ln -s CLAUDE.md "$IOS/AGENTS.md"
 printf -- '---\nname: reviewer\n---\n' >"$IOS/.claude/agents/reviewer.md"
 printf '#!/bin/bash\n# Builds the app.\n' >"$IOS/scripts/build.sh"
@@ -49,23 +53,23 @@ EOF
 printf '"""Records fixtures.\n\nExit codes: 0 ok, 2 no network.\n"""\nprint("REC_OK")\n' >"$IOS/scripts/rec.py"
 printf '.ai/workspace/\n.env\n' >"$IOS/.gitignore"
 printf 'SECRET=1\n' >"$IOS/.env"
-commit "$IOS" "NKR-1 add login"
+commit "$IOS" "OPS-1 add billing"
 git -C "$IOS" checkout -q -b develop
-git -C "$IOS" checkout -q -b feature/NFI-2-home
-printf '//\n' >>"$IOS/App/Domains/Home_/V.swift"; commit "$IOS" "NFI-2 fix home"
+git -C "$IOS" checkout -q -b feature/PROJ-2-orders
+printf '//\n' >>"$IOS/core/Modules/Orders/list.ts"; commit "$IOS" "PROJ-2 fix orders"
 git -C "$IOS" checkout -q develop
-git -C "$IOS" merge -q --no-ff feature/NFI-2-home -m "Merged in feature/NFI-2-home (pull request #1)"
+git -C "$IOS" merge -q --no-ff feature/PROJ-2-orders -m "Merged in feature/PROJ-2-orders (pull request #1)"
 
 out="$TMP/ios.json"
 bash "$SCAN" "$IOS" >"$out"
 check "$out" '.stacks[0].id == "ios-uikit" and .stacks[0].cocoapods and (.stacks[0].xcode_synchronized_groups | not)' "ios: stack"
 check "$out" '.git.base_branch_guess == "develop"' "ios: base develop"
-check "$out" '.git.ticket_prefixes.NFI >= 1 and .git.ticket_prefixes.NKR >= 1' "ios: prefixes"
-check "$out" '.git.merged_branch_names | index("feature/NFI-2-home") != null' "ios: merged branch"
+check "$out" '.git.ticket_prefixes.PROJ >= 1 and .git.ticket_prefixes.OPS >= 1' "ios: prefixes"
+check "$out" '.git.merged_branch_names | index("feature/PROJ-2-orders") != null' "ios: merged branch"
 check "$out" '.git.branch_types_seen == ["feature"]' "ios: branch types"
 check "$out" '.doc_language_guess == "pl"' "ios: language pl"
-check "$out" '.module_candidates | map(select(.pattern == "*/Domains/*")) | .[0].count == 3' "ios: modules"
-check "$out" '.tests.dirs == ["AppTests"]' "ios: test dirs without Firebase/test"
+check "$out" '.module_candidates | map(select(.pattern == "*/Modules/*")) | .[0].count == 3' "ios: modules"
+check "$out" '.tests.dirs == ["DemoTests"]' "ios: test dirs without config/env/test"
 check "$out" '.ai_setup["AGENTS.md"].symlink_to == "CLAUDE.md"' "ios: symlink AGENTS"
 check "$out" '.ai_setup.orchestration == true' "ios: orchestration from agents"
 check "$out" '.ai_setup.gitignore_ai == [".ai/workspace/"]' "ios: gitignore patterns"
@@ -74,17 +78,17 @@ check "$out" '.commands.scripts_dir[0].doc == "Builds the app."' "ios: script de
 check "$out" '.commands.scripts_meta | map(select(.path == "scripts/unit_test.sh")) | .[0] | .exit_codes_doc == "Kod wyjscia: 0 gdy zielone, 1 gdy test czerwony, 2 przy niedostepnym srodowisku." and .status_tokens == ["ENV_DOWN", "UNIT_OK"]' "ios: script exit codes and statuses (Polish)"
 check "$out" '.commands.scripts_meta | map(select(.path == "scripts/rec.py")) | .[0] | .exit_codes_doc == "Exit codes: 0 ok, 2 no network." and .status_tokens == ["REC_OK"]' "ios: python docstring"
 check "$out" '.commands.scripts_meta | map(.path) | index("scripts/build.sh") == null' "ios: script without result description skipped"
-check "$out" '.commands.documented_commands == [{"doc": "CLAUDE.md", "cmd": "scripts/build.sh"}]' "ios: commands from docs without swift block"
+check "$out" '.commands.documented_commands == [{"doc": "CLAUDE.md", "cmd": "scripts/build.sh"}]' "ios: commands from docs without python block"
 check "$out" '.source_files >= 4' "ios: source files"
 grep -q 'SECRET=1' "$out" && fail "ios: secret value in output" || ok
 
 # MARK: Symfony with a frontend
 PHP="$TMP/php"
 init_repo "$PHP"
-mkdir -p "$PHP/src/Orders/Domain" "$PHP/src/Orders/Application" "$PHP/templates" "$PHP/metronic" "$PHP/tests/Unit"
+mkdir -p "$PHP/src/Orders/Domain" "$PHP/src/Orders/Application" "$PHP/templates" "$PHP/web" "$PHP/tests/Unit"
 printf '{"require":{"php":">=8.4","symfony/framework-bundle":"7.4.*","symfony/messenger":"7.4.*","doctrine/orm":"^3"},"scripts":{"analyse":"phpstan","test":"phpunit","post-install-cmd":["x"]}}\n' >"$PHP/composer.json"
-printf '{"devDependencies":{"tailwindcss":"4","vite":"5"},"scripts":{"build":"vite build"}}\n' >"$PHP/metronic/package.json"
-touch "$PHP/metronic/yarn.lock"
+printf '{"devDependencies":{"tailwindcss":"4","vite":"5"},"scripts":{"build":"vite build"}}\n' >"$PHP/web/package.json"
+touch "$PHP/web/yarn.lock"
 printf '<?php\n' >"$PHP/tests/Unit/T.php"
 cat >"$PHP/bitbucket-pipelines.yml" <<'EOF'
 pipelines:
@@ -109,9 +113,9 @@ out="$TMP/php.json"
 bash "$SCAN" "$PHP" >"$out"
 check "$out" '.stacks | map(.id) == ["php-symfony", "node"]' "php: stacks"
 check "$out" '.stacks[0].ddd_layout == ["Application", "Domain"] and .stacks[0].messenger' "php: DDD and messenger"
-check "$out" '.stacks[1].dir == "metronic" and (.stacks[1].frontend_hints | index("tailwindcss") != null)' "php: frontend in a subdirectory"
+check "$out" '.stacks[1].dir == "web" and (.stacks[1].frontend_hints | index("tailwindcss") != null)' "php: frontend in a subdirectory"
 check "$out" '.commands.composer | has("analyse") and (has("post-install-cmd") | not)' "php: composer scripts"
-check "$out" '.commands["package.json:metronic"].runner == "yarn"' "php: runner from lockfile"
+check "$out" '.commands["package.json:web"].runner == "yarn"' "php: runner from lockfile"
 check "$out" '.commands.ci[0].steps[0] == {"section": "pull-requests:**", "name": "Analyse", "commands": ["composer install", "composer analyse"]}' "php: CI PR step"
 check "$out" '.commands.ci[0].steps[1].section == "custom:deploy"' "php: custom section"
 check "$out" '.commands.docker_compose == ["docker-compose.yml"]' "php: compose"

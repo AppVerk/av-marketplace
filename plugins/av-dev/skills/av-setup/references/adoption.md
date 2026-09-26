@@ -41,8 +41,8 @@ Typical mapping:
 | implementation and resume commands (`feature_implement`, `feature_continue`) | CONVERT | rules -> `av-implement.md` |
 | docs commands (`docs_update`, `docs_audit`) | CONVERT | code->docs map, audit perspectives -> `av-docs-sync.md` |
 | build command (`build`) | CONVERT | command -> `validation.commands.build` |
-| implementing agent (`backend-php`, `frontend-designer`, `js-specialist`, `ios-data-layer`, `ios-presentation`, `angular-developer`) | CONVERT | file scope -> role in `roles` in the config; layer rules -> role skill `.claude/skills/<prefix>-<role>/` (`references/role-skills.md`) |
-| review agent (`swift-reviewer`, `code-reviewer`, `view-reviewer`, `angular-reviewer`) | CONVERT | axes and checklists -> `code-review.md`; check tools and owners -> `av-review.md` |
+| implementing agent (`backend-developer`, `frontend-designer`, `js-specialist`, `mobile-data-layer`, `mobile-presentation`, `web-developer`) | CONVERT | file scope -> role in `roles` in the config; layer rules -> role skill `.claude/skills/<prefix>-<role>/` (`references/role-skills.md`) |
+| review agent (`code-reviewer`, `security-reviewer`, `view-reviewer`, `web-reviewer`) | CONVERT | axes and checklists -> `code-review.md`; check tools and owners -> `av-review.md` |
 | security agent (`security-reviewer`, `security-auditor`) | CONVERT | rules -> security axis in `code-review.md` |
 | agent that verifies with commands (`build-verifier`, `test-runner`, `simulator-verifier`, `e2e-test-runner`) | CONVERT | commands -> `validation`; result interpretation -> `av-verify.md` |
 | agent that verifies with MCP tools (`visual-verifier` with Playwright, comparison with Figma) | CONVERT | procedure -> `av-verify.md`, section "Tool checks", with the condition for when it is required. It gives no `gate.sh` evidence, but `av-implement` must run it and report it |
@@ -94,7 +94,7 @@ Follow `references/plan-format.md`. The "Knowledge that gets lost" section is re
 ```bash
 bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> \
   --old <CONVERT and DROP files> --new CLAUDE.md <docs-dir> \
-  --noise '<names of old agents and commands, e.g. swift-reviewer|feature_plan>'
+  --noise '<names of old agents and commands, e.g. code-reviewer|feature_plan>'
 ```
 
 - Result: `LOST <old-file> <token>` for a backtick token with no trace in the new corpus. At the end: `TOKENS n LOST m FILTERED f`.

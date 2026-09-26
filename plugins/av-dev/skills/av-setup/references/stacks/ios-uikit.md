@@ -27,42 +27,42 @@
 - `known-issues.md`: technical debt, when the team tracks it.
 
 ## Modules
-Candidates: screen or feature directories (e.g. `*/Domains/*`, `*/Features/*`, `*/Scenes/*`). Module template: Files (Layer | File), State (enum), Endpoints, Navigation, Localization, Pitfalls.
+Candidates: screen or feature directories (e.g. `*/Features/*`, `*/Scenes/*`, `*/Modules/*`; use the grouping the repo already has). Module template: Files (Layer | File), State (enum), Endpoints, Navigation, Localization, Pitfalls.
 
 ## Review axes
 | Axis | What to check |
 |---|---|
-| Layers and DI | VC -> VM -> manager -> API flow; registrations in the container; no shortcuts through singletons |
+| Layers and DI | the layer flow the repo uses (read it from the code); dependencies through its DI, no shortcuts through singletons |
 | Memory and threads | `[weak self]` in closures and `sink`; UI only on main; `store(in:)` for subscriptions |
 | Localization | UI texts through keys; key in all language files |
-| UI conventions | colors and fonts from project extensions, no hex values and no `systemFont` |
+| UI conventions | colors, fonts and components from the repo's design system, as found in the code |
 | Style regression | new code in the current pattern, not the old one |
 | Security | Keychain instead of UserDefaults for secrets; ATS; deep link validation; no logging of personal data; permissions in Info.plist |
 | Xcode project | new files in the target; no accidental changes in `project.pbxproj`, entitlements, plists |
 
 ## Roles for av-implement
-- `data` (skill `<prefix>-data`): response models, endpoints, domain managers, DI registrations.
+- `data` (skill `<prefix>-data`): response models, endpoints, services or repositories, DI registrations.
 - `ui` (skill `<prefix>-ui`): ViewModel, ViewController, cells, navigation, translations, UI tests.
 LARGE mode splits the work into these roles with disjoint files. The contract between them is the list of data layer types and methods.
 
 ## High risk (default)
-Authentication and token, Keychain, session and logout, API configuration (`clientId`, API version), payments, deep links and push, local data migrations, entitlements and Info.plist.
+Authentication and token, Keychain, session and logout, API configuration (keys, API version, hosts), payments, deep links and push, local data migrations, entitlements and Info.plist.
 
 ## Docs-sync map
 | Change in | Docs |
 |---|---|
 | API endpoints | `networking.md`, module |
-| domain managers, DI | `architecture.md`, module |
+| services, DI | `architecture.md`, module |
 | navigation, deep links | `navigation.md` |
 | new screen directory | new `modules/<Module>.md`, `modules/README.md` |
 | Podfile, Package.resolved | `tech-stack.md` |
 
 ## Eval defects
-The set for `references/eval.md`. Based on: the nfamily-ios pipeline measurement from 18-19.09.2026.
+The set for `references/eval.md`.
 | # | Defect | Axis |
 |---|---|---|
 | 1 | fake API key or `clientSecret` hard-coded in the network client | Security |
 | 2 | `sink { self.… }` without `[weak self]` in a new ViewModel | Memory and threads |
 | 3 | new translation key in only some `Localizable.strings` files | Localization |
-| 4 | `UIColor(hex:)` or `UIFont.systemFont` instead of project extensions | UI conventions |
+| 4 | a hard-coded color or font instead of the repo's design system | UI conventions |
 | 5 | full user model (e-mail, phone) in `print` or in `UserDefaults` | Security |

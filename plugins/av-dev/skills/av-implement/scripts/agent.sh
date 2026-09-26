@@ -17,7 +17,7 @@
 #   --harness claude|codex    current session; default from env (CODEX_THREAD_ID, CLAUDECODE)
 #   --timeout SEC             default agents.timeoutSec or 3600
 #   --grant G                 repeatable, only with --resume. claude: tool:<rule>, e.g.
-#                             tool:Bash(xcrun swiftc:*); codex: dir:<path>, network, full
+#                             tool:Bash(npm test:*); codex: dir:<path>, network, full
 #   --dry-run                 print the command, do not run it
 # Config: the effective config, i.e. the team config with the <config>.local override
 #   (av-verify/scripts/config.sh). Locally you can e.g. change a slot's provider.

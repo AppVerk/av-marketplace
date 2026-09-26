@@ -52,13 +52,13 @@ Rules:
 ```json
 {
   "version": 1,
-  "requires": { "av-dev": ">=0.1.0" },
+  "requires": { "av-dev": ">=0.2.0" },
   "project": {
-    "name": "acme-ios",
-    "summary": "Native iOS app for the Acme store (example, do not copy the values).",
+    "name": "example-shop",
+    "summary": "Web shop: API service and web client (example, do not copy the values).",
     "language": "en",
-    "stacks": ["acme-uikit"],
-    "skillPrefix": "acme"
+    "stacks": ["generic"],
+    "skillPrefix": "shop"
   },
   "docs": {
     "entry": "CLAUDE.md",
@@ -83,54 +83,52 @@ Rules:
     "branchPattern": "{type}/{TICKET}-{slug}",
     "branchTypes": ["feature", "bugfix", "task", "hotfix"],
     "commitPattern": "{TICKET} {imperative sentence in English}",
-    "ticketPrefixes": ["ACM"],
+    "ticketPrefixes": ["PROJ"],
     "commit": "on-request",
     "push": "never",
     "aiSignature": false
   },
   "validation": {
     "commands": {
-      "lint": { "run": ".ai/scripts/lint.sh", "timeoutSec": 300 },
+      "lint": { "run": "make lint", "timeoutSec": 300, "parallel": true },
       "unit": { "run": ".ai/scripts/unit_test.sh", "expect": "UNIT_OK", "timeoutSec": 900 },
-      "build": {
-        "run": "xcodebuild -workspace Acme.xcworkspace -scheme \"Acme Dev\" -destination \"generic/platform=iOS Simulator\" -configuration Debug build",
-        "expect": "BUILD SUCCEEDED",
-        "timeoutSec": 1200
-      },
-      "ui": {
-        "run": ".ai/scripts/ui_test.sh \"$UI_SUITE\"",
-        "expect": "DEVICE_OK",
-        "precheck": "test -n \"$UI_SUITE\" && xcrun simctl list devices available | grep -q iPhone",
-        "needs": "simulator, test account, UI_SUITE parameter",
+      "build": { "run": "make build", "timeoutSec": 1200 },
+      "e2e": {
+        "run": ".ai/scripts/e2e.sh \"$E2E_SUITE\"",
+        "expect": "E2E_OK",
+        "precheck": "test -n \"$E2E_SUITE\" && docker compose ps --status running --format json | grep -q .",
+        "needs": "docker compose up, test account, E2E_SUITE parameter",
         "notRunExitCodes": [2],
         "covers": ["build"],
         "timeoutSec": 3600
       },
       "docs": {
         "run": "bash \"$AV_SKILLS_DIR/av-docs-sync/scripts/check_refs.sh\" CLAUDE.md .ai .claude/skills --root . --strict && bash \"$AV_SKILLS_DIR/av-docs-sync/scripts/check_linerefs.sh\" CLAUDE.md .ai --root . --strict",
-        "timeoutSec": 120
+        "timeoutSec": 120,
+        "parallel": true
       },
-      "fixtures": {
-        "run": ".ai/scripts/fixtures_check.sh",
-        "precheck": "test -d ../acme-api",
+      "contract": {
+        "run": ".ai/scripts/contract_check.sh",
+        "precheck": "test -d ../example-api-spec",
         "optional": true
       }
     },
     "gates": {
       "quick": ["lint", "docs", "unit"],
-      "full": ["lint", "docs", "unit", "build"]
+      "full": ["lint", "docs", "unit", "build"],
+      "e2e": ["e2e"]
     }
   },
   "roles": [
-    { "name": "data", "skill": "acme-data", "order": 1, "globs": ["Acme/API_/**", "Acme/ArchitectureBase/Modules/Network/**", "Acme/DataProviders/**"] },
-    { "name": "ui", "skill": "acme-ui", "order": 1, "globs": ["Acme/Domains/**", "Acme/Presenters/**", "Acme/*.lproj/**"] },
-    { "name": "tests", "skill": "acme-tests", "order": 2, "globs": ["AcmeTests/**", "AcmeUITests/**"] }
+    { "name": "backend", "skill": "shop-backend", "order": 1, "globs": ["src/api/**", "src/domain/**", "migrations/**"] },
+    { "name": "web", "skill": "shop-web", "order": 1, "globs": ["web/src/**", "web/public/**"] },
+    { "name": "tests", "skill": "shop-tests", "order": 2, "globs": ["tests/**", "e2e/**"] }
   ],
-  "generatedPaths": ["Pods/**", "Acme.xcodeproj/project.pbxproj"],
+  "generatedPaths": ["package-lock.json", "web/dist/**"],
   "unownedPaths": [".ai/scripts/**"],
   "risk": {
-    "highRiskAreas": ["authentication", "network and session", "payments and points", "deep links", "personal data"],
-    "highRiskPaths": ["Acme/API_/**", "Acme/ArchitectureBase/Modules/Persistence/**"]
+    "highRiskAreas": ["authentication", "sessions", "payments", "personal data", "database migrations"],
+    "highRiskPaths": ["src/api/auth/**", "src/domain/payments/**", "migrations/**"]
   },
   "agents": {
     "independentReview": true,
@@ -139,7 +137,7 @@ Rules:
   "integrations": {
     "tracker": "jira",
     "design": ["miro"],
-    "mcp": ["atlassian", "bitbucket"],
+    "mcp": ["atlassian"],
     "miro": {"via": "browser", "boards": {"docs": "https://miro.com/app/board/aBcDeFgHiJk=/"}},
     "translations": "lokalise"
   },
@@ -157,7 +155,7 @@ Rules:
 **project**
 - `language`: the language of generated docs, plans and reports. Code and commands are always in English.
 - `stacks`: profile identifiers from `references/stacks/`. A mixed repo has several, e.g. `["php-symfony", "frontend-node"]`.
-- `skillPrefix`: the prefix of role skill names, e.g. `admin` gives `admin-backend`. By default from the project name (`composer.json`, `package.json`, the `origin` URL), not from the directory name: the last segment without the company prefix.
+- `skillPrefix`: the prefix of role skill names, e.g. `shop` gives `shop-backend`. By default from the project name (`composer.json`, `package.json`, the `origin` URL), not from the directory name: the last segment without the company prefix.
 
 **docs**
 - `entry`: the agent instruction file. Usually `CLAUDE.md`, and `AGENTS.md` is a symlink to it.
@@ -169,7 +167,7 @@ Rules:
 - `overlays`: overlays per skill. Always under `.ai/`.
 - `workspace`: a gitignored directory for working files. `plans`, `reports` and `runs` sit under it.
 - `learnings`: session learnings, gitignored.
-- `scripts`: repo tools created for work with the agent (gates, lint, fixtures, indexes, mocks). Default `.ai/scripts`, committed. The `scripts/` directory in the root stays for the team's pre-AI tools. Language: bash with `jq`, `git`, `awk`, `curl`. Another language only with a reason written in the script header, e.g. an HTTP server (Python) or editing `project.pbxproj` with the `xcodeproj` gem (Ruby). Script tests go in `<scripts>/tests/`.
+- `scripts`: repo tools created for work with the agent (gates, lint, fixtures, indexes, mocks). Default `.ai/scripts`, committed. The `scripts/` directory in the root stays for the team's pre-AI tools. Language: bash with `jq`, `git`, `awk`, `curl`. Another language only with a reason written in the script header, e.g. an HTTP server (Python) or a library that exists only in another language. Script tests go in `<scripts>/tests/`.
 
 **git**
 - `baseBranch`: the branch the diff is computed against. `"auto"` means `origin/HEAD`.
@@ -212,7 +210,7 @@ Commands from the config are the only commands that `av-verify` runs without ask
 - `check_setup.sh --owner <file>...` from the `av-setup` skill determines a file's owner. Order: `generatedPaths`, then `roles` (first by `order`), then `unownedPaths`, finally `implementer`.
 - A repo with one role may skip `roles`. Then every file belongs to `implementer`.
 
-**generatedPaths**: globs of files that no role edits by hand: lockfile, `Pods/**`, build output, `project.pbxproj` changed by a script.
+**generatedPaths**: globs of files that no role edits by hand: lockfiles, vendored dependencies, build output, a project file changed only by a script.
 
 **unownedPaths**: globs of repo tools outside roles, e.g. `scripts/**`. Change them only when the plan lists them.
 

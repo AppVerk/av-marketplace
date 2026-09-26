@@ -1,6 +1,6 @@
 # Profile: frontend in a backend repo (Node, TypeScript, Tailwind, E2E)
 
-Use it as an add-on when the scan found `package.json` in a subdirectory of a repo with another stack. Example: `metronic/` in a Symfony panel or `tests/E2E/` with Playwright.
+Use it as an add-on when the scan found `package.json` in a subdirectory of a repo with another stack. Example: a `web/` client in a backend repo or `tests/E2E/` with Playwright.
 
 ## Detection
 - `id: node` from the scan with `dir` other than `.`.

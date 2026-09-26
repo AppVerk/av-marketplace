@@ -41,7 +41,7 @@ printf 'OpenAI Codex\n--------\nmodel: %s\nreasoning effort: %s\nsession id: s-1
 [ -n "${FAKE_SLEEP:-}" ] && sleep "$FAKE_SLEEP"
 [ -n "${FAKE_EMPTY:-}" ] && exit 0
 if [ -n "${FAKE_PERM:-}" ]; then
-  printf 'Partly done.\nPERMISSION_REQUEST: xcodebuild test | run the tests | no evidence\n' >"$out"
+  printf 'Partly done.\nPERMISSION_REQUEST: npm run e2e | run the tests | no evidence\n' >"$out"
   exit 0
 fi
 printf 'APPROVED: codex result\n' >"$out"
@@ -58,7 +58,7 @@ if [ -n "${FAKE_ERROR:-}" ]; then
   exit 0
 fi
 if [ -n "${FAKE_DENY:-}" ]; then
-  printf '{"type":"result","is_error":false,"result":"partial","session_id":"c-1","modelUsage":{"claude-opus-5-5":{}},"permission_denials":[{"tool_name":"Bash","tool_input":{"command":"xcrun swiftc -parse A.swift"}}]}\n'
+  printf '{"type":"result","is_error":false,"result":"partial","session_id":"c-1","modelUsage":{"claude-opus-5-5":{}},"permission_denials":[{"tool_name":"Bash","tool_input":{"command":"npm test -- src/orders/list.test.ts"}}]}\n'
   exit 0
 fi
 printf '{"type":"result","is_error":false,"result":"PLAN_READY: claude result","session_id":"c-1","modelUsage":{"claude-opus-5-5":{}}}\n'
@@ -139,7 +139,7 @@ has "$(cat "$TMP/codex.args")" "sandbox_mode" && fail "codex: overrides sandbox_
 out="$(FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r6 --prompt-file "$TMP/prompt.md")"; rc=$?
 [ "$rc" -eq 5 ] && ok || fail "perm codex: code $rc: $out"
 has "$out" "AGENT_NEEDS_PERMISSION plan" && has "$out" "session=s-123" && ok || fail "perm codex: status missing: $out"
-has "$out" "PERMISSION xcodebuild test | run the tests | no evidence" && ok || fail "perm codex: request missing: $out"
+has "$out" "PERMISSION npm run e2e | run the tests | no evidence" && ok || fail "perm codex: request missing: $out"
 [ "$(tail -n 1 .ai/workspace/runs/r6/agents.jsonl | jq -r '.status + " " + (.permission_requests | length | tostring)')" = "NEEDS_PERMISSION 1" ] && ok || fail "perm codex: wrong entry"
 out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant network --grant dir:/opt/cache)"; rc=$?
 [ "$rc" -eq 0 ] && has "$out" "RESUMING s-123 grants: network dir:/opt/cache" && ok || fail "resume codex: $rc $out"
@@ -155,15 +155,15 @@ has "$(cat "$TMP/codex.args")" 'sandbox_mode="danger-full-access"' && ok || fail
 
 # --- 4. claude through agent.sh: permission denial, resume with a rule
 out="$(FAKE_DENY=1 bash "$AGENT" --slot implement --run-id r7 --prompt-file "$TMP/prompt.md" --harness codex)"; rc=$?
-[ "$rc" -eq 5 ] && has "$out" "PERMISSION claude denial: Bash: xcrun swiftc -parse A.swift" && ok || fail "perm claude: $rc $out"
+[ "$rc" -eq 5 ] && has "$out" "PERMISSION claude denial: Bash: npm test -- src/orders/list.test.ts" && ok || fail "perm claude: $rc $out"
 args="$(cat "$TMP/claude.args")"
 has "$args" "acceptEdits" && ok || fail "claude write: acceptEdits missing: $args"
 has "$args" "bypassPermissions" && fail "claude: bypasses permissions" || ok
 has "$args" "--effort" && has "$args" "xhigh" && ok || fail "claude: effort missing"
-out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant 'tool:Bash(xcrun swiftc:*)' --harness codex)"; rc=$?
+out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant 'tool:Bash(npm test:*)' --harness codex)"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "resume claude: $rc $out"
 args="$(cat "$TMP/claude.args")"
-has "$args" "--resume" && has "$args" "c-1" && has "$args" "Bash(xcrun swiftc:*)" && ok || fail "resume claude: $args"
+has "$args" "--resume" && has "$args" "c-1" && has "$args" "Bash(npm test:*)" && ok || fail "resume claude: $args"
 out="$(bash "$AGENT" --slot planReview --run-id r7 --prompt-file "$TMP/prompt.md" --harness codex)"
 args="$(cat "$TMP/claude.args")"
 has "$args" "acceptEdits" && fail "claude read: acceptEdits in a read slot" || ok

@@ -51,7 +51,7 @@ Flow: `<layer A> -> <layer B> -> ...` (when the architecture has a clear flow).
 At the start of a session, read `<paths.learnings>` if it exists.
 ```
 
-**Task routing** is the most important section. One row per relevant area: domain module, layer, UI, tests, CI, translations. `Read first` contains real paths. `Key rules` contains conventions observed in the code, e.g. "new endpoint = a method in `NovolApi*.swift` + a model in `Response/`".
+**Task routing** is the most important section. One row per relevant area: domain module, layer, UI, tests, CI, translations. `Read first` contains real paths. `Key rules` contains conventions observed in the code, e.g. "new endpoint = a handler in `src/api/` + a schema in `src/api/schemas/`".
 
 ## Core `<docs.root>/`
 

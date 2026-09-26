@@ -2,7 +2,7 @@
 # check_linerefs.sh - checks file:line references in the docs.
 #
 # For each reference `path/file.ext:12` or `file.ext:12-20` in backticks
-# (the path may have spaces, e.g. `App/Login & Registration_/X.swift:3`;
+# (the path may have spaces, e.g. `src/Orders & Billing_/list.ts:3`;
 # `:40-42` after a reference on the same line inherits its file):
 #   - checks that the file exists and the line number fits in the file,
 #   - finds the commit that created the docs line (git blame),

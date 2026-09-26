@@ -178,7 +178,7 @@ When generating the av-verify overlay, also apply the sections "Verdict and requ
 
 Follow `references/role-skills.md` and, for section headers, `references/localization.md`. One skill per role from `roles` in the config, when the repo has at least 2 roles or the rules of the only role exceed 40 lines.
 
-- Name: `<project.skillPrefix>-<role>`, e.g. `admin-twig`.
+- Name: `<project.skillPrefix>-<role>`, e.g. `shop-web`.
 - An existing project skill or a plugin skill that covers the layer is referenced in the overlay instead of creating a new one.
 - Do not overwrite an existing role skill. Show the diff and ask; with `--defaults`, save `SKILL.proposed.md` next to it.
 - The `description` lists the directories and words of the layer, so that Claude also runs the skill during ordinary work. Up to about 300 characters.

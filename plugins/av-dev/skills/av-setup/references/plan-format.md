@@ -66,6 +66,6 @@ UPDATE also covers "KEEP with a reference fix": the file stays, only the names o
 
 ## Level of detail
 
-- Give rule sources as `file:range` per rule group, e.g. `swift-reviewer.md:20-58 -> axes 1-4`. No row per rule is needed.
+- Give rule sources as `file:range` per rule group, e.g. `code-reviewer.md:20-58 -> axes 1-4`. No row per rule is needed.
 - Group items: "scripts `scripts/*_test.sh` (4 files) KEEP" instead of 4 rows.
 - The plan must be readable in 5 minutes. The "Decisions" section usually fits in 40 rows.

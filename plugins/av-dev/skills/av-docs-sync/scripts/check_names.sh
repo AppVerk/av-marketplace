@@ -17,8 +17,8 @@
 #     (negation words in Polish and English),
 #   - names in strikethrough ~~...~~ (history),
 #   - placeholders: Foo/foo as a name part (openFoo, fooViewModel, foo_title),
-#     Xxx, a single trailing X (NovolApiX), names touching { } < > *
-#     (novolApi{Feature}, Request<T>, NS*UsageDescription, account_error*),
+#     Xxx, a single trailing X (BillingApiX), names touching { } < > *
+#     (billingApi{Feature}, Request<T>, Http*RequestHandler, account_error*),
 #     My<Name> on a line with "np.", "przyklad", "example" or "e.g.",
 #   - names shorter than 4 characters,
 #   - names from the ignore list: section "## Known false names" (Polish alias

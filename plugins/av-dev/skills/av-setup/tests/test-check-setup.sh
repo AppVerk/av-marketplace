@@ -16,11 +16,11 @@ hasnt() { grep -qF -- "$2" "$1" && fail "$3" || ok; }
 
 R="$TMP/repo x"
 git init -q "$R" && git -C "$R" config user.email t@t && git -C "$R" config user.name t
-mkdir -p "$R/App/Data" "$R/App/UI" "$R/App/Shared" "$R/My Dir/Sub Dir" "$R/Other/Lib" "$R/Other/Tools" "$R/Pods" \
+mkdir -p "$R/src/Data" "$R/src/UI" "$R/src/Shared" "$R/My Dir/Sub Dir" "$R/Other/Lib" "$R/Other/Tools" "$R/generated" \
   "$R/scripts" "$R/.ai/overlays" "$R/.claude/skills/app-data" "$R/.claude/skills/app-ui"
-for f in App/Data/A.swift App/UI/V.swift App/UI/a.generated.swift App/Shared/Both.swift App/Q1.swift App/Q12.swift \
-  "My Dir/Sub Dir/x.swift" Other/Lib/y.swift Other/Lib/z.swift Other/Tools/w.swift Pods/P.swift; do
-  printf 'import UIKit\n' >"$R/$f"
+for f in src/Data/A.py src/UI/V.ts src/UI/a.generated.ts src/Shared/Both.kt src/Q1.py src/Q12.py \
+  "My Dir/Sub Dir/x.ts" Other/Lib/y.php Other/Lib/z.java Other/Tools/w.js generated/P.php; do
+  printf 'x\n' >"$R/$f"
 done
 printf '#!/bin/bash\n' >"$R/scripts/t.sh"
 
@@ -28,12 +28,12 @@ cat >"$R/.ai/av.config.json" <<'EOF'
 {
   "version": 1,
   "roles": [
-    {"name": "ui", "skill": "app-ui", "order": 2, "globs": ["App/UI/**", "App/Shared/**", "My Dir/**", "App/Nope/**", "App/{A,B}/**"]},
-    {"name": "data", "skill": "app-data", "order": 1, "globs": ["App/Data/**", "App/Shared/**", "App/?1.swift"]},
+    {"name": "ui", "skill": "app-ui", "order": 2, "globs": ["src/UI/**", "src/Shared/**", "My Dir/**", "src/Nope/**", "src/{A,B}/**"]},
+    {"name": "data", "skill": "app-data", "order": 1, "globs": ["src/Data/**", "src/Shared/**", "src/?1.py"]},
     {"name": "net", "skill": "app-net", "order": 3, "globs": ["Net/**"]},
     {"name": "plug", "skill": "vendor:php-developer", "order": 3, "globs": ["Plug/**"]}
   ],
-  "generatedPaths": ["Pods/**", "**/*.generated.swift"],
+  "generatedPaths": ["generated/**", "**/*.generated.ts"],
   "unownedPaths": ["scripts/**"],
   "validation": {
     "commands": {"lint": {"run": "true"}, "unit": {"run": "true"}},
@@ -47,7 +47,7 @@ cat >"$R/.claude/skills/app-data/SKILL.md" <<'EOF'
 name: app-data
 ---
 ## File scope
-`App/Data/**`, `App/Shared/**`, `App/?1.swift`
+`src/Data/**`, `src/Shared/**`, `src/?1.py`
 Run `gate.sh --only unit` or `gate.sh --only ghost`.
 EOF
 printf -- '---\nname: app-ui\n---\n## File scope\nRole `ui` in `.ai/av.config.json`.\n' >"$R/.claude/skills/app-ui/SKILL.md"
@@ -68,14 +68,14 @@ hasnt "$out" 'SETUP_OVERLAY_SECTION .ai/overlays/av-verify.md: Gate selection' "
 hasnt "$out" 'SETUP_OVERLAY_SECTION .ai/overlays/av-implement.md' "av-implement sections complete"
 has "$out" "SETUP_ROLE_SKILL_MISSING net .claude/skills/app-net/SKILL.md" "missing role skill"
 hasnt "$out" "php-developer" "plugin skill skipped"
-has "$out" "SETUP_ROLE_OVERLAP data,ui 1: App/Shared/Both.swift" "role overlap"
-has "$out" "SETUP_ROLE_EMPTY ui App/Nope/**" "empty glob"
-has "$out" "SETUP_ROLE_EMPTY ui App/{A,B}/** (braces" "hint for braces"
+has "$out" "SETUP_ROLE_OVERLAP data,ui 1: src/Shared/Both.kt" "role overlap"
+has "$out" "SETUP_ROLE_EMPTY ui src/Nope/**" "empty glob"
+has "$out" "SETUP_ROLE_EMPTY ui src/{A,B}/** (braces" "hint for braces"
 hasnt "$out" "SETUP_ROLE_EMPTY ui My Dir/**" "glob with a space matches"
-hasnt "$out" "SETUP_ROLE_EMPTY data App/?1.swift" "glob with a question mark"
+hasnt "$out" "SETUP_ROLE_EMPTY data src/?1.py" "glob with a question mark"
 has "$out" "SETUP_UNOWNED_DIR Other 3 files without owner: Other/Lib 2, Other/Tools 1" "directory without owner"
-has "$out" "SETUP_UNOWNED_DIR App 1 files without owner: App 1" "file App/Q12.swift without owner"
-hasnt "$out" "SETUP_UNOWNED_DIR Pods" "generated skipped"
+has "$out" "SETUP_UNOWNED_DIR src 1 files without owner: src 1" "file src/Q12.py without owner"
+hasnt "$out" "SETUP_UNOWNED_DIR generated" "generated skipped"
 has "$out" "SETUP_GLOB_COPY .claude/skills/app-data/SKILL.md copies 3" "glob copy in role skill"
 hasnt "$out" "SETUP_GLOB_COPY .claude/skills/app-ui" "skill linking to the config"
 has "$out" "SETUP_GATE_UNKNOWN .ai/overlays/av-implement.md:8 --gate nope" "unknown gate"
@@ -92,20 +92,20 @@ tail -1 "$out" | grep -qE '^CHECKED [0-9]+ ERRORS [0-9]+ WARNINGS [0-9]+$' && ok
 
 # MARK: owner
 own="$TMP/own.txt"
-bash "$CS" --root "$R" --owner App/Data/deep/New.swift Pods/P.swift scripts/t.sh README.md "My Dir/Sub Dir/x.swift" \
-  App/Q1.swift App/Q12.swift "$R/App/UI/V.swift" App/UI/b.generated.swift App/Shared/Both.swift >"$own" 2>"$TMP/own.err"
+bash "$CS" --root "$R" --owner src/Data/deep/New.py generated/P.php scripts/t.sh README.md "My Dir/Sub Dir/x.ts" \
+  src/Q1.py src/Q12.py "$R/src/UI/V.ts" src/UI/b.generated.ts src/Shared/Both.kt >"$own" 2>"$TMP/own.err"
 rc=$?
 [ "$rc" -eq 0 ] && ok || fail "owner: code $rc"
-has "$own" "OWNER App/Data/deep/New.swift data" "owner: new role file"
-has "$own" "OWNER Pods/P.swift generated" "owner: generated"
+has "$own" "OWNER src/Data/deep/New.py data" "owner: new role file"
+has "$own" "OWNER generated/P.php generated" "owner: generated"
 has "$own" "OWNER scripts/t.sh unowned" "owner: unowned"
 has "$own" "OWNER README.md implementer" "owner: implementer"
-has "$own" "OWNER My Dir/Sub Dir/x.swift ui" "owner: path with a space"
-has "$own" "OWNER App/Q1.swift data" "owner: question mark"
-has "$own" "OWNER App/Q12.swift implementer" "owner: question mark is one character"
-has "$own" "OWNER App/UI/V.swift ui" "owner: absolute path"
-has "$own" "OWNER App/UI/b.generated.swift generated" "owner: **/ inside a glob"
-has "$own" "OWNER App/Shared/Both.swift data" "owner: overlap picks the role by order"
+has "$own" "OWNER My Dir/Sub Dir/x.ts ui" "owner: path with a space"
+has "$own" "OWNER src/Q1.py data" "owner: question mark"
+has "$own" "OWNER src/Q12.py implementer" "owner: question mark is one character"
+has "$own" "OWNER src/UI/V.ts ui" "owner: absolute path"
+has "$own" "OWNER src/UI/b.generated.ts generated" "owner: **/ inside a glob"
+has "$own" "OWNER src/Shared/Both.kt data" "owner: overlap picks the role by order"
 has "$TMP/own.err" "role overlap" "owner: overlap warning"
 
 # MARK: clean setup
@@ -116,7 +116,7 @@ printf '## Dobór bramki\nx\n## Interpretacja wyników\nx\n' >"$C/.ai/overlays/a
 printf '## Pliki do przeczytania przed planem\nx\n## Obowiązkowe sekcje planu\nx\n' >"$C/.ai/overlays/av-plan.md"
 printf -- '---\nname: app-data\n---\n## File scope\nRole `data` in the config.\n' >"$C/.claude/skills/app-data/SKILL.md"
 sed -i '' 's/, `gate.sh --gate nope`//' "$C/.ai/overlays/av-implement.md" 2>/dev/null || sed -i 's/, `gate.sh --gate nope`//' "$C/.ai/overlays/av-implement.md"
-jq '.roles = [{"name": "data", "skill": "app-data", "order": 1, "globs": ["App/**"]}, {"name": "ui", "skill": "app-ui", "order": 1, "globs": ["My Dir/**", "Other/**"]}]' \
+jq '.roles = [{"name": "data", "skill": "app-data", "order": 1, "globs": ["src/**"]}, {"name": "ui", "skill": "app-ui", "order": 1, "globs": ["My Dir/**", "Other/**"]}]' \
   "$R/.ai/av.config.json" >"$C/.ai/av.config.json"
 bash "$CS" --root "$C" >"$out"; rc=$?
 has "$out" "SETUP_LOCAL_IGNORE add .ai/av.config.json.local to .gitignore" "local: no entry in .gitignore"
@@ -133,8 +133,8 @@ has "$out" "SETUP_LOCAL_USED .ai/av.config.json.local" "local: no info about the
 has "$out" "SETUP_ROLES_NONE" "local: check did not use the effective config"
 bash "$CS" --root "$C" --no-local >"$out"; rc=$?
 hasnt "$out" "SETUP_ROLES_NONE" "local: --no-local used the override"
-bash "$CS" --root "$C" --owner App/Data/A.swift >"$out"; rc=$?
-has "$out" "OWNER App/Data/A.swift implementer" "local: --owner without the effective config"
+bash "$CS" --root "$C" --owner src/Data/A.py >"$out"; rc=$?
+has "$out" "OWNER src/Data/A.py implementer" "local: --owner without the effective config"
 hasnt "$out" "SETUP_LOCAL_USED" "local: --owner prints the info"
 git -C "$C" add -f .ai/av.config.json.local
 bash "$CS" --root "$C" >"$out"; rc=$?
@@ -206,9 +206,9 @@ jq 'del(.roles)' "$R/.ai/av.config.json" >"$TMP/noroles.json"
 bash "$CS" --root "$C" --config "$TMP/noroles.json" >"$out"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "no roles: code $rc"
 has "$out" "SETUP_ROLES_NONE" "no roles: warning"
-bash "$CS" --root "$C" --config "$TMP/noroles.json" --owner App/UI/V.swift Pods/P.swift >"$own"
-has "$own" "OWNER App/UI/V.swift implementer" "no roles: implementer"
-has "$own" "OWNER Pods/P.swift generated" "no roles: generated still works"
+bash "$CS" --root "$C" --config "$TMP/noroles.json" --owner src/UI/V.ts generated/P.php >"$own"
+has "$own" "OWNER src/UI/V.ts implementer" "no roles: implementer"
+has "$own" "OWNER generated/P.php generated" "no roles: generated still works"
 
 printf '{bad json' >"$TMP/bad.json"
 bash "$CS" --root "$C" --config "$TMP/bad.json" >"$out"; rc=$?
