@@ -1,6 +1,6 @@
 # Doc set
 
-This file describes which documents `av-setup` creates and where it takes the facts from. The stack profile from `references/stacks/` adds stack-specific files.
+This file describes which documents `av-setup` creates and where it takes the facts from. Topic files specific to the repo come from the stack facts in `SKILL.md`, step 2.
 
 ## Overriding rules
 
@@ -66,10 +66,10 @@ At the start of a session, read `<paths.learnings>` if it exists.
 | `tech-stack.md` | dependencies with versions | lockfile |
 | `testing.md` | how to write and run tests, mocks, fixtures | test directories, sample tests |
 | `agents.md` | work with the agent: av-* skills, overlays, role skills, slots and models (no copy of config values), machine requirements (Codex CLI, slot agent definitions, allow rule for `agent.sh`, browser extension for integrations), local override `.ai/av.config.json.local` | config, av-implement `SKILL.md` "Slots and providers" |
-| `code-review.md` | repo review rules (read by `av-review`) | stack profile + conventions from the code |
+| `code-review.md` | repo review rules (read by `av-review`) | conventions from the code, linters, CI and team docs |
 | `contracts.md` | protected surfaces and what is a breaking change | public API, routes, DB schema, deep links, events |
 | `modules/README.md` | module index | candidates from the scan |
-| `modules/_template.md` | module description template | stack profile |
+| `modules/_template.md` | module description template | the common skeleton below, extended with the layers the repo has |
 | `modules/<Module>.md` | one module | module code |
 | `domain/glossary.md` | glossary of business terms | names of classes, enums, translations |
 | `domain/business-rules.md` | business rules | validators, status enums, tests |
@@ -77,7 +77,7 @@ At the start of a session, read `<paths.learnings>` if it exists.
 | `<paths.learnings>` | session learnings (gitignored) | file with a header, pattern below |
 | `<paths.workspace>/README.md` | layout of the working directory (the rest is gitignored) | fixed text |
 
-Files from the stack profile (e.g. `networking.md`, `php-rules.md`, `frontend.md`) join this table.
+Topic files the repo needs (e.g. `networking.md`, `frontend.md`) join this table when the code shows the topic and the core files do not cover it.
 
 When the repo uses `docs/` with its own layout (e.g. `docs/standards/`), do not duplicate. Map the existing files to the topics in the table. Create only missing topics, in the team's naming convention.
 
@@ -90,7 +90,7 @@ The only owner of the review axes and checklists. The `av-review.md` overlay onl
 
 ## Priorities
 1. Correctness and regressions.
-2. Security (link to the profile section).
+2. Security (risks found in this repo).
 3. Contracts from `contracts.md`.
 4. Repo conventions.
 
@@ -128,11 +128,11 @@ Rules:
 - Do not overwrite an existing file. Show the diff and ask; with `--defaults`, save it next to it as `.proposed`.
 - The docs file gets a row in the "Documentation" table in `CLAUDE.md` and in the docs index.
 - `check_setup.sh` reports `SETUP_INTEGRATION_INVALID` (ERROR) and `SETUP_TEMPLATE_MISSING` (WARNING) when `applies` is true and the file is missing.
-- Solve a problem of one repo (a script for its project, a workaround for its tool) in that repo: in `<paths.scripts>`, docs and overlays. Do not add it to the template or the stack profile.
+- Solve a problem of one repo (a script for its project, a workaround for its tool) in that repo: in `<paths.scripts>`, docs and overlays. Do not add it to a template.
 
 ## Modules
 
-Take the module template from the stack profile. Common skeleton:
+Common skeleton; add sections only for layers the repo has:
 
 ```markdown
 # Module: {Name}

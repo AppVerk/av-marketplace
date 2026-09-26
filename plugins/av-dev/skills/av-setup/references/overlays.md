@@ -164,7 +164,7 @@ The same script checks the content of overlays and role skills:
 
 ## Where overlay content comes from
 
-1. The stack profile gives default axes, roles and gates.
+1. The code, linters and CI give the axes, roles and gates.
 2. The scan and reading the code give real paths and scripts.
 3. In ADOPTION mode, the most valuable source is the existing agent, command and pipeline files. Move their substantive rules. Skip orchestration, because the generic skill does it. Details in `references/adoption.md`.
 

@@ -12,7 +12,7 @@ Ask the questions with one question tool (e.g. AskUserQuestion), at most 4 at on
    - A "zero tests" or "tests skipped" code is not a missing environment for unit tests. Leave it out of `notRunExitCodes`, unless the script describes it as a missing account or device.
    - Propose a `docs` command in `quick` (`references/config-schema.md`, section validation).
 2. **Git.** Show the detected base branch, the commit pattern (from history) and the ticket prefixes. Defaults: commit only on request, no push, no AI signature.
-3. **High-risk areas.** Propose a list from the stack profile and the scan (auth, payments, migrations). The user adds domain areas.
+3. **High-risk areas.** Propose a list from the scan, the code and the docs (e.g. auth, payments, migrations, when the repo has them). The user adds domain areas.
 4. **Docs language.** By default, detected from the existing docs.
 
 ## Round 2: only when relevant

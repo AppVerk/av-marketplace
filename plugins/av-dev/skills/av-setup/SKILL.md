@@ -1,6 +1,6 @@
 ---
 name: av-setup
-description: Scans a repository and sets up work with an AI agent - config `.ai/av.config.json`, docs in `.ai/` or `docs/`, CLAUDE.md with a routing table, overlays for the av-plan, av-implement, av-review, av-verify and av-docs-sync skills, role skills with the knowledge of each layer (backend, views, TS, E2E) and symlinks for Codex. Supports iOS, PHP/Symfony, Angular and other stacks. Moves existing pipelines, agents and commands to skills (adoption mode). Use when the user wants to prepare a repo for AI agents, generate or refresh AI docs, "set up the project for Claude", "skonfigurować projekt dla Claude", "bootstrap AI docs", move from a pipeline to skills, or when another av-* skill reports a missing config.
+description: Scans a repository and sets up work with an AI agent - config `.ai/av.config.json`, docs in `.ai/` or `docs/`, CLAUDE.md with a routing table, overlays for the av-plan, av-implement, av-review, av-verify and av-docs-sync skills, role skills with the knowledge of each layer (backend, views, TS, E2E) and symlinks for Codex. Works with any stack: it derives commands and conventions from the repo itself, without stack templates. Moves existing pipelines, agents and commands to skills (adoption mode). Use when the user wants to prepare a repo for AI agents, generate or refresh AI docs, "set up the project for Claude", "skonfigurować projekt dla Claude", "bootstrap AI docs", move from a pipeline to skills, or when another av-* skill reports a missing config.
 argument-hint: "[--defaults] [--dry-run] [--all-modules] [--eval] [--only config|docs|overlays|roles|codex]"
 ---
 
@@ -65,17 +65,17 @@ bash <skill-dir>/scripts/scan.sh <repo-root> > <tmp>/av-scan.json
 
 The result contains: the number of source files, the stack, commands (composer, package.json, Makefile, `scripts/` with exit codes and statuses from headers in `scripts_meta`, CI steps, commands described in docs), tools (husky, lint-staged, versions, coverage thresholds, linter configs), the directory layout, modules with sizes, test directories, the existing AI setup, secret file names, and git (a proposed base branch, ticket prefixes with counts, branch types, share of commits with an AI signature).
 
-## Step 2: Stack profile
+## Step 2: Stack facts
 
-For each `stacks[].id`, read the matching profile. Read only the matching ones.
+The plugin has no stack templates. Repos built on the same stack are designed differently, and a template would push its own conventions onto them.
 
-| id from the scan | Profile |
-|---|---|
-| `ios-uikit` | `references/stacks/ios-uikit.md` |
-| `php-symfony`, `php`, `php-laravel` | `references/stacks/php-symfony.md` |
-| `angular` | `references/stacks/angular.md` |
-| `node` with a `dir` other than `.` | `references/stacks/frontend-node.md` |
-| other | `references/stacks/generic.md` |
+Everything about the stack comes from this repo:
+1. Scan facts: manifests and build files (`stacks[]`, `commands`, `tools`, `layout`).
+2. CI config and scripts: the commands the team really runs, with their outputs.
+3. Existing docs and team rules.
+4. Reading the code: layers, naming, DI, error handling, tests (step 3).
+
+A convention you cannot confirm in one of these sources does not go into docs, overlays or role skills. Ask in the interview (step 4) or write `_[TODO: fill in]_`.
 
 ## Step 3: Deep dive
 
@@ -150,7 +150,7 @@ No `av-verify` skill: report it and skip the check.
 
 ## Step 7: Docs
 
-Follow `references/doc-set.md`, the stack profile and, for section headers, `references/localization.md`. Only items from the plan.
+Follow `references/doc-set.md`, the facts from steps 1-3 and, for section headers, `references/localization.md`. Only items from the plan.
 
 **Module budget.** Without `--all-modules`, at most 5 modules get full descriptions. Candidate group: a `module_candidates` entry without `looks_like_layers` with the largest `count`. The reference module from step 3 always gets a full description and takes first place. Shared directories (a library of cells, components, helpers: no own entry point, e.g. a ViewController or a controller) are not modules; they go to the index with a one-sentence description. The reference module does not count toward the 3 most often changed. A tie goes to the larger `by_size`. Modules that share a manager and an endpoint (e.g. list and details) may have one description; the other gets a link to it in the index, without a note. Remaining slots: first the 3 most often changed in the last 6 months (`git log --since=6.months --name-only`), then the largest by `by_size`, without repeats. The rest get a row in the module index with the note `_[description to create: av-docs-sync]_`. When the scan marks candidates as `looks_like_layers` (e.g. `Controller`, `Form`, `Enum`), they are not modules. Then determine modules from the team docs or from groups of files changed together in `git log`. A missing description gets created on the first change in the module.
 
@@ -164,7 +164,7 @@ Follow `references/doc-set.md`, the stack profile and, for section headers, `ref
 
 ## Step 8: Overlays
 
-Follow `references/overlays.md` and, for section headers, `references/localization.md`. Create 5 overlays: `av-plan.md`, `av-implement.md`, `av-review.md`, `av-verify.md`, `av-docs-sync.md`. The content comes from the stack profile, the facts from step 3 and, in ADOPTION, from the converted agents, commands and pipeline.
+Follow `references/overlays.md` and, for section headers, `references/localization.md`. Create 5 overlays: `av-plan.md`, `av-implement.md`, `av-review.md`, `av-verify.md`, `av-docs-sync.md`. The content comes from the stack facts (step 2), the facts from step 3 and, in ADOPTION, from the converted agents, commands and pipeline.
 
 Do not overwrite an existing overlay. Show the section diff and ask. With `--defaults`, save the proposal next to it as `<name>.proposed.md` and list it in the report.
 
@@ -204,7 +204,7 @@ Follow `references/role-skills.md` and, for section headers, `references/localiz
 
 ## Step 10b: Review eval (`--eval` only)
 
-Follow `references/eval.md`. A clone in the session working directory, never the live repo. 5 defects from the "Eval defects" section of the stack profile, review by a fresh subagent with the `av-review` skill. Result for the report: "Review eval: N/5".
+Follow `references/eval.md`. A clone in the session working directory, never the live repo. 5 defects built from this repo (`references/eval.md`, section "Defects"), review by a fresh subagent with the `av-review` skill. Result for the report: "Review eval: N/5".
 
 ## Step 11: Report
 

@@ -13,7 +13,7 @@ Hand-written agent pipelines drift apart between repos, and ports for other tool
 - role skills: `.claude/skills/<prefix>-<role>/`,
 - AI docs: `.ai/` or `docs/`.
 
-The global skills hold general rules and templates only. Problems of one stack or one repo are solved in that repo.
+The plugin holds general rules and integration templates only. Knowledge of a stack or a repo is derived from that repo and stays in it.
 
 ## Skills
 
@@ -35,7 +35,7 @@ The plugin is written in English. Files it generates in a repo (docs, overlays, 
 3. After approval it writes the files and validates them: `check_setup.sh`, doc reference checks and the `quick` gate.
 4. From then on, the working skills read the effective config and the overlay for their step.
 
-Supported stack profiles: iOS UIKit, PHP/Symfony, Angular, Node frontends, and a generic profile for anything else.
+There are no stack templates. `av-setup` works with any stack: it takes commands and conventions only from the repo itself (scan facts, CI, existing docs, the code), so it does not push one design onto projects built differently.
 
 ## Config
 

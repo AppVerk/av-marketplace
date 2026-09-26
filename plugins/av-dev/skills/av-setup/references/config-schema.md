@@ -57,7 +57,7 @@ Rules:
     "name": "example-shop",
     "summary": "Web shop: API service and web client (example, do not copy the values).",
     "language": "en",
-    "stacks": ["generic"],
+    "stacks": ["node"],
     "skillPrefix": "shop"
   },
   "docs": {
@@ -154,7 +154,7 @@ Rules:
 
 **project**
 - `language`: the language of generated docs, plans and reports. Code and commands are always in English.
-- `stacks`: profile identifiers from `references/stacks/`. A mixed repo has several, e.g. `["php-symfony", "frontend-node"]`.
+- `stacks`: labels of the technologies the scan detected, for information only, e.g. `["php", "node"]`. No template is attached to them.
 - `skillPrefix`: the prefix of role skill names, e.g. `shop` gives `shop-backend`. By default from the project name (`composer.json`, `package.json`, the `origin` URL), not from the directory name: the last segment without the company prefix.
 
 **docs**
@@ -178,7 +178,7 @@ Rules:
 
 **validation**
 - `commands`: named commands. Each has `run`. Optional fields:
-  - `expect`: a string that must appear in the output, e.g. `BUILD SUCCEEDED`. It protects against a false green. Sources: the real command output (CI log, a run), the code of the repo script that prints this string, or a fixed tool message described in the stack profile (e.g. `** BUILD SUCCEEDED **` from xcodebuild). A guessed `expect` gives a false FAIL. When no source confirms it, skip the field; the exit code is enough.
+  - `expect`: a string that must appear in the output, e.g. `BUILD SUCCEEDED`. It protects against a false green. Sources: the real command output (CI log, a run), the code of the repo script that prints this string, or a fixed message of the tool, confirmed in its documentation or a real run (e.g. `** BUILD SUCCEEDED **` from xcodebuild). A guessed `expect` gives a false FAIL. When no source confirms it, skip the field; the exit code is enough.
   - `precheck`: a command that checks the environment. When it fails, the result is `NOT_RUN`, not `FAIL`. The precheck must check the environment of **this checkout**: dependencies in this directory, containers from this directory (label `com.docker.compose.project.working_dir`), not any running services with the same name.
   - `needs`: a description of requirements for a human, e.g. "docker compose up".
   - `timeoutSec`: time limit, default 900.
