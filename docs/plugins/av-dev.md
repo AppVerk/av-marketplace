@@ -4,6 +4,8 @@ One agent workflow for every repo. `av-setup` configures the repo once; five wor
 
 **Version:** 0.2.0
 
+Usage guide with examples: [plugins/av-dev/README.md](../../plugins/av-dev/README.md).
+
 ## Why
 
 Hand-written agent pipelines drift apart between repos, and ports for other tools (for example `.codex/agents`) go stale within weeks. AV Dev keeps the workflow in one plugin and moves everything repo-specific into files inside the repo:
