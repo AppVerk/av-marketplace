@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # scan.sh - deterministic repository scan for av-setup.
 #
-# Collects facts: stack, validation commands, CI, tooling, code layout, existing
-# AI setup, git. Does not read secret values or .env files. Prints JSON.
+# Collects neutral facts: ecosystems from manifest and build files, validation commands,
+# CI steps, tooling, code layout, existing AI setup, git. Reports the files it finds and
+# never guesses frameworks. Does not read secret values or .env files. Prints JSON.
 # commands.scripts_meta covers scripts/ and repo-local shell scripts referenced
 # by CI files, composer.json and package.json scripts and Makefile recipes.
 #
@@ -17,7 +18,7 @@ pretty=0
 for a in "$@"; do
   case "$a" in
     --pretty) pretty=1 ;;
-    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) root="$a" ;;
   esac
 done
@@ -29,7 +30,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 MAX_LIST=60
 MAX_REF_SCRIPTS=40
-CODE_EXT_RE='\.(swift|m|h|php|ts|tsx|js|jsx|mjs|py|rb|kt|java|go|rs|cs|vue|twig|html|scss|css)$'
+CODE_EXT_RE='\.(swift|m|h|c|cc|cpp|hpp|php|ts|tsx|js|jsx|mjs|cjs|py|rb|kt|kts|java|scala|go|rs|cs|fs|dart|ex|exs|vue|svelte|twig|html|scss|css)$'
 SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData -o -name build
   -o -name dist -o -name .angular -o -name .idea -o -name .vscode -o -name var -o -name coverage -o -name .gradle
   -o -name __pycache__ -o -name .venv -o -name venv -o -name tmp -o -name public -o -name legacy-vendors
@@ -98,70 +99,47 @@ git_json() {
 
 # MARK: stack
 
+MANIFEST_RE='package\.json|composer\.json|[^/]+\.(xcodeproj|xcworkspace|sln|csproj|fsproj|vbproj|gemspec)|Podfile|Package\.swift|(build|settings)\.gradle(\.kts)?|pom\.xml|go\.mod|pyproject\.toml|requirements\.txt|setup\.py|Pipfile|Cargo\.toml|Gemfile|pubspec\.yaml|mix\.exs'
+
+# manifest_id NAME - ecosystem id of a manifest or build file name (MANIFEST_RE), nothing for other names
+manifest_id() {
+  case "$1" in
+    package.json) echo npm ;;
+    composer.json) echo composer ;;
+    *.xcodeproj|*.xcworkspace) echo xcode ;;
+    Podfile) echo cocoapods ;;
+    Package.swift) echo swiftpm ;;
+    build.gradle|build.gradle.kts|settings.gradle|settings.gradle.kts) echo gradle ;;
+    pom.xml) echo maven ;;
+    go.mod) echo go ;;
+    pyproject.toml|requirements.txt|setup.py|Pipfile) echo python ;;
+    Cargo.toml) echo cargo ;;
+    *.sln|*.csproj|*.fsproj|*.vbproj) echo dotnet ;;
+    Gemfile|*.gemspec) echo ruby ;;
+    pubspec.yaml) echo dart ;;
+    mix.exs) echo elixir ;;
+  esac
+}
+
+# stacks_json - neutral facts only: one entry {id, dir, evidence} per ecosystem and directory.
+# id names the ecosystem of the manifest or build file found (npm, composer, xcode, gradle, ...),
+# dir is the directory of the manifest ("." for the root), evidence lists the files found.
+# Scans the root and 3 levels below it; invalid package.json and composer.json files are skipped.
 stacks_json() {
-  : >"$tmp/stacks"
-  local ev pbx sync sui ddd
-  ev="$(ls -d "$root"/*.xcworkspace "$root"/*.xcodeproj 2>/dev/null)"
-  if [ -n "$ev" ]; then
-    pbx="$(ls "$root"/*.xcodeproj/project.pbxproj 2>/dev/null | head -1)"
-    sync=false
-    [ -n "$pbx" ] && grep -q PBXFileSystemSynchronizedRootGroup "$pbx" && sync=true
-    sui="$(walk "$root" 8 f | grep '\.swift$' | tr '\n' '\0' | xargs -0 grep -l 'import SwiftUI' 2>/dev/null | wc -l | tr -d ' ')"
-    { printf '%s\n' "$ev" | while IFS= read -r p; do rel "$p"; done
-      for f in Podfile Package.swift; do [ -f "$root/$f" ] && echo "$f"; done; } >"$tmp/ev"
-    jq -n -c --argjson ev "$(lines_to_json <"$tmp/ev")" --argjson sync "$sync" \
-      --argjson pods "$([ -f "$root/Podfile" ] && echo true || echo false)" --argjson sui "$sui" \
-      '{id: "ios-uikit", evidence: $ev, xcode_synchronized_groups: $sync, cocoapods: $pods, swiftui_files: $sui}' >>"$tmp/stacks"
-  fi
-
-  if [ -f "$root/composer.json" ] && jq empty "$root/composer.json" 2>/dev/null; then
-    ddd="$(find "$root/src" -mindepth 2 -maxdepth 2 -type d \( -name Domain -o -name Application -o -name Infrastructure -o -name UI -o -name Presentation \) 2>/dev/null | xargs -n1 basename 2>/dev/null | sort -u | lines_to_json)"
-    jq -c --argjson ddd "$ddd" --argjson tpl "$([ -d "$root/templates" ] && echo true || echo false)" '
-      (.require // {}) as $r
-      | {id: (if $r["symfony/framework-bundle"] then "php-symfony" elif $r["laravel/framework"] then "php-laravel" else "php" end),
-         evidence: ["composer.json"], php: $r.php,
-         framework: ($r["symfony/framework-bundle"] // $r["laravel/framework"]),
-         doctrine: $r["doctrine/orm"], twig: (($r["symfony/twig-bundle"] != null) or $tpl),
-         messenger: ($r["symfony/messenger"] != null), ddd_layout: $ddd}' "$root/composer.json" >>"$tmp/stacks"
-  fi
-
-  { [ -f "$root/package.json" ] && echo "$root/package.json"; walk "$root" 3 f | grep '/package\.json$'; } | sort -u |
-  while IFS= read -r pkg; do
-    jq empty "$pkg" 2>/dev/null || continue
-    local dir main_ts boot
-    dir="$(dirname "$pkg")"; dir="${dir#$root}"; dir="${dir#/}"; [ -n "$dir" ] || dir="."
-    main_ts="$(dirname "$pkg")/src/main.ts"
-    boot="null"
-    if [ -f "$main_ts" ]; then
-      if grep -q bootstrapApplication "$main_ts"; then boot='"standalone"'
-      elif grep -q bootstrapModule "$main_ts"; then boot='"ngmodule"'; fi
-    fi
-    jq -c --arg ev "$(rel "$pkg")" --arg dir "$dir" --argjson boot "$boot" '
-      ((.dependencies // {}) + (.devDependencies // {})) as $d
-      | def first_of($xs): [$xs[] | select($d[.] != null)] | .[0];
-      (if $d["@angular/core"] then "angular" elif $d.next then "react-next" elif $d.react then "react"
-       elif $d.vue then "vue" else "node" end) as $id
-      | {id: $id, evidence: [$ev], dir: $dir}
-      + (if $id == "angular" then
-          {angular: $d["@angular/core"],
-           unit_test: first_of(["jest", "vitest", "karma"]),
-           e2e: first_of(["@playwright/test", "cypress"]),
-           i18n: first_of(["@jsverse/transloco", "@ngneat/transloco", "@ngx-translate/core", "@angular/localize"]),
-           state: first_of(["@ngrx/store", "@ngrx/signals", "@ngxs/store"]),
-           bootstrap: $boot}
-         elif $id == "node" then
-          {frontend_hints: ([$d | keys[] | select(IN("tailwindcss", "typescript", "webpack", "vite", "esbuild", "sass", "@playwright/test"))] | sort)}
-         else {} end)' "$pkg"
-  done >>"$tmp/stacks"
-
-  if [ -f "$root/pyproject.toml" ] || [ -f "$root/requirements.txt" ]; then
-    jq -n -c --argjson ev "$(for f in pyproject.toml requirements.txt; do [ -f "$root/$f" ] && echo "$f"; done | lines_to_json)" '{id: "python", evidence: $ev}' >>"$tmp/stacks"
-  fi
-  [ -f "$root/go.mod" ] && echo '{"id":"go","evidence":["go.mod"]}' >>"$tmp/stacks"
-  if ls "$root"/build.gradle* "$root"/*/build.gradle* >/dev/null 2>&1; then
-    echo '{"id":"android-gradle","evidence":["build.gradle"]}' >>"$tmp/stacks"
-  fi
-  jq -s -c . "$tmp/stacks"
+  local p id dir
+  { walk "$root" 3 f; walk "$root" 3 d | grep -E '\.(xcodeproj|xcworkspace)$'; } | grep -v '\.xcodeproj/' |
+    grep -E "/($MANIFEST_RE)\$" | LC_ALL=C sort -u |
+  while IFS= read -r p; do
+    id="$(manifest_id "$(basename "$p")")"
+    [ -n "$id" ] || continue
+    case "$id" in npm|composer) jq empty "$p" 2>/dev/null || continue ;; esac
+    dir="$(dirname "$p")"; dir="${dir#$root}"; dir="${dir#/}"; [ -n "$dir" ] || dir="."
+    printf '%s\t%s\t%s\n' "$id" "$dir" "$(rel "$p")"
+  done | jq -R -s -c --argjson max "$MAX_LIST" '
+    split("\n") | map(select(length > 0) | split("\t"))
+    | group_by([.[1], .[0]])
+    | map({id: .[0][0], dir: .[0][1], evidence: (map(.[2]) | sort | .[:20])})
+    | sort_by([(.dir != "."), .dir, .id]) | .[:$max]'
 }
 
 # MARK: commands and CI
@@ -244,45 +222,119 @@ resolve_refs() {
   done
 }
 
+# parse_ci FILE KIND(bitbucket|gitlab|github) - JSON {steps, steps_total}: every step that has
+# commands, in file order, at most 60 (steps_total counts all). A step is a Bitbucket list item
+# (step, stage, parallel, script snippet), an item of a GitHub job steps list, or a GitLab top-level
+# key (job, hidden template, global before_script). Commands come from script, run, before_script,
+# after_script and after-script: inline values, list items (also at the same indent as the key)
+# and each line of a multi-line block. Each step has section (Bitbucket pipeline or definitions,
+# GitHub "jobs", GitLab stage) and name; anchor (&name on the step), ref (*name alias, <<: *name
+# merge or GitLab extends), job (GitHub or GitLab job id) and job_name (GitHub job name) are added
+# when present. A step with a ref and no own commands takes the commands and name of its target,
+# so a step defined once and used in several pipelines is reported in each of them; a *name
+# command is replaced by the commands of the step with that anchor. CRLF files are accepted.
 parse_ci() {
-  awk '
+  awk -v kind="$2" '
     function redact(t) {
       if (t ~ /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/ || t ~ /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)
         return "[skipped: line with an identifier or e-mail address]"
       return t
     }
-    BEGIN { script_indent = -1; step = 0; section = "" }
+    function unquote(v) { if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2); return v }
+    function new_step() { step++; named = 0; print "M\t" step "\tsection\t" section; if (job != "") meta("job", job); if (jname != "") meta("job_name", jname) }
+    function meta(k, v) { if (step == 0) new_step(); gsub(/\t/, " ", v); if (k ~ /name/) v = redact(v); print "M\t" step "\t" k "\t" v }
+    function cmd(c) { if (step == 0) new_step(); gsub(/\t/, " ", c); print "C\t" step "\t" redact(substr(c, 1, 200)) }
+    function alias(v) { if (match(v, /^\*[A-Za-z0-9_.-]+/)) meta("ref", substr(v, 2, RLENGTH - 1)) }
+    BEGIN { script_indent = -1; step = 0; section = ""; job = ""; jname = ""; job_child = -1; skey = -1; child = -1; sec_indent = -1; sub_indent = -1; job_indent = -1; steps_item = -1 }
     {
-      raw = $0
+      raw = $0; sub(/\r$/, "", raw)
       if (raw ~ /^[ \t]*$/ || raw ~ /^[ \t]*#/) next
       match(raw, /^[ ]*/); indent = RLENGTH; line = substr(raw, indent + 1)
-      if (indent <= 4 && line ~ /^(default|pull-requests|branches|tags|custom|on|jobs):[ \t]*$/) { section = line; sub(/:.*$/, "", section) }
-      base = section; sub(/:.*$/, "", base)
-      if (base ~ /^(branches|pull-requests|custom|tags)$/ && (indent == 4 || indent == 6) && line ~ /^["\047]?[A-Za-z0-9_*\/.{},-]+["\047]?:[ \t]*$/) {
-        k = line; sub(/:[ \t]*$/, "", k); gsub(/["\047]/, "", k)
-        if (k != "step" && k != "script" && k != "parallel" && k != "steps") section = base ":" k
+      sub(/[ \t]+$/, "", line)
+      if (list_job) {
+        list_job = 0
+        if (indent > 0 && line ~ /^- / && substr(line, 3) !~ /^["\047]?[A-Za-z0-9_.-]+["\047]?:([ \t]|$)/) { script_indent = 0; script_list = 0 }
       }
       if (script_indent >= 0) {
-        if (indent <= script_indent) script_indent = -1
-        else {
-          sub(/[ \t]+$/, "", line)
-          if (line ~ /^- /) { cmd = substr(line, 3); if (cmd ~ /^".*"$/ || cmd ~ /^\047.*\047$/) cmd = substr(cmd, 2, length(cmd) - 2); if (length(cmd) > 2) print step "\t" section "\t" sname[step] "\t" redact(substr(cmd, 1, 200)) }
-          else if (line !~ /:$/) print step "\t" section "\t" sname[step] "\t" redact(substr(line, 1, 200))
+        if (indent > script_indent || (script_list && indent == script_indent && line ~ /^- /)) {
+          if (line ~ /^- /) { c = unquote(substr(line, 3)); if (length(c) > 2) cmd(c) }
+          else if (line !~ /:$/) cmd(line)
           next
         }
+        script_indent = -1
       }
-      if (line ~ /^-?[ \t]*name:[ \t]*/) { n = line; sub(/^-?[ \t]*name:[ \t]*/, "", n); gsub(/["\047]/, "", n); step++; sname[step] = n; next }
-      if (line ~ /^-?[ \t]*(script|run):[ \t]*[|>]?[ \t]*$/) { script_indent = indent; if (step == 0) { step++; sname[step] = "" } next }
-      if (line ~ /^-?[ \t]*run:[ \t]*/) { c = line; sub(/^-?[ \t]*run:[ \t]*/, "", c); if (step == 0) step++; print step "\t" section "\t" sname[step] "\t" redact(substr(c, 1, 200)) }
-    }' "$1" | jq -R -s -c '
+      li = (line ~ /^- /); kin = indent; body = line
+      if (li) { kin = indent + 2; body = substr(line, 3); sub(/^[ \t]+/, "", body) }
+      key = ""; val = ""
+      if (match(body, /^["\047]?[^"\047:]+["\047]?:([ \t]|$)/)) {
+        key = substr(body, 1, RLENGTH); sub(/:[ \t]*$/, "", key); gsub(/["\047]/, "", key)
+        val = substr(body, RLENGTH + 1); sub(/^[ \t]+/, "", val)
+      }
+      anc = ""; first = step
+      if (match(val, /^&[A-Za-z0-9_.-]+/)) { anc = substr(val, 2, RLENGTH - 1); val = substr(val, RLENGTH + 1); sub(/^[ \t]+/, "", val) }
+      if (kind == "bitbucket") {
+        if (!li && indent <= 4 && key ~ /^(default|pull-requests|branches|tags|custom|definitions)$/ && val == "") {
+          section = key; base = key; sec_indent = indent; sub_indent = -1; next
+        }
+        if (!li && indent == 0) { section = ""; base = "" }
+        if (base ~ /^(branches|pull-requests|custom|tags)$/ && !li && indent > sec_indent && key != "" && val == "") {
+          if (sub_indent < 0) sub_indent = indent
+          if (indent == sub_indent && key ~ /^[A-Za-z0-9_*\/.{},-]+$/) { section = base ":" key; next }
+        }
+        if (li && key != "") { new_step(); skey = kin; if (val == "") { skey = -1; child = kin } }
+        else if (!li && skey < 0 && child >= 0 && indent >= child) { skey = indent; child = -1 }
+      } else if (kind == "github") {
+        if (indent == 0) {
+          job = ""; jname = ""; in_jobs = 0; in_steps = 0
+          if (key ~ /^(on|jobs)$/ && val == "") section = key
+          if (key == "jobs" && val == "") { in_jobs = 1; job_indent = -1 }
+          next
+        }
+        if (in_jobs && !li) {
+          if (job_indent < 0) job_indent = indent
+          if (indent == job_indent && key != "") { job = key; jname = ""; job_child = -1; new_step(); skey = -1; in_steps = 0; next }
+          if (job_child < 0 && indent > job_indent) job_child = indent
+          if (indent == job_child && key == "name" && val != "") { jname = unquote(val); next }
+        }
+        if (!li && key == "steps" && val == "") { in_steps = 1; steps_item = -1; next }
+        if (li && in_steps && key != "") {
+          if (steps_item < 0) steps_item = indent
+          if (indent == steps_item) { new_step(); skey = kin }
+        }
+      } else if (kind == "gitlab") {
+        if (indent == 0 && !li && key != "") { job = key; new_step(); meta("name", key); named = 1; skey = -1; list_job = (val == "" && (anc != "" || key ~ /^\./)) }
+        if (key == "stage" && val != "") meta("section", unquote(val))
+        if (key == "extends" && val != "") { v = val; gsub(/[][ "\047]/, "", v); sub(/,.*$/, "", v); if (v != "") meta("ref", v) }
+      }
+      if (anc != "" && step != first) meta("anchor", anc)
+      if (key == "<<" || key == "step") alias(val)
+      if (key == "name" && kin == skey && !named) { meta("name", unquote(val)); named = 1 }
+      if (key ~ /^(script|run|before_script|after_script|after-script)$/ && !(key == "run" && val == "")) {
+        if (val == "" || val ~ /^[|>][-+0-9]*$/) { script_indent = kin; script_list = (val == ""); if (step == 0) new_step() }
+        else cmd(unquote(val))
+      }
+    }' "$1" | jq -R -s -c --argjson max 60 '
       split("\n") | map(select(length > 0) | split("\t"))
-      | group_by(.[0] | tonumber)
-      | map({section: (.[0][1] | if . == "" then null else . end), name: (.[0][2] | if . == "" then null else . end), commands: map(.[3])})
-      | .[:30]'
+      | (map(select(.[0] == "M")) | reduce .[] as $r ({}; .[$r[1]][$r[2]] = $r[3])) as $m
+      | (map(select(.[0] == "C")) | reduce .[] as $r ({}; .[$r[1]] += [$r[2]])) as $c
+      | [($m | keys[]), ($c | keys[])] | unique | map(tonumber) | sort
+      | map(tostring as $k | ($m[$k] // {}) as $x
+          | {section: (if ($x.section // "") == "" then null else $x.section end), name: (if ($x.name // "") == "" then null else $x.name end),
+             commands: ($c[$k] // []), anchor: $x.anchor, ref: $x.ref, job: $x.job, job_name: $x.job_name})
+      | . as $all
+      | map(.commands |= (map(. as $cmd | if test("^\\*[A-Za-z0-9_.-]+$") then
+          ([$all[] | select(.anchor == $cmd[1:] and (.commands | length) > 0)] | .[0].commands // [$cmd]) else [$cmd] end) | add // []))
+      | . as $all
+      | map(if .ref == null then . else
+          .ref as $r | ([$all[] | select((.anchor == $r or .job == $r) and (.commands | length) > 0)] | .[0]) as $t
+          | if $t == null then . else .name = (.name // $t.name) | .commands = (if .commands == [] then $t.commands else .commands end) end
+        end)
+      | map(select((.commands | length) > 0) | with_entries(select(.value != null or (.key | IN("section", "name")))))
+      | {steps_total: length, steps: .[:$max]}'
 }
 
 commands_json() {
-  local out="{}" pkg dir runner key f
+  local out="{}" pkg dir runner key f kind
   if [ -f "$root/composer.json" ] && jq -e '.scripts' "$root/composer.json" >/dev/null 2>&1; then
     out="$(jq -c --slurpfile c "$root/composer.json" '. + {composer: ($c[0].scripts | with_entries(select(.key | test("^(post-|pre-|auto-)") | not)))}' <<<"$out")"
   fi
@@ -311,7 +363,8 @@ commands_json() {
   : >"$tmp/refwords"
   for f in "$root/bitbucket-pipelines.yml" "$root/.gitlab-ci.yml" "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
     [ -f "$f" ] || continue
-    jq -n -c --arg f "$(rel "$f")" --argjson s "$(parse_ci "$f")" '{file: $f, steps: $s}' >>"$tmp/ci"
+    case "$f" in */bitbucket-pipelines.yml) kind=bitbucket ;; */.gitlab-ci.yml) kind=gitlab ;; *) kind=github ;; esac
+    jq -n -c --arg f "$(rel "$f")" --argjson s "$(parse_ci "$f" "$kind")" '{file: $f} + $s' >>"$tmp/ci"
     ref_words "$(rel "$f")" "$root" <"$f" >>"$tmp/refwords"
   done
   [ -s "$tmp/ci" ] && out="$(jq -c --argjson c "$(jq -s -c . "$tmp/ci")" '. + {ci: $c}' <<<"$out")"
@@ -352,7 +405,7 @@ commands_json() {
         if (s == "" || s ~ /^#/) next
         if (lang == "" || lang == "console") {
           if (s ~ /^\$ /) s = substr(s, 3)
-          else if (s !~ /^(\.\/|scripts\/|bin\/|npm |npx |yarn |pnpm |composer |docker |make |xcodebuild |xcrun |pod |git |php |python3? |bash |sh |ruby |bundle |swift |ng |export |cd )/) next
+          else if (s !~ /^(\.\/|scripts\/|bin\/|npm |npx |yarn |pnpm |composer |docker |make |xcodebuild |xcrun |pod |git |php |python3? |bash |sh |ruby |bundle |swift |ng |export |cd |go |cargo |mvn |\.\/mvnw |gradle |\.\/gradlew |dotnet |pytest|poetry |uv |pip3? |tox |rake |rails |just |task |node |deno |bun |dart |flutter |mix )/) next
         }
         sub(/[ \t]+#.*$/, "", s)
         print doc "\t" substr(s, 1, 200)
@@ -440,7 +493,7 @@ modules_json() {
     done
     count="$(wc -l <"$tmp/mod" | tr -d ' ')"
     [ "$count" -ge 3 ] || continue
-    layers="$(cut -f2 "$tmp/mod" | grep -cxE 'Controller|Controllers|Form|Forms|Enum|Enums|Entity|Entities|Service|Services|Repository|Repositories|EventSubscriber|EventListener|Util|Utils|Twig|Validator|Provider|Command|Commands|Security|DataFixtures|Model|Models|Helper|Helpers|Kernel|Sentry|Exception|Exceptions|Message|MessageHandler|core|shared|layout|i18n|assets|environments|styles|app' )"
+    layers="$(cut -f2 "$tmp/mod" | grep -icxE 'controllers?|forms?|enums?|entity|entities|services?|repository|repositories|events?|listeners?|subscribers?|handlers?|middlewares?|utils?|utilities|validators?|providers?|commands?|security|models?|helpers?|exceptions?|errors?|messages?|views?|components?|config|core|shared|common|layout|i18n|assets|styles|app|lib' )"
     jq -n -c --arg p "$pat" --argjson c "$count" --argjson layers "$( [ $((layers * 2)) -ge "$count" ] && echo true || echo false )" \
       --argjson s "$(sort -t "$(printf '\t')" -k1,1nr -k2,2 "$tmp/mod" | head -200 | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {name: .[1], files: (.[0] | tonumber)})')" \
       '{pattern: $p, count: $c, looks_like_layers: $layers, by_size: $s}' >>"$tmp/modules"
@@ -456,10 +509,55 @@ tests_json() {
   done | sort | head -20 >"$tmp/testdirs"
   local spec=0
   [ -d "$root/src" ] && spec="$(walk "$root/src" 20 f | grep -c '\.spec\.ts$')"
-  jq -n -c --argjson d "$(lines_to_json <"$tmp/testdirs")" --argjson s "$spec" '{dirs: $d, spec_ts_files: $s}'
+  walk "$root" 10 f | grep -E "$CODE_EXT_RE" | awk -F/ '
+    { n = $NF
+      if (n ~ /\.spec\.[^.]+$/) c["*.spec.*"]++
+      else if (n ~ /\.test\.[^.]+$/) c["*.test.*"]++
+      else if (n ~ /_test\.[^.]+$/) c["*_test.*"]++
+      else if (n ~ /^test_.+\.[^.]+$/) c["test_*.*"]++
+      else if (n ~ /Tests?\.[^.]+$/) c["*Test.*"]++ }
+    END { for (k in c) print k "\t" c[k] }' >"$tmp/testfiles"
+  jq -n -c --argjson d "$(lines_to_json <"$tmp/testdirs")" --argjson s "$spec" \
+    --argjson p "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {(.[0]): (.[1] | tonumber)}) | add // {}' "$tmp/testfiles")" \
+    '{dirs: $d, spec_ts_files: $s, test_file_patterns: $p}'
 }
 
 # MARK: existing AI setup
+
+# pipeline_docs_json - markdown files that describe an agent pipeline, independent of the capped
+# .ai and docs lists. A file under .ai/ or docs/ counts by name when it is implementation-pipeline.md,
+# pipeline.md or *agents.md. A file under .ai/, docs/ or .claude/ counts by content when it has at
+# least 2 of 4 signals: (1) 2+ headings with "phase" or the Polish "faza" next to a number,
+# (2) the literal RUN_ID, (3) "orchestrator" or the Polish "orkiestrator" (and derived words),
+# (4) a reference to .claude/agents/. One of the 2 must be (1) or (2): signals (3) and (4) alone
+# also fit single agent specs and slash commands, which are listed under .claude already.
+# Headings inside code fences do not count. Skips .ai/workspace and .ai/sessions, reads at most
+# PIPELINE_MAX_FILES files of at most 256 KB each and reports at most 20 paths.
+PIPELINE_MAX_FILES=400
+pipeline_docs_json() {
+  local d
+  for d in .ai docs .claude; do
+    [ -d "$root/$d" ] || continue
+    find -H "$root/$d" \( -path "$root/.ai/workspace" -o -path "$root/.ai/sessions" -o -name node_modules \) -prune \
+      -o -type f -name '*.md' -size -257k -print 2>/dev/null
+  done | LC_ALL=C sort | head -$PIPELINE_MAX_FILES >"$tmp/pipecands"
+  {
+    while IFS= read -r f; do
+      case "$(rel "$f")" in .ai/*|docs/*) ;; *) continue ;; esac
+      printf '%s\n' "$f" | grep -qE '(implementation-pipeline|/pipeline|agents)\.md$' && printf '%s\n' "$f"
+    done <"$tmp/pipecands"
+    tr '\n' '\0' <"$tmp/pipecands" | xargs -0 awk '
+      function flush() { if (f != "" && (ph >= 2 || rid) && (ph >= 2) + rid + orc + ag >= 2) print f }
+      FNR == 1 { flush(); f = FILENAME; ph = 0; rid = 0; orc = 0; ag = 0; fence = 0 }
+      /^[ \t]*```/ { fence = !fence; next }
+      { l = tolower($0) }
+      !fence && l ~ /^#+[ \t]/ && l ~ /(phase|faza)[ \t]*[0-9]|[0-9][.):]?[ \t]*[-:]?[ \t]*(phase|faza)/ { ph++ }
+      index($0, "RUN_ID") { rid = 1 }
+      l ~ /orchestrat|orkiestrat/ { orc = 1 }
+      index($0, ".claude/agents/") { ag = 1 }
+      END { flush() }' 2>/dev/null
+  } | while IFS= read -r f; do rel "$f"; done | LC_ALL=C sort -u | head -20 | lines_to_json
+}
 
 md_list() { [ -d "$root/$1" ] && find "$root/$1" -name "${2:-*.md}" -not -name .DS_Store 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort | head -$MAX_LIST | lines_to_json || echo null; }
 
@@ -518,9 +616,10 @@ ai_json() {
   jq -c --argjson codex "$codex" --argjson as "$agents_skills" --argjson mcp "$mcp" \
     --argjson githooks "$githooks" --argjson cother "$cother" --argjson agign "$agents_ignored" \
     --argjson gi "$(printf '%s\n' "$gi" | grep -E '^[/!]*\.ai' | lines_to_json)" \
-    --argjson env "$(printf '%s\n' "$gi" | grep -qE '^/?\.env' && echo true || echo false)" '
+    --argjson env "$(printf '%s\n' "$gi" | grep -qE '^/?\.env' && echo true || echo false)" \
+    --argjson pipe "$(pipeline_docs_json)" '
     . + {".codex": $codex, ".agents/skills": $as, agents_ignored: $agign, githooks: $githooks, claude_other: $cother}
-    | .pipeline_docs = ([(.[".ai"] // []), (.docs // [])] | add | map(select(test("(implementation-pipeline|/pipeline|agents)\\.md$"))))
+    | .pipeline_docs = $pipe
     | .orchestration = (((.[".claude"].agents // []) | length > 0) or ((.[".claude"].commands // []) | length > 0)
                         or (.pipeline_docs | length > 0) or ((.[".codex"] // []) | any(test("agents/"))))
     | . + {mcp_servers: $mcp, gitignore_ai: $gi, gitignore_has_env: $env}' <<<"$out"

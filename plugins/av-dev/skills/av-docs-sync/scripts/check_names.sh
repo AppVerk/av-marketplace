@@ -25,10 +25,16 @@
 #     "## Znane falszywe nazwy", with or without diacritics) in the overlay
 #     <paths.overlays>/av-docs-sync.md (default .ai/overlays), lines
 #     "- `Name`" (exact) or "- `Prefix*`" (prefix). --ignore-file
-#     replaces the overlay; the file may have that section or just lines with names.
+#     replaces the overlay; the file may have that section or just lines with names,
+#   - documents excluded by --exclude GLOB (repeatable) or by the overlay section
+#     "## Excluded docs paths" (Polish alias "## Wykluczone sciezki docs", with or
+#     without diacritics), lines "- `glob`"; --ignore-file does not replace it.
+#     Glob syntax like git pathspec :(glob), relative to --root: "*" and "?" do not
+#     cross "/", "**" does; a glob without "*" or "?" also excludes everything under it
+#     (e.g. `.ai/external_services/`). The summary line ends with EXCLUDED <documents>.
 #
 # Usage:
-#   check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE]...
+#   check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE]... [--exclude GLOB]...
 # Exit code: 0 no candidates, 1 candidates found, 2 usage error.
 # Requires: bash 3.2+, git, awk, grep, sort, comm; iconv for UTF-16; jq optional.
 
@@ -37,18 +43,23 @@ set -uo pipefail
 root="."
 paths=""
 ignore_files=""
+excludes=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root) root="${2:-}"; shift ;;
     --ignore-file) ignore_files="$ignore_files${2:-}"$'\n'; shift ;;
-    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+    --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
+    -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
 done
-[ -n "$paths" ] || { echo "USAGE check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE]"; exit 2; }
+[ -n "$paths" ] || { echo "USAGE check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE] [--exclude GLOB]"; exit 2; }
 root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
 git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root is not a git repo"; exit 2; }
+
+# shellcheck source=docs_lib.sh
+. "$(cd "$(dirname "$0")" && pwd)/docs_lib.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -57,20 +68,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 need_section=0
 if [ -z "$ignore_files" ]; then
-  overlays=""
-  if [ -f "$root/.ai/av.config.json" ]; then
-    config_sh="$(cd "$(dirname "$0")/../.." && pwd)/av-verify/scripts/config.sh"
-    if command -v jq >/dev/null 2>&1 && [ -f "$config_sh" ]; then
-      overlays="$(bash "$config_sh" --root "$root" 2>/dev/null | jq -r '.paths.overlays // empty' 2>/dev/null)"
-    elif command -v jq >/dev/null 2>&1; then
-      overlays="$(jq -r '.paths.overlays // empty' "$root/.ai/av.config.json" 2>/dev/null)"
-    else
-      overlays="$(sed -n 's/.*"overlays"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$root/.ai/av.config.json" | head -1)"
-    fi
-  fi
-  [ -n "$overlays" ] || overlays=".ai/overlays"
   need_section=1
-  [ -f "$root/${overlays%/}/av-docs-sync.md" ] && ignore_files="$root/${overlays%/}/av-docs-sync.md"$'\n'
+  ignore_files="$(docs_overlay_file "$root")"$'\n'
 else
   printf '%s' "$ignore_files" | while IFS= read -r f; do
     [ -f "$f" ] || [ -f "$root/$f" ] || { printf 'USAGE --ignore-file not found: %s\n' "$f" >&2; echo x; }
@@ -81,26 +80,9 @@ fi
 printf '%s' "$ignore_files" | while IFS= read -r f; do
   [ -n "$f" ] || continue
   [ -f "$f" ] || f="$root/$f"
-  awk -v need_section="$need_section" '
-    function take(line,    t) {
-      if (match(line, /^[ \t]*[-*][ \t]+`[^`]+`/)) {
-        t = substr(line, RSTART, RLENGTH); sub(/^[^`]*`/, "", t); sub(/`$/, "", t)
-      } else if (line ~ /^[ \t]*[A-Za-z_][A-Za-z0-9_]*\*?[ \t]*$/) {
-        t = line; gsub(/[ \t]/, "", t)
-      } else return
-      if (t ~ /^[A-Za-z_][A-Za-z0-9_]*\*?$/) print t
-    }
-    { lines[NR] = $0 }
-    # Section header: canonical English name or the Polish alias (references/localization.md).
-    /^#+[ \t]+(Known false names|Znane fa(ł|l)szywe nazwy)/ { sec = NR }
-    END {
-      if (sec) {
-        for (i = sec + 1; i <= NR && lines[i] !~ /^#/; i++) take(lines[i])
-      } else if (!need_section) {
-        for (i = 1; i <= NR; i++) if (lines[i] !~ /^#/) take(lines[i])
-      }
-    }' "$f"
+  docs_section_items "$f" names "$need_section"
 done >"$tmp/ignore"
+docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
 
 # MARK: dictionary of names from the code
 
@@ -135,9 +117,10 @@ printf '%s' "$paths" | while IFS= read -r p; do
   else
     printf 'WARNING file or directory not found: %s\n' "$p" >&2
   fi
-done | sort -u >"$tmp/docs"
+done | sort -u | docs_exclude "$root" "$tmp/excludes" "$tmp/excluded" >"$tmp/docs"
+excluded="$(cat "$tmp/excluded" 2>/dev/null)"
 
-[ -s "$tmp/docs" ] || { echo "CHECKED 0 NAME_MISSING 0"; exit 0; }
+[ -s "$tmp/docs" ] || { echo "CHECKED 0 NAME_MISSING 0 EXCLUDED ${excluded:-0}"; exit 0; }
 
 # MARK: name extraction
 
@@ -209,5 +192,5 @@ while IFS=$'\t' read -r name where; do
   fi
 done <"$tmp/names"
 
-printf 'CHECKED %s NAME_MISSING %d\n' "$checked" "$count"
+printf 'CHECKED %s NAME_MISSING %d EXCLUDED %d\n' "$checked" "$count" "${excluded:-0}"
 [ "$count" -eq 0 ]

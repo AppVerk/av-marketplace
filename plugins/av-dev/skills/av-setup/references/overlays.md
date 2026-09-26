@@ -102,8 +102,9 @@ The reviewer finds the owner of a fix with `check_setup.sh --owner <file>` (role
 | Change | Gate |
 |---|---|
 | docs only | none |
-| code without UI | quick |
-| screen or navigation | full + ui |
+| code in one layer, normal risk | quick |
+| contract between layers, high risk | full |
+| <the repo's own case, e.g. a public API change or a user flow> | full + <the repo's special gate> |
 
 ## Environment setup
 <e.g. the command that starts the services of this checkout; a device or simulator; test account from ~/.claude/credentials/<project>.env>
@@ -137,6 +138,10 @@ The reviewer finds the owner of a fix with `check_setup.sh --owner <file>` (role
 <names in backticks that `check_names.sh` reports although they are not drift; e.g. names from another repo, words from examples>
 - `Name`
 - `Prefix*`
+
+## Excluded docs paths
+<globs of docs files that describe other repositories or external systems; the docs scripts skip them>
+- `<docs.root>/external/**`
 ```
 
 ## Section "Known false names"

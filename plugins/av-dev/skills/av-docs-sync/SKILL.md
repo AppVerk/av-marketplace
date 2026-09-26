@@ -122,6 +122,8 @@ The script itself skips: names in strikethrough `~~...~~`, placeholders (`Foo` a
 
 Ignore list: the section `## Known false names` in the overlay `<paths.overlays>/av-docs-sync.md`. One name per line, as a list item with the name in backticks. A name ending with `*` is a prefix, e.g. `Legacy*`. Add there names confirmed as false in triage (aliases from the docs legend, names from other repos). `--ignore-file FILE` replaces the overlay.
 
+Excluded docs: `check_refs.sh`, `check_names.sh` and `check_linerefs.sh` skip documents matching `--exclude <glob>` (repeatable) or a glob from the overlay section `## Excluded docs paths`, one `` - `glob` `` per line. Globs work like git `:(glob)` relative to `--root`; a glob without `*` excludes everything under it. The summary line ends with `EXCLUDED n`. Put docs about other repositories there.
+
 With many candidates (over 50), triage like this: first candidates from lines that also contain a path or a code file name; then names that appear in more than one docs file; check the rest with a sample of 10 and estimate the share of real ones. Check each one: `git log -S<name> --oneline | head -3` shows when the name disappeared or changed. Typical false hits: language built-in functions, names from other repos, typos in docs that are worth fixing.
 
 ### Step 3a: Removed names and line references (deterministic)

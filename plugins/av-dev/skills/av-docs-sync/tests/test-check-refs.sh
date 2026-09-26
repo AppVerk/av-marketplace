@@ -163,6 +163,51 @@ out="$(bash "$CHECK" docs2/workspace --root .)"
 has "$out" "CHECKED 0" && ok || fail "workspace directory given directly: $out"
 rm -rf "$REPO/docs2" "$REPO/Results"
 
+# --- 5d. excluded docs paths: --exclude (repeatable, git pathspec globs) and the overlay
+#     section "Excluded docs paths" in English and Polish; files outside the globs stay checked
+mkdir -p docs3/external_services/other-repo/api docs3/external_services_notes docs3/ext/sub
+printf '# o\nClient: `src/other/Client.go`.\n' >docs3/external_services/other-repo/api/client.md
+printf '# o\nWorker: `src/other/Worker.go`.\n' >docs3/external_services/other-repo/README.md
+printf '# k\nKept: `src/kept/Ghost.go`.\n' >docs3/kept.md
+printf '# n\nNotes: `src/notes/Ghost.go`.\n' >docs3/external_services_notes/notes.md
+printf '# t\nTop: `src/ext/Top.go`.\n' >docs3/ext/top.md
+printf '# d\nDeep: `src/ext/Deep.go`.\n' >docs3/ext/sub/deep.md
+out="$(bash "$CHECK" docs3 --root . --exclude docs3/external_services/ --exclude 'docs3/ext/*.md' --strict)"; rc=$?
+has "$out" "src/other/" && fail "document under an excluded directory checked: $out" || ok
+has "$out" "src/ext/Top.go" && fail "document matching the glob checked: $out" || ok
+has "$out" "MISSING docs3/kept.md:2 src/kept/Ghost.go" && ok || fail "document outside the globs skipped: $out"
+has "$out" "MISSING docs3/external_services_notes/notes.md:2 src/notes/Ghost.go" && ok || fail "directory glob hides a sibling with the same prefix: $out"
+has "$out" "MISSING docs3/ext/sub/deep.md:2 src/ext/Deep.go" && ok || fail "* crosses a directory: $out"
+has "$out" "CHECKED 3 MISSING 3 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED 3" && [ "$rc" -eq 1 ] && ok || fail "counters with --exclude: $(printf '%s' "$out" | tail -1) (code $rc)"
+out="$(bash "$CHECK" docs3 --root . --exclude '**/api/*.md')"
+has "$out" "src/other/Client.go" && fail "**/ glob does not exclude: $out" || ok
+has "$out" "MISSING docs3/external_services/other-repo/README.md:2 src/other/Worker.go" && has "$out" "EXCLUDED 1" && ok || fail "**/ glob excludes too much: $out"
+out="$(bash "$CHECK" docs3 --root . --exclude 'docs3/**')"; rc=$?
+has "$out" "CHECKED 0 MISSING 0 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED 6" && [ "$rc" -eq 0 ] && ok || fail "everything excluded: $out (code $rc)"
+mkdir -p .ai/ov
+printf '{"paths":{"overlays":".ai/ov"}}\n' >.ai/av.config.json
+for header in "Excluded docs paths" "Wykluczone ścieżki docs" "Wykluczone sciezki docs"; do
+  cat >.ai/ov/av-docs-sync.md <<MD
+# Overlay
+## Known false names
+- \`docs3/kept.md\`
+## $header
+- \`docs3/external_services/\` - docs of another repository
+- \`docs3/ext/*.md\`
+## Other
+- \`docs3/external_services_notes/**\`
+MD
+  out="$(bash "$CHECK" docs3 --root .)"
+  has "$out" "src/other/" && fail "$header: overlay glob does not exclude: $out" || ok
+  has "$out" "MISSING docs3/kept.md:2 src/kept/Ghost.go" && has "$out" "MISSING docs3/external_services_notes/notes.md:2" && ok || fail "$header: item outside the section excludes: $out"
+  has "$out" "CHECKED 3 MISSING 3 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED 3" && ok || fail "$header: counters with overlay: $(printf '%s' "$out" | tail -1)"
+done
+out="$(bash "$CHECK" docs3 --root . --exclude docs3/kept.md)"
+has "$out" "src/kept/" && fail "--exclude next to the overlay ignored: $out" || ok
+has "$out" "CHECKED 2 MISSING 2 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED 4" && ok || fail "overlay and --exclude together: $(printf '%s' "$out" | tail -1)"
+bash "$CHECK" docs3 --root . --exclude >/dev/null; [ $? -eq 2 ] && ok || fail "--exclude without a glob: code 2"
+rm -rf docs3 .ai/ov .ai/av.config.json
+
 # --- 6. no arguments: code 2
 bash "$CHECK" >/dev/null; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "no arguments code $rc"

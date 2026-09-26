@@ -152,7 +152,7 @@ Rules:
 
 **project**
 - `language`: the language of generated docs, plans and reports. Code and commands are always in English.
-- `stacks`: labels of the technologies the scan detected (`stacks[]` in the scan result), for information only. No template is attached to them.
+- `stacks`: the `id` values of `stacks[]` in the scan result, for information only (e.g. `["composer", "npm"]`). No template is attached to them. Each scan entry is `{id, dir, evidence}`: `id` is the ecosystem of the manifest or build file (`npm`, `composer`, `xcode`, `gradle`, ...), `dir` its directory, `evidence` the files found. The scan reports no frameworks or features.
 - `skillPrefix`: the prefix of role skill names, e.g. `shop` gives `shop-backend`. By default from the project name (the project manifest, the `origin` URL), not from the directory name: the last segment without the company prefix (`references/role-skills.md`, section "Name").
 
 **docs**
@@ -191,7 +191,7 @@ Rules:
 - `gates`: named sets of commands. `quick` after every code change. `full` before the report in STANDARD and LARGE modes, and with high risk; SMALL mode ends with `quick`. You can add your own, e.g. `e2e`. The `av-verify.md` overlay, section "Gate selection", says when to run special gates.
 - A command does not have to belong to a gate. Helper commands with a parameter, e.g. `lint_snapshot` and `lint_delta` with `LINT_BASE`, are called with `gate.sh --only lint_delta --env LINT_BASE=...`.
 - **Skills directory in commands.** `gate.sh` exports the `AV_SKILLS_DIR` variable to every command and precheck: the directory where the av-* skills sit. This way the config contains no path from `~/.claude`.
-- **The `docs` command** (recommended): it detects certain docs drift from code in a few seconds, also for changes outside `av-implement`. Put it into `quick`:
+- **The `docs` command** (recommended): it detects certain docs drift from code in a few seconds, also for changes outside `av-implement`. Put it into `quick` once the docs have 0 certain drift items (`SKILL.md` step 3). Docs about other repositories go to the overlay section "Excluded docs paths", which the scripts read; `--exclude <glob>` does the same on the command line:
   ```json
   "docs": {"run": "bash \"$AV_SKILLS_DIR/av-docs-sync/scripts/check_refs.sh\" CLAUDE.md .ai .claude/skills --root . --strict && bash \"$AV_SKILLS_DIR/av-docs-sync/scripts/check_linerefs.sh\" CLAUDE.md .ai --root . --strict", "timeoutSec": 120}
   ```

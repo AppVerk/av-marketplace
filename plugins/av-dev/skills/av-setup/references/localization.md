@@ -8,7 +8,7 @@ Rules:
 - `av-setup` writes headers in `project.language`, using this table for the names below.
 - Verdict tokens (`READY_FOR_COMMIT`, `NEEDS_HUMAN`, `PLAN_READY`, `APPROVED`, `NEEDS_FIXES`, `PASS`, `FAIL`, `NOT_RUN`, `FRESH`, `STALE`, `DOCS_OK`, `DOCS_DRIFT`) and script codes (`SETUP_*`, `CHECK`, `GATE`) are never translated.
 - A language not in the table: use the English name.
-- Adding a language: add a column here and the header aliases in `check_setup.sh` and `check_names.sh`.
+- Adding a language: add a column here and the header aliases in `check_setup.sh` and `av-docs-sync/scripts/docs_lib.sh`.
 
 ## Overlay sections
 
@@ -36,6 +36,7 @@ Rules:
 | av-docs-sync | Numbers to maintain | Liczby do utrzymania |
 | av-docs-sync | Out of sync scope | Poza zakresem sync |
 | av-docs-sync | Known false names | Znane fałszywe nazwy |
+| av-docs-sync | Excluded docs paths | Wykluczone ścieżki docs |
 
 ## Role skill sections
 

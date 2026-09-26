@@ -79,6 +79,7 @@ When the old pipeline had its own modes, map them in the plan (section "Mode map
 | mode without a reviewer, with a deterministic test (e.g. SELF_CHECK) | SMALL | entry conditions of the old mode -> "SMALL mode conditions"; when the old mode skipped review, write "no" in "Review in SMALL mode" |
 | one implementer + reviewer (e.g. BOUNDED) | STANDARD | |
 | "full pipeline" with one implementer, tests, security review and a required plan | STANDARD with tightenings | in "Mode selection": plan required, `full` gate before the report, security axis always. Do not map to LARGE, because LARGE means several roles, and then STANDARD would never be used |
+| "full pipeline" triggered by size (e.g. N files in one layer) with one implementer | STANDARD with tightenings | move the size trigger to "Mode selection" (plan required above the threshold); LARGE only when the old pipeline also split work into roles |
 | "full pipeline" with several roles (backend, frontend, js, e2e) | LARGE | STANDARD may then stay almost empty; that is correct when the old process had no middle mode. Say so explicitly in the plan |
 | specialists in parallel, split review (e.g. FULL) | LARGE | move the entry criteria to "Mode selection" |
 | "high risk forces the full mode" | tightening | in `av-implement.md`, section "Mode selection": with high risk, a plan is required (on top of the default review, `full` and the security axis). Do not map to LARGE, because LARGE means a contract or several roles |
@@ -89,11 +90,13 @@ When the team docs give conflicting mode thresholds (e.g. "from 2 layers" and "f
 
 Follow `references/plan-format.md`. The "Knowledge that gets lost" section is required. It lets the team object before something disappears.
 
+`pipeline_docs` in the scan also lists markdown files under `.ai/`, `docs/` and `.claude/` whose content describes agent phases or orchestration.
+
 **Knowledge loss detector.** Compare the CONVERT and DROP files with the docs that stay:
 
 ```bash
 bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> --old-rev <rev> \
-  --old <CONVERT, DROP and UPDATE files> --new CLAUDE.md <docs-dir> .claude/skills \
+  --old <CONVERT, DROP and UPDATE files> --new <every file that stays after setup> \
   --noise '<names of old agents and commands, e.g. code-reviewer|feature_plan>'
 ```
 
@@ -103,7 +106,7 @@ bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> --old-rev <rev> \
 - The filter skips orchestration: RUN_ID, CHECK_ID, EVIDENCE, `$ARGUMENTS`, `pipeline_state`, `pipeline_check`, the paths `.claude/agents` and `.claude/commands`. `--noise` (ERE) adds the names of old agents and commands.
 - It also filters handoff noise and counts it as FILTERED: upper-case `KEY=value` parameters, upper-case field names, `{name}` and `<Name>` placeholders, placeholder file names (`XController.php`, `Foo*`, `Example*`). A rule keyword written as an upper-case field line in a code block (e.g. a plan section template) is filtered too: check such templates by hand.
 - It exits 2 when none of the `--old` files can be read. In zsh, pass each file as its own argument; `--old "$VAR"` with several paths is one word.
-- List `.claude/skills` in `--new` only when the repo has project skills; the corpus must be the same in step 3 and step 5.
+- The `--new` corpus is every file that stays after setup and carries knowledge: `CLAUDE.md`, the docs root, `<paths.overlays>`, `.claude/skills` (when present), KEEP and UPDATE agents and commands, and UPDATE files outside the docs root (e.g. `README.md`). Paths that do not exist yet at step 3 (new overlays) are skipped then and counted at step 5; compare the two counts group by group, not only in total. The corpus list must be the same in step 3 and step 5.
 - Every `LOST` gets a place in the plan. A substantive rule (findings category, threshold, script, pitfall) goes to "Knowledge moved to overlays" with a target. Orchestration goes to "Knowledge that gets lost" with what replaces it.
 - Group them: one row per group of tokens, not per token. Write the `TOKENS`, `LOST` and `FILTERED` counts into the plan.
 

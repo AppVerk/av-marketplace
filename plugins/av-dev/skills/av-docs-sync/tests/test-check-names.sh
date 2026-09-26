@@ -144,6 +144,52 @@ has "$out" "NAME_MISSING docs2/kept.md:2 PrunedGhostController" && ok || fail "d
 printf '%s\n' "$out" | grep -qE 'workspace/|sessions/' && fail "document from workspace or sessions checked: $out" || ok
 rm -rf docs2
 
+# --- excluded docs paths: --exclude (repeatable, git pathspec globs) and the overlay
+#     section "Excluded docs paths" in English and Polish; files outside the globs stay checked
+mkdir -p docs3/external_services/other-repo/api docs3/external_services_notes docs3/ext/sub
+printf '# o\nClass `OtherRepoClient`.\n' >docs3/external_services/other-repo/api/client.md
+printf '# o\nClass `OtherRepoWorker`.\n' >docs3/external_services/other-repo/README.md
+printf '# k\nClass `KeptGhostName`.\n' >docs3/kept.md
+printf '# n\nClass `NotesGhostName`.\n' >docs3/external_services_notes/notes.md
+printf '# t\nClass `ExtTopName`.\n' >docs3/ext/top.md
+printf '# d\nClass `ExtDeepName`.\n' >docs3/ext/sub/deep.md
+out="$(bash "$CHECK" docs3 --root . --exclude docs3/external_services/ --exclude 'docs3/ext/*.md')"; rc=$?
+has "$out" "OtherRepo" && fail "document under an excluded directory checked: $out" || ok
+has "$out" "ExtTopName" && fail "document matching the glob checked: $out" || ok
+has "$out" "NAME_MISSING docs3/kept.md:2 KeptGhostName" && ok || fail "document outside the globs skipped: $out"
+has "$out" "NAME_MISSING docs3/external_services_notes/notes.md:2 NotesGhostName" && ok || fail "directory glob hides a sibling with the same prefix: $out"
+has "$out" "NAME_MISSING docs3/ext/sub/deep.md:2 ExtDeepName" && ok || fail "* crosses a directory: $out"
+has "$out" "CHECKED 3 NAME_MISSING 3 EXCLUDED 3" && [ "$rc" -eq 1 ] && ok || fail "counters with --exclude: $(printf '%s' "$out" | tail -1) (code $rc)"
+out="$(bash "$CHECK" docs3 --root . --exclude '**/api/*.md')"
+has "$out" "OtherRepoClient" && fail "**/ glob does not exclude: $out" || ok
+has "$out" "NAME_MISSING docs3/external_services/other-repo/README.md:2 OtherRepoWorker" && has "$out" "EXCLUDED 1" && ok || fail "**/ glob excludes too much: $out"
+out="$(bash "$CHECK" docs3 --root . --exclude 'docs3/**')"; rc=$?
+has "$out" "CHECKED 0 NAME_MISSING 0 EXCLUDED 6" && [ "$rc" -eq 0 ] && ok || fail "everything excluded: $out (code $rc)"
+mkdir -p .ai/ov
+printf '{"paths":{"overlays":".ai/ov"}}\n' >.ai/av.config.json
+for header in "Excluded docs paths" "Wykluczone ścieżki docs" "Wykluczone sciezki docs"; do
+  cat >.ai/ov/av-docs-sync.md <<MD
+# Overlay
+## Known false names
+- \`docs3/kept.md\`
+## $header
+- \`docs3/external_services/\` - docs of another repository
+- \`docs3/ext/*.md\`
+## Other
+- \`docs3/external_services_notes/**\`
+MD
+  out="$(bash "$CHECK" docs3 --root .)"
+  has "$out" "OtherRepo" && fail "$header: overlay glob does not exclude: $out" || ok
+  has "$out" "NAME_MISSING docs3/kept.md:2 KeptGhostName" && has "$out" "NAME_MISSING docs3/external_services_notes/notes.md:2" && ok || fail "$header: item outside the section excludes: $out"
+  has "$out" "CHECKED 3 NAME_MISSING 3 EXCLUDED 3" && ok || fail "$header: counters with overlay: $(printf '%s' "$out" | tail -1)"
+done
+printf '# plain\nKeptGhostName\n' >"$TMP/ignore2.txt"
+out="$(bash "$CHECK" docs3 --root . --ignore-file "$TMP/ignore2.txt" --exclude docs3/external_services_notes/)"
+has "$out" "OtherRepo" && fail "--ignore-file turns off the overlay exclusions: $out" || ok
+has "$out" "CHECKED 1 NAME_MISSING 1 EXCLUDED 4" && has "$out" "NAME_MISSING docs3/ext/sub/deep.md:2 ExtDeepName" && ok || fail "overlay, --exclude and --ignore-file together: $out"
+bash "$CHECK" docs3 --root . --exclude >/dev/null; [ $? -eq 2 ] && ok || fail "--exclude without a glob: code 2"
+rm -rf docs3 .ai/ov .ai/av.config.json
+
 bash "$CHECK" >/dev/null; [ $? -eq 2 ] && ok || fail "no arguments"
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"

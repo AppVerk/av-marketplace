@@ -10,11 +10,14 @@ Ask the questions with one question tool (e.g. AskUserQuestion), at most 4 at on
    - Take `expect` and `notRunExitCodes` from `commands.scripts_meta` in the scan. `exit_codes_doc` is the exit code description from the script header; e.g. "2 when the environment is unavailable" gives `notRunExitCodes: [2]`. `status_tokens` are the status strings the script prints; e.g. `UNIT_OK` gives `expect`.
    - A token `X_FAILED` without `X_OK` usually means a status built in code (e.g. `label + '_OK'` in a helper). Confirm it by reading the code or running it before you write `expect`.
    - A "zero tests" or "tests skipped" code is not a missing environment for unit tests. Leave it out of `notRunExitCodes`, unless the script describes it as a missing account or device.
-   - Propose a `docs` command in `quick` (`references/config-schema.md`, section validation).
+   - Gates come only from commands the team already runs: CI steps, git hooks, scripts described in the docs. A useful command the team does not run (e.g. a type check found in the tooling) goes to the report as a proposal, not into a gate.
+   - Propose a `docs` command in `quick` only when the docs have 0 certain drift items after step 3 (`references/config-schema.md`, section validation). With drift, see `SKILL.md` step 3.
    - Read each candidate command before proposing it. Mark and explain in the proposal:
      - a command that writes tracked files (a build into a committed directory, a test that rewrites a fixture): it makes the evidence STALE; keep it out of `quick` and `full`, or run it last and say so in `needs`;
      - a generator that rewrites a tracked file with the same content on every run: allowed as a gate when a probe run leaves the tree fingerprint unchanged (`git status --porcelain` empty after the run); say in `needs` which input files change the generated file, because a change there makes the evidence STALE;
      - a command that sends data to an external service (symbol or artifact upload, telemetry, deploy, a report to a hosted service): not a gate, unless a variable or a config switch turns the sending off; then put the switch into `run` and describe it in `needs`. A gate runs many times a day, also from clones and by other people;
+     - a read-only query of a public registry (e.g. a dependency audit that sends the package list): not a gate by default; keep it as a command outside the gates, called with `--only`, and say what it sends in `needs`;
+     - a command that runs inside a container: allowed only through the container of this checkout (`av-verify/scripts/compose_container.sh`, `docker exec` with its id), never by container or service name;
      - a command that may print secrets into logs (secret scanners, commands that dump the environment, especially when the repo tracks an env file): never a gate, because gate logs are kept as evidence;
      - a command that starts, stops or restarts containers or services by a fixed name: it can hit another checkout; not a gate;
      - one exit code for both "environment missing" and "tests failed": `notRunExitCodes` cannot separate them; guard the command with a `precheck`.

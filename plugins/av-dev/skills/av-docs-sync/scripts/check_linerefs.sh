@@ -23,9 +23,15 @@
 #   LINEREF_RANGE    the line number is beyond the file length
 #   LINEREF_NOFILE   the file does not exist (also run check_refs.sh)
 # Paths are resolved relative to root, and if missing, by suffix in `git ls-files`.
+# Skips documents excluded by --exclude GLOB (repeatable) or by the overlay section
+# "## Excluded docs paths" (Polish alias "## Wykluczone sciezki docs", with or without
+# diacritics) in <paths.overlays>/av-docs-sync.md, lines "- `glob`". Glob syntax like
+# git pathspec :(glob), relative to --root: "*" and "?" do not cross "/", "**" does;
+# a glob without "*" or "?" also excludes everything under it (e.g. `.ai/external_services/`).
+# The summary line ends with EXCLUDED <documents>.
 #
 # Usage:
-#   check_linerefs.sh <file.md|dir> [...] [--root DIR] [--strict]
+#   check_linerefs.sh <file.md|dir> [...] [--root DIR] [--exclude GLOB]... [--strict]
 # Exit code: 0 no hits, 1 hits found (CHANGED, MOVED, GONE, RANGE,
 #   NOFILE), 2 usage error. With --strict code 1 only for RANGE, NOFILE or GONE.
 # Requires: bash 3.2+, git, awk.
@@ -35,21 +41,27 @@ set -uo pipefail
 root="."
 strict=0
 paths=""
+excludes=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root) root="${2:-}"; shift ;;
     --strict) strict=1 ;;
-    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+    --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
 done
-[ -n "$paths" ] || { echo "USAGE check_linerefs.sh <file.md|dir> [...] [--root DIR] [--strict]"; exit 2; }
+[ -n "$paths" ] || { echo "USAGE check_linerefs.sh <file.md|dir> [...] [--root DIR] [--exclude GLOB] [--strict]"; exit 2; }
 root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
 git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root is not a git repo"; exit 2; }
 
+# shellcheck source=docs_lib.sh
+. "$(cd "$(dirname "$0")" && pwd)/docs_lib.sh"
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
 
 git -C "$root" -c core.quotePath=false ls-files --cached --others --exclude-standard >"$tmp/files"
 dirty_ok=1
@@ -84,7 +96,8 @@ printf '%s' "$paths" | while IFS= read -r p; do
   else
     printf 'WARNING file or directory not found: %s\n' "$p" >&2
   fi
-done | sort -u >"$tmp/docs"
+done | sort -u | docs_exclude "$root" "$tmp/excludes" "$tmp/excluded" >"$tmp/docs"
+excluded="$(cat "$tmp/excluded" 2>/dev/null)"
 
 checked=0
 ok=0
@@ -252,8 +265,8 @@ while IFS= read -r doc; do
   done <"$tmp/refs"
 done <"$tmp/docs"
 
-printf 'CHECKED %d LINEREF_CHANGED %d LINEREF_RANGE %d LINEREF_NOFILE %d LINEREF_OK %d LINEREF_MOVED %d LINEREF_GONE %d\n' \
-  "$checked" "$changed" "$range" "$nofile" "$ok" "$moved" "$gone"
+printf 'CHECKED %d LINEREF_CHANGED %d LINEREF_RANGE %d LINEREF_NOFILE %d LINEREF_OK %d LINEREF_MOVED %d LINEREF_GONE %d EXCLUDED %d\n' \
+  "$checked" "$changed" "$range" "$nofile" "$ok" "$moved" "$gone" "${excluded:-0}"
 if [ "$strict" -eq 1 ]; then
   [ $((range + nofile + gone)) -eq 0 ]
 else

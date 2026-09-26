@@ -1,7 +1,8 @@
 #!/bin/bash
 # Black box tests for scan.sh.
-# Builds small repos (iOS, Symfony with a frontend, Angular, extras) and checks the JSON fields.
-# The iOS repo has Polish docs and a Polish exit code comment: they test Polish detection.
+# Builds small repos (Xcode, Composer with an npm subdirectory, npm, extras, mixed languages,
+# pipeline docs, CI files) and checks the JSON fields. Stacks are neutral: {id, dir, evidence}.
+# The Xcode repo has Polish docs and a Polish exit code comment: they test Polish detection.
 set -u
 SCAN="$(cd "$(dirname "$0")/.." && pwd)/scripts/scan.sh"
 PASS=0; FAIL=0
@@ -23,7 +24,7 @@ commit() {
 IOS="$TMP/ios app"
 init_repo "$IOS"
 # Stack markers for iOS detection: Demo.xcodeproj, Demo.xcworkspace, Podfile, src/Demo/Main.swift.
-mkdir -p "$IOS/Demo.xcodeproj" "$IOS/Demo.xcworkspace" "$IOS/src/Demo" "$IOS/core/Modules/Billing" "$IOS/core/Modules/Orders" \
+mkdir -p "$IOS/Demo.xcodeproj/project.xcworkspace" "$IOS/Demo.xcworkspace" "$IOS/src/Demo" "$IOS/core/Modules/Billing" "$IOS/core/Modules/Orders" \
   "$IOS/core/Modules/Profile" "$IOS/DemoTests" "$IOS/config/env/test" "$IOS/.ai/workspace" "$IOS/.claude/agents" "$IOS/scripts"
 printf 'objects = { PBXGroup };\n' >"$IOS/Demo.xcodeproj/project.pbxproj"
 printf "platform :ios, '15.0'\n" >"$IOS/Podfile"
@@ -62,7 +63,7 @@ git -C "$IOS" merge -q --no-ff feature/PROJ-2-orders -m "Merged in feature/PROJ-
 
 out="$TMP/ios.json"
 bash "$SCAN" "$IOS" >"$out"
-check "$out" '.stacks[0].id == "ios-uikit" and .stacks[0].cocoapods and (.stacks[0].xcode_synchronized_groups | not)' "ios: stack"
+check "$out" '.stacks == [{"id": "cocoapods", "dir": ".", "evidence": ["Podfile"]}, {"id": "xcode", "dir": ".", "evidence": ["Demo.xcodeproj", "Demo.xcworkspace"]}]' "ios: stack from manifests, workspace inside the project skipped"
 check "$out" '.git.base_branch_guess == "develop"' "ios: base develop"
 check "$out" '.git.ticket_prefixes.PROJ >= 1 and .git.ticket_prefixes.OPS >= 1' "ios: prefixes"
 check "$out" '.git.merged_branch_names | index("feature/PROJ-2-orders") != null' "ios: merged branch"
@@ -111,9 +112,9 @@ commit "$PHP" "feat: init"
 
 out="$TMP/php.json"
 bash "$SCAN" "$PHP" >"$out"
-check "$out" '.stacks | map(.id) == ["php-symfony", "node"]' "php: stacks"
-check "$out" '.stacks[0].ddd_layout == ["Application", "Domain"] and .stacks[0].messenger' "php: DDD and messenger"
-check "$out" '.stacks[1].dir == "web" and (.stacks[1].frontend_hints | index("tailwindcss") != null)' "php: frontend in a subdirectory"
+check "$out" '.stacks == [{"id": "composer", "dir": ".", "evidence": ["composer.json"]}, {"id": "npm", "dir": "web", "evidence": ["web/package.json"]}]' "php: stacks"
+check "$out" '[.stacks[] | keys] | all(. == ["dir", "evidence", "id"])' "php: no framework fields in stacks"
+grep -qE '"(php-symfony|ddd_layout|messenger|doctrine|twig|frontend_hints|framework)"' "$out" && fail "php: framework guess in output" || ok
 check "$out" '.commands.composer | has("analyse") and (has("post-install-cmd") | not)' "php: composer scripts"
 check "$out" '.commands["package.json:web"].runner == "yarn"' "php: runner from lockfile"
 check "$out" '.commands.ci[0].steps[0] == {"section": "pull-requests:**", "name": "Analyse", "commands": ["composer install", "composer analyse"]}' "php: CI PR step"
@@ -143,7 +144,8 @@ commit "$NG" "feat(auth): CC-10 add login"
 
 out="$TMP/ng.json"
 bash "$SCAN" "$NG" >"$out"
-check "$out" '.stacks[0].id == "angular" and .stacks[0].unit_test == "karma" and .stacks[0].i18n == "@ngx-translate/core" and .stacks[0].bootstrap == "standalone"' "ng: stack"
+check "$out" '.stacks == [{"id": "npm", "dir": ".", "evidence": ["package.json"]}]' "ng: stack"
+grep -qE '"(angular|unit_test|e2e|i18n|state|bootstrap)"' "$out" && fail "ng: framework fields in output" || ok
 check "$out" '.tooling.husky_hooks["pre-commit"] == ["npm run lint"]' "ng: husky"
 check "$out" '.tooling.versions[".nvmrc"] == ["22.12"] and .tooling.versions.engines.node == ">=22"' "ng: versions"
 check "$out" '.tooling.coverage_thresholds["karma.conf.js"] | test("statements: 75")' "ng: coverage threshold"
@@ -260,6 +262,169 @@ out="$TMP/lay.json"
 bash "$SCAN" "$LAY" >"$out"
 check "$out" '.module_candidates | map(select(.pattern == "src/*")) | .[0].looks_like_layers == true' "layers: layers detected"
 check "$out" '.ai_setup.agents_ignored == true' "layers: .agents ignored"
+
+# MARK: mixed languages - ecosystems from manifests, test file names, layers, documented commands
+POLY="$TMP/poly"
+init_repo "$POLY"
+mkdir -p "$POLY/app" "$POLY/services/api" "$POLY/src/Tool" "$POLY/src/pkg" "$POLY/src/web" "$POLY/tests" \
+  "$POLY/node_modules/x" "$POLY/vendor/y" "$POLY/a/b/c/d" "$POLY/bad" "$POLY/lib/controllers" "$POLY/lib/models" "$POLY/lib/services"
+printf 'module example.com/poly\n' >"$POLY/go.mod"
+printf '[package]\nname = "poly"\n' >"$POLY/Cargo.toml"
+printf '<project/>\n' >"$POLY/pom.xml"
+printf "source 'https://rubygems.org'\n" >"$POLY/Gemfile"
+printf '[project]\nname = "poly"\n' >"$POLY/pyproject.toml"
+printf 'requests\n' >"$POLY/requirements.txt"
+printf '[project]\nname = "api"\n' >"$POLY/services/api/pyproject.toml"
+printf 'include(":app")\n' >"$POLY/settings.gradle.kts"
+printf 'plugins {}\n' >"$POLY/app/build.gradle.kts"
+printf '<Project/>\n' >"$POLY/src/Tool/Tool.csproj"
+printf '{}\n' >"$POLY/node_modules/x/package.json"
+printf '{}\n' >"$POLY/vendor/y/composer.json"
+printf '{}\n' >"$POLY/a/b/c/d/package.json"
+printf '{not json\n' >"$POLY/bad/package.json"
+printf 'package pkg\n' >"$POLY/src/pkg/calc_test.go"
+printf 'it("a", () => {});\n' >"$POLY/src/web/app.spec.ts"
+printf 'test("b", () => {});\n' >"$POLY/src/web/util.test.js"
+printf 'def test_calc():\n    pass\n' >"$POLY/tests/test_calc.py"
+printf 'class CalcTests {}\n' >"$POLY/src/Tool/CalcTests.cs"
+for d in controllers models services; do printf 'x = 1\n' >"$POLY/lib/$d/a.rb"; done
+printf '# Poly\n\n```\ngo test ./...\ncargo build\nsome prose line\n```\n' >"$POLY/README.md"
+commit "$POLY" "PROJ-5 init"
+out="$TMP/poly.json"
+bash "$SCAN" "$POLY" >"$out"
+check "$out" '.stacks == [
+  {"id": "cargo", "dir": ".", "evidence": ["Cargo.toml"]},
+  {"id": "go", "dir": ".", "evidence": ["go.mod"]},
+  {"id": "gradle", "dir": ".", "evidence": ["settings.gradle.kts"]},
+  {"id": "maven", "dir": ".", "evidence": ["pom.xml"]},
+  {"id": "python", "dir": ".", "evidence": ["pyproject.toml", "requirements.txt"]},
+  {"id": "ruby", "dir": ".", "evidence": ["Gemfile"]},
+  {"id": "gradle", "dir": "app", "evidence": ["app/build.gradle.kts"]},
+  {"id": "python", "dir": "services/api", "evidence": ["services/api/pyproject.toml"]},
+  {"id": "dotnet", "dir": "src/Tool", "evidence": ["src/Tool/Tool.csproj"]}]' "poly: ecosystems per directory, skipped and invalid manifests left out"
+check "$out" '.tests.test_file_patterns == {"*_test.*": 1, "*.spec.*": 1, "*.test.*": 1, "test_*.*": 1, "*Test.*": 1}' "poly: test file name patterns"
+check "$out" '.module_candidates | map(select(.pattern == "lib/*")) | .[0].looks_like_layers == true' "poly: lowercase layer names"
+check "$out" '[.commands.documented_commands[].cmd] == ["go test ./...", "cargo build"]' "poly: commands of other ecosystems from a block without language"
+
+# MARK: pipeline docs by name beyond the .ai list cap and by content
+PIPE="$TMP/pipe"
+init_repo "$PIPE"
+mkdir -p "$PIPE/.ai/modules" "$PIPE/.ai/pipeline" "$PIPE/.ai/workspace" "$PIPE/docs" "$PIPE/.claude/commands"
+for i in $(seq -w 1 65); do printf '# Module %s\n' "$i" >"$PIPE/.ai/modules/m$i.md"; done
+printf '# Implementation\n' >"$PIPE/.ai/pipeline/implementation-pipeline.md"
+printf '# Workflow\n\n## Phase 1: Plan\n\n## Phase 2: Build\n\nEach run writes RUN_ID to the log.\n' >"$PIPE/docs/workflow.md"
+printf '# Ship\n\n## Faza 1\n\n## Faza 2\n\nOrkiestrator uruchamia role po kolei.\n' >"$PIPE/.claude/commands/ship.md"
+printf '# Notes\n\n## Phase 1\n\n## Phase 2\n' >"$PIPE/docs/notes.md"
+printf '# Agent\n\nThe orchestrator reads .claude/agents/reviewer.md.\n' >"$PIPE/docs/agent-spec.md"
+printf '# Fenced\n\n```\n## Phase 1\n## Phase 2\n```\n\nRUN_ID\n' >"$PIPE/docs/fenced.md"
+{ printf '# Big\n\n## Phase 1\n\n## Phase 2\n\nRUN_ID orchestrator\n'; head -c 300000 /dev/zero | tr '\0' 'x'; } >"$PIPE/docs/huge.md"
+printf '## Phase 1\n## Phase 2\nRUN_ID\n' >"$PIPE/.ai/workspace/run.md"
+commit "$PIPE" "PROJ-6 docs"
+out="$TMP/pipe.json"
+bash "$SCAN" "$PIPE" >"$out"
+check "$out" '.ai_setup[".ai"] | length == 60' "pipe: .ai list stays capped"
+check "$out" '.ai_setup.pipeline_docs == [".ai/pipeline/implementation-pipeline.md", ".claude/commands/ship.md", "docs/workflow.md"]' "pipe: by name past the cap and by content, weak, fenced, large and workspace files skipped"
+check "$out" '.ai_setup.orchestration == true' "pipe: orchestration from pipeline docs"
+
+# MARK: CI steps - anchors, compact lists, multi-line scripts, GitHub jobs, GitLab jobs with CRLF
+CIX="$TMP/ci"
+init_repo "$CIX"
+mkdir -p "$CIX/.github/workflows"
+cat >"$CIX/bitbucket-pipelines.yml" <<'EOF4'
+definitions:
+  steps:
+    - step: &unit
+        name: Unit tests
+        script:
+        - make deps
+        - |
+          make test
+          make coverage
+        caches:
+        - deps
+    - step: &lint
+        name: Lint
+        script:
+          - make lint
+pipelines:
+  pull-requests:
+    '**':
+      - step: *unit
+      - step:
+          <<: *lint
+          name: Lint on PR
+  custom:
+    release:
+      - variables:
+          - name: VERSION
+      - stage:
+          name: Release stage
+          steps:
+            - step:
+                script:
+                  - ./release.sh
+EOF4
+cat >"$CIX/.github/workflows/ci.yml" <<'EOF5'
+name: CI
+on:
+  pull_request:
+jobs:
+  test:
+    name: Test suite
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v4
+      - run: make deps
+      - name: Test
+        run: |
+          make test
+          make report
+EOF5
+{ printf 'on: push\njobs:\n  many:\n    steps:\n'; for i in $(seq 1 65); do printf '      - run: echo %s\n' "$i"; done; } >"$CIX/.github/workflows/many.yml"
+awk '{ printf "%s\r\n", $0 }' >"$CIX/.gitlab-ci.yml" <<'EOF6'
+stages:
+  - test
+.setup: &setup
+  - make deps
+before_script:
+  - echo start
+.base:
+  script:
+    - make base
+unit:
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - *setup
+    - make test
+lint:
+  stage: test
+  extends: .base
+EOF6
+commit "$CIX" "PROJ-7 ci"
+out="$TMP/ci.json"
+bash "$SCAN" "$CIX" >"$out"
+ci() { printf '.commands.ci | map(select(.file == "%s")) | .[0]' "$1"; }
+check "$out" "$(ci bitbucket-pipelines.yml) | .steps_total == 5 and .steps == [
+  {\"section\": \"definitions\", \"name\": \"Unit tests\", \"commands\": [\"make deps\", \"make test\", \"make coverage\"], \"anchor\": \"unit\"},
+  {\"section\": \"definitions\", \"name\": \"Lint\", \"commands\": [\"make lint\"], \"anchor\": \"lint\"},
+  {\"section\": \"pull-requests:**\", \"name\": \"Unit tests\", \"commands\": [\"make deps\", \"make test\", \"make coverage\"], \"ref\": \"unit\"},
+  {\"section\": \"pull-requests:**\", \"name\": \"Lint on PR\", \"commands\": [\"make lint\"], \"ref\": \"lint\"},
+  {\"section\": \"custom:release\", \"name\": null, \"commands\": [\"./release.sh\"]}]" "ci: Bitbucket anchors, compact and multi-line scripts, variables and stages"
+check "$out" "$(ci .github/workflows/ci.yml) | .steps == [
+  {\"section\": \"jobs\", \"name\": null, \"commands\": [\"make deps\"], \"job\": \"test\", \"job_name\": \"Test suite\"},
+  {\"section\": \"jobs\", \"name\": \"Test\", \"commands\": [\"make test\", \"make report\"], \"job\": \"test\", \"job_name\": \"Test suite\"}]" "ci: GitHub steps per job, defaults.run skipped"
+check "$out" "$(ci .github/workflows/many.yml) | .steps_total == 65 and (.steps | length) == 60 and .steps[59].commands == [\"echo 60\"]" "ci: at most 60 steps with the total"
+check "$out" "$(ci .gitlab-ci.yml) | .steps == [
+  {\"section\": null, \"name\": \".setup\", \"commands\": [\"make deps\"], \"anchor\": \"setup\", \"job\": \".setup\"},
+  {\"section\": null, \"name\": \"before_script\", \"commands\": [\"echo start\"], \"job\": \"before_script\"},
+  {\"section\": null, \"name\": \".base\", \"commands\": [\"make base\"], \"job\": \".base\"},
+  {\"section\": \"test\", \"name\": \"unit\", \"commands\": [\"make deps\", \"make test\"], \"job\": \"unit\"},
+  {\"section\": \"test\", \"name\": \"lint\", \"commands\": [\"make base\"], \"ref\": \".base\", \"job\": \"lint\"}]" "ci: GitLab jobs with CRLF, script alias, rules and extends"
 
 # MARK: errors
 out="$(bash "$SCAN" "$TMP/missing")"; rc=$?

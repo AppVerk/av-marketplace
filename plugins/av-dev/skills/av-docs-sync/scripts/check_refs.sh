@@ -20,9 +20,16 @@
 # paths ignored by git and lines that themselves say the file is missing
 # (negation words in Polish and English).
 # The repo index includes *.xcresult bundles without their contents (hundreds of thousands of files).
+# Skips documents excluded by --exclude GLOB (repeatable) or by the overlay section
+# "## Excluded docs paths" (Polish alias "## Wykluczone sciezki docs", with or without
+# diacritics) in <paths.overlays>/av-docs-sync.md, lines "- `glob`" (e.g. docs about
+# other repositories). Glob syntax like git pathspec :(glob), relative to --root: "*" and
+# "?" do not cross "/", "**" does; a glob without "*" or "?" also excludes everything
+# under it (e.g. `.ai/external_services/`). Excluded documents still count as existing paths.
+# The summary line ends with EXCLUDED <documents>.
 #
 # Usage:
-#   check_refs.sh <file.md|dir> [...] [--root DIR] [--workspace DIR] [--strict]
+#   check_refs.sh <file.md|dir> [...] [--root DIR] [--workspace DIR] [--exclude GLOB]... [--strict]
 # Exit code: 0 no MISSING, 1 MISSING found, 2 usage error. UNRESOLVED, EXTERNAL
 #   and WORKSPACE do not change the code. --strict (for gates) makes the same contract
 #   explicit: code 1 only with MISSING.
@@ -33,21 +40,27 @@ set -uo pipefail
 root="."
 workspace=".ai/workspace"
 paths=""
+excludes=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root) root="${2:-}"; shift ;;
     --workspace) workspace="${2:-}"; shift ;;
+    --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
     --strict) ;;
-    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
 done
-[ -n "$paths" ] || { echo "USAGE check_refs.sh <file.md|dir> [...] [--root DIR]"; exit 2; }
+[ -n "$paths" ] || { echo "USAGE check_refs.sh <file.md|dir> [...] [--root DIR] [--exclude GLOB]"; exit 2; }
 root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
+
+# shellcheck source=docs_lib.sh
+. "$(cd "$(dirname "$0")" && pwd)/docs_lib.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
 
 # MARK: repo path index
 
@@ -92,12 +105,13 @@ printf '%s' "$paths" | while IFS= read -r p; do
 done | while IFS= read -r f; do
   d="$(cd "$(dirname "$f")" && pwd)"
   printf '%s\n' "${d#$root/}/$(basename "$f")" | sed "s|^$root/||; s|^\\./||"
-done | sed "s|^$root\$||" | sort -u >"$tmp/docs"
+done | sed "s|^$root\$||" | sort -u | docs_exclude "$root" "$tmp/excludes" "$tmp/excluded" >"$tmp/docs"
+excluded="$(cat "$tmp/excluded" 2>/dev/null)"
 
 # MARK: extraction and check
 
 if [ ! -s "$tmp/docs" ]; then
-  echo "CHECKED 0 MISSING 0 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0"
+  echo "CHECKED 0 MISSING 0 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED ${excluded:-0}"
   exit 0
 fi
 
@@ -278,5 +292,5 @@ while IFS=$'\t' read -r where tok kind stripped ign rel2; do
   fi
 done <"$tmp/candidates"
 
-printf 'CHECKED %s MISSING %d UNRESOLVED %d EXTERNAL %d WORKSPACE %d\n' "${checked:-0}" "$missing" "$unresolved" "$external" "$in_workspace"
+printf 'CHECKED %s MISSING %d UNRESOLVED %d EXTERNAL %d WORKSPACE %d EXCLUDED %d\n' "${checked:-0}" "$missing" "$unresolved" "$external" "$in_workspace" "${excluded:-0}"
 [ "$missing" -eq 0 ]
