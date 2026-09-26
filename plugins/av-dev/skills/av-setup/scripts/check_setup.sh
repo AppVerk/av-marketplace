@@ -8,7 +8,7 @@
 #   SETUP_OVERLAY_SECTION     overlay without a required section (WARNING)
 #                             English name or Polish alias (references/localization.md)
 #   SETUP_ROLES_NONE          config without "roles"; every file belongs to implementer (WARNING)
-#   SETUP_ROLE_INVALID        role without name, skill or globs (ERROR)
+#   SETUP_ROLE_INVALID        role without name, skill or globs, or with exclusions only (ERROR)
 #   SETUP_ROLE_SKILL_MISSING  no .claude/skills/<skill>/SKILL.md (ERROR)
 #   SETUP_ROLE_OVERLAP        tracked file matches the globs of 2 roles (ERROR)
 #   SETUP_ROLE_EMPTY          role glob matches no tracked file (WARNING)
@@ -17,9 +17,6 @@
 #   SETUP_REF_SKIPPED         no av-docs-sync/scripts/check_refs.sh (WARNING)
 #   SETUP_GATE_UNKNOWN        --gate X or --only X not in validation (ERROR)
 #   SETUP_GLOB_COPY           role skill or overlay copies 3+ role globs (WARNING)
-#   SETUP_INTEGRATION_INVALID integration field does not match the template manifest (ERROR)
-#   SETUP_TEMPLATE_MISSING    template applies, but its file is missing in the repo (WARNING)
-#                             templates: templates/<name>/template.json or AV_TEMPLATES_DIR
 #   SETUP_LOCAL_TRACKED       <config>.local is tracked by git (ERROR)
 #   SETUP_LOCAL_IGNORE        .gitignore does not ignore <config>.local (WARNING)
 #   SETUP_LOCAL_USED          info: the check runs on the config with a local override
@@ -33,6 +30,10 @@
 # in the config), then unownedPaths, otherwise implementer.
 # Globs as in git pathspec :(glob): *, ?, **; a path without a star also matches
 # the directory contents. Files do not have to exist.
+# A glob starting with ! excludes matching files from its own list (one role,
+# generatedPaths or unownedPaths), e.g. ["config/**", "!config/app.yaml"];
+# an excluded file falls through to the next rule. An exclusion never
+# counts as an empty glob; a role with exclusions only is invalid.
 #
 # Usage:
 #   check_setup.sh [--root DIR] [--config FILE] [--no-local]
@@ -53,7 +54,7 @@ while [ $# -gt 0 ]; do
     --config) config="${2:-}"; shift ;;
     --owner) owner_mode=1 ;;
     --no-local) no_local=1 ;;
-    -h|--help) sed -n '2,41p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,42p' "$0"; exit 0 ;;
     -*) echo "USAGE unknown option: $1"; exit 2 ;;
     *) if [ "$owner_mode" -eq 1 ]; then owner_files+=("$1"); else echo "USAGE unknown argument: $1"; exit 2; fi ;;
   esac
@@ -67,7 +68,6 @@ case "$config" in /*) ;; *) [ -f "$config" ] || config="$root/$config" ;; esac
 if [ "$owner_mode" -eq 1 ] && [ "${#owner_files[@]}" -eq 0 ]; then echo "USAGE --owner requires a list of files"; exit 2; fi
 
 skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
-templates_dir="${AV_TEMPLATES_DIR:-$skill_dir/templates}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -124,6 +124,7 @@ jq -r '
    + [.unownedPaths // [] | .[] | ["unowned", "-", .]])[] | @tsv' "$config" >"$tmp/rules" 2>/dev/null
 
 # matcher: rules + list of paths -> F path roles gen unowned; at the end G role glob hits
+# (include globs only). A glob with ! excludes the path from its own list (kind + name).
 match_paths() {
   awk -F'\t' '
     function g2re(g,   r, i, n, c) {
@@ -146,11 +147,15 @@ match_paths() {
       if (g !~ /[*?]/) r = r "(/.*)?"
       return r "$"
     }
-    FNR == NR { n++; kind[n] = $1; name[n] = $2; glob[n] = $3; re[n] = g2re($3); hits[n] = 0; next }
+    FNR == NR {
+      n++; kind[n] = $1; name[n] = $2; glob[n] = $3; key[n] = $1 SUBSEP $2; hits[n] = 0
+      neg[n] = (substr($3, 1, 1) == "!"); re[n] = g2re(neg[n] ? substr($3, 2) : $3); next
+    }
     {
-      p = $0; sub(/^\.\//, "", p); roles = ""; gen = 0; un = 0
+      p = $0; sub(/^\.\//, "", p); roles = ""; gen = 0; un = 0; split("", excl)
+      for (i = 1; i <= n; i++) if (neg[i] && p ~ re[i]) excl[key[i]] = 1
       for (i = 1; i <= n; i++) {
-        if (p !~ re[i]) continue
+        if (neg[i] || p !~ re[i] || (key[i] in excl)) continue
         hits[i]++
         if (kind[i] == "generated") gen = 1
         else if (kind[i] == "unowned") un = 1
@@ -158,7 +163,7 @@ match_paths() {
       }
       printf "F\t%s\t%s\t%d\t%d\n", p, roles, gen, un
     }
-    END { for (i = 1; i <= n; i++) if (kind[i] == "role") printf "G\t%s\t%s\t%d\n", name[i], glob[i], hits[i] }
+    END { for (i = 1; i <= n; i++) if (kind[i] == "role" && !neg[i]) printf "G\t%s\t%s\t%d\n", name[i], glob[i], hits[i] }
   ' "$tmp/rules" -
 }
 
@@ -179,31 +184,6 @@ if [ "$owner_mode" -eq 1 ]; then
 fi
 
 rel() { printf '%s\n' "${1#$root/}"; }
-# MARK: integration templates
-
-if [ "$owner_mode" -eq 0 ]; then
-  docs_root="$(jq -r '.docs.root // ".ai"' "$config")"
-  scripts_dir="$(jq -r '.paths.scripts // ".ai/scripts"' "$config")"
-  for manifest in "$templates_dir"/*/template.json; do
-    [ -f "$manifest" ] || continue
-    checked=$((checked + 1))
-    tname="$(jq -r '.name // empty' "$manifest")"
-    validate="$(jq -r '.validate // empty' "$manifest")"
-    if [ -n "$validate" ]; then
-      while IFS= read -r problem; do
-        [ -n "$problem" ] && err "INTEGRATION_INVALID $problem"
-      done < <(jq -r "$validate" "$config" 2>/dev/null)
-    fi
-    applies="$(jq -r '.applies // "false"' "$manifest")"
-    jq -e "$applies" "$config" >/dev/null 2>&1 || continue
-    while IFS= read -r target; do
-      [ -n "$target" ] || continue
-      target="${target//\{docs.root\}/${docs_root%/}}"
-      target="${target//\{paths.scripts\}/${scripts_dir%/}}"
-      [ -e "$root/$target" ] || warn "TEMPLATE_MISSING $target (template $tname); create it from templates/$tname"
-    done < <(jq -r '(.files // {})[]' "$manifest")
-  done
-fi
 
 overlays_dir="$(jq -r '.paths.overlays // ".ai/overlays"' "$config")"
 
@@ -255,24 +235,28 @@ if [ "$nroles" -eq 0 ]; then
   checked=$((checked + 1))
   warn 'ROLES_NONE no "roles" in config; every file belongs to implementer'
 else
-  while IFS=$'\037' read -r idx name skill nglobs; do
+  while IFS=$'\037' read -r idx name skill nglobs nincl; do
     checked=$((checked + 1))
     if [ -z "$name" ] || [ -z "$skill" ] || [ "$nglobs" -eq 0 ]; then
       err "ROLE_INVALID roles[$idx] requires name, skill and globs"; continue
+    fi
+    if [ "$nincl" -eq 0 ]; then
+      err "ROLE_INVALID roles[$idx] $name has only exclusions (!); add at least one glob without !"; continue
     fi
     case "$skill" in *:*) continue ;; esac
     checked=$((checked + 1))
     sk="$root/.claude/skills/$skill/SKILL.md"
     if [ ! -f "$sk" ]; then err "ROLE_SKILL_MISSING $name .claude/skills/$skill/SKILL.md"; continue; fi
     checked=$((checked + 1))
-    copies="$(jq -r --argjson i "$idx" '.roles[$i].globs[]' "$config" | while IFS= read -r g; do grep -qF -- "$g" "$sk" && echo x; done | wc -l | tr -d ' ')"
+    copies="$(jq -r --argjson i "$idx" '.roles[$i].globs[] | ltrimstr("!")' "$config" | LC_ALL=C sort -u | while IFS= read -r g; do grep -qF -- "$g" "$sk" && echo x; done | wc -l | tr -d ' ')"
     [ "$copies" -ge 3 ] && warn "GLOB_COPY .claude/skills/$skill/SKILL.md copies $copies globs of role $name; the file scope belongs in the config (roles)"
-  done < <(jq -r '(.roles // []) | to_entries[] | [.key, (.value.name // ""), (.value.skill // ""), ((.value.globs // []) | length)] | map(tostring) | join("\u001f")' "$config")
+  done < <(jq -r '(.roles // []) | to_entries[] | [.key, (.value.name // ""), (.value.skill // ""), ((.value.globs // []) | length),
+    ((.value.globs // []) | map(select(type != "string" or (startswith("!") | not))) | length)] | map(tostring) | join("\u001f")' "$config")
 
   impl="$root/$overlays_dir/av-implement.md"
   if [ -f "$impl" ]; then
     checked=$((checked + 1))
-    copies="$(jq -r '.roles[].globs // [] | .[]' "$config" | while IFS= read -r g; do grep -qF -- "$g" "$impl" && echo x; done | wc -l | tr -d ' ')"
+    copies="$(jq -r '.roles[].globs // [] | .[] | ltrimstr("!")' "$config" | LC_ALL=C sort -u | while IFS= read -r g; do grep -qF -- "$g" "$impl" && echo x; done | wc -l | tr -d ' ')"
     [ "$copies" -ge 3 ] && warn "GLOB_COPY $overlays_dir/av-implement.md copies $copies role globs; the roles table should link to the config (roles)"
   fi
 

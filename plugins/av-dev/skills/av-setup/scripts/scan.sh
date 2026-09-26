@@ -3,6 +3,8 @@
 #
 # Collects facts: stack, validation commands, CI, tooling, code layout, existing
 # AI setup, git. Does not read secret values or .env files. Prints JSON.
+# commands.scripts_meta covers scripts/ and repo-local shell scripts referenced
+# by CI files, composer.json and package.json scripts and Makefile recipes.
 #
 # Usage:
 #   scan.sh [ROOT] [--pretty]
@@ -15,7 +17,7 @@ pretty=0
 for a in "$@"; do
   case "$a" in
     --pretty) pretty=1 ;;
-    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) root="$a" ;;
   esac
 done
@@ -26,6 +28,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 MAX_LIST=60
+MAX_REF_SCRIPTS=40
 CODE_EXT_RE='\.(swift|m|h|php|ts|tsx|js|jsx|mjs|py|rb|kt|java|go|rs|cs|vue|twig|html|scss|css)$'
 SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData -o -name build
   -o -name dist -o -name .angular -o -name .idea -o -name .vscode -o -name var -o -name coverage -o -name .gradle
@@ -202,6 +205,45 @@ script_meta() {
     '{path: $p, exit_codes_doc: (if $c == "" then null else $c end), status_tokens: $t}'
 }
 
+# ref_words SOURCE BASEDIR <TEXT - path-like words of command lines as "SOURCE<TAB>BASEDIR<TAB>WORD"
+ref_words() {
+  awk -v src="$1" -v base="$2" '
+    /^[ \t]*#/ { next }
+    {
+      n = split($0, w, /[ \t;&|()<>=`"\047]+/)
+      for (i = 1; i <= n; i++) {
+        t = w[i]; sub(/^\.\//, "", t)
+        if (t ~ /^[A-Za-z0-9_.][A-Za-z0-9_.\/+-]*$/ && (t ~ /\// || t ~ /\.(sh|bash)$/) && !seen[t]++) print src "\t" base "\t" t
+      }
+    }'
+}
+
+# resolve_refs <"SOURCE<TAB>BASEDIR<TAB>WORD" - existing repo-local scripts as "PATH<TAB>SOURCE".
+# Accepts .sh/.bash files and files with a shell shebang; composer.json and package.json
+# references also accept .py, .php, .mjs and .js files.
+resolve_refs() {
+  local src base word b p first found
+  while IFS=$'\t' read -r src base word; do
+    case "/$word/" in */node_modules/*|*/vendor/*) continue ;; esac
+    found=""
+    for b in "$base" "$root"; do
+      p="$b/$word"
+      case "$word" in *..*) p="$(cd "$(dirname "$p")" 2>/dev/null && printf '%s/%s' "$(pwd)" "$(basename "$p")")" || continue ;; esac
+      case "$p" in "$root"/*) ;; *) continue ;; esac
+      [ -f "$p" ] && { found="$p"; break; }
+    done
+    [ -n "$found" ] || continue
+    p="$found"
+    case "$p" in
+      *.sh|*.bash) ;;
+      *.py|*.php|*.mjs|*.js) case "$src" in composer.json|package.json|*/package.json) ;; *) continue ;; esac ;;
+      *) first=""; IFS= read -r first <"$p" 2>/dev/null
+         printf '%s\n' "$first" | grep -qE '^#!.*[/ ](ba|z|da|k)?sh([ ]|$)' || continue ;;
+    esac
+    printf '%s\t%s\n' "$(rel "$p")" "$src"
+  done
+}
+
 parse_ci() {
   awk '
     function redact(t) {
@@ -253,7 +295,7 @@ commands_json() {
     elif [ -f "$dir/bun.lockb" ]; then runner="bun run"; fi
     key="package.json:$(rel "$dir")"; [ "$dir" = "$root" ] && key="package.json:."
     out="$(jq -c --arg k "$key" --arg r "$runner" --slurpfile p "$pkg" '. + {($k): {runner: $r, scripts: $p[0].scripts}}' <<<"$out")"
-  done < <({ [ -f "$root/package.json" ] && echo "$root/package.json"; walk "$root" 3 f | grep '/package\.json$'; } | sort -u)
+  done < <({ [ -f "$root/package.json" ] && echo "$root/package.json"; walk "$root" 3 f | grep '/package\.json$'; } | sort -u | tee "$tmp/pkgs")
   if [ -f "$root/Makefile" ]; then
     out="$(jq -c --argjson m "$(grep -oE '^[A-Za-z][A-Za-z0-9_-]*:' "$root/Makefile" | tr -d : | sort -u | head -$MAX_LIST | lines_to_json)" '. + {make: $m}' <<<"$out")"
   fi
@@ -266,22 +308,32 @@ commands_json() {
     out="$(jq -c --argjson s "$(jq -s -c ".[:$MAX_LIST]" "$tmp/scripts")" '. + {scripts_dir: $s}' <<<"$out")"
   fi
   : >"$tmp/ci"
-  for f in bitbucket-pipelines.yml .gitlab-ci.yml; do
-    [ -f "$root/$f" ] && jq -n -c --arg f "$f" --argjson s "$(parse_ci "$root/$f")" '{file: $f, steps: $s}' >>"$tmp/ci"
-  done
-  for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
-    [ -f "$f" ] && jq -n -c --arg f "$(rel "$f")" --argjson s "$(parse_ci "$f")" '{file: $f, steps: $s}' >>"$tmp/ci"
+  : >"$tmp/refwords"
+  for f in "$root/bitbucket-pipelines.yml" "$root/.gitlab-ci.yml" "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
+    [ -f "$f" ] || continue
+    jq -n -c --arg f "$(rel "$f")" --argjson s "$(parse_ci "$f")" '{file: $f, steps: $s}' >>"$tmp/ci"
+    ref_words "$(rel "$f")" "$root" <"$f" >>"$tmp/refwords"
   done
   [ -s "$tmp/ci" ] && out="$(jq -c --argjson c "$(jq -s -c . "$tmp/ci")" '. + {ci: $c}' <<<"$out")"
   : >"$tmp/metafiles"
-  [ -d "$root/scripts" ] && walk "$root/scripts" 2 f | grep -v '/tests\?/' | grep -E '\.(sh|bash|py|rb|mjs|cjs|js|ts|php)$' >>"$tmp/metafiles"
-  jq -r '.composer // {} | .[] | if type == "array" then .[] else . end | strings' <<<"$out" >"$tmp/pkgcmds"
-  jq -r 'to_entries[] | select(.key | startswith("package.json:")) | .value.scripts // {} | .[] | strings' <<<"$out" >>"$tmp/pkgcmds"
-  grep -oE '(\./)?[A-Za-z0-9_./-]+\.(sh|bash|py|php|mjs|js)' "$tmp/pkgcmds" 2>/dev/null | sed 's|^\./||' | while IFS= read -r f; do
-    [ -f "$root/$f" ] && printf '%s\n' "$root/$f"
-  done >>"$tmp/metafiles"
-  LC_ALL=C sort -u "$tmp/metafiles" | head -$MAX_LIST | while IFS= read -r f; do script_meta "$f"; done >"$tmp/meta"
-  [ -s "$tmp/meta" ] && out="$(jq -c --argjson m "$(jq -s -c . "$tmp/meta")" '. + {scripts_meta: $m}' <<<"$out")"
+  [ -d "$root/scripts" ] && walk "$root/scripts" 2 f | grep -v '/tests\?/' | grep -E '\.(sh|bash|py|rb|mjs|cjs|js|ts|php)$' |
+    LC_ALL=C sort -u | head -$MAX_LIST >"$tmp/metafiles"
+  [ -f "$root/composer.json" ] && jq -r '.scripts // {} | .[] | if type == "array" then .[] else . end | strings' "$root/composer.json" 2>/dev/null |
+    ref_words composer.json "$root" >>"$tmp/refwords"
+  while IFS= read -r pkg; do
+    jq -r '.scripts // {} | .[] | strings' "$pkg" 2>/dev/null | ref_words "$(rel "$pkg")" "$(dirname "$pkg")" >>"$tmp/refwords"
+  done <"$tmp/pkgs"
+  [ -f "$root/Makefile" ] && grep "^$(printf '\t')" "$root/Makefile" | ref_words Makefile "$root" >>"$tmp/refwords"
+  resolve_refs <"$tmp/refwords" >"$tmp/refs"
+  cut -f1 "$tmp/refs" | awk '!seen[$0]++' | while IFS= read -r f; do
+    grep -qxF "$root/$f" "$tmp/metafiles" || printf '%s\n' "$root/$f"
+  done | head -$MAX_REF_SCRIPTS >>"$tmp/metafiles"
+  LC_ALL=C sort -u "$tmp/metafiles" | while IFS= read -r f; do script_meta "$f"; done >"$tmp/meta"
+  if [ -s "$tmp/meta" ]; then
+    out="$(jq -c --argjson m "$(jq -s -c . "$tmp/meta")" --argjson r "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t"))
+      | reduce .[] as $x ({}; .[$x[0]] = ((.[$x[0]] // []) + [$x[1]] | unique))' "$tmp/refs")" \
+      '. + {scripts_meta: ($m | map(. + {referenced_by: ($r[.path] // [])}))}' <<<"$out")"
+  fi
   local compose
   compose="$(ls "$root"/docker-compose*.y*ml "$root"/compose*.y*ml 2>/dev/null | xargs -n1 basename 2>/dev/null | lines_to_json)"
   [ "$compose" != "[]" ] && out="$(jq -c --argjson d "$compose" '. + {docker_compose: $d}' <<<"$out")"

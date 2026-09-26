@@ -163,7 +163,7 @@ good="$TMP/good.json"
 jq 'del(.validation.gates.broken)
     | .agents = {"models": {"plan": "inherit", "implement": "opus", "review": "sonnet", "verify": "fable"}}
     | .git = {"commit": "on-request", "push": "never"}
-    | .roles = [{"name": "data", "skill": "backend-data", "order": 1, "globs": ["src/api/**", "src/db/*.py"]},
+    | .roles = [{"name": "data", "skill": "backend-data", "order": 1, "globs": ["src/api/**", "src/db/*.py", "!src/api/generated/**"]},
                 {"name": "ui", "skill": "web-ui", "order": 2, "globs": ["src/ui/**"]}]
     | .generatedPaths = ["vendor/**"] | .unownedPaths = ["scripts/**"]' .ai/av.config.json >"$good"
 out="$(bash "$GATE" --config "$good" --list)"; rc=$?
@@ -182,6 +182,9 @@ bad_case '.agents.models = "opus"' "agents.models: expected an object" "models n
 bad_case '.git.commit = "always"' "git.commit: invalid value \"always\"" "git.commit"
 bad_case '.git.push = "force"' "git.push: invalid value \"force\"" "git.push"
 bad_case '.roles[0].globs = ["src/{a,b}/**"]' "roles[0].globs: glob \"src/{a,b}/**\" has a curly brace" "glob with braces"
+bad_case '.roles[0].globs = ["!src/{a,b}/**", "src/**"]' "roles[0].globs: glob \"!src/{a,b}/**\" has a curly brace" "exclusion with braces"
+bad_case '.roles[1].globs = ["!src/ui/legacy/**"]' "roles[1].globs: only exclusions (!); add at least one glob without !" "role with only exclusions"
+bad_case '.roles[1].globs = ["src/ui/**", "!"]' "roles[1].globs: exclusion \"!\" has no pattern" "empty exclusion"
 bad_case '.roles[1].order = 1.5' "roles[1].order: expected an integer" "fractional order"
 bad_case '.roles[0].globs = []' "roles[0].globs: expected a non-empty array" "empty globs"
 bad_case '.roles[0].globs = ["a", 3]' "roles[0].globs: element 3 is not a string" "glob not a string"

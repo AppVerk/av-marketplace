@@ -96,7 +96,7 @@ Rules:
       "e2e": {
         "run": ".ai/scripts/e2e.sh \"$E2E_SUITE\"",
         "expect": "E2E_OK",
-        "precheck": "test -n \"$E2E_SUITE\" && docker compose ps --status running --format json | grep -q .",
+        "precheck": "test -n \"$E2E_SUITE\" && bash \"$AV_SKILLS_DIR/av-verify/scripts/compose_container.sh\" app >/dev/null",
         "needs": "docker compose up, test account, E2E_SUITE parameter",
         "notRunExitCodes": [2],
         "covers": ["build"],
@@ -136,9 +136,8 @@ Rules:
   },
   "integrations": {
     "tracker": "jira",
-    "design": ["miro"],
+    "design": ["figma"],
     "mcp": ["atlassian"],
-    "miro": {"via": "browser", "boards": {"docs": "https://miro.com/app/board/aBcDeFgHiJk=/"}},
     "translations": "lokalise"
   },
   "codex": { "enabled": true }
@@ -180,6 +179,7 @@ Rules:
 - `commands`: named commands. Each has `run`. Optional fields:
   - `expect`: a string that must appear in the output, e.g. `BUILD SUCCEEDED`. It protects against a false green. Sources: the real command output (CI log, a run), the code of the repo script that prints this string, or a fixed message of the tool, confirmed in its documentation or a real run (e.g. `** BUILD SUCCEEDED **` from xcodebuild). A guessed `expect` gives a false FAIL. When no source confirms it, skip the field; the exit code is enough.
   - `precheck`: a command that checks the environment. When it fails, the result is `NOT_RUN`, not `FAIL`. The precheck must check the environment of **this checkout**: dependencies in this directory, containers from this directory (label `com.docker.compose.project.working_dir`), not any running services with the same name.
+    Shared helper: `av-verify/scripts/compose_container.sh [--root DIR] <service>` prints the id of the running Docker Compose container of `<service>` that belongs to this checkout: its label `com.docker.compose.project.working_dir` is the repo root or a directory under it, compared by logical and physical path. It reads only `docker ps`, never calls `docker compose` and never starts, stops or execs containers. It exits 2 when no container of this checkout runs, or when the Docker CLI or daemon is missing, so it fits both `precheck` and `notRunExitCodes: [2]`. Example: `"precheck": "bash \"$AV_SKILLS_DIR/av-verify/scripts/compose_container.sh\" app >/dev/null"`, `"run": "docker exec \"$(bash \"$AV_SKILLS_DIR/av-verify/scripts/compose_container.sh\" app)\" composer test"`.
   - `needs`: a description of requirements for a human, e.g. "docker compose up".
   - `timeoutSec`: time limit, default 900.
   - `cwd`: directory relative to the repo root.
@@ -187,6 +187,7 @@ Rules:
   - `optional`: `true` means that `NOT_RUN` of this command does not make the gate incomplete. The result is `SKIPPED`.
   - `covers`: a list of commands that this command covers. Example: UI tests build the app, so `ui` covers `build`. Within one gate, a covered command does not run a second time.
   - `parallel`: `true` means that the command shares no state with the other gate commands (it does not write where others read, does not use the same simulator, database or build directory). It starts in the background at the start of the gate, next to the rest. Results, logs and evidence are the same and come in gate order. Typical: `docs`, `lint`, a fixtures check next to tests. Do not set it for builds or for tests on a shared device. A command with `covers`, or one covered by another gate command, runs in sequence despite the flag. A value other than `true`/`false` is a config error.
+- Commands that write tracked files, may print secrets or manage containers by a fixed name do not belong in gates (`references/interview.md`, round 1).
 - Pass command parameters through environment variables: `"run": "scripts/ui_test.sh \"$UI_SUITE\""`, and the call is `gate.sh --only ui --env UI_SUITE=LoginTests`. Detect a missing parameter in `precheck`.
 - `gates`: named sets of commands. `quick` after every code change. `full` before the report in STANDARD and LARGE modes, and with high risk; SMALL mode ends with `quick`. You can add your own, e.g. `e2e`. The `av-verify.md` overlay, section "Gate selection", says when to run special gates.
 - A command does not have to belong to a gate. Helper commands with a parameter, e.g. `lint_snapshot` and `lint_delta` with `LINT_BASE`, are called with `gate.sh --only lint_delta --env LINT_BASE=...`.
@@ -205,6 +206,7 @@ Commands from the config are the only commands that `av-verify` runs without ask
   - `skill`: the role skill in `.claude/skills/<skill>/SKILL.md`. Write a plugin skill with a colon, e.g. `phpstorm-plugin:php-project-guide`; the validator does not look for it.
   - `order`: roles with the same number may work in parallel. A lower number goes first.
   - `globs`: git pathspec `:(glob)` syntax: `*`, `**`, `?`. No `{a,b}` braces: each variant is a separate glob. A path without a star also covers the directory contents.
+    A glob starting with `!` excludes matching files from its own list (one role, `generatedPaths` or `unownedPaths`), e.g. `["config/**", "!config/app.yaml"]`. An excluded file falls through to the next rule. A role with exclusions only is invalid.
 - Role globs must not overlap. A file without a role belongs to `implementer`, that is, the main session.
 - The `av-implement.md` overlay and the role skill do not copy globs. They link to `roles` in one sentence.
 - `check_setup.sh --owner <file>...` from the `av-setup` skill determines a file's owner. Order: `generatedPaths`, then `roles` (first by `order`), then `unownedPaths`, finally `implementer`.
@@ -224,7 +226,8 @@ Commands from the config are the only commands that `av-verify` runs without ask
   - String: a Claude model, `inherit`, `opus`, `sonnet`, `haiku`, `fable` or a full id `claude-<id>`. Short for `{"provider": "claude", "model": "<string>"}`.
   - Object: `{"provider": "claude"|"codex", "model": "...", "effort": "..."}`. All fields optional: `provider` defaults to `claude`, `model` and `effort` default to `inherit`. A `codex` model is a name from Codex CLI, e.g. `<codex-model>`; `inherit` takes the model from `~/.codex/config.toml`.
   - Effort: `claude` accepts `low`, `medium`, `high`, `xhigh`, `max`; `codex` also `minimal` and `ultra`. `agent.sh` checks in `~/.codex/models_cache.json` whether a given Codex model supports the effort (a warning).
-  - `planReview` without an entry inherits `review`. A missing slot is `inherit`.
+  - `planReview` without an entry inherits `review`.
+  - A `claude` slot with effort `inherit` runs as a `general-purpose` subagent with the session effort. Set `effort` to run it on a slot definition (`av-slot-<effort>`). A missing slot is `inherit`.
   - `gate.sh --list` rejects other values, and `haiku` in `review` (code 2). Do not give `haiku` to review. A cheap model can falsely confirm correctness. For running commands with an objective exit code, it is enough. In adoption, choose the stronger of two: the model from the old agent's frontmatter or the default from this schema.
   - A Claude slot runs the Agent tool with the `av-slot-<effort>` definition (session permissions). A Codex slot runs `av-implement/scripts/agent.sh` through `codex exec` in the user's sandbox, with a permission prompt when permissions are missing. Rules: skill `av-implement`, sections "Slots and providers" and "Permissions".
 - `crossVendor` (optional, bool): `true` requires `review` to have a different provider than `implement`, and `planReview` (or `review`) a different one than `plan`. Models from different companies make mistakes in different places, so mutual checking catches more. Alternating example:
@@ -245,8 +248,8 @@ Commands from the config are the only commands that `av-verify` runs without ask
   ```
 - `timeoutSec` (optional): the limit of one slot in `agent.sh`, default 3600.
 
-**integrations**: information for the skills about which tools they may use (tracker, Miro, Figma, translation system). The fields are open; the team can add its own. Secrets never go here.
-- An integration with a template in `templates/<name>/` has the field shape described in the template's `README.md`. `check_setup.sh` validates it from the template manifest. Example above: `miro` (`templates/miro/`).
+**integrations**: information for the skills about which tools they may use (tracker, boards, design tools, translation system). The fields are open; the team can add its own. Secrets never go here.
+- How the repo uses a tool is described in the repo docs (`references/doc-set.md`, section "Integrations"), not in the config.
 - `mcp` lists the MCP servers that the skills use.
 
 **codex.enabled**: `true` means that setup maintains `AGENTS.md` and `.agents/skills` as symlinks.

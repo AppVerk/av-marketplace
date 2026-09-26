@@ -81,6 +81,12 @@ Gaps: <changed code without docs coverage; drift from team rules>
 
 Without a flag it edits no files. It returns a list of drift items and proposed fixes. With `--fix` it fixes fact drift (per "Content rules") and leaves rule drift for the team to decide. Sync works only on the diff, so it will not fix drift without code changes. Use `audit --fix` for that.
 
+Rules for `--fix`, also when subagents do the work:
+- A changed path needs evidence that the new path is the successor: `git log --follow -- <new>` or `git log -S <old name>`. Without evidence, do not invent a path: turn the mention into plain text history or leave it as a gap.
+- New and rewritten lines have no em dash or en dash.
+- After subagents return: every path they changed must exist (`check_refs.sh --strict` on the changed files) and `grep -n "[—–]"` on their added lines must be empty. Fix before the report.
+- Give one subagent at most about 5 docs files.
+
 ### Step 1: Files
 
 By default `docs.entry`, the whole `docs.root` and the overlays from `paths.overlays`, without `workspace/` and `sessions/`. Arguments narrow the set.
@@ -91,7 +97,7 @@ By default `docs.entry`, the whole `docs.root` and the overlays from `paths.over
 bash <skill-dir>/scripts/check_refs.sh <files or directories> --root <repo-root> --workspace <paths.workspace>
 ```
 
-The script checks links and paths in backticks, also paths relative to the source directory (suffix match). It skips placeholders, package names, files ignored by git and lines that themselves say the file is missing.
+The script checks links and paths in backticks, also paths relative to the source directory (suffix match). It skips placeholders (`<x>`, `$VAR`, `${VAR}`), package names, files ignored by git and lines that themselves say the file is missing.
 
 - `MISSING`: a path with a directory, or a link, that does not exist. Almost always real drift.
 - `UNRESOLVED`: a bare file name that was not found. Judge by hand: often it is an example or a file name from another repo. The script itself skips av-* skill script names (`gate.sh`, `scan.sh`, `check_refs.sh`, `check_names.sh`).

@@ -4,7 +4,7 @@ This file describes which documents `av-setup` creates and where it takes the fa
 
 ## Overriding rules
 
-1. **Facts only from code.** Every path, class, method, command and number must exist in the repo. When something cannot be established, write `_[TODO: fill in]_`. An invented rule does more harm than a missing rule, because the agent will follow it.
+1. **Facts only from code.** Every path, class, method, command and number must exist in the repo. When something cannot be established, write `_[TODO: fill in]_` (localized form: `references/localization.md`, section "Markers"). An invented rule does more harm than a missing rule, because the agent will follow it.
 2. **One owner per topic.** Each topic has one file. Elsewhere, only a link and one sentence are allowed. Copies always drift apart.
 3. **Do not number rules that someone will refer to.** Numbering shifts with every addition. Link to the section.
 4. **Do not overwrite existing files.** Create the missing ones. Changes to existing ones go only through an approved plan (adoption or refresh mode).
@@ -65,7 +65,7 @@ At the start of a session, read `<paths.learnings>` if it exists.
 | `configuration.md` | config files and what may be changed in them | config files, env without values |
 | `tech-stack.md` | dependencies with versions | lockfile |
 | `testing.md` | how to write and run tests, mocks, fixtures | test directories, sample tests |
-| `agents.md` | work with the agent: av-* skills, overlays, role skills, slots and models (no copy of config values), machine requirements (Codex CLI, slot agent definitions, allow rule for `agent.sh`, browser extension for integrations), local override `.ai/av.config.json.local` | config, av-implement `SKILL.md` "Slots and providers" |
+| `agents.md` | work with the agent: av-* skills, overlays, role skills, slots and models (no copy of config values), machine requirements (Codex CLI, slot agent definitions, allow rule for `agent.sh`, tools the integrations need), local override `.ai/av.config.json.local` | config, av-implement `SKILL.md` "Slots and providers" |
 | `code-review.md` | repo review rules (read by `av-review`) | conventions from the code, linters, CI and team docs |
 | `contracts.md` | protected surfaces and what is a breaking change | public API, routes, DB schema, deep links, events |
 | `modules/README.md` | module index | candidates from the scan |
@@ -111,24 +111,12 @@ An inventory of the actual surfaces. For each: where it lives, who consumes it, 
 
 ## Integrations
 
-Instructions for external tools and stack tools live in the repo, not in the global av-* skills. Only templates live globally: `templates/<name>/` with a `template.json` manifest and a `README.md` description.
+The plugin ships no instructions for external tools. Instructions for a tool the repo uses (a board, a design tool, a tracker, a device) are repo knowledge.
 
-Manifest:
-- `configKey`: the config key that enables the template, e.g. `integrations.<name>`,
-- `applies`: a jq expression on the config; `true` means the files must be in the repo,
-- `validate`: a jq expression that returns field error descriptions (validation in `check_setup.sh`),
-- `files`: template file -> target in the repo with `{docs.root}` and `{paths.scripts}`,
-- `placeholders`: strings in the content to replace with config values,
-- `fakeNames`: names for the "Known false names" section in the `av-docs-sync.md` overlay.
-
-Rules:
-- Read the template's `README.md`: when to use it, how to fill the config, what to add to the overlays.
-- Copy the files with the `placeholders` replaced. Leave the rest of the content: it is a proven solution, not content to invent.
-- Template docs (e.g. `miro.md`) are written in English. When you copy one into a repo, translate the prose to `project.language`. Keep code, commands and names.
-- Do not overwrite an existing file. Show the diff and ask; with `--defaults`, save it next to it as `.proposed`.
-- The docs file gets a row in the "Documentation" table in `CLAUDE.md` and in the docs index.
-- `check_setup.sh` reports `SETUP_INTEGRATION_INVALID` (ERROR) and `SETUP_TEMPLATE_MISSING` (WARNING) when `applies` is true and the file is missing.
-- Solve a problem of one repo (a script for its project, a workaround for its tool) in that repo: in `<paths.scripts>`, docs and overlays. Do not add it to a template.
+- Source: existing agents, skills and docs of the repo that use the tool; in ADOPTION, tool agents and tool skills (`references/adoption.md`).
+- Place: a topic file in `<docs.root>/` (e.g. `<docs.root>/<tool>.md`) with a row in the docs table of `CLAUDE.md`; helper scripts in `<paths.scripts>/`. Overlays link to the topic file.
+- Access method (MCP, browser, CLI): the team's choice as found in the repo or given in the interview. Do not switch it.
+- Solve a problem of one repo (a script for its project, a workaround for its tool) in that repo. Do not add it to the plugin.
 
 ## Modules
 

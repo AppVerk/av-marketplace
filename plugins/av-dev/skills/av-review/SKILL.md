@@ -60,7 +60,7 @@ A consumer outside the repo (e.g. a mobile app, an admin panel, another service)
 
 ## Step 5: Axes
 
-Axes come from `docs.reviewRules`. The overlay says which tools check them and who fixes. For the files of each affected layer, add the sections "Required steps" and "Pitfalls" from the role skill (config, field `roles`). A broken required step of a layer is at least MEDIUM. You may run the read-only commands from the "Layer check" section (lint, static analysis on the changed files) when the environment works; their result is evidence in a finding, not a gate. Process steps from the overlay (docker, Miro, Figma) are not review axes. With `--security`, or when the diff touches `risk.highRiskPaths` or an area from `risk.highRiskAreas`, the security axis is required and checked in full.
+Axes come from `docs.reviewRules`. The overlay says which tools check them and who fixes. For the files of each affected layer, add the sections "Required steps" and "Pitfalls" from the role skill (config, field `roles`). A broken required step of a layer is at least MEDIUM. You may run the read-only commands from the "Layer check" section (lint, static analysis on the changed files) when the environment works; their result is evidence in a finding, not a gate. Process steps from the overlay (docker, a board, Figma) are not review axes. With `--security`, or when the diff touches `risk.highRiskPaths` or an area from `risk.highRiskAreas`, the security axis is required and checked in full.
 
 Default axes (when the repo has none of its own):
 1. Correctness: logic, edge cases, error handling, null and empty collection.

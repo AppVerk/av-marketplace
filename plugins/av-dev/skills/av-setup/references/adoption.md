@@ -50,8 +50,8 @@ Typical mapping:
 | acceptance agent against the plan (`acceptance-verifier`) | CONVERT | criteria -> "Plan compliance" axis in `code-review.md`; `av-review` checks it with `--run` |
 | `docs-keeper`, `docs-auditor` | CONVERT | -> `av-docs-sync.md` |
 | translation agent (`i18n-guardian`) | KEEP or CONVERT | KEEP when it does work (adds keys in many language files, syncs with a tool like Lokalise); CONVERT when it only checks rules; then rules -> `code-review.md` and required steps |
-| tool agents (`miro-reader`, `figma-reader`) | KEEP or UPDATE | not part of the pipeline; UPDATE when they refer to deleted agents, phases or commands |
-| tool project skills (`translate`, `read-miro`, `writing-tests`, `angular-templates`) | KEEP or UPDATE | overlays may point to them; UPDATE references as above |
+| tool agents (`board-reader`, `figma-reader`) | KEEP or UPDATE | not part of the pipeline; UPDATE when they refer to deleted agents, phases or commands |
+| tool project skills (`translate`, `read-board`, `writing-tests`, `angular-templates`) | KEEP or UPDATE | overlays may point to them; UPDATE references as above |
 | project skills that wrap the pipeline (refer to RUN_ID, phases, a manifest) | CONVERT | rules -> overlay; the wrapper DROP, or UPDATE when it also contains a tool |
 | session summary prompt (`.claude/prompts/post-session-review.md`) | KEEP when a hook uses it; otherwise CONVERT | -> `av-implement.md` overlay, section "Learnings" (step 10 of `av-implement` reads it) |
 | pipeline scripts (`pipeline_state.py`, `pipeline_check.py`) and their tests | DROP or TODO | `gate.sh` replaces them; deleting needs approval; without approval, put them into TODO |
@@ -99,6 +99,8 @@ bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> \
 
 - Result: `LOST <old-file> <token>` for a backtick token with no trace in the new corpus. At the end: `TOKENS n LOST m FILTERED f`.
 - The filter skips orchestration: RUN_ID, CHECK_ID, EVIDENCE, `$ARGUMENTS`, `pipeline_state`, `pipeline_check`, the paths `.claude/agents` and `.claude/commands`. `--noise` (ERE) adds the names of old agents and commands.
+- It also filters handoff noise and counts it as FILTERED: upper-case `KEY=value` parameters, upper-case field names, `{name}` and `<Name>` placeholders, placeholder file names (`XController.php`, `Foo*`, `Example*`). A rule keyword written as an upper-case field line in a code block (e.g. a plan section template) is filtered too: check such templates by hand.
+- It exits 2 when none of the `--old` files can be read. In zsh, pass each file as its own argument; `--old "$VAR"` with several paths is one word.
 - Every `LOST` gets a place in the plan. A substantive rule (findings category, threshold, script, pitfall) goes to "Knowledge moved to overlays" with a target. Orchestration goes to "Knowledge that gets lost" with what replaces it.
 - Group them: one row per group of tokens, not per token. Write the `TOKENS`, `LOST` and `FILTERED` counts into the plan.
 

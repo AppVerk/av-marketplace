@@ -13,7 +13,7 @@
 #               one that exists next to root is not reported,
 #   WORKSPACE   reference to a working file (--workspace, default .ai/workspace);
 #               docs should not link plans and reports.
-# Skips placeholders (YYYY, <x>, [x], {x}, Foo), package names from manifests,
+# Skips placeholders (YYYY, <x>, [x], {x}, $VAR, ${VAR}, Foo), package names from manifests,
 # paths ignored by git and lines that themselves say the file is missing
 # (negation words in Polish and English).
 # The repo index includes *.xcresult bundles without their contents (hundreds of thousands of files).
@@ -117,7 +117,7 @@ fi
       return t
     }
     function placeholder(t) {
-      return (t ~ /YYYY|MM-DD|\[[^]]*\]|\{[^}]*\}|<[^>]*>|RUN_ID/ || t ~ /\.\.\.([^\/]|$)/ ||
+      return (t ~ /YYYY|MM-DD|\[[^]]*\]|\{[^}]*\}|<[^>]*>|[$][A-Za-z_{]|RUN_ID/ || t ~ /\.\.\.([^\/]|$)/ ||
               t ~ /(^|[^A-Za-z])(foo|xxx)([^A-Za-z]|$)/ || t ~ /(^|[^A-Za-z])Foo([A-Z_.\/-]|$)/)
     }
     function looks_like_path(t,    s) {

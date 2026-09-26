@@ -148,7 +148,7 @@ check "$out" '.tooling.husky_hooks["pre-commit"] == ["npm run lint"]' "ng: husky
 check "$out" '.tooling.versions[".nvmrc"] == ["22.12"] and .tooling.versions.engines.node == ">=22"' "ng: versions"
 check "$out" '.tooling.coverage_thresholds["karma.conf.js"] | test("statements: 75")' "ng: coverage threshold"
 check "$out" '.tests.spec_ts_files == 1' "ng: spec files"
-check "$out" '.commands.scripts_meta == [{"path": "tools/ci.sh", "exit_codes_doc": "CI. Exit 0: ok; 1: error.", "status_tokens": ["CI_OK"]}]' "ng: script from package.json"
+check "$out" '.commands.scripts_meta == [{"path": "tools/ci.sh", "exit_codes_doc": "CI. Exit 0: ok; 1: error.", "status_tokens": ["CI_OK"], "referenced_by": ["package.json"]}]' "ng: script from package.json"
 check "$out" '.ai_setup.docs == ["docs/standards/testing.md"]' "ng: docs"
 check "$out" '.ai_setup[".claude"].co_authored_setting == false' "ng: includeCoAuthoredBy false"
 check "$out" '.git.ticket_prefixes.CC == 1' "ng: prefix CC"
@@ -196,6 +196,58 @@ check "$out" '.commands.scripts_dir | map(.file) | index("scripts/claude/guard.m
 check "$out" '.git.ai_signature_commits == "1/2"' "extra: AI signature in recent commits"
 check "$out" '.doc_language_guess == "en"' "extra: language en"
 check "$out" '.commands.scripts_meta | map(select(.path == "scripts/unit.sh")) | .[0] | .exit_codes_doc == "Exit code: 0 when green, 1 when a test fails, 2 when the environment is down." and .status_tokens == ["UNIT_OK"]' "extra: script exit codes and statuses (English)"
+
+# MARK: scripts referenced by CI, composer.json, package.json and Makefile
+REF="$TMP/refs"
+init_repo "$REF"
+mkdir -p "$REF/tests/E2E" "$REF/bin" "$REF/ci" "$REF/tools" "$REF/web/tools" "$REF/vendor/pkg" "$REF/scripts" "$REF/src/gen" "$REF/.github/workflows"
+doc() { printf '%s\n# Runs %s.\n# Exit code: 0 ok, 1 failed.\necho "%s_OK"\n' "$1" "$2" "$3"; }
+doc '#!/bin/bash' e2e E2E >"$REF/tests/E2E/run-tests.sh"
+doc '#!/bin/sh' check CHECK >"$REF/bin/check.sh"
+doc '#!/bin/sh' lint LINT >"$REF/ci/lint.sh"
+doc '#!/usr/bin/env bash' verify VERIFY >"$REF/bin/verify"
+doc '#!/usr/bin/env python3' tool TOOL >"$REF/bin/tool"
+doc '#!/usr/bin/env python3' report REPORT >"$REF/tools/report.py"
+doc '#!/bin/sh' smoke SMOKE >"$REF/tools/smoke.sh"
+doc '// gen' gen GEN >"$REF/web/tools/gen.js"
+doc '#!/bin/sh' vendored VENDOR >"$REF/vendor/pkg/x.sh"
+doc '#!/bin/sh' outside OUTSIDE >"$TMP/outside.sh"
+doc '#!/bin/sh' unit UNIT >"$REF/scripts/unit.sh"
+doc '#!/bin/sh' build BUILD >"$REF/scripts/build.sh"
+cat >"$REF/bitbucket-pipelines.yml" <<'EOF3'
+pipelines:
+  default:
+    - step:
+        name: E2E
+        script:
+          - bash tests/E2E/run-tests.sh --headless
+          - ./bin/check.sh && python3 tools/report.py
+          - sh vendor/pkg/x.sh; bash ../outside.sh
+          - bash tests/missing.sh
+EOF3
+printf 'on: push\njobs:\n  lint:\n    steps:\n      - run: sh ./ci/lint.sh\n' >"$REF/.github/workflows/ci.yml"
+printf '{"scripts":{"e2e":"tests/E2E/run-tests.sh","post-install-cmd":["@php bin/tool"]}}\n' >"$REF/composer.json"
+printf '{"scripts":{"smoke":"bash ../tools/smoke.sh","gen":"node tools/gen.js"}}\n' >"$REF/web/package.json"
+{ printf 'verify:\n\t./bin/verify\n\tbin/tool\n\tscripts/unit.sh\n# not a recipe: bin/check.sh\ngen:\n'
+  for i in $(seq 1 45); do printf '\tbash src/gen/g%02d.sh\n' "$i"; done; } >"$REF/Makefile"
+for i in $(seq 1 45); do doc '#!/bin/sh' "g$i" GEN >"$REF/src/gen/g$(printf '%02d' "$i").sh"; done
+commit "$REF" "PROJ-1 init"
+out="$TMP/refs.json"
+bash "$SCAN" "$REF" >"$out"
+meta() { printf '.commands.scripts_meta | map(select(.path == "%s")) | .[0]' "$1"; }
+check "$out" "$(meta tests/E2E/run-tests.sh) | .exit_codes_doc == \"Exit code: 0 ok, 1 failed.\" and .status_tokens == [\"E2E_OK\"] and .referenced_by == [\"bitbucket-pipelines.yml\", \"composer.json\"]" "refs: CI and composer script with meta and sources"
+check "$out" '.commands.scripts_meta | map(select(.path == "tests/E2E/run-tests.sh")) | length == 1' "refs: script referenced twice listed once"
+check "$out" "$(meta bin/check.sh) | .referenced_by == [\"bitbucket-pipelines.yml\"]" "refs: ./ prefix and && chain"
+check "$out" "$(meta ci/lint.sh) | .referenced_by == [\".github/workflows/ci.yml\"]" "refs: sh ./x.sh in a GitHub workflow"
+check "$out" "$(meta bin/verify) | .status_tokens == [\"VERIFY_OK\"] and .referenced_by == [\"Makefile\"]" "refs: Makefile recipe, shell shebang without extension"
+check "$out" "$(meta tools/smoke.sh) | .referenced_by == [\"web/package.json\"]" "refs: ../ path from a package.json in a subdirectory"
+check "$out" "$(meta web/tools/gen.js) | .referenced_by == [\"web/package.json\"]" "refs: package.json js script relative to its directory"
+check "$out" "$(meta scripts/unit.sh) | .referenced_by == [\"Makefile\"]" "refs: scripts/ entry gets its source"
+check "$out" "$(meta scripts/build.sh) | .referenced_by == []" "refs: unreferenced scripts/ entry has empty sources"
+check "$out" '.commands.scripts_meta | map(.path) | (index("bin/tool") == null and index("tools/report.py") == null)' "refs: non-shell scripts from CI and Makefile skipped"
+check "$out" '.commands.scripts_meta | map(.path) | (index("vendor/pkg/x.sh") == null and index("tests/missing.sh") == null and any(.[]; test("outside")) == false)' "refs: vendor, missing and outside files skipped"
+check "$out" '.commands.scripts_meta | map(select(.path | startswith("scripts/") | not)) | length == 40' "refs: at most 40 referenced scripts"
+check "$out" '.commands.scripts_meta | map(select(.path | startswith("src/gen/"))) | length == 34 and .[0].path == "src/gen/g01.sh"' "refs: cap keeps references in order"
 
 # MARK: layers instead of modules, .agents ignored
 LAY="$TMP/layers"

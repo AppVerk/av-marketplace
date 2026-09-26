@@ -16,7 +16,6 @@ Reference page: [docs/plugins/av-dev.md](../../docs/plugins/av-dev.md).
 - [What av-setup creates](#what-av-setup-creates)
 - [Config examples](#config-examples)
 - [Claude and Codex slots](#claude-and-codex-slots)
-- [Miro through the browser](#miro-through-the-browser)
 - [Language](#language)
 - [Troubleshooting](#troubleshooting)
 
@@ -178,7 +177,7 @@ AGENTS.md -> CLAUDE.md        the same instructions for Codex
   overlays/                   repo rules for each of the 5 skills
   README.md, architecture.md, commands.md, code-review.md, contracts.md, ...
   modules/                    one file per module
-  scripts/                    repo tools for the agent (gates, lint, templates)
+  scripts/                    repo tools for the agent (gates, lint, helpers)
   workspace/                  plans, reports, run evidence (gitignored)
   sessions/learnings.md       session learnings (gitignored)
 .claude/skills/<prefix>-<role>/SKILL.md   knowledge of one layer, e.g. shop-backend
@@ -196,7 +195,7 @@ Gates:
     "lint":  { "run": "make lint", "parallel": true },
     "unit":  { "run": ".ai/scripts/unit_test.sh", "expect": "UNIT_OK", "timeoutSec": 900 },
     "build": { "run": "make build", "timeoutSec": 1200 },
-    "e2e":   { "run": ".ai/scripts/e2e.sh \"$E2E_SUITE\"", "precheck": "docker compose ps --status running --format json | grep -q .", "notRunExitCodes": [2] }
+    "e2e":   { "run": ".ai/scripts/e2e.sh \"$E2E_SUITE\"", "precheck": "bash \"$AV_SKILLS_DIR/av-verify/scripts/compose_container.sh\" app >/dev/null", "notRunExitCodes": [2] }
   },
   "gates": {
     "quick": ["lint", "unit"],
@@ -208,6 +207,7 @@ Gates:
 - `expect`: text that must appear in the output. It protects against a green result that did nothing.
 - `precheck`: fails means `NOT_RUN`, not `FAIL`.
 - `parallel`: runs in the background next to the other commands of the gate.
+- `compose_container.sh <service>`: the container of this checkout only, never one started from another copy of the repo.
 
 Local override: `.ai/av.config.json.local` changes settings only on your machine. Objects merge, arrays replace, `null` removes a key.
 
@@ -254,18 +254,6 @@ Each step of a run is a slot with its own provider, model and effort:
 
 - When a Codex slot needs more access (network, a folder outside the repo), the run asks you and resumes with a narrow grant.
 - No Codex on your machine: switch its slots to Claude in `.ai/av.config.json.local` and set `crossVendor: false`.
-
-## Miro through the browser
-
-When the repo uses a Miro board, `av-setup` copies a template into the repo: `.ai/miro.md` and `.ai/scripts/miro-frames.js`.
-
-```json
-"integrations": { "miro": { "via": "browser", "boards": { "docs": "https://miro.com/app/board/<id>/" } } }
-```
-
-- Needs Claude in Chrome and a Miro session in Chrome.
-- Works in a background tab: reading and writing go through the board's Web SDK, not through clicks.
-- Writes in a hidden tab use `withFrames` from `miro-frames.js`, because Chrome pauses animation frames there.
 
 ## Language
 

@@ -15,7 +15,7 @@ Hand-written agent pipelines drift apart between repos, and ports for other tool
 - role skills: `.claude/skills/<prefix>-<role>/`,
 - AI docs: `.ai/` or `docs/`.
 
-The plugin holds general rules and integration templates only. Knowledge of a stack or a repo is derived from that repo and stays in it.
+The plugin holds general rules only. Knowledge of a stack or a repo is derived from that repo and stays in it.
 
 ## Skills
 
@@ -50,7 +50,7 @@ There are no stack templates. `av-setup` works with any stack: it takes commands
 | `risk` | high-risk areas and paths that force an independent review |
 | `agents` | model, provider and effort per pipeline slot |
 | `git` | base branch, branch and commit patterns, commit and push policy |
-| `integrations` | tracker, design tools, templates such as Miro |
+| `integrations` | tracker, boards, design tools |
 
 `gate.sh --list` validates the config. `requires: {"av-dev": ">=X.Y.Z"}` pins the minimum plugin version.
 
@@ -86,17 +86,14 @@ Slots: `plan`, `planReview`, `implement`, `review`, `verify`. Each slot sets a p
 - `crossVendor: true` requires code and plans to be checked by a different provider than the one that wrote them.
 - `haiku` is rejected for `review`: a cheap model can falsely confirm correctness.
 
-## Integration Templates
+## Integrations
 
-Tool knowledge lives in `av-setup/templates/<name>/`, not in the working skills. Each template has a manifest (`template.json`: when it applies, field validation, files, placeholders, known false names) and a `README.md`. `av-setup` copies the files into the repo and the overlays link to them.
-
-Shipped template: `miro`. It works through the browser (Claude in Chrome) and the board page's Web SDK, also in a background tab. Writes in a hidden tab need `withFrames` from `miro-frames.js`, because Chrome does not fire `requestAnimationFrame` there.
+The plugin ships no instructions for external tools. How a repo uses a board, a design tool or a tracker is repo knowledge: `av-setup` keeps it in the repo docs (a topic file linked from the overlays), taken from the repo's existing agents, skills and docs.
 
 ## Prerequisites
 
 - `bash` 3.2+, `git`, `jq`.
 - Codex slots: Codex CLI, logged in.
-- Miro template: Claude in Chrome with a Miro session.
 
 ## Installation
 
@@ -113,4 +110,4 @@ Then run `av-setup` in the repo.
 bash plugins/av-dev/tests/run.sh
 ```
 
-548 script tests: gates, config merge, slot executor, setup validator, repo scan, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.
+646 script tests: gates, config merge, slot executor, setup validator, repo scan, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.

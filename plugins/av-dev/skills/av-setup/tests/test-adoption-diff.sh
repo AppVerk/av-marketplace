@@ -65,6 +65,43 @@ bash "$AD" --root "$R" --old old.md --new CLAUDE.md .ai >"$out"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "code 0 without LOST: $rc"
 has "$out" "TOKENS 2 LOST 0 FILTERED 0" "everything moved"
 
+# MARK: orchestration filter
+cat >"$R/handoff.md" <<'EOF'
+# handoff
+Start with `MODE=fix` and `STATUS=DONE|BLOCKED`, also `SCOPE=all ROUND=2`.
+Report `STATUS` and `CHANGED_FILES`, then read `NEXT_AGENT` and `RETRY_COUNT`.
+Set RETRY_COUNT=3 before the loop.
+```text
+- NEXT_AGENT: reviewer
+```
+Templates: `{entity}`, `src/<Module>/Service.php`, `make <target>`.
+Placeholders: `XController.php`, `FooService*`, `ExampleTest.py`, `src/foo.ts`, `XxxRepository.kt`.
+Keep: `APP_DIR=/opt/app`, `Request<T>`, `${HOME}/bin/tool`, `src/*.{ts,js}`, `XCTest`, `.env.example`.
+Keep: `KEEP_RULE`, `BUILD_DIR=out npm run build`, `src/Foodstuff.go`.
+EOF
+bash "$AD" --root "$R" --old handoff.md --new CLAUDE.md .ai >"$out"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "code 1 with LOST after filtering: $rc"
+for tok in "MODE=fix" "STATUS=DONE" "SCOPE=all" "STATUS" "CHANGED_FILES" "NEXT_AGENT" "RETRY_COUNT" "{entity}" "<Module>" "<target>" \
+  "XController" "FooService" "ExampleTest" "src/foo.ts" "XxxRepository"; do
+  hasnt "$out" "$tok" "orchestration token filtered: $tok"
+done
+for tok in "APP_DIR=/opt/app" "Request<T>" '${HOME}/bin/tool' "src/*.{ts,js}" "XCTest" ".env.example" "KEEP_RULE" \
+  "BUILD_DIR=out npm run build" "src/Foodstuff.go"; do
+  has "$out" "LOST handoff.md $tok" "real token kept: $tok"
+done
+has "$out" "TOKENS 24 LOST 9 FILTERED 15" "summary with the orchestration filter"
+
+# MARK: missing old files
+bash "$AD" --root "$R" --old "old.md handoff.md" --new .ai >"$out" 2>"$TMP/err.txt"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "no old file readable: code $rc"
+has "$out" "USAGE none of the old files can be read: old.md handoff.md" "message for unreadable old files"
+hasnt "$out" "TOKENS" "no summary without old files"
+has "$TMP/err.txt" "WARNING file not found: old.md handoff.md" "warning for the joined argument"
+bash "$AD" --root "$R" --old old.md ghost.md --new CLAUDE.md .ai >"$out" 2>"$TMP/err.txt"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "some old files present: code $rc"
+has "$TMP/err.txt" "WARNING file not found: ghost.md" "warning per missing old file"
+has "$out" "TOKENS 2 LOST 0 FILTERED 0" "present old files still compared"
+
 # MARK: usage
 bash "$AD" --root "$R" --new .ai >/dev/null; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "no old files: code $rc"

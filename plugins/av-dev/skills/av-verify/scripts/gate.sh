@@ -251,10 +251,12 @@ schema_errors() {
               ( if ($r.order | type) != "number" or ($r.order | floor) != $r.order then "\($p).order: expected an integer" else empty end ),
               ( if ($r.globs | type) != "array" or ($r.globs | length) == 0 then "\($p).globs: expected a non-empty array of strings"
                 else
-                  $r.globs[]
+                  ( $r.globs[]
                   | if isstr | not then "\($p).globs: element \(tojson) is not a string"
                     elif test("[{}]") then "\($p).globs: glob \(tojson) has a curly brace; list each variant separately"
-                    else empty end
+                    elif . == "!" then "\($p).globs: exclusion \"!\" has no pattern"
+                    else empty end ),
+                  ( if all($r.globs[]; isstr and startswith("!")) then "\($p).globs: only exclusions (!); add at least one glob without !" else empty end )
                 end )
             end
         end ),

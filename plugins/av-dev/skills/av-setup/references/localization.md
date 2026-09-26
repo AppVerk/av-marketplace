@@ -91,9 +91,41 @@ Rules:
 
 ## Docs sections
 
+Headers of the files `av-setup` generates from `references/doc-set.md`.
+
+| File | English (canonical) | Polish (pl) |
+|---|---|---|
+| `CLAUDE.md` | Quick start | Szybki start |
+| `CLAUDE.md` | Code map | Mapa kodu |
+| `CLAUDE.md` | Task routing | Routing zadań |
+| `CLAUDE.md` | Critical rules | Krytyczne zasady |
+| `CLAUDE.md` | Working with the agent | Praca z agentem |
+| `CLAUDE.md` | Documentation | Dokumentacja |
+| `CLAUDE.md` | Git | Git |
+| `CLAUDE.md`, learnings file | Session learnings | Wnioski z sesji |
+| `code-review.md` | Review rules | Reguły review |
+| `code-review.md` | Priorities | Priorytety |
+| `code-review.md` | Axes | Osie |
+| `code-review.md` | Known false alarms | Znane fałszywe alarmy |
+| `code-review.md` | Severity | Ważność |
+| `agents.md` | Skills | Skille |
+| `agents.md` | Role skills | Skille ról |
+| `agents.md` | Models | Modele |
+| `agents.md` | Machine requirements | Wymagania na maszynie |
+| `agents.md` | Local override | Nadpisanie lokalne |
+| module file | Module: {Name} | Moduł: {Nazwa} |
+| module file | Files | Pliki |
+| module file | Contracts | Kontrakty |
+| module file | Dependencies | Zależności |
+| module file | Pitfalls | Pułapki |
+
+## Markers
+
 | English (canonical) | Polish (pl) |
 |---|---|
-| Task routing (`CLAUDE.md`) | Routing zadań |
-| Working with the agent (`CLAUDE.md`) | Praca z agentem |
-| Models (`agents.md`) | Modele |
-| Session learnings (`CLAUDE.md`) | Wnioski z sesji |
+| `_[TODO: fill in]_` | `_[TODO: uzupełnij]_` |
+| `_[description to create: av-docs-sync]_` | `_[opis do utworzenia: av-docs-sync]_` |
+
+## Names outside the tables
+
+A header that is not in these tables: translate it once and use the same translation in every file of the repo. Before you write it, check the existing docs of the repo for a header with the same meaning and reuse it.

@@ -165,41 +165,49 @@ has "$out" "SETUP_OVERLAY_SECTION .ai/overlays/av-docs-sync.md: Known false name
 hasnt "$out" "Gate selection" "English: Gate selection accepted"
 hasnt "$out" "Code -> docs map" "English: Code -> docs map accepted"
 
-# MARK: integrations
-miro_cfg() { jq --argjson m "$1" '.integrations = {miro: $m}' "$C/.ai/av.config.json" >"$TMP/miro.json"; bash "$CS" --root "$C" --config "$TMP/miro.json" >"$out"; }
-miro_cfg '{"via":"api"}'
-has "$out" "SETUP_INTEGRATION_INVALID integrations.miro.via" "miro: via api passed"
-miro_cfg '{"boards":{"x":"http://example.com"}}'
-has "$out" "SETUP_INTEGRATION_INVALID integrations.miro.boards" "miro: bad address passed"
-miro_cfg '"browser"'
-has "$out" "SETUP_INTEGRATION_INVALID integrations.miro: " "miro: string passed"
-miro_cfg '{"via":"browser","boards":{"docs":"https://miro.com/app/board/abc=/"}}'
-hasnt "$out" "SETUP_INTEGRATION_INVALID" "miro: valid entry rejected"
-has "$out" "SETUP_TEMPLATE_MISSING .ai/miro.md" "miro: no warning about docs"
-has "$out" "SETUP_TEMPLATE_MISSING .ai/scripts/miro-frames.js" "miro: no warning about the script"
-mkdir -p "$C/.ai/scripts"; : >"$C/.ai/miro.md"; : >"$C/.ai/scripts/miro-frames.js"
-miro_cfg '{"via":"browser"}'
-hasnt "$out" "SETUP_TEMPLATE_MISSING" "miro: warning despite files"
-miro_cfg '{"via":"mcp"}'
-hasnt "$out" "SETUP_INTEGRATION" "miro: mcp requires no files"
-rm -rf "$C/.ai/miro.md" "$C/.ai/scripts"
-
-# MARK: templates: generic mechanism
-TD="$TMP/templates"; mkdir -p "$TD/demo"
-cat >"$TD/demo/template.json" <<'EOF2'
-{"name": "demo", "applies": ".integrations.demo == true",
- "validate": "if (.integrations.demo // null) == null or (.integrations.demo | type) == \"boolean\" then empty else \"integrations.demo: expected true or false\" end",
- "files": {"demo.md": "{docs.root}/demo.md", "demo.sh": "{paths.scripts}/demo.sh"}}
-EOF2
-demo_cfg() { jq --argjson d "$1" '.integrations = {demo: $d}' "$C/.ai/av.config.json" >"$TMP/demo.json"; AV_TEMPLATES_DIR="$TD" bash "$CS" --root "$C" --config "$TMP/demo.json" >"$out"; }
-demo_cfg 'true'
-has "$out" "SETUP_TEMPLATE_MISSING .ai/demo.md (template demo)" "template: missing docs file"
-has "$out" "SETUP_TEMPLATE_MISSING .ai/scripts/demo.sh (template demo)" "template: missing script"
-demo_cfg '"yes"'
-has "$out" "SETUP_INTEGRATION_INVALID integrations.demo: expected true or false" "template: validation from the manifest"
-demo_cfg 'false'
-hasnt "$out" "SETUP_TEMPLATE_MISSING" "template: applies false requires files"
-hasnt "$out" "miro" "template: AV_TEMPLATES_DIR did not replace the directory"
+# MARK: exclusions
+X="$TMP/exclusions"
+cp -R "$C" "$X"
+mkdir -p "$X/scripts"
+printf 'x\n' >"$X/generated/Keep.php"; printf '#!/bin/bash\n' >"$X/scripts/keep.sh"
+git -C "$X" add -A && git -C "$X" commit -qm exclusions
+jq '.roles = [
+      {"name": "data", "skill": "app-data", "order": 1, "globs": ["src/**", "!src/UI/**", "!src/Shared/Both.kt", "!src/Nothing/**", "My Dir/**", "!My Dir/**"]},
+      {"name": "ui", "skill": "app-ui", "order": 2, "globs": ["src/UI/**", "src/Shared/Both.kt", "My Dir/**", "Other/**", "!Other/Tools/**"]}]
+    | .generatedPaths = ["generated/**", "**/*.generated.ts", "!generated/Keep.php"]
+    | .unownedPaths = ["scripts/**", "!scripts/keep.sh"]' "$C/.ai/av.config.json" >"$X/.ai/av.config.json"
+printf -- '---\nname: app-ui\n---\n## File scope\n`src/UI/**`, `src/Shared/Both.kt`, `Other/Tools/**`\n' >"$X/.claude/skills/app-ui/SKILL.md"
+printf 'Scope: `src/UI/**`, `src/Shared/Both.kt`.\n' >>"$X/.ai/overlays/av-implement.md"
+bash "$CS" --root "$X" >"$out"; rc=$?
+[ "$rc" -eq 0 ] && ok || { fail "exclusions: code $rc"; cat "$out" >&2; }
+has "$out" "ERRORS 0 " "exclusions: errors reported"
+hasnt "$out" "SETUP_ROLE_OVERLAP" "exclusions: excluded file counted as overlap"
+hasnt "$out" "SETUP_ROLE_EMPTY data !" "exclusions: exclusion reported as an empty glob"
+has "$out" "SETUP_ROLE_EMPTY data My Dir/**" "exclusions: fully excluded include not reported as empty"
+hasnt "$out" "SETUP_ROLE_EMPTY ui" "exclusions: include of the other role reported as empty"
+has "$out" "SETUP_UNOWNED_DIR Other 1 files without owner: Other/Tools 1" "exclusions: excluded directory not unowned"
+hasnt "$out" "SETUP_UNOWNED_DIR src" "exclusions: src without owner"
+has "$out" "SETUP_GLOB_COPY .claude/skills/app-ui/SKILL.md copies 3 globs of role ui" "exclusions: copied exclusion not counted"
+hasnt "$out" "SETUP_GLOB_COPY .ai/overlays/av-implement.md" "exclusions: include and exclusion of one pattern counted twice"
+bash "$CS" --root "$X" --owner src/UI/V.ts src/Shared/Both.kt src/Data/A.py src/UI/new/N.swift Other/Lib/y.php Other/Tools/w.js \
+  "My Dir/Sub Dir/x.ts" generated/P.php generated/Keep.php scripts/t.sh scripts/keep.sh >"$own" 2>"$TMP/own.err"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "exclusions owner: code $rc"
+has "$own" "OWNER src/UI/V.ts ui" "exclusions owner: excluded directory"
+has "$own" "OWNER src/UI/new/N.swift ui" "exclusions owner: new file in an excluded directory"
+has "$own" "OWNER src/Shared/Both.kt ui" "exclusions owner: excluded file"
+has "$own" "OWNER src/Data/A.py data" "exclusions owner: included file"
+has "$own" "OWNER Other/Lib/y.php ui" "exclusions owner: include next to an exclusion"
+has "$own" "OWNER Other/Tools/w.js implementer" "exclusions owner: excluded file without another owner"
+has "$own" "OWNER My Dir/Sub Dir/x.ts ui" "exclusions owner: include excluded in the first role"
+has "$own" "OWNER generated/P.php generated" "exclusions owner: generated"
+has "$own" "OWNER generated/Keep.php implementer" "exclusions owner: generatedPaths exclusion"
+has "$own" "OWNER scripts/t.sh unowned" "exclusions owner: unowned"
+has "$own" "OWNER scripts/keep.sh implementer" "exclusions owner: unownedPaths exclusion"
+hasnt "$TMP/own.err" "role overlap" "exclusions owner: overlap warning"
+jq '.roles += [{"name": "neg", "skill": "app-ui", "order": 3, "globs": ["!src/**", "!Other/**"]}]' "$X/.ai/av.config.json" >"$TMP/neg.json"
+bash "$CS" --root "$X" --config "$TMP/neg.json" >"$out"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "exclusions only: code $rc"
+has "$out" "SETUP_ROLE_INVALID roles[2] neg has only exclusions (!)" "exclusions only: role accepted"
 
 # MARK: no roles, config errors, usage
 jq 'del(.roles)' "$R/.ai/av.config.json" >"$TMP/noroles.json"

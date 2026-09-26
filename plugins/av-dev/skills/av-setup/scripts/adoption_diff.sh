@@ -7,9 +7,20 @@
 # a candidate for the "Knowledge that gets lost" section or for fixing the overlays.
 #
 # An old file deleted from the tree is read from git show <rev>:<file> (--old-rev).
-# Orchestration filter: tokens with RUN_ID, CHECK_ID, EVIDENCE, $ARGUMENTS,
-# .claude/agents, .claude/commands, pipeline_state, pipeline_check and
-# tokens matching --noise REGEX (ERE, e.g. names of old agents and commands).
+# A missing old file gives a WARNING; when none of them can be read the script
+# stops with code 2 (e.g. zsh passed --old "$VAR" as one word with spaces).
+# Orchestration filter (counted as FILTERED, never LOST):
+#   - tokens with RUN_ID, CHECK_ID, EVIDENCE, $ARGUMENTS, .claude/agents,
+#     .claude/commands, pipeline_state, pipeline_check, and the exact names
+#     STATUS and CHANGED_FILES,
+#   - handoff parameters: only KEY=VALUE pairs with an upper-case KEY and a
+#     one-word VALUE (MODE=fix, STATUS=DONE|BLOCKED); a value with "/" is kept,
+#   - upper-case names used as fields in the old files: NAME=word anywhere or
+#     a "NAME:" line inside a fenced block (handoff template),
+#   - template placeholders: {name} (not ${VAR} or {a,b}) and <Name> not glued
+#     to an identifier (Request<T> is kept),
+#   - generic placeholder names: XController.php, Foo*, foo.ts, Example*, Xxx*,
+#   - tokens matching --noise REGEX (ERE, e.g. names of old agents and commands).
 # The corpus skips the workspace/ and sessions/ directories and the old files themselves.
 #
 # Output:
@@ -21,7 +32,7 @@
 #   adoption_diff.sh [--root DIR] --old-rev REV --deleted --new <file|dir>... [--noise REGEX]
 #     --deleted adds text files deleted since REV to the old files
 #     (git diff --name-only --diff-filter=D REV: .md, .txt, .toml, .html).
-# Exit code: 0 no LOST, 1 LOST found, 2 usage error.
+# Exit code: 0 no LOST, 1 LOST found, 2 usage error or no old file readable.
 # Requires: bash 3.2+, git, awk.
 
 set -uo pipefail
@@ -41,7 +52,7 @@ while [ $# -gt 0 ]; do
     --noise) noise="${2:-}"; shift ;;
     --old) mode=old ;;
     --new) mode=new ;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
     -*) echo "USAGE unknown option: $1"; exit 2 ;;
     *)
       case "$mode" in
@@ -75,13 +86,31 @@ awk '!seen[$0]++' "$tmp/oldlist" >"$tmp/oldu"
 [ -s "$tmp/oldu" ] || { echo "USAGE no old files (--old or --deleted)"; exit 2; }
 
 : >"$tmp/tokens"
+: >"$tmp/fields"
+found=0
+missing=""
 while IFS= read -r f; do
   if [ -f "$f" ]; then cat -- "$f" >"$tmp/src"
   elif [ -n "$rev" ] && git show "$rev:$f" >"$tmp/src" 2>/dev/null; then :
-  else printf 'WARNING file not found: %s\n' "$f" >&2; continue; fi
-  awk -v file="$f" '
+  else printf 'WARNING file not found: %s\n' "$f" >&2; missing="$missing $f"; continue; fi
+  found=$((found + 1))
+  awk -v file="$f" -v fields="$tmp/fields" '
     /^[ \t]*```/ { in_code = !in_code; next }
-    in_code { next }
+    {
+      rest = $0
+      while (match(rest, /(^|[^A-Za-z0-9_$])[A-Z][A-Z0-9_]*=[A-Za-z0-9_.|-]*([^A-Za-z0-9_.|\/=-]|$)/)) {
+        name = substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH)
+        sub(/^[^A-Z]/, "", name); sub(/=.*$/, "", name)
+        print name >>fields
+      }
+    }
+    in_code {
+      if (match($0, /^[ \t]*([-*>][ \t]*)?[A-Z][A-Z0-9_]*[ \t]*:/)) {
+        name = substr($0, RSTART, RLENGTH); sub(/^[ \t]*([-*>][ \t]*)?/, "", name); sub(/[ \t]*:$/, "", name)
+        print name >>fields
+      }
+      next
+    }
     {
       rest = $0
       while (match(rest, /`[^`]+`/)) {
@@ -91,6 +120,11 @@ while IFS= read -r f; do
       }
     }' "$tmp/src" >>"$tmp/tokens"
 done <"$tmp/oldu"
+if [ "$found" -eq 0 ]; then
+  printf 'USAGE none of the old files can be read:%s\n' "$missing"
+  echo "USAGE pass each old file as a separate argument (zsh does not split \"\$VAR\"; use \${=VAR} or an array)"
+  exit 2
+fi
 
 # MARK: new corpus
 
@@ -110,10 +144,19 @@ done | sed 's|^\./||' | awk 'NR == FNR { skip[$0] = 1; next } !skip[$0] && !seen
 
 # MARK: comparison
 
-default_noise='RUN_ID|CHECK_ID|EVIDENCE|[$]ARGUMENTS|[.]claude/agents|[.]claude/commands|pipeline_state|pipeline_check'
-AD_NOISE="$default_noise" AD_EXTRA="$noise" awk -F'\t' -v corpus="$tmp/corpus" '
+default_noise='RUN_ID|CHECK_ID|EVIDENCE|[$]ARGUMENTS|[.]claude/agents|[.]claude/commands|pipeline_state|pipeline_check|^(STATUS|CHANGED_FILES)$'
+AD_NOISE="$default_noise" AD_EXTRA="$noise" awk -F'\t' -v corpus="$tmp/corpus" -v fields="$tmp/fields" '
+  function orchestration(t) {
+    if (t ~ /^[A-Z][A-Z0-9_]*=[A-Za-z0-9_.|-]*( +[A-Z][A-Z0-9_]*=[A-Za-z0-9_.|-]*)*$/) return 1
+    if (t ~ /^[A-Z][A-Z0-9_]*$/ && (t in field)) return 1
+    if (t ~ /(^|[^$])\{[A-Za-z_][A-Za-z0-9_ .-]*\}/) return 1
+    if (t ~ /(^|[^A-Za-z0-9])<[A-Za-z_][A-Za-z0-9_ .-]*>/) return 1
+    if (t ~ /(^|[^A-Za-z0-9])(X[A-Z][a-z]|[Ff]oo([^a-z]|$)|Example([^a-z]|$)|[Xx]xx([^a-z]|$))/) return 1
+    return 0
+  }
   BEGIN {
     noise = ENVIRON["AD_NOISE"]; extra = ENVIRON["AD_EXTRA"]
+    while ((getline name < fields) > 0) field[name] = 1
     RS_OLD = RS; RS = "\001"
     if ((getline text < corpus) <= 0) text = ""
     RS = RS_OLD
@@ -122,7 +165,7 @@ AD_NOISE="$default_noise" AD_EXTRA="$noise" awk -F'\t' -v corpus="$tmp/corpus" '
     file = $1; tok = substr($0, length(file) + 2)
     if (tok in seen) next
     seen[tok] = 1; total++
-    if (tok ~ noise || (extra != "" && tok ~ extra)) { filtered++; next }
+    if (tok ~ noise || (extra != "" && tok ~ extra) || orchestration(tok)) { filtered++; next }
     if (index(text, tok) == 0) { lost++; printf "LOST %s %s\n", file, tok }
   }
   END { printf "TOKENS %d LOST %d FILTERED %d\n", total, lost, filtered; exit (lost > 0) }

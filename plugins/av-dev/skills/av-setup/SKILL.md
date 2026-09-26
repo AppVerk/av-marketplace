@@ -63,7 +63,7 @@ bash <skill-dir>/scripts/scan.sh <repo-root> > <tmp>/av-scan.json
 
 `<skill-dir>` is the directory of this SKILL.md file. `<tmp>` is the session working directory (the scratchpad if the environment provides one, otherwise `$TMPDIR`).
 
-The result contains: the number of source files, the stack, commands (composer, package.json, Makefile, `scripts/` with exit codes and statuses from headers in `scripts_meta`, CI steps, commands described in docs), tools (husky, lint-staged, versions, coverage thresholds, linter configs), the directory layout, modules with sizes, test directories, the existing AI setup, secret file names, and git (a proposed base branch, ticket prefixes with counts, branch types, share of commits with an AI signature).
+The result contains: the number of source files, the stack, commands (composer, package.json, Makefile, `scripts/` and shell scripts called from CI, composer.json, package.json and Makefile, with exit codes, statuses and `referenced_by` in `scripts_meta`, CI steps, commands described in docs), tools (husky, lint-staged, versions, coverage thresholds, linter configs), the directory layout, modules with sizes, test directories, the existing AI setup, secret file names, and git (a proposed base branch, ticket prefixes with counts, branch types, share of commits with an AI signature).
 
 ## Step 2: Stack facts
 
@@ -97,7 +97,7 @@ git -C <repo-root> diff --name-only --diff-filter=D "$c" HEAD | sed 's|.*/||; s|
 3. `LINEREF_RANGE`, `LINEREF_NOFILE`, `LINEREF_GONE` from `check_linerefs` are certain drifts.
 4. Deleted names: files deleted since the last docs commit. Search the docs for each name (`grep -rnwF`). A hit is a drift.
 
-Write the counts per docs file and the total into the plan, section "Docs drift from code". With more than 10 drifts in ADOPTION and COMPLETION, propose an `av-docs-sync audit --fix` step in the plan before the overlays. Run it only after the plan is approved. Then write the overlays on the fixed docs.
+Write the counts per docs file and the total into the plan, section "Docs drift from code". With more than 10 drifts in ADOPTION and COMPLETION, propose an `av-docs-sync audit --fix` step in the plan before the overlays. Split the fix work so that one subagent handles at most about 5 docs files. Run it only after the plan is approved. Then write the overlays on the fixed docs.
 
 A topic covered by current docs needs no new research. Research only gaps and topics with drift.
 
@@ -156,7 +156,7 @@ Follow `references/doc-set.md`, the facts from steps 1-3 and, for section header
 
 **Module subagents.** With more than 3 full descriptions, split the work across `general-purpose` subagents (model `sonnet`; Explore does not write files), at most 2 modules per subagent. The prompt contains: the module template, the list of paths, the facts rule, and these sentences: "Other subagents write descriptions of other modules in the same directory in parallel. Write only your own files. Do not touch other files and do not treat them as errors. Do not delegate the work further." After collecting the results, check the paths with `check_refs.sh`.
 
-**Integrations:** templates from `templates/` according to `references/doc-set.md`, section "Integrations". The global av-* skills do not know the project tools; that knowledge goes to the repo docs, scripts and overlays.
+**Integrations:** the plugin ships no instructions for external tools (boards, design tools, trackers). Record the tool in `integrations` in the config. How the repo uses it is repo knowledge: take it from the existing docs, agents and skills of the repo, and keep it in a topic file of the repo docs that the overlays link to (`references/doc-set.md`, section "Integrations").
 
 **`CLAUDE.md`:** in NEW mode, create it. In other modes, edit only the sections from the plan. Keep the critical rules, the response style and everything the plan does not list.
 - In ADOPTION and COMPLETION, the "Task routing" and "Working with the agent" sections are required. Add the other template sections only when the topic has no place in the file yet.
@@ -192,7 +192,7 @@ Follow `references/role-skills.md` and, for section headers, `references/localiz
 - `.ai/sessions/learnings.md` with a header, when missing.
 - If step 5 saved the plan to `<tmp>` (the workspace was not ignored yet), move it to `<paths.plans>/` once `.gitignore` ignores it.
 - Slot agent definitions: when `agent.sh --slot <slot> --resolve` gives a `WARNING` about a missing agent definition for any slot, propose the command from the warning. This is the only change outside the repo: run it only with the user's approval; with `--defaults`, only an entry in the report. In the av-dev plugin, the definitions come with the plugin and there is no warning.
-- `permissions.deny` in `.claude/settings.json` for secret files from the scan: only with approval from the interview. With `--defaults`, only propose it in the report. Syntax: `Read(./<path or glob>)` and `Edit(./<path or glob>)`, e.g. `Read(./**/<key-file>)`. Always add the `.env` and `.env.*` patterns. Add key files that the scan does not know, but that step 3 or the interview pointed out, with the same syntax.
+- `permissions.deny` in `.claude/settings.json` for secret files from the scan: only with approval from the interview. With `--defaults`, only propose it in the report. Syntax: `Read(./<path or glob>)` and `Edit(./<path or glob>)`, e.g. `Read(./**/<key-file>)`. Always add `Read(./**/.env)` and `Read(./**/.env.*)`, also for nested env files. Edit only the `permissions.deny` key of `.claude/settings.json` (e.g. with `jq`); do not print or change other keys, which may hold values. Add key files that the scan does not know, but that step 3 or the interview pointed out, with the same syntax.
 
 ## Step 10: Check
 

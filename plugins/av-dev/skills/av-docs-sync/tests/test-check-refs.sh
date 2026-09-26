@@ -62,8 +62,8 @@ out2="$(bash "$CHECK" "$TMP/pl.md" --root .)"
 has "$out2" "MISSING 0" && ok || fail "Polish negation does not turn off the line: $out2"
 
 # --- 2c. paths outside the repo, another repo, relative workspace, never, bare directory
-mkdir -p "$TMP/sibling-repo/tests" "$REPO/.ai/workspace/miro"
-printf '# y\nTests: `../../sibling-repo/tests/`.\nFile: `../../ghost-repo/x.md`.\nIn the backend repository: `api/Orders/Bar.php`.\nNotes: `workspace/miro/`.\nNEVER write to `.claude/plans/x.md`.\nDirectory `reports/`.\nW repozytorium backend: `api/Orders/Baz.php`.\n' >"$REPO/.ai/ext.md"
+mkdir -p "$TMP/sibling-repo/tests" "$REPO/.ai/workspace/board"
+printf '# y\nTests: `../../sibling-repo/tests/`.\nFile: `../../ghost-repo/x.md`.\nIn the backend repository: `api/Orders/Bar.php`.\nNotes: `workspace/board/`.\nNEVER write to `.claude/plans/x.md`.\nDirectory `reports/`.\nW repozytorium backend: `api/Orders/Baz.php`.\n' >"$REPO/.ai/ext.md"
 out3="$(bash "$CHECK" .ai/ext.md --root .)"
 has "$out3" "EXTERNAL .ai/ext.md:3 ../../ghost-repo/x.md" && ok || fail "no EXTERNAL for a nonexistent repo"
 has "$out3" "sibling-repo" && fail "existing sibling repo reported" || ok
@@ -94,6 +94,14 @@ printf '# ws\nGates: `gate.sh`.\n' >"$REPO/.ai/gates.md"
 out6="$(bash "$CHECK" .ai/gates.md .ai/workspace/README.md --root . --workspace .ai/workspace)"
 has "$out6" "MISSING 0 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0" && ok || fail "av scripts and workspace README: $(printf '%s' "$out6" | tail -1)"
 rm -f "$REPO/.ai/gates.md"
+
+# --- 2g. shell variables in a path are placeholders like <x>; a real path on the same line is still checked
+printf '# v\nPer environment: `config/$APP_ENV/app.yml`, `config/${APP_ENV}/app.yml`, `$ROOT/src/main.go`.\nLink: [cfg](config/$APP_ENV/app.yml). Next to it: `config/ghost/app.yml`.\n' >"$REPO/.ai/vars.md"
+out9="$(bash "$CHECK" .ai/vars.md --root .)"; rc=$?
+printf '%s\n' "$out9" | grep -q 'APP_ENV\|ROOT' && fail "shell variable path reported: $out9" || ok
+has "$out9" "MISSING .ai/vars.md:3 config/ghost/app.yml" && ok || fail "real path next to a variable path not checked: $out9"
+has "$out9" "CHECKED 1 MISSING 1 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0" && [ "$rc" -eq 1 ] && ok || fail "counters with shell variables: $(printf '%s' "$out9" | tail -1) (code $rc)"
+rm "$REPO/.ai/vars.md"
 
 # --- 2d. document given relative to --root from outside the repo directory
 out4="$(cd "$TMP" && bash "$CHECK" .ai/modules/Orders.md --root "$REPO")"

@@ -11,6 +11,11 @@ Ask the questions with one question tool (e.g. AskUserQuestion), at most 4 at on
    - A token `X_FAILED` without `X_OK` usually means a status built in code (e.g. `label + '_OK'` in a helper). Confirm it by reading the code or running it before you write `expect`.
    - A "zero tests" or "tests skipped" code is not a missing environment for unit tests. Leave it out of `notRunExitCodes`, unless the script describes it as a missing account or device.
    - Propose a `docs` command in `quick` (`references/config-schema.md`, section validation).
+   - Read each candidate command before proposing it. Mark and explain in the proposal:
+     - a command that writes tracked files (a build into a committed directory, a test that rewrites a fixture): it makes the evidence STALE; keep it out of `quick` and `full`, or run it last and say so in `needs`;
+     - a command that may print secrets into logs (secret scanners, commands that dump the environment, especially when the repo tracks an env file): never a gate, because gate logs are kept as evidence;
+     - a command that starts, stops or restarts containers or services by a fixed name: it can hit another checkout; not a gate;
+     - one exit code for both "environment missing" and "tests failed": `notRunExitCodes` cannot separate them; guard the command with a `precheck`.
 2. **Git.** Show the detected base branch, the commit pattern (from history) and the ticket prefixes. Defaults: commit only on request, no push, no AI signature.
 3. **High-risk areas.** Propose a list from the scan, the code and the docs (e.g. auth, payments, migrations, when the repo has them). The user adds domain areas.
 4. **Docs language.** By default, detected from the existing docs.
@@ -37,7 +42,7 @@ Ask the questions with one question tool (e.g. AskUserQuestion), at most 4 at on
   - `fable` is an allowed value, but it sits outside the scale. Write it only on the user's decision.
 - `agents.independentReview`: `true`.
 - `integrations`: from `.mcp.json`, `enabledMcpjsonServers` and MCP server names (e.g. atlassian/jira -> tracker `jira`, figma, bitbucket). Tool names from docs (e.g. Lokalise) as extra fields.
-- Integrations with a template (`templates/*/README.md`, section "When"): when the condition matches the repo or the user's answer, fill the config field according to the template README.
+- Tool integrations (a board, a design tool): record them in `integrations`. How to access a tool (MCP, browser, CLI) is the team's decision: take it from the repo (existing agents, skills, docs) or ask. The plugin has no default.
 - `git.baseBranch`: the branch that pull requests go to in the history (`merged_branch_names`, docs about the flow). When docs list several main branches without choosing one, take `develop` if it exists. `base_branch_guess` from the scan is only a hint; in a local clone it may be wrong.
 - `git.ticketPrefixes`: the keys of `git.ticket_prefixes` from the scan with a count of at least 3, plus prefixes from docs. Single hits are usually noise.
 - `git.commit`: the team rule from docs; when docs conflict or say nothing, `on-request`, and the conflict goes to the report.
