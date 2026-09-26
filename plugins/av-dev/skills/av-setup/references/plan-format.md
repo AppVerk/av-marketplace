@@ -36,7 +36,7 @@ One format for NEW, COMPLETION, ADOPTION and REFRESH modes. Add sections marked 
 <drift that changes plan decisions:>
 | file:line | docs say | code says |
 
-<with any certain drift item (MISSING, LINEREF_*): an "av-docs-sync audit --fix" step before the overlays, for approval; a separate row in Decisions (rule: `SKILL.md` step 3)>
+<with any certain drift item (definition: `SKILL.md` step 3): an "av-docs-sync audit --fix" step before the overlays, for approval; a separate row in Decisions (rule: `SKILL.md` step 3)>
 
 
 ## Default decisions

@@ -259,6 +259,9 @@ MD
   has "$out" "CHECKED 2 NAME_MISSING 2 EXCLUDED 0" && [ "$rc" -eq 1 ] && ok || fail "$header: counters with line entries: $(printf '%s' "$out" | tail -1) (code $rc)"
   has "$out" "KNOWN_STALE .ai/scoped.md:6 NotOnThatLine" && ok || fail "$header: line without the name not stale: $out"
   has "$out" "KNOWN_STALE .ai/scoped.md:99 ScopedGhostName" && ok || fail "$header: line past the end not stale: $out"
+  out="$(bash "$CHECK" .ai/ov/av-docs-sync.md --root .)"
+  has "$out" "NAME_MISSING .ai/ov/av-docs-sync.md:3 " && fail "$header: ignore section entries reported in the overlay itself: $out" || ok
+  has "$out" "NAME_MISSING .ai/ov/av-docs-sync.md:11 ScopedGhostName" && ok || fail "$header: section after the ignore section not checked: $out"
   for e in ".ai/scoped.md:2 " "legacy_scoped" "GlobalGhostName" "TmpGhost" ".ai/other.md" ".ai/scoped.md:3"; do
     printf '%s\n' "$out" | grep '^KNOWN_STALE' | grep -qF -- "$e" && fail "$header: false stale entry $e: $out" || ok
   done

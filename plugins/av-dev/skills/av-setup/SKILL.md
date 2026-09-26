@@ -96,11 +96,13 @@ git -C <repo-root> diff --name-only --diff-filter=D "$c" HEAD | sed 's|.*/||; s|
 In ADOPTION, add `.claude/skills` to `check_refs.sh` when the repo has project skills: the `docs` gate checks them too, so a KEEP skill with a dead path would fail the gate right after setup (`references/adoption.md`, step 2).
 
 1. `MISSING` from `check_refs` is a certain drift.
-2. `NAME_MISSING` from `check_names` is a candidate. Confirmed real name drift counts as certain drift for the `audit --fix` decision below. Triage it: grep the code, count the real ones, and put the false ones aside for the "Known false names" section of the `av-docs-sync.md` overlay (step 8). With more than 50 candidates, delegate the triage to an Explore subagent. Its result lists every candidate with a verdict (real, false, unsure); count the list against the input and triage missing names yourself. A read-only subagent cannot write files: save its table to `<tmp>/triage-names.md` yourself, so the plan and the overlay can cite it.
+2. `NAME_MISSING` from `check_names` is a candidate. A candidate confirmed as real in triage is a certain drift. Triage it: grep the code, count the real ones, and put the false ones aside for the "Known false names" section of the `av-docs-sync.md` overlay (step 8). With more than 50 candidates, delegate the triage to an Explore subagent. Its result lists every candidate with a verdict (real, false, unsure); count the list against the input and triage missing names yourself. A read-only subagent cannot write files: save its table to `<tmp>/triage-names.md` yourself, so the plan and the overlay can cite it. The plan needs the triage result: wait for it before step 5, however long it takes.
 3. `LINEREF_RANGE`, `LINEREF_NOFILE`, `LINEREF_GONE` from `check_linerefs` are certain drifts.
-4. Deleted names: files deleted since the last docs commit. Search the docs for each name (`grep -rnwF`). A hit is a drift.
+4. Deleted names: files deleted since the last docs commit. Search the docs for each name (`grep -rnwF`). A hit is a certain drift.
 
-Write the counts per docs file and the total into the plan, section "Docs drift from code". With any certain drift (MISSING, LINEREF_*) in ADOPTION and COMPLETION, propose an `av-docs-sync audit --fix` step in the plan before the overlays, because the `docs` gate would be red from the first day. Never reword team docs only to satisfy a checker: a false alarm goes to the overlay exceptions ("Known false names", "Known false paths", "Excluded docs paths"). Docs about other repositories inside the docs root go to "Excluded docs paths". Split the fix work so that one subagent handles at most about 5 docs files. Run it only after the plan is approved. Then write the overlays on the fixed docs.
+**Certain drift** in all av-setup files means: `MISSING`, `LINEREF_RANGE`, `LINEREF_NOFILE`, `LINEREF_GONE`, names confirmed as real in triage, and deleted names found in the docs. The `docs` command checks only the first two groups; the rest needs `audit --fix`.
+
+Write the counts per docs file and the total into the plan, section "Docs drift from code". With any certain drift in ADOPTION and COMPLETION, propose an `av-docs-sync audit --fix` step in the plan before the overlays, because the `docs` gate would be red from the first day. Never reword team docs only to satisfy a checker: a false alarm goes to the overlay exceptions ("Known false names", "Known false paths", "Excluded docs paths"). Docs about other repositories inside the docs root go to "Excluded docs paths". Split the fix work so that one subagent handles at most about 5 docs files. Run it only after the plan is approved. Then write the overlays on the fixed docs: step 8 starts only after `audit --fix` ends.
 
 A topic covered by current docs needs no new research. Research only gaps and topics with drift.
 
@@ -171,6 +173,8 @@ Follow `references/doc-set.md`, the facts from steps 1-3 and, for section header
 
 Follow `references/overlays.md` and, for section headers, `references/localization.md`. Create 5 overlays: `av-plan.md`, `av-implement.md`, `av-review.md`, `av-verify.md`, `av-docs-sync.md`. The content comes from the stack facts (step 2), the facts from step 3 and, in ADOPTION, from the converted agents, commands and pipeline.
 
+Start only after the `audit --fix` step from the plan, when the plan has one (step 3): the "Known false names" section and the counts depend on the fixed docs.
+
 Do not overwrite an existing overlay. Show the section diff and ask. With `--defaults`, save the proposal next to it as `<name>.proposed.md` and list it in the report.
 
 Roles live in `roles` in the config. The "Roles" section of the `av-implement.md` overlay links to them in one sentence, without a copy of the globs. The rules of one layer go to the role skill in step 8b.
@@ -197,7 +201,7 @@ Follow `references/role-skills.md` and, for section headers, `references/localiz
 - `.ai/sessions/learnings.md` with a header, when missing.
 - If step 5 saved the plan to `<tmp>` (the workspace was not ignored yet), move it to `<paths.plans>/` once `.gitignore` ignores it.
 - Slot agent definitions: when `agent.sh --slot <slot> --resolve` gives a `WARNING` about a missing agent definition for any slot, propose the command from the warning. This is the only change outside the repo: run it only with the user's approval; with `--defaults`, only an entry in the report. In the av-dev plugin, the definitions come with the plugin and there is no warning.
-- `permissions.deny` in `.claude/settings.json` for secret files from the scan: only with approval from the interview. With `--defaults`, only propose it in the report. Syntax: `Read(./<path or glob>)` and `Edit(./<path or glob>)`, e.g. `Read(./**/<key-file>)`. Always add `Read(./**/.env)` and `Read(./**/.env.*)`, also for nested env files. Edit only the `permissions.deny` key of `.claude/settings.json` (e.g. with `jq`); do not print or change other keys, which may hold values. Add key files that the scan does not know, but that step 3 or the interview pointed out, with the same syntax.
+- `permissions.deny` in `.claude/settings.json` for secret files from the scan: only with approval from the interview. With `--defaults`, only propose it in the report. Syntax: `Read(./<path or glob>)` and `Edit(./<path or glob>)`, e.g. `Read(./**/<key-file>)`. Always add `Read(./**/.env)` and `Read(./**/.env.*)`, also for nested env files. Edit only the `permissions.deny` key of `.claude/settings.json` (e.g. with `jq`); do not print or change other keys, which may hold values. Append only the missing rules (`.permissions.deny += ($new - .permissions.deny)`), keep the order of the existing ones, and keep the file's indentation (`jq --indent <n>`), so the diff shows only the added lines. Add key files that the scan does not know, but that step 3 or the interview pointed out, with the same syntax.
 
 ## Step 10: Check
 

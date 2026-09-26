@@ -473,10 +473,12 @@ run_timed() {
   ( sleep "$limit"; : >"$marker"; kill -TERM -- "-$pid" 2>/dev/null; sleep 3; kill -KILL -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
   local watcher=$!
   set +m
+  : >"$bg_dir/watch.$watcher"
   rc=0
   wait "$pid" 2>/dev/null || rc=$?
   kill -TERM -- "-$watcher" 2>/dev/null
   wait "$watcher" 2>/dev/null
+  rm -f "$bg_dir/watch.$watcher"
   timed_out=0
   [ -f "$marker" ] && timed_out=1
   rm -f "$marker"
@@ -495,6 +497,9 @@ cleanup() {
   local f
   for f in "$bg_dir"/*.cmdpid; do
     [ -f "$f" ] && kill -TERM -- "-$(cat "$f")" 2>/dev/null
+  done
+  for f in "$bg_dir"/watch.*; do
+    [ -f "$f" ] && kill -TERM -- "-${f##*/watch.}" 2>/dev/null
   done
   rm -rf "$lock" "$bg_dir"
   [ -n "$merged_cfg" ] && rm -f "$merged_cfg"

@@ -322,8 +322,8 @@ jq '.validation.commands += {
       "pmut": {"run": "echo m >bg-new.txt; echo done", "parallel": true},
       "pbuild": {"run": "echo BUILT", "parallel": true},
       "pui": {"run": "echo DEVICE_OK", "expect": "DEVICE_OK", "covers": ["pbuild"]},
-      "plong": {"run": "sleep 29", "parallel": true},
-      "fglong": {"run": "sleep 31"},
+      "plong": {"run": "sleep 29", "parallel": true, "timeoutSec": 917},
+      "fglong": {"run": "sleep 31", "timeoutSec": 917},
       "pflag": {"run": "echo x", "parallel": "yes"}}
     | .validation.gates += {"pg": ["p1", "fgc", "p2"], "pfail": ["pslow", "pbad", "pdown", "ppre", "popt", "fgc"],
                             "pmutg": ["pmut", "fgc"], "pcov": ["pbuild", "pui"], "plongg": ["plong", "fglong"]}' "$good" >"$TMP/par.json"
@@ -374,6 +374,8 @@ n=0; while ! pgrep -f "sleep 31" >/dev/null && [ "$n" -lt 100 ]; do sleep 0.1; n
 kill -TERM "$gpid"; wait "$gpid" 2>/dev/null
 n=0; while pgrep -f "sleep (29|31)" >/dev/null && [ "$n" -lt 30 ]; do sleep 0.1; n=$((n + 1)); done
 pgrep -f "sleep (29|31)" >/dev/null && { fail "parallel: command alive after the gate was interrupted"; pkill -f "sleep (29|31)"; } || ok
+n=0; while pgrep -f "sleep 917" >/dev/null && [ "$n" -lt 30 ]; do sleep 0.1; n=$((n + 1)); done
+pgrep -f "sleep 917" >/dev/null && { fail "parallel: timeout watcher alive after the gate was interrupted"; pkill -f "sleep 917"; } || ok
 [ ! -d .ai/workspace/runs/r25/.lock ] && [ -z "$(ls -A .ai/workspace/runs/r25 | grep -E '^\.bg')" ] && ok || fail "parallel: lock or .bg left after interruption"
 
 # --- 13. workspace outside .gitignore does not change the fingerprint

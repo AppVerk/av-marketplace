@@ -32,6 +32,8 @@
 #     (only on that docs line, <doc> relative to --root; the name may end with "*").
 #     --ignore-file replaces the overlay; the file may have that section or just lines
 #     with names (a line scoped entry only as a list item in backticks),
+#   - lines inside the overlay sections "Known false names", "Known false paths" and
+#     "Excluded docs paths" (and their Polish aliases), in any checked document,
 #   - documents excluded by --exclude GLOB (repeatable) or by the overlay section
 #     "## Excluded docs paths" (Polish alias "## Wykluczone sciezki docs", with or
 #     without diacritics), lines "- `glob`"; --ignore-file does not replace it.
@@ -203,6 +205,7 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
     }
     FNR == 1 {
       in_code = 0
+      skip_sec = 0
       rel = FILENAME
       if (index(rel, root "/") == 1) rel = substr(rel, length(root) + 2)
       while (substr(rel, 1, 2) == "./") rel = substr(rel, 3)
@@ -214,6 +217,11 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
     }
     /^[ \t]*```/ { in_code = !in_code; next }
     in_code { next }
+    # the ignore sections of an overlay list names on purpose: they are never candidates
+    /^#+[ \t]/ {
+      skip_sec = ($0 ~ /^#+[ \t]+(Known false names|Znane fa(ł|l)szywe nazwy|Known false paths|Znane fa(ł|l)szywe (ś|s)cie(ż|z)ki|Excluded docs paths|Wykluczone (ś|s)cie(ż|z)ki docs)/)
+    }
+    skip_sec { next }
     {
       if (tolower($0) ~ neg) next
       line = $0

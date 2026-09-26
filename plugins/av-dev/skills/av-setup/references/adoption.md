@@ -26,7 +26,7 @@ grep -rlnE "[Ff]az[aeiy] [0-9]|[Pp]hase [0-9]" --include='*.md' . | grep -v -e w
 
 The patterns are quoted, because zsh expands `*.md` without quotes. `-w` protects against hits like `architect` in the word "architecture". Names that are ordinary words (e.g. the `translate` skill) give hits in code and examples. Review every hit; it is only a candidate for UPDATE.
 
-**Check that the rules you move are still current.** A rule about known debt or a known false alarm may be outdated (e.g. the debt was fixed in recent commits). Check it in the code. Put an outdated rule into "Deliberately not moved".
+**Check that the rules you move are still current.** A rule about known debt or a known false alarm may be outdated (e.g. the debt was fixed in recent commits). Check it in the code. Run `check_refs.sh` from `av-docs-sync` on the agent and command directories too (e.g. `.claude/agents .claude/commands`): a dead example path there would move into an overlay or a role skill. Put an outdated rule into "Deliberately not moved".
 
 ## Step 2: Classification
 
