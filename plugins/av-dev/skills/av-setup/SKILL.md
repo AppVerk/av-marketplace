@@ -63,7 +63,7 @@ bash <skill-dir>/scripts/scan.sh <repo-root> > <tmp>/av-scan.json
 
 `<skill-dir>` is the directory of this SKILL.md file. `<tmp>` is the session working directory (the scratchpad if the environment provides one, otherwise `$TMPDIR`).
 
-The result contains: the number of source files, the stack, commands (composer, package.json, Makefile, `scripts/` and shell scripts called from CI, composer.json, package.json and Makefile, with exit codes, statuses and `referenced_by` in `scripts_meta`, CI steps, commands described in docs), tools (husky, lint-staged, versions, coverage thresholds, linter configs), the directory layout, modules with sizes, test directories, the existing AI setup, secret file names, and git (a proposed base branch, ticket prefixes with counts, branch types, share of commits with an AI signature).
+The result contains: the number of source files, the stack, commands (manifests, build files, `scripts/` and shell scripts called from CI, manifests and build files, with exit codes, statuses and `referenced_by` in `scripts_meta`, CI steps, commands described in docs), tools (husky, lint-staged, versions, coverage thresholds, linter configs), the directory layout, modules with sizes, test directories, the existing AI setup, secret file names, and git (a proposed base branch, ticket prefixes with counts, branch types, share of commits with an AI signature).
 
 ## Step 2: Stack facts
 
@@ -91,6 +91,8 @@ bash $S/check_linerefs.sh CLAUDE.md <docs-dir> --root <repo-root> --strict
 c=$(git -C <repo-root> log -1 --format=%H -- CLAUDE.md <docs-dir>)
 git -C <repo-root> diff --name-only --diff-filter=D "$c" HEAD | sed 's|.*/||; s|\.[^.]*$||' | sort -u
 ```
+
+In ADOPTION, add `.claude/skills` to `check_refs.sh` when the repo has project skills: the `docs` gate checks them too, so a KEEP skill with a dead path would fail the gate right after setup (`references/adoption.md`, step 2).
 
 1. `MISSING` from `check_refs` is a certain drift.
 2. `NAME_MISSING` from `check_names` is a candidate. Triage it: grep the code, count the real ones, and put the false ones aside for the "Known false names" section of the `av-docs-sync.md` overlay (step 8). With more than 50 candidates, delegate the triage to an Explore subagent.
@@ -152,7 +154,7 @@ No `av-verify` skill: report it and skip the check.
 
 Follow `references/doc-set.md`, the facts from steps 1-3 and, for section headers, `references/localization.md`. Only items from the plan.
 
-**Module budget.** Without `--all-modules`, at most 5 modules get full descriptions. Candidate group: a `module_candidates` entry without `looks_like_layers` with the largest `count`. The reference module from step 3 always gets a full description and takes first place. Shared directories (a library of cells, components, helpers: no own entry point, e.g. a ViewController or a controller) are not modules; they go to the index with a one-sentence description. The reference module does not count toward the 3 most often changed. A tie goes to the larger `by_size`. Modules that share a manager and an endpoint (e.g. list and details) may have one description; the other gets a link to it in the index, without a note. Remaining slots: first the 3 most often changed in the last 6 months (`git log --since=6.months --name-only`), then the largest by `by_size`, without repeats. The rest get a row in the module index with the note `_[description to create: av-docs-sync]_`. When the scan marks candidates as `looks_like_layers` (e.g. `Controller`, `Form`, `Enum`), they are not modules. Then determine modules from the team docs or from groups of files changed together in `git log`. A missing description gets created on the first change in the module.
+**Module budget.** Without `--all-modules`, at most 5 modules get full descriptions. Candidate group: a `module_candidates` entry without `looks_like_layers` with the largest `count`. The reference module from step 3 always gets a full description and takes first place. Shared directories (a library of cells, components, helpers: no own entry point such as a controller or a screen class) are not modules; they go to the index with a one-sentence description. The reference module does not count toward the 3 most often changed. A tie goes to the larger `by_size`. Modules that share a service and an entry point with another module (e.g. list and details) are covered by that module's description: they take no slot and get a link to it in the index, without a note. Remaining slots: first the 3 most often changed in the last 6 months (`git log --since=6.months --name-only`), then the largest by `by_size`, without repeats. The rest get a row in the module index with the note `_[description to create: av-docs-sync]_`. Existing descriptions (COMPLETION, ADOPTION, REFRESH) stay and take no slot: the budget applies only to candidates without a description, in the same order; with every candidate described, setup creates none. When the scan marks candidates as `looks_like_layers` (e.g. `Controller`, `Form`, `Enum`), they are not modules. Then determine modules from the team docs or from groups of files changed together in `git log`. A missing description gets created on the first change in the module.
 
 **Module subagents.** With more than 3 full descriptions, split the work across `general-purpose` subagents (model `sonnet`; Explore does not write files), at most 2 modules per subagent. The prompt contains: the module template, the list of paths, the facts rule, and these sentences: "Other subagents write descriptions of other modules in the same directory in parallel. Write only your own files. Do not touch other files and do not treat them as errors. Do not delegate the work further." After collecting the results, check the paths with `check_refs.sh`.
 
@@ -181,7 +183,7 @@ Follow `references/role-skills.md` and, for section headers, `references/localiz
 - Name: `<project.skillPrefix>-<role>`, e.g. `shop-web`.
 - An existing project skill or a plugin skill that covers the layer is referenced in the overlay instead of creating a new one.
 - Do not overwrite an existing role skill. Show the diff and ask; with `--defaults`, save `SKILL.proposed.md` next to it.
-- The `description` lists the directories and words of the layer, so that Claude also runs the skill during ordinary work. Up to about 300 characters.
+- The `description` lists the directories and words of the layer, so that Claude also runs the skill during ordinary work. Length limit: `references/role-skills.md`, section "Format".
 - The "File scope" section is one sentence with a link to the role in the config. Do not copy globs.
 - `check_setup.sh` checks role globs in step 10: overlap (`SETUP_ROLE_OVERLAP`), empty globs (`SETUP_ROLE_EMPTY`), source directories without an owner (`SETUP_UNOWNED_DIR`). Add a directory without an owner to a role, `generatedPaths` or `unownedPaths`, or report it as a gap.
 

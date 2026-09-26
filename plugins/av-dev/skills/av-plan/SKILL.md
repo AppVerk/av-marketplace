@@ -22,7 +22,7 @@ The plan is the contract for implementation. It must be concrete enough that `av
 
 - Task text: use it directly.
 - Ticket (prefix from `git.ticketPrefixes`): fetch its content with the tracker tools from `integrations`, if available. Without access, ask for the content.
-- Links to boards, mockups and pages (e.g. Figma, Confluence): use the method from the overlay, section "Task source", or from the integration docs it points to. Without such an instruction, use the available tools or project skills. Save the result to `<paths.workspace>/sources/`.
+- Links to boards, mockups and pages (a design tool, a wiki): use the method from the overlay, section "Task source", or from the integration docs it points to. Without such an instruction, use the available tools or project skills. Save the result to `<paths.workspace>/sources/`.
 
 When a requirement is unclear in a way that changes the plan (different scope, different contract), ask questions before the plan. At most 4, each with a recommended answer. Record minor unclear points in the "Open questions" section and move on.
 

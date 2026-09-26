@@ -6,7 +6,7 @@ The file always sits in `.ai/av.config.json`, even when the human docs live in `
 
 ## Local override `.ai/av.config.json.local`
 
-Settings of one person or one machine go to `.ai/av.config.json.local`. The file is in `.gitignore`. Typical reasons: no Codex CLI (a Codex slot switched to Claude), a different simulator in `needs` and `precheck`, a longer `timeoutSec` on a slow machine, a personal integration.
+Settings of one person or one machine go to `.ai/av.config.json.local`. The file is in `.gitignore`. Typical reasons: no Codex CLI (a Codex slot switched to Claude), a different device in `needs` and `precheck`, a longer `timeoutSec` on a slow machine, a personal integration.
 
 Skills and scripts read the effective config from the `av-verify/scripts/config.sh` script:
 
@@ -57,7 +57,7 @@ Rules:
     "name": "example-shop",
     "summary": "Web shop: API service and web client (example, do not copy the values).",
     "language": "en",
-    "stacks": ["node"],
+    "stacks": ["<label from the scan>"],
     "skillPrefix": "shop"
   },
   "docs": {
@@ -97,7 +97,7 @@ Rules:
         "run": ".ai/scripts/e2e.sh \"$E2E_SUITE\"",
         "expect": "E2E_OK",
         "precheck": "test -n \"$E2E_SUITE\" && bash \"$AV_SKILLS_DIR/av-verify/scripts/compose_container.sh\" app >/dev/null",
-        "needs": "docker compose up, test account, E2E_SUITE parameter",
+        "needs": "services of this checkout running, test account, E2E_SUITE parameter",
         "notRunExitCodes": [2],
         "covers": ["build"],
         "timeoutSec": 3600
@@ -135,10 +135,9 @@ Rules:
     "models": { "plan": "inherit", "implement": "inherit", "review": "opus", "verify": "haiku" }
   },
   "integrations": {
-    "tracker": "jira",
-    "design": ["figma"],
-    "mcp": ["atlassian"],
-    "translations": "lokalise"
+    "tracker": { "access": "mcp", "urls": ["https://tracker.example.com/browse/PROJ"], "doc": ".ai/tracker.md" },
+    "board": { "access": "browser", "urls": ["https://board.example.com/b/123"], "doc": ".ai/board.md" },
+    "mcp": ["example-tracker"]
   },
   "codex": { "enabled": true }
 }
@@ -153,8 +152,8 @@ Rules:
 
 **project**
 - `language`: the language of generated docs, plans and reports. Code and commands are always in English.
-- `stacks`: labels of the technologies the scan detected, for information only, e.g. `["php", "node"]`. No template is attached to them.
-- `skillPrefix`: the prefix of role skill names, e.g. `shop` gives `shop-backend`. By default from the project name (`composer.json`, `package.json`, the `origin` URL), not from the directory name: the last segment without the company prefix.
+- `stacks`: labels of the technologies the scan detected (`stacks[]` in the scan result), for information only. No template is attached to them.
+- `skillPrefix`: the prefix of role skill names, e.g. `shop` gives `shop-backend`. By default from the project name (the project manifest, the `origin` URL), not from the directory name: the last segment without the company prefix (`references/role-skills.md`, section "Name").
 
 **docs**
 - `entry`: the agent instruction file. Usually `CLAUDE.md`, and `AGENTS.md` is a symlink to it.
@@ -177,17 +176,17 @@ Rules:
 
 **validation**
 - `commands`: named commands. Each has `run`. Optional fields:
-  - `expect`: a string that must appear in the output, e.g. `BUILD SUCCEEDED`. It protects against a false green. Sources: the real command output (CI log, a run), the code of the repo script that prints this string, or a fixed message of the tool, confirmed in its documentation or a real run (e.g. `** BUILD SUCCEEDED **` from xcodebuild). A guessed `expect` gives a false FAIL. When no source confirms it, skip the field; the exit code is enough.
+  - `expect`: a string that must appear in the output, e.g. `BUILD SUCCEEDED`. It protects against a false green. Sources: the real command output (CI log, a run), the code of the repo script that prints this string, or a fixed message of the tool, confirmed in its documentation or a real run. A guessed `expect` gives a false FAIL. When no source confirms it, skip the field; the exit code is enough.
   - `precheck`: a command that checks the environment. When it fails, the result is `NOT_RUN`, not `FAIL`. The precheck must check the environment of **this checkout**: dependencies in this directory, containers from this directory (label `com.docker.compose.project.working_dir`), not any running services with the same name.
     Shared helper: `av-verify/scripts/compose_container.sh [--root DIR] <service>` prints the id of the running Docker Compose container of `<service>` that belongs to this checkout: its label `com.docker.compose.project.working_dir` is the repo root or a directory under it, compared by logical and physical path. It reads only `docker ps`, never calls `docker compose` and never starts, stops or execs containers. It exits 2 when no container of this checkout runs, or when the Docker CLI or daemon is missing, so it fits both `precheck` and `notRunExitCodes: [2]`. Example: `"precheck": "bash \"$AV_SKILLS_DIR/av-verify/scripts/compose_container.sh\" app >/dev/null"`, `"run": "docker exec \"$(bash \"$AV_SKILLS_DIR/av-verify/scripts/compose_container.sh\" app)\" composer test"`.
-  - `needs`: a description of requirements for a human, e.g. "docker compose up".
+  - `needs`: a description of requirements for a human, e.g. "services of this checkout running".
   - `timeoutSec`: time limit, default 900.
   - `cwd`: directory relative to the repo root.
   - `notRunExitCodes`: exit codes that the repo script returns when the environment is missing (e.g. 2 = the service is not running). They give `NOT_RUN` instead of `FAIL`. Set them per command from the script code. The same code may mean different things in different commands: "0 tests" is a missing account (NOT_RUN) for UI tests, but a configuration error (FAIL) for unit tests.
   - `optional`: `true` means that `NOT_RUN` of this command does not make the gate incomplete. The result is `SKIPPED`.
   - `covers`: a list of commands that this command covers. Example: UI tests build the app, so `ui` covers `build`. Within one gate, a covered command does not run a second time.
   - `parallel`: `true` means that the command shares no state with the other gate commands (it does not write where others read, does not use the same simulator, database or build directory). It starts in the background at the start of the gate, next to the rest. Results, logs and evidence are the same and come in gate order. Typical: `docs`, `lint`, a fixtures check next to tests. Do not set it for builds or for tests on a shared device. A command with `covers`, or one covered by another gate command, runs in sequence despite the flag. A value other than `true`/`false` is a config error.
-- Commands that write tracked files, may print secrets or manage containers by a fixed name do not belong in gates (`references/interview.md`, round 1).
+- Commands that write tracked files (except a generator whose probe run leaves the tree unchanged), send data to an external service without a switch to turn it off, may print secrets or manage containers by a fixed name do not belong in gates (`references/interview.md`, round 1).
 - Pass command parameters through environment variables: `"run": "scripts/ui_test.sh \"$UI_SUITE\""`, and the call is `gate.sh --only ui --env UI_SUITE=LoginTests`. Detect a missing parameter in `precheck`.
 - `gates`: named sets of commands. `quick` after every code change. `full` before the report in STANDARD and LARGE modes, and with high risk; SMALL mode ends with `quick`. You can add your own, e.g. `e2e`. The `av-verify.md` overlay, section "Gate selection", says when to run special gates.
 - A command does not have to belong to a gate. Helper commands with a parameter, e.g. `lint_snapshot` and `lint_delta` with `LINT_BASE`, are called with `gate.sh --only lint_delta --env LINT_BASE=...`.
@@ -203,7 +202,7 @@ Commands from the config are the only commands that `av-verify` runs without ask
 **roles** (optional; the only source of role file scope)
 - A list of roles: `name`, `skill`, `order`, `globs`.
   - `name`: the role name, the same in the plan, the overlay and the skill name.
-  - `skill`: the role skill in `.claude/skills/<skill>/SKILL.md`. Write a plugin skill with a colon, e.g. `phpstorm-plugin:php-project-guide`; the validator does not look for it.
+  - `skill`: the role skill in `.claude/skills/<skill>/SKILL.md`. Write a plugin skill with a colon, e.g. `example-plugin:example-guide`; the validator does not look for it.
   - `order`: roles with the same number may work in parallel. A lower number goes first.
   - `globs`: git pathspec `:(glob)` syntax: `*`, `**`, `?`. No `{a,b}` braces: each variant is a separate glob. A path without a star also covers the directory contents.
     A glob starting with `!` excludes matching files from its own list (one role, `generatedPaths` or `unownedPaths`), e.g. `["config/**", "!config/app.yaml"]`. An excluded file falls through to the next rule. A role with exclusions only is invalid.
@@ -248,9 +247,10 @@ Commands from the config are the only commands that `av-verify` runs without ask
   ```
 - `timeoutSec` (optional): the limit of one slot in `agent.sh`, default 3600.
 
-**integrations**: information for the skills about which tools they may use (tracker, boards, design tools, translation system). The fields are open; the team can add its own. Secrets never go here.
+**integrations**: information for the skills about which tools they may use (tracker, boards, design tools, translation system). The keys are categories or tool names chosen by the team; the fields are open. Secrets never go here.
+- A tool entry is a string (the tool name) or an object with optional fields: `access` (`mcp`, `browser`, `cli` or `api`), `urls` (addresses the skills may open, without credentials in the address) and `doc` (the topic file in the repo docs). Use the object form when the team needs the access method or the addresses; every run then writes the same keys.
 - How the repo uses a tool is described in the repo docs (`references/doc-set.md`, section "Integrations"), not in the config.
-- `mcp` lists the MCP servers that the skills use.
+- `mcp` lists the MCP servers that the skills use. A server that the team keeps in `.mcp.json` but no longer uses is left out of this list.
 
 **codex.enabled**: `true` means that setup maintains `AGENTS.md` and `.agents/skills` as symlinks.
 

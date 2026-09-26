@@ -102,6 +102,25 @@ bash "$AD" --root "$R" --old old.md ghost.md --new CLAUDE.md .ai >"$out" 2>"$TMP
 has "$TMP/err.txt" "WARNING file not found: ghost.md" "warning per missing old file"
 has "$out" "TOKENS 2 LOST 0 FILTERED 0" "present old files still compared"
 
+# MARK: an edited (UPDATE) file: old content from --old-rev, new content stays in the corpus
+printf '# agents\nRules `OLD_RULE`, `MOVED_RULE` and `STAYS_HERE`.\n' >"$R/.ai/agents.md"
+git -C "$R" add -A && git -C "$R" commit -qm agents
+printf '# agents\nRewritten. Still `STAYS_HERE`.\n' >"$R/.ai/agents.md"
+printf 'MOVED_RULE\n' >>"$R/.ai/overlays/av-plan.md"
+bash "$AD" --root "$R" --old-rev HEAD --old .ai/agents.md --new CLAUDE.md .ai >"$out" 2>"$TMP/err.txt"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "edited file with --old-rev: code $rc"
+has "$out" "LOST .ai/agents.md OLD_RULE" "token dropped by the edit is LOST"
+hasnt "$out" "MOVED_RULE" "token moved to an overlay is not LOST"
+hasnt "$out" "STAYS_HERE" "new content of the edited file is corpus"
+has "$out" "TOKENS 3 LOST 1 FILTERED 0" "summary for an edited file"
+bash "$AD" --root "$R" --old .ai/agents.md --new CLAUDE.md .ai >"$out"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "edited file without --old-rev reads the tree: code $rc"
+has "$out" "LOST .ai/agents.md STAYS_HERE" "without --old-rev the old file is not corpus"
+has "$out" "TOKENS 1 LOST 1 FILTERED 0" "summary without --old-rev"
+bash "$AD" --root "$R" --old-rev HEAD --old ghost.md --new CLAUDE.md .ai >"$out" 2>"$TMP/err.txt"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "file in neither the revision nor the tree: code $rc"
+has "$TMP/err.txt" "WARNING file not found: ghost.md" "warning for a file missing in both places"
+
 # MARK: usage
 bash "$AD" --root "$R" --new .ai >/dev/null; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "no old files: code $rc"

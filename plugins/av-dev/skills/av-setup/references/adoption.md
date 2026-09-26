@@ -45,13 +45,13 @@ Typical mapping:
 | review agent (`code-reviewer`, `security-reviewer`, `view-reviewer`, `web-reviewer`) | CONVERT | axes and checklists -> `code-review.md`; check tools and owners -> `av-review.md` |
 | security agent (`security-reviewer`, `security-auditor`) | CONVERT | rules -> security axis in `code-review.md` |
 | agent that verifies with commands (`build-verifier`, `test-runner`, `simulator-verifier`, `e2e-test-runner`) | CONVERT | commands -> `validation`; result interpretation -> `av-verify.md` |
-| agent that verifies with MCP tools (`visual-verifier` with Playwright, comparison with Figma) | CONVERT | procedure -> `av-verify.md`, section "Tool checks", with the condition for when it is required. It gives no `gate.sh` evidence, but `av-implement` must run it and report it |
+| agent that verifies with tools (`visual-verifier` with a browser automation tool, comparison with a design file) | CONVERT | procedure -> `av-verify.md`, section "Tool checks", with the condition for when it is required. It gives no `gate.sh` evidence, but `av-implement` must run it and report it |
 | environment cleanup rules by container or process name | move with a filter | only with a filter on this checkout's directory; otherwise they hit other people's environments |
 | acceptance agent against the plan (`acceptance-verifier`) | CONVERT | criteria -> "Plan compliance" axis in `code-review.md`; `av-review` checks it with `--run` |
 | `docs-keeper`, `docs-auditor` | CONVERT | -> `av-docs-sync.md` |
-| translation agent (`i18n-guardian`) | KEEP or CONVERT | KEEP when it does work (adds keys in many language files, syncs with a tool like Lokalise); CONVERT when it only checks rules; then rules -> `code-review.md` and required steps |
-| tool agents (`board-reader`, `figma-reader`) | KEEP or UPDATE | not part of the pipeline; UPDATE when they refer to deleted agents, phases or commands |
-| tool project skills (`translate`, `read-board`, `writing-tests`, `angular-templates`) | KEEP or UPDATE | overlays may point to them; UPDATE references as above |
+| translation agent (`i18n-guardian`) | KEEP or CONVERT | KEEP when it does work (adds keys in many language files, syncs with a translation service); CONVERT when it only checks rules; then rules -> `code-review.md` and required steps |
+| tool agents (`board-reader`, `design-reader`) | KEEP or UPDATE | not part of the pipeline; UPDATE when they refer to deleted agents, phases or commands, or use an access method the team dropped in the interview (e.g. an MCP tool where the team now reads through the browser): rewrite the access steps, keep the rest |
+| tool project skills (`translate`, `read-board`, `writing-tests`, `view-templates`) | KEEP or UPDATE | overlays may point to them; UPDATE references as above. A KEEP file with a path that no longer exists (`MISSING` from `check_refs.sh` on `.claude/skills`) gets an UPDATE of that one line, because the `docs` gate checks project skills; otherwise the gate fails right after setup |
 | project skills that wrap the pipeline (refer to RUN_ID, phases, a manifest) | CONVERT | rules -> overlay; the wrapper DROP, or UPDATE when it also contains a tool |
 | session summary prompt (`.claude/prompts/post-session-review.md`) | KEEP when a hook uses it; otherwise CONVERT | -> `av-implement.md` overlay, section "Learnings" (step 10 of `av-implement` reads it) |
 | pipeline scripts (`pipeline_state.py`, `pipeline_check.py`) and their tests | DROP or TODO | `gate.sh` replaces them; deleting needs approval; without approval, put them into TODO |
@@ -62,7 +62,7 @@ Typical mapping:
 | pipeline section in `CLAUDE.md` | UPDATE | -> "Working with the agent" section |
 | critical rules and response style in `CLAUDE.md` | KEEP | these are team decisions |
 | `.codex/agents/*.toml` | DROP | Codex gets skills through `.agents/skills` |
-| `.codex/config.toml`, `.mcp.json`, `settings.json` | KEEP | environment and MCP |
+| `.codex/config.toml`, `.mcp.json`, `settings.json` | KEEP | environment and MCP; an entry for a server the team no longer uses stays, and the tool's topic file says so |
 | `.agents/skills/*` | MERGE | unique skills -> `.claude/skills/`, then a symlink |
 | `sessions/learnings.md`, files in `workspace/` | KEEP | team history |
 | `workspace/README.md` | UPDATE | description of the `runs/`, `plans/`, `reports/` directories instead of the old pipeline phases |
@@ -92,15 +92,18 @@ Follow `references/plan-format.md`. The "Knowledge that gets lost" section is re
 **Knowledge loss detector.** Compare the CONVERT and DROP files with the docs that stay:
 
 ```bash
-bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> \
-  --old <CONVERT and DROP files> --new CLAUDE.md <docs-dir> \
+bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> --old-rev <rev> \
+  --old <CONVERT, DROP and UPDATE files> --new CLAUDE.md <docs-dir> .claude/skills \
   --noise '<names of old agents and commands, e.g. code-reviewer|feature_plan>'
 ```
+
+`<rev>` is the commit before setup (usually `HEAD` at the start); write it into the plan. `--old-rev` reads every old file from that commit, so UPDATE files count with their content before the edit, and their edited tree version stays in the new corpus. Step 5 runs the same command on the same corpus; only then do the two counts compare.
 
 - Result: `LOST <old-file> <token>` for a backtick token with no trace in the new corpus. At the end: `TOKENS n LOST m FILTERED f`.
 - The filter skips orchestration: RUN_ID, CHECK_ID, EVIDENCE, `$ARGUMENTS`, `pipeline_state`, `pipeline_check`, the paths `.claude/agents` and `.claude/commands`. `--noise` (ERE) adds the names of old agents and commands.
 - It also filters handoff noise and counts it as FILTERED: upper-case `KEY=value` parameters, upper-case field names, `{name}` and `<Name>` placeholders, placeholder file names (`XController.php`, `Foo*`, `Example*`). A rule keyword written as an upper-case field line in a code block (e.g. a plan section template) is filtered too: check such templates by hand.
 - It exits 2 when none of the `--old` files can be read. In zsh, pass each file as its own argument; `--old "$VAR"` with several paths is one word.
+- List `.claude/skills` in `--new` only when the repo has project skills; the corpus must be the same in step 3 and step 5.
 - Every `LOST` gets a place in the plan. A substantive rule (findings category, threshold, script, pitfall) goes to "Knowledge moved to overlays" with a target. Orchestration goes to "Knowledge that gets lost" with what replaces it.
 - Group them: one row per group of tokens, not per token. Write the `TOKENS`, `LOST` and `FILTERED` counts into the plan.
 
@@ -121,7 +124,7 @@ New files are created before old ones are deleted. At every moment, the repo has
 
 - Repeat the grep from step 1. Fix or report every hit outside `workspace/` and `sessions/`.
 - `check_refs.sh` for changed docs and overlays.
-- `adoption_diff.sh` again, on the new setup. After deletions: `--old-rev HEAD --deleted --new CLAUDE.md <docs-dir> .claude/skills` with the same `--noise`. Before deletions: `--old <CONVERT and DROP files>`. A `LOST` outside "Knowledge that gets lost" is a gap: add the rule to an overlay or a role skill, and when that is not possible, report it.
+- `adoption_diff.sh` again: the command from step 3 with the same `<rev>`, `--old` list, `--new` corpus and `--noise`. After approved deletions, add `--deleted`. A `LOST` outside "Knowledge that gets lost" is a gap: add the rule to an overlay or a role skill, and when that is not possible, report it.
 - `check_setup.sh`: overlays, roles, references and gate names. Fix `ERROR` before the report.
 - The `quick` gate at the very end, according to SKILL.md, step 10, point 5. It checks that the commands from the config really work.
 - Every group of rules from the "Knowledge moved to overlays" section has a target place. A missing place is a gap in the report.

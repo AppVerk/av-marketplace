@@ -13,7 +13,10 @@
 #               one that exists next to root is not reported,
 #   WORKSPACE   reference to a working file (--workspace, default .ai/workspace);
 #               docs should not link plans and reports.
+# A backtick token looks like a path when it has a known extension, ends with "/"
+# or names a dotfile after a directory (config/.toolrc).
 # Skips placeholders (YYYY, <x>, [x], {x}, $VAR, ${VAR}, Foo), package names from manifests,
+# scripts shipped with the av-* skills (bare name or a path under the skills directory),
 # paths ignored by git and lines that themselves say the file is missing
 # (negation words in Polish and English).
 # The repo index includes *.xcresult bundles without their contents (hundreds of thousands of files).
@@ -35,7 +38,7 @@ while [ $# -gt 0 ]; do
     --root) root="${2:-}"; shift ;;
     --workspace) workspace="${2:-}"; shift ;;
     --strict) ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
@@ -51,6 +54,13 @@ trap 'rm -rf "$tmp"' EXIT
 find "$root" \( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData \
   -o -name build -o -name dist -o -name .angular -o -name coverage -o -name __pycache__ -o -name .venv \) -prune \
   -o -name '*.xcresult' -prune -print -o -print 2>/dev/null | sed "s|^$root/||" | grep -v "^$root\$" >"$tmp/index"
+
+# MARK: scripts of the av-* skills (sibling skill directories), with every path suffix
+
+skills_dir="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)"
+: >"$tmp/avscripts"
+[ -n "$skills_dir" ] && find "$skills_dir" -mindepth 3 -maxdepth 3 -path '*/scripts/*' -name '*.sh' 2>/dev/null |
+  sed "s|^$skills_dir/||" | awk -F/ '{ s = ""; for (i = NF; i >= 1; i--) { s = (s == "" ? $i : $i "/" s); print s } }' >"$tmp/avscripts"
 
 # MARK: package names
 
@@ -127,7 +137,8 @@ fi
       if (t ~ /^(feature|bugfix|hotfix|release|task|origin|refs)\//) return 0
       if (placeholder(t)) return 0
       s = t; sub(/:[0-9]+(-[0-9]+)?$/, "", s)
-      if (s !~ /\.(swift|php|ts|js|mjs|json|md|yml|yaml|xml|twig|html|scss|css|py|rb|sh|plist|strings|xib|storyboard|xcconfig|toml|lock|kt|java|go)$/ && s !~ /\/$/) return 0
+      if (s !~ /\.(swift|php|ts|js|mjs|json|md|yml|yaml|xml|twig|html|scss|css|py|rb|sh|plist|strings|xib|storyboard|xcconfig|toml|lock|kt|java|go)$/ && s !~ /\/$/ &&
+          s !~ /\/\.[A-Za-z0-9][A-Za-z0-9_.-]*$/) return 0
       if (s ~ /^[A-Z0-9_]+\/[A-Z0-9_]+$/) return 0
       return 1
     }
@@ -236,7 +247,7 @@ while IFS=$'\t' read -r where tok kind stripped ign rel2; do
         continue ;;
     esac
   fi
-  case "$stripped" in gate.sh|scan.sh|check_refs.sh|check_names.sh|check_linerefs.sh|check_setup.sh|adoption_diff.sh) continue ;; esac
+  grep -qxF -- "$stripped" "$tmp/avscripts" && continue
   if [ "${stripped#*/}" = "$stripped" ] && [ -f "$root/.gitignore" ] &&
      grep -vE '^[[:space:]]*(#|!)' "$root/.gitignore" | grep -qE "(^|/)$(printf '%s' "$stripped" | sed 's/[.[\*^$]/\\&/g')/?$"; then
     continue

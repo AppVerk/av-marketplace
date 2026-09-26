@@ -49,7 +49,7 @@ Commits in the range that already changed the docs mapped to their own code are 
 For each changed code file, find the docs to update:
 1. Overlay, section "Code -> docs map".
 2. Module: a file in a module directory -> `<docs.modules>/<Module>.md`.
-3. Dependency manifests (lockfile, composer.json, package.json, Podfile) -> `tech-stack.md`.
+3. Dependency manifests and lockfiles -> `tech-stack.md`.
 4. Config files -> `configuration.md`.
 5. New scripts, commands, gates -> `commands.md` and possibly `validation` in the config. Propose the config change; do not make it yourself.
 6. A new module directory, or a module with the annotation `_[description to create: av-docs-sync]_` in the index (in a Polish repo: `_[opis do utworzenia: av-docs-sync]_`) -> a new description from `<docs.modules>/_template.md` and an entry in the module index.
@@ -100,7 +100,7 @@ bash <skill-dir>/scripts/check_refs.sh <files or directories> --root <repo-root>
 The script checks links and paths in backticks, also paths relative to the source directory (suffix match). It skips placeholders (`<x>`, `$VAR`, `${VAR}`), package names, files ignored by git and lines that themselves say the file is missing.
 
 - `MISSING`: a path with a directory, or a link, that does not exist. Almost always real drift.
-- `UNRESOLVED`: a bare file name that was not found. Judge by hand: often it is an example or a file name from another repo. The script itself skips av-* skill script names (`gate.sh`, `scan.sh`, `check_refs.sh`, `check_names.sh`).
+- `UNRESOLVED`: a bare file name that was not found. Judge by hand: often it is an example or a file name from another repo. The script itself skips the scripts shipped with the av-* skills: a bare name (`gate.sh`, `agent.sh`) or a path under the skills directory (`av-verify/scripts/gate.sh`).
 - `EXTERNAL`: a path to another repo that is not next to this one. Report it only when the text suggests it should exist.
 - `WORKSPACE`: a reference to a specific working file (plan, report). A mention of the workspace directory itself is not reported. This is DRIFT: docs do not link history. Replace it with a description of the state or a link to the owner docs.
 
@@ -150,7 +150,7 @@ Check `check_names.sh` candidates with `git log -S` only after filtering out nam
 ### Step 3b: Claims (by grep and reading)
 
 Check what the scripts do not cover:
-- commands: they exist in `package.json`, `composer.json`, `scripts/`, Makefile,
+- commands: they exist in the manifests, build files and `scripts/` of the repo,
 - versions: they match the lockfile,
 - numbers (e.g. "8 agents", "17 modules"): recount. Without a list in the overlay, find them with grep, using words in the docs language: `grep -nE "[0-9]+ (file|method|screen|test|line|module|agent|key)" <docs>`,
 - rules that describe code (e.g. "every ViewModel has a protocol"): check on 3-5 examples.

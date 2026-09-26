@@ -6,13 +6,15 @@ Ask the questions with one question tool (e.g. AskUserQuestion), at most 4 at on
 
 ## Round 1: always
 
-1. **Validation gates.** Show the detected commands and the proposed split into `quick` and `full`. Sources in order of trust: CI, repo scripts, composer/package.json, Makefile. Ask whether it is right.
+1. **Validation gates.** Show the detected commands and the proposed split into `quick` and `full`. Sources in order of trust: CI, repo scripts, manifests, build files. Ask whether it is right.
    - Take `expect` and `notRunExitCodes` from `commands.scripts_meta` in the scan. `exit_codes_doc` is the exit code description from the script header; e.g. "2 when the environment is unavailable" gives `notRunExitCodes: [2]`. `status_tokens` are the status strings the script prints; e.g. `UNIT_OK` gives `expect`.
    - A token `X_FAILED` without `X_OK` usually means a status built in code (e.g. `label + '_OK'` in a helper). Confirm it by reading the code or running it before you write `expect`.
    - A "zero tests" or "tests skipped" code is not a missing environment for unit tests. Leave it out of `notRunExitCodes`, unless the script describes it as a missing account or device.
    - Propose a `docs` command in `quick` (`references/config-schema.md`, section validation).
    - Read each candidate command before proposing it. Mark and explain in the proposal:
      - a command that writes tracked files (a build into a committed directory, a test that rewrites a fixture): it makes the evidence STALE; keep it out of `quick` and `full`, or run it last and say so in `needs`;
+     - a generator that rewrites a tracked file with the same content on every run: allowed as a gate when a probe run leaves the tree fingerprint unchanged (`git status --porcelain` empty after the run); say in `needs` which input files change the generated file, because a change there makes the evidence STALE;
+     - a command that sends data to an external service (symbol or artifact upload, telemetry, deploy, a report to a hosted service): not a gate, unless a variable or a config switch turns the sending off; then put the switch into `run` and describe it in `needs`. A gate runs many times a day, also from clones and by other people;
      - a command that may print secrets into logs (secret scanners, commands that dump the environment, especially when the repo tracks an env file): never a gate, because gate logs are kept as evidence;
      - a command that starts, stops or restarts containers or services by a fixed name: it can hit another checkout; not a gate;
      - one exit code for both "environment missing" and "tests failed": `notRunExitCodes` cannot separate them; guard the command with a `precheck`.
@@ -41,8 +43,8 @@ Ask the questions with one question tool (e.g. AskUserQuestion), at most 4 at on
   - Adoption does not lower the review model.
   - `fable` is an allowed value, but it sits outside the scale. Write it only on the user's decision.
 - `agents.independentReview`: `true`.
-- `integrations`: from `.mcp.json`, `enabledMcpjsonServers` and MCP server names (e.g. atlassian/jira -> tracker `jira`, figma, bitbucket). Tool names from docs (e.g. Lokalise) as extra fields.
-- Tool integrations (a board, a design tool): record them in `integrations`. How to access a tool (MCP, browser, CLI) is the team's decision: take it from the repo (existing agents, skills, docs) or ask. The plugin has no default.
+- `integrations`: from `.mcp.json`, `enabledMcpjsonServers` and MCP server names, mapped to a category (a tracker, a design tool, a repository host, a board). Tools named only in docs go in as extra fields. Shape of an entry: `references/config-schema.md`, field `integrations`.
+- Tool integrations (a board, a design tool): record them in `integrations`. How to access a tool (MCP, browser, CLI) is the team's decision: take it from the repo (existing agents, skills, docs) or ask. An interview answer wins over what the repo shows, because the repo may be stale; the plan records the change (`references/doc-set.md`, section "Integrations"). The plugin has no default.
 - `git.baseBranch`: the branch that pull requests go to in the history (`merged_branch_names`, docs about the flow). When docs list several main branches without choosing one, take `develop` if it exists. `base_branch_guess` from the scan is only a hint; in a local clone it may be wrong.
 - `git.ticketPrefixes`: the keys of `git.ticket_prefixes` from the scan with a count of at least 3, plus prefixes from docs. Single hits are usually noise.
 - `git.commit`: the team rule from docs; when docs conflict or say nothing, `on-request`, and the conflict goes to the report.

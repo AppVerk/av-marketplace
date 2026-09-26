@@ -103,6 +103,24 @@ has "$out9" "MISSING .ai/vars.md:3 config/ghost/app.yml" && ok || fail "real pat
 has "$out9" "CHECKED 1 MISSING 1 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0" && [ "$rc" -eq 1 ] && ok || fail "counters with shell variables: $(printf '%s' "$out9" | tail -1) (code $rc)"
 rm "$REPO/.ai/vars.md"
 
+# --- 2h. a dotfile after a directory is a path; a bare dotfile is still an extension mention
+mkdir -p "$REPO/tools"
+touch "$REPO/tools/.toolrc"
+printf '# n\nVersion: `tools/.toolrc`. Ghost: `tools/.ghostrc` and `config/.env.example`. Extension: `.toolrc`.\n' >"$REPO/.ai/dot.md"
+out10="$(bash "$CHECK" .ai/dot.md --root .)"; rc=$?
+has "$out10" "MISSING .ai/dot.md:2 tools/.ghostrc" && ok || fail "dotfile after a directory not reported: $out10"
+has "$out10" "MISSING .ai/dot.md:2 config/.env.example" && ok || fail "dotfile with a second extension not reported: $out10"
+printf '%s\n' "$out10" | grep -q 'tools/.toolrc' && fail "existing dotfile reported: $out10" || ok
+has "$out10" "CHECKED 3 MISSING 2 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0" && [ "$rc" -eq 1 ] && ok || fail "counters with dotfiles: $(printf '%s' "$out10" | tail -1) (code $rc)"
+rm "$REPO/.ai/dot.md"
+
+# --- 2i. every script shipped with the av-* skills is known, by bare name or by its path in the skills directory
+printf '# s\nSlots: `agent.sh`, `config.sh`, `compose_container.sh`, `av-verify/scripts/gate.sh`, `scripts/adoption_diff.sh`. Unknown: `ghost_tool.sh`.\n' >"$REPO/.ai/avs.md"
+out11="$(bash "$CHECK" .ai/avs.md --root .)"
+has "$out11" "UNRESOLVED .ai/avs.md:2 ghost_tool.sh" && ok || fail "unknown bare script not reported: $out11"
+has "$out11" "CHECKED 6 MISSING 0 UNRESOLVED 1 EXTERNAL 0 WORKSPACE 0" && ok || fail "counters with av scripts: $(printf '%s' "$out11" | tail -1)"
+rm "$REPO/.ai/avs.md"
+
 # --- 2d. document given relative to --root from outside the repo directory
 out4="$(cd "$TMP" && bash "$CHECK" .ai/modules/Orders.md --root "$REPO")"
 has "$out4" "RemovedList.ts" && ok || fail "document path relative to --root"

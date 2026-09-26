@@ -42,7 +42,7 @@ Docs-only changes need no gate. Report it and stop. Exception: the gate was name
 
 ## Step 2: Environment
 
-Commands may have a `precheck` (e.g. running docker, a simulator). The environment must belong to this checkout. Do not run commands in containers started from another directory, even with the same project name (clone, worktree). When the config precheck does not check this, report it as a config problem. When the overlay describes environment setup as safe and local (e.g. `docker compose up -d`), do it. Any other setup (accounts, data, external services) needs a question first.
+Commands may have a `precheck` (e.g. a running container, a device or simulator). The environment must belong to this checkout. Do not run commands in containers started from another directory, even with the same project name (clone, worktree). When the config precheck does not check this, report it as a config problem. When the overlay describes environment setup as safe and local (e.g. starting the services of this checkout), do it. Any other setup (accounts, data, external services) needs a question first.
 
 Do not read secret files. The test account comes from environment variables described in the overlay.
 
@@ -109,7 +109,7 @@ Up to 10 lines. Full logs stay in `paths.runs/<RUN_ID>/`. Give paths; do not pas
 
 ## Tool checks
 
-Some checks are not a command: visual verification through Playwright MCP, comparing a screen with Figma, clicking a path in the app, checking an external board. The overlay, and the repo docs it points to, say how to do them. The overlay describes them in the section "Tool checks": when they are required, how to do them, where to save screenshots (`<paths.workspace>/screenshots/`).
+Some checks are not a command: visual verification through a browser automation tool, comparing a screen with a design file, clicking a path in the app, checking an external board. The overlay, and the repo docs it points to, say how to do them. The overlay describes them in the section "Tool checks": when they are required, how to do them, where to save screenshots (`<paths.workspace>/screenshots/`).
 
 - Do them when the change meets the condition in the overlay.
 - Record the result as `TOOL_CHECK <name> PASS|FAIL|NOT_RUN` with evidence: screenshot paths, a description of differences, the reason it did not run.
@@ -119,4 +119,4 @@ Some checks are not a command: visual verification through Playwright MCP, compa
 
 ## Use by other skills
 
-`av-implement` calls this skill after changes and before the report. It can also hand it to the `verify` slot (`agent.sh --slot verify`), because the result depends on the exit code, not on judgment. The `codex` executor runs in the user's sandbox. The iOS simulator, Docker or network may need approval (`AGENT_NEEDS_PERMISSION`, skill `av-implement`, section "Permissions"). For such gates it is easier to leave `verify` on `inherit`.
+`av-implement` calls this skill after changes and before the report. It can also hand it to the `verify` slot (`agent.sh --slot verify`), because the result depends on the exit code, not on judgment. The `codex` executor runs in the user's sandbox. A device emulator, a container runtime or network may need approval (`AGENT_NEEDS_PERMISSION`, skill `av-implement`, section "Permissions"). For such gates it is easier to leave `verify` on `inherit`.

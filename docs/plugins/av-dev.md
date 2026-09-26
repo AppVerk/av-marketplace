@@ -110,4 +110,4 @@ Then run `av-setup` in the repo.
 bash plugins/av-dev/tests/run.sh
 ```
 
-646 script tests: gates, config merge, slot executor, setup validator, repo scan, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.
+662 script tests: gates, config merge, slot executor, setup validator, repo scan, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.

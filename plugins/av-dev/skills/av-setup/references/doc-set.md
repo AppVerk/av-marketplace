@@ -61,7 +61,7 @@ At the start of a session, read `<paths.learnings>` if it exists.
 | `architecture.md` | layers, flow, DI, module boundaries | directory structure, imports, DI registrations |
 | `coding-standards.md` | naming, sections, localization, comments | 3-5 representative files, linter config |
 | `commands.md` | build, tests, lint, run, logs | `validation.commands`, scripts, CI |
-| `environment.md` | required tools, versions, docker, simulator | lockfile, `.tool-versions`, compose, README |
+| `environment.md` | required tools, versions, containers, devices | lockfile, tool version files, service definitions, README |
 | `configuration.md` | config files and what may be changed in them | config files, env without values |
 | `tech-stack.md` | dependencies with versions | lockfile |
 | `testing.md` | how to write and run tests, mocks, fixtures | test directories, sample tests |
@@ -115,8 +115,23 @@ The plugin ships no instructions for external tools. Instructions for a tool the
 
 - Source: existing agents, skills and docs of the repo that use the tool; in ADOPTION, tool agents and tool skills (`references/adoption.md`).
 - Place: a topic file in `<docs.root>/` (e.g. `<docs.root>/<tool>.md`) with a row in the docs table of `CLAUDE.md`; helper scripts in `<paths.scripts>/`. Overlays link to the topic file.
-- Access method (MCP, browser, CLI): the team's choice as found in the repo or given in the interview. Do not switch it.
+- Access method (MCP, browser, CLI): the team's choice. The interview wins over the repo, because the repo may describe a method the team dropped. Do not switch it on your own. A changed method is a plan decision: agents and skills that use the old method get UPDATE (`references/adoption.md`, step 2), and the entry in `.mcp.json` stays with a note in the topic file that the server is unused.
+- A tool known only from the interview (no agent, skill or doc in the repo): create the topic file with the address, the access method and a `_[TODO: fill in]_` marker for the procedure. Do not invent the procedure.
 - Solve a problem of one repo (a script for its project, a workaround for its tool) in that repo. Do not add it to the plugin.
+
+Topic file skeleton:
+
+```markdown
+# <Tool>
+
+<One sentence: what the team keeps there.>
+
+## Access
+<method, address, who has access; no credentials>
+
+## Usage
+<when a skill reads or writes it, and how; or a TODO marker>
+```
 
 ## Modules
 
@@ -140,7 +155,7 @@ Common skeleton; add sections only for layers the repo has:
 <non-obvious things; only those confirmed in the code>
 ```
 
-`SKILL.md`, step 7 describes the budget and parallelism of module descriptions. Modules without a full description get a row in `modules/README.md` with the note `_[description to create: av-docs-sync]_` (in a Polish repo: `_[opis do utworzenia: av-docs-sync]_`).
+`SKILL.md`, step 7 describes the budget and parallelism of module descriptions. Modules without a full description get a row in `modules/README.md` with the note `_[description to create: av-docs-sync]_` (localized form: `references/localization.md`, section "Markers").
 
 ## Code templates
 

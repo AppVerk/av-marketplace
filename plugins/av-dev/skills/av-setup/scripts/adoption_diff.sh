@@ -6,7 +6,11 @@
 # corpus (CLAUDE.md, docs, overlays, role skills). A token without a trace is
 # a candidate for the "Knowledge that gets lost" section or for fixing the overlays.
 #
-# An old file deleted from the tree is read from git show <rev>:<file> (--old-rev).
+# With --old-rev, every old file is read from git show <rev>:<file> first (the
+# content before the edit), and from the tree only when the revision lacks it.
+# The tree version of a file read from the revision stays in the new corpus, so
+# an edited (UPDATE) file can be compared with itself. Without --old-rev, old
+# files come from the tree and are never corpus.
 # A missing old file gives a WARNING; when none of them can be read the script
 # stops with code 2 (e.g. zsh passed --old "$VAR" as one word with spaces).
 # Orchestration filter (counted as FILTERED, never LOST):
@@ -21,7 +25,7 @@
 #     to an identifier (Request<T> is kept),
 #   - generic placeholder names: XController.php, Foo*, foo.ts, Example*, Xxx*,
 #   - tokens matching --noise REGEX (ERE, e.g. names of old agents and commands).
-# The corpus skips the workspace/ and sessions/ directories and the old files themselves.
+# The corpus skips the workspace/ and sessions/ directories and the old files read from the tree.
 #
 # Output:
 #   LOST <old-file> <token>            token without a trace in the new corpus
@@ -29,7 +33,7 @@
 #
 # Usage:
 #   adoption_diff.sh [--root DIR] --old <file>... --new <file|dir>... [--noise REGEX]
-#   adoption_diff.sh [--root DIR] --old-rev REV --deleted --new <file|dir>... [--noise REGEX]
+#   adoption_diff.sh [--root DIR] --old-rev REV [--deleted] [--old <file>...] --new <file|dir>... [--noise REGEX]
 #     --deleted adds text files deleted since REV to the old files
 #     (git diff --name-only --diff-filter=D REV: .md, .txt, .toml, .html).
 # Exit code: 0 no LOST, 1 LOST found, 2 usage error or no old file readable.
@@ -52,7 +56,7 @@ while [ $# -gt 0 ]; do
     --noise) noise="${2:-}"; shift ;;
     --old) mode=old ;;
     --new) mode=new ;;
-    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
     -*) echo "USAGE unknown option: $1"; exit 2 ;;
     *)
       case "$mode" in
@@ -87,11 +91,12 @@ awk '!seen[$0]++' "$tmp/oldlist" >"$tmp/oldu"
 
 : >"$tmp/tokens"
 : >"$tmp/fields"
+: >"$tmp/skip"
 found=0
 missing=""
 while IFS= read -r f; do
-  if [ -f "$f" ]; then cat -- "$f" >"$tmp/src"
-  elif [ -n "$rev" ] && git show "$rev:$f" >"$tmp/src" 2>/dev/null; then :
+  if [ -n "$rev" ] && git show "$rev:$f" >"$tmp/src" 2>/dev/null; then :
+  elif [ -f "$f" ]; then cat -- "$f" >"$tmp/src"; printf '%s\n' "$f" >>"$tmp/skip"
   else printf 'WARNING file not found: %s\n' "$f" >&2; missing="$missing $f"; continue; fi
   found=$((found + 1))
   awk -v file="$f" -v fields="$tmp/fields" '
@@ -139,7 +144,7 @@ for n in "${new[@]}"; do
   else
     printf 'WARNING new file or directory not found: %s\n' "$n" >&2
   fi
-done | sed 's|^\./||' | awk 'NR == FNR { skip[$0] = 1; next } !skip[$0] && !seen[$0]++' "$tmp/oldu" - |
+done | sed 's|^\./||' | awk -v skipf="$tmp/skip" 'FILENAME == skipf { skip[$0] = 1; next } !skip[$0] && !seen[$0]++' "$tmp/skip" - |
   while IFS= read -r f; do cat -- "$f"; printf '\n'; done >"$tmp/corpus"
 
 # MARK: comparison

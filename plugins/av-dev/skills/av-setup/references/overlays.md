@@ -32,6 +32,8 @@ The skill skips an overlay rule that breaks these limits and reports it.
 # av-review overlay: <project>
 ```
 
+The part `av-overlay: <skill> | stack: <label>` is a marker and stays as it is. The note after it and the title follow `references/localization.md`, section "Titles and markers".
+
 The team edits overlays by hand. On refresh, `av-setup` does not overwrite an overlay. It proposes a section diff and asks.
 
 ## `av-plan.md`
@@ -104,7 +106,7 @@ The reviewer finds the owner of a fix with `check_setup.sh --owner <file>` (role
 | screen or navigation | full + ui |
 
 ## Environment setup
-<e.g. `docker compose up -d`; simulator; test account from ~/.claude/credentials/<project>.env>
+<e.g. the command that starts the services of this checkout; a device or simulator; test account from ~/.claude/credentials/<project>.env>
 
 ## Interpreting results
 <e.g. a failed unit run with "0 tests" = configuration error, not a red test>

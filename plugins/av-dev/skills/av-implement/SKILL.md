@@ -64,7 +64,7 @@ Missing permission: the executor ends its work with `PERMISSION_REQUEST` lines, 
 1. Ask the user (AskUserQuestion): show each request, its reason and the proposed scope of the approval. Options: approve, deny, stop the run. Never grant an approval yourself.
 2. Approval: `agent.sh --slot <slot> --run-id <RUN_ID> --resume <session> --grant <G> [--grant ...] [--label <label>]`. Use the narrowest scope that is enough:
    - Codex: `dir:<absolute path>` (write outside the repo), `network` (network), `full` (no sandbox, only when the user chose it explicitly).
-   - Claude: `tool:<rule>`, e.g. `tool:Bash(npm test:*)`.
+   - Claude: `tool:<rule>`, e.g. `tool:Bash(scripts/test.sh:*)`.
 3. Denial: do not resume the session. Assess the partial result. A missing key action is NEEDS_HUMAN with a reason.
 4. An approval covers one resume. Record it in the run state and in the report (`agent.sh --summary` shows `grants=`).
 
@@ -203,7 +203,7 @@ Save `<paths.reports>/<RUN_ID>.md` (RUN_ID already has the date). The "Models" r
 |---|---|
 | Mode | STANDARD, normal risk |
 | Files | N changed (list in the report) |
-| Gates | quick PASS FRESH, full PASS FRESH, e2e NOT_RUN: docker not running |
+| Gates | quick PASS FRESH, full PASS FRESH, e2e NOT_RUN: services of this checkout not running |
 | Checks | TOOL_CHECK visual PASS (screenshots in workspace) or "none required" |
 | Review | APPROVED after 1 round; 0 open BLOCKER/HIGH |
 | Models | plan codex <codex-model>/high, implement claude opus/xhigh, review codex <codex-model>/xhigh |

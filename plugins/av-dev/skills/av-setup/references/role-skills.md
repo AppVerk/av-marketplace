@@ -13,12 +13,12 @@ A role skill is a project skill with the knowledge of one repo layer: backend, v
 
 - The repo has at least 2 roles in `roles` in the config (e.g. backend and views, data layer and presentation): one skill per role.
 - The repo has 1 role: a role skill is optional. Create it when the layer rules exceed 40 lines. Smaller rules stay in the overlay.
-- A good project skill for this layer already exists (e.g. `angular-templates`): do not duplicate it. The role points to the existing skill.
-- A marketplace plugin covers the layer (e.g. `phpstorm-plugin:php-project-guide`): the role can point to its skill or agent. Rules of this repo that the plugin does not know still get a role skill, only a shorter one.
+- A good project skill for this layer already exists (e.g. `view-templates`): do not duplicate it. The role points to the existing skill.
+- A marketplace plugin covers the layer (e.g. `example-plugin:example-guide`): the role can point to its skill or agent. Rules of this repo that the plugin does not know still get a role skill, only a shorter one.
 
 ## Name
 
-`<prefix>-<role>`, e.g. `shop-backend`, `shop-web`, `shop-tests`. The prefix comes from `project.skillPrefix` in the config. By default, take it from the project name, not the directory name (a clone or worktree may have a different one): first `name` from `composer.json` or `package.json`, then the repo name from the `origin` URL, then the name of the main project file found by the scan. When no source exists (a clone without `origin`, a repo without a manifest), ask in the interview; with `--defaults`, take the directory name and record it in "Default decisions". From the name, take the last part without the company prefix, e.g. `acme-shop` gives `shop`. When the result is a platform or layer word (`ios`, `android`, `api`, `web`, `admin`, `app`), it will collide with other repos of the same product: ask in the interview; with `--defaults`, keep the full project name as the prefix and record it in "Default decisions".
+`<prefix>-<role>`, e.g. `shop-backend`, `shop-web`, `shop-tests`. The prefix comes from `project.skillPrefix` in the config. By default, take it from the project name, not the directory name (a clone or worktree may have a different one): first the `name` field of the project manifest, then the repo name from the `origin` URL, then the name of the main project file found by the scan. When no source exists (a clone without `origin`, a repo without a manifest), ask in the interview; with `--defaults`, take the directory name and record it in "Default decisions". From the name, take the last part without the company prefix, e.g. `acme-shop` gives `shop`. When the result is a platform or layer word (`mobile`, `api`, `web`, `admin`, `app`), it will collide with other repos of the same product: ask in the interview; with `--defaults`, keep the full project name as the prefix and record it in "Default decisions".
 
 The role name is the same in the config (`roles[].name`), in the plan (`av-plan`, "Role" column) and in the skill name.
 
@@ -46,7 +46,7 @@ The file scope of this role is the `web` role in `roles` in `.ai/av.config.json`
 <rules whose violation breaks the build, security or consistency; short, with the reason in half a sentence>
 
 ## Layer check
-<quick commands on this layer's files during work, e.g. phpstan only on changed files. This helps the role; it is not evidence. Evidence comes only from gates in validation.commands, which av-verify runs. When the command exists in the config, give its name (`gate.sh --only <name>`) instead of copying it.>
+<quick commands on this layer's files during work, e.g. the layer's static checker only on changed files. This helps the role; it is not evidence. Evidence comes only from gates in validation.commands, which av-verify runs. When the command exists in the config, give its name (`gate.sh --only <name>`) instead of copying it.>
 
 ## Handoff
 - You receive: <from which role and what, e.g. a route table from shop-backend>
@@ -59,7 +59,7 @@ This is the only place that describes the handoff. The role order is in the conf
 ```
 
 Rules:
-- The `description` lists directories (names, without `/**`) and words by which Claude recognizes the layer. `SETUP_GLOB_COPY` counts globs in the description. Write it broadly, because a too narrow description keeps the skill from triggering. Length up to about 300 characters.
+- The `description` lists directories (names, without `/**`) and words by which Claude recognizes the layer. `SETUP_GLOB_COPY` counts globs in the description. Write it broadly, because a too narrow description keeps the skill from triggering. Length up to about 300 characters, counted as characters (`wc -m`), not bytes: letters outside ASCII take several bytes.
 - Content: 40-150 lines. Knowledge that is a norm for people (architecture, conventions) stays in the docs; the skill only links to it.
 - Facts from the code, as in the whole setup. Check every path and command before writing it.
 - A role skill does not orchestrate. It does not talk about whole-repo gates, review or commits. `av-implement` does that.
