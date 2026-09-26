@@ -124,6 +124,8 @@ Ignore list: the section `## Known false names` in the overlay `<paths.overlays>
 
 Excluded docs: `check_refs.sh`, `check_names.sh` and `check_linerefs.sh` skip documents matching `--exclude <glob>` (repeatable) or a glob from the overlay section `## Excluded docs paths`, one `` - `glob` `` per line. Globs work like git `:(glob)` relative to `--root`; a glob without `*` excludes everything under it. The summary line ends with `EXCLUDED n`. Put docs about other repositories there.
 
+Known false paths: when a checked path is a known false positive, add it to the overlay section `## Known false paths`, one list item in backticks per entry: `<doc>.md:<line>` ignores every path on that docs line, and `<path or glob>` never reports that referenced path. Matches count as `KNOWN n` in the summary; `KNOWN_STALE <entry>` marks an entry that can be removed. Use it instead of rewording team docs to satisfy the checker.
+
 With many candidates (over 50), triage like this: first candidates from lines that also contain a path or a code file name; then names that appear in more than one docs file; check the rest with a sample of 10 and estimate the share of real ones. Check each one: `git log -S<name> --oneline | head -3` shows when the name disappeared or changed. Typical false hits: language built-in functions, names from other repos, typos in docs that are worth fixing.
 
 ### Step 3a: Removed names and line references (deterministic)

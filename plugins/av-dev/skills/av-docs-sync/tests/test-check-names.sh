@@ -129,6 +129,39 @@ has "$out" "points_many_utf16" && fail "UTF-16 key reported" || ok
 has "$out" "NAME_MISSING .ai/l10n.md:2 points_none_here" && ok || fail "no key candidate: $out"
 rm -rf i18n .ai/l10n.md .ai/noise.md
 
+# --- R5: non-ASCII letters stay inside a name, in the docs and in the code
+cat >"src/Orders/Zamówienia.swift" <<'SWIFT'
+final class ZamówienieService {}
+let pozycjaZamówienia = 1
+let größeWert = 2
+let данныеId = 3
+let ilość_pozycji = 4
+// „CytatKlasa” — see OrderPanel—legacy
+SWIFT
+cat >.ai/utf8.md <<'MD'
+# U
+Service `ZamówienieService` with `pozycjaZamówienia`, `größeWert`, `данныеId`, `ilość_pozycji`.
+Quoted in the code: `CytatKlasa`, `OrderPanel`. File: `Zamówienia`.
+Missing: `zamówienieNumer`, `staraŁódźKlasa`, `ÜberGhostName`.
+Prose: `zażółć`, `Wartość domyślna`. Short: `ółA`. Template: `stanŁódźX`.
+MD
+out="$(bash "$CHECK" .ai/utf8.md --root .)"; rc=$?
+for n in ZamówienieService pozycjaZamówienia größeWert данныеId ilość_pozycji CytatKlasa OrderPanel Zamówienia wienieService wienia eWert zamówienie wienieNumer Klasa berGhostName GhostName zażółć Wartość ółA stanŁódźX; do
+  printf '%s\n' "$out" | grep '^NAME_MISSING' | grep -q -- " $n\$" && fail "non-ASCII: false candidate $n: $out" || ok
+done
+for n in zamówienieNumer staraŁódźKlasa ÜberGhostName; do
+  printf '%s\n' "$out" | grep -qx -- "NAME_MISSING .ai/utf8.md:4 $n" && ok || fail "non-ASCII: no candidate $n: $out"
+done
+has "$out" "NAME_MISSING 3 " && [ "$rc" -eq 1 ] && ok || fail "non-ASCII counters: $(printf '%s' "$out" | tail -1) (code $rc)"
+printf '# plain\n- `zamówienieNumer`\n- `stara*`\nÜberGhostName\n' >"$TMP/ignore_utf8.txt"
+out="$(bash "$CHECK" .ai/utf8.md --root . --ignore-file "$TMP/ignore_utf8.txt")"; rc=$?
+has "$out" "NAME_MISSING 0 " && [ "$rc" -eq 0 ] && ok || fail "non-ASCII names in the ignore list: $out (code $rc)"
+printf '"klucz_zamówienia" = "x";\n' | iconv -f UTF-8 -t UTF-16 >src/Orders/pl.strings
+printf '# L\nKey `klucz_zamówienia`.\n' >.ai/utf8.md
+out="$(bash "$CHECK" .ai/utf8.md --root .)"
+has "$out" "NAME_MISSING 0 " && ok || fail "non-ASCII key from a UTF-16 file: $out"
+rm -f "src/Orders/Zamówienia.swift" src/Orders/pl.strings .ai/utf8.md
+
 out="$(cd "$TMP" && bash "$CHECK" .ai/orders.md --root "$REPO")"
 has "$out" "ReturnOrderController" && ok || fail "path relative to --root"
 

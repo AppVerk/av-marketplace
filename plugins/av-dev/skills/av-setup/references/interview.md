@@ -21,7 +21,7 @@ Ask the questions with one question tool (e.g. AskUserQuestion), at most 4 at on
      - a command that may print secrets into logs (secret scanners, commands that dump the environment, especially when the repo tracks an env file): never a gate, because gate logs are kept as evidence;
      - a command that starts, stops or restarts containers or services by a fixed name: it can hit another checkout; not a gate;
      - one exit code for both "environment missing" and "tests failed": `notRunExitCodes` cannot separate them; guard the command with a `precheck`.
-2. **Git.** Show the detected base branch, the commit pattern (from history) and the ticket prefixes. Defaults: commit only on request, no push, no AI signature.
+2. **Git.** Show the detected base branch, the commit pattern (from history) and the ticket prefixes. Defaults: commit only on request, no push, no AI signature. When team docs or instructions allow more (e.g. free commit and push) and the interview decides otherwise, the config wins: the team file is an UPDATE in the plan with a note, so the two do not contradict each other.
 3. **High-risk areas.** Propose a list from the scan, the code and the docs (e.g. auth, payments, migrations, when the repo has them). The user adds domain areas.
 4. **Docs language.** By default, detected from the existing docs.
 

@@ -30,7 +30,7 @@
 # Command environment: AV_SKILLS_DIR = directory with the av-* skills (parent of av-verify).
 # Version: VERSION file in the skill directory (missing = dev); the config may require
 #   "requires": {"av-dev": ">=X.Y.Z"}.
-# Requires: bash 3.2+, git, jq.
+# Requires: bash 3.2+, git, jq, awk.
 
 set -uo pipefail
 
@@ -304,6 +304,50 @@ config_problems="$(schema_errors)"
 
 # MARK: --list
 
+# First command word of a shell command, after leading VAR=value assignments.
+# Quotes, $(...), ${...} and backticks (nested) belong to the word. Prints the
+# word only when it looks like a relative path to a file; otherwise nothing.
+script_path() {
+  printf '%s\n' "$1" | awk '
+    BEGIN { RS = "\001" }
+    {
+      s = $0; n = length(s); i = 1
+      while (1) {
+        while (i <= n && substr(s, i, 1) ~ /[ \t\n]/) i++
+        if (i > n) exit
+        start = i; top = 0
+        while (i <= n) {
+          c = substr(s, i, 1); c2 = substr(s, i, 2); ctx = top ? st[top] : ""
+          if (ctx == "S") { if (c == "\047") top--; i++; continue }
+          if (c == "\\") { i += 2; continue }
+          if (ctx == "B") { if (c == "`") top--; i++; continue }
+          if (ctx == "D") {
+            if (c == "\"") top--
+            else if (c2 == "$(") { st[++top] = "P"; i++ }
+            else if (c2 == "${") { st[++top] = "C"; i++ }
+            else if (c == "`") st[++top] = "B"
+            i++; continue
+          }
+          if (ctx == "" && c ~ /[ \t\n;&|<>()]/) break
+          if (c == "\047") st[++top] = "S"
+          else if (c == "\"") st[++top] = "D"
+          else if (c == "`") st[++top] = "B"
+          else if (c2 == "$(") { st[++top] = "P"; i++ }
+          else if (c2 == "${") { st[++top] = "C"; i++ }
+          else if (ctx == "P" && c == "(") st[++top] = "P"
+          else if (ctx == "P" && c == ")") top--
+          else if (ctx == "C" && c == "}") top--
+          i++
+        }
+        w = substr(s, start, i - start)
+        if (w == "") exit
+        if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue
+        if (w ~ /^[A-Za-z0-9._+-][A-Za-z0-9._\/+-]*$/ && w ~ /\// && w !~ /\/$/) print w
+        exit
+      }
+    }'
+}
+
 if [ "$mode" = "list" ]; then
   printf 'AV_DEV %s\n' "$av_version"
   [ -n "$config_sources" ] && printf '%s\n' "$config_sources"
@@ -328,13 +372,11 @@ $errors}"
       errors="${errors:+$errors
 }command '$name': syntax error in field $field"
     fi
-    rest_cmd="$text"
-    while printf '%s' "${rest_cmd%% *}" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; do rest_cmd="${rest_cmd#* }"; done
-    first="${rest_cmd%% *}"
-    case "$first" in
-      */*) [ -e "$root/$(jq -r --arg n "$name" '.validation.commands[$n].cwd // "."' "$cfg")/$first" ] ||
-             printf 'WARNING command %s: file %s not found\n' "$name" "$first" ;;
-    esac
+    first="$(script_path "$text")"
+    if [ -n "$first" ]; then
+      [ -e "$root/$(jq -r --arg n "$name" '.validation.commands[$n].cwd // "."' "$cfg")/$first" ] ||
+        printf 'WARNING command %s: file %s not found\n' "$name" "$first"
+    fi
   done < <(jq -r '(.validation.commands // {}) | to_entries[] | select(.value | type == "object")
                  | .key as $k | (["run", "precheck"][] as $f | select(.value[$f] != null) | [$k, $f, .value[$f]] | @tsv)' "$cfg")
   count="$(jq '(.validation.commands // {}) | length' "$cfg")"

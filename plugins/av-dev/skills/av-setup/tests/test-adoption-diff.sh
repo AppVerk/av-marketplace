@@ -107,13 +107,30 @@ printf '# agents\nRules `OLD_RULE`, `MOVED_RULE` and `STAYS_HERE`.\n' >"$R/.ai/a
 git -C "$R" add -A && git -C "$R" commit -qm agents
 printf '# agents\nRewritten. Still `STAYS_HERE`.\n' >"$R/.ai/agents.md"
 printf 'MOVED_RULE\n' >>"$R/.ai/overlays/av-plan.md"
-bash "$AD" --root "$R" --old-rev HEAD --old .ai/agents.md --new CLAUDE.md .ai >"$out" 2>"$TMP/err.txt"; rc=$?
+bash "$AD" --root "$R" --old-rev HEAD --keep .ai/agents.md --new CLAUDE.md .ai >"$out" 2>"$TMP/err.txt"; rc=$?
 [ "$rc" -eq 1 ] && ok || fail "edited file with --old-rev: code $rc"
 has "$out" "LOST .ai/agents.md OLD_RULE" "token dropped by the edit is LOST"
 hasnt "$out" "MOVED_RULE" "token moved to an overlay is not LOST"
 hasnt "$out" "STAYS_HERE" "new content of the edited file is corpus"
 has "$out" "TOKENS 3 LOST 1 FILTERED 0" "summary for an edited file"
-bash "$AD" --root "$R" --old .ai/agents.md --new CLAUDE.md .ai >"$out"; rc=$?
+bash "$AD" --root "$R" --old-rev HEAD --old .ai/agents.md --keep ./.ai/agents.md --new CLAUDE.md .ai >"$out"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "file in both --old and --keep: code $rc"
+has "$out" "TOKENS 3 LOST 1 FILTERED 0" "--keep wins over --old for the same file"
+bash "$AD" --root "$R" --old-rev HEAD --keep .ai/agents.md --new CLAUDE.md >"$out"; rc=$?
+hasnt "$out" "STAYS_HERE" "--keep adds the tree version to the corpus outside --new"
+has "$out" "LOST .ai/agents.md MOVED_RULE" "corpus limited to --new plus --keep files"
+has "$out" "TOKENS 3 LOST 2 FILTERED 0" "summary for --keep outside --new"
+
+# MARK: a converted file inside a --new directory is not corpus
+bash "$AD" --root "$R" --old-rev HEAD --old .ai/agents.md --new CLAUDE.md .ai >"$out" 2>"$TMP/err.txt"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "converted file inside --new: code $rc"
+has "$out" "LOST .ai/agents.md OLD_RULE" "converted file: dropped token is LOST"
+has "$out" "LOST .ai/agents.md STAYS_HERE" "converted file inside --new does not hide its own losses"
+hasnt "$out" "MOVED_RULE" "converted file: token moved to an overlay is not LOST"
+has "$out" "TOKENS 3 LOST 2 FILTERED 0" "summary for a converted file inside --new"
+bash "$AD" --root "$R" --old-rev HEAD --old ./.ai/agents.md --new CLAUDE.md ./.ai >"$out"; rc=$?
+has "$out" "LOST .ai/agents.md STAYS_HERE" "converted file excluded with ./ paths"
+bash "$AD" --root "$R" --old "$R/.ai/agents.md" --new CLAUDE.md .ai >"$out"; rc=$?
 [ "$rc" -eq 1 ] && ok || fail "edited file without --old-rev reads the tree: code $rc"
 has "$out" "LOST .ai/agents.md STAYS_HERE" "without --old-rev the old file is not corpus"
 has "$out" "TOKENS 1 LOST 1 FILTERED 0" "summary without --old-rev"
@@ -130,6 +147,9 @@ bash "$AD" --root "$R" --old old.md >/dev/null; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "missing --new: code $rc"
 bash "$AD" --root "$R" --old-rev missing --deleted --new .ai >/dev/null; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "bad revision: code $rc"
+bash "$AD" --root "$R" --keep .ai/agents.md --new .ai >"$out"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "--keep without --old-rev: code $rc"
+has "$out" "USAGE --keep requires --old-rev" "message for --keep without --old-rev"
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

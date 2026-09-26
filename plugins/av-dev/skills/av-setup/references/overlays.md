@@ -142,6 +142,11 @@ The reviewer finds the owner of a fix with `check_setup.sh --owner <file>` (role
 ## Excluded docs paths
 <globs of docs files that describe other repositories or external systems; the docs scripts skip them>
 - `<docs.root>/external/**`
+
+## Known false paths
+<paths that `check_refs.sh` or `check_linerefs.sh` report although they are not drift: `<doc>:<line>` ignores every path on that docs line, `<path or glob>` never reports that referenced path>
+- `docs/setup.md:42` - created by the installer
+- `generated/**`
 ```
 
 ## Section "Known false names"

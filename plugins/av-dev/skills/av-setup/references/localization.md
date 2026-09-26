@@ -37,6 +37,7 @@ Rules:
 | av-docs-sync | Out of sync scope | Poza zakresem sync |
 | av-docs-sync | Known false names | Znane fałszywe nazwy |
 | av-docs-sync | Excluded docs paths | Wykluczone ścieżki docs |
+| av-docs-sync | Known false paths | Znane fałszywe ścieżki |
 
 ## Role skill sections
 

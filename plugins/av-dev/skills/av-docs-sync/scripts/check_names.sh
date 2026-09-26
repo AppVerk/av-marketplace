@@ -7,7 +7,9 @@
 # from files tracked by git (and new, not ignored ones), except docs
 # (*.md), and with file and directory names. *.strings and *.stringsdict files
 # in UTF-16 (with BOM) are converted to UTF-8 first, so their keys also count
-# as found.
+# as found. Non-ASCII letters (UTF-8 sequences, except punctuation and symbols with
+# lead bytes C2 and E2) belong to a name in the docs and in the code alike, so
+# `zamówienieId` or `größeWert` is one name, not fragments; they count as letters of either case.
 #
 # Output:
 #   NAME_MISSING file:line name     the name is not in the code (drift candidate)
@@ -49,7 +51,7 @@ while [ $# -gt 0 ]; do
     --root) root="${2:-}"; shift ;;
     --ignore-file) ignore_files="$ignore_files${2:-}"$'\n'; shift ;;
     --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
-    -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,41p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
@@ -85,20 +87,26 @@ done >"$tmp/ignore"
 docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
 
 # MARK: dictionary of names from the code
+# C locale with UTF-8 sequences as letters: non-ASCII letters stay inside a word in any locale.
 
-git -C "$root" grep -I -h -o -w -E --untracked '[A-Za-z_][A-Za-z0-9_]{3,}' -- . ':(exclude)*.md' ':(exclude)*.lock' \
+utf8_letter=$'[\xc3-\xdf][\x80-\xbf]|[\xe0\xe1\xe3-\xef][\x80-\xbf][\x80-\xbf]|[\xf0-\xf4][\x80-\xbf][\x80-\xbf][\x80-\xbf]'
+word_re="([A-Za-z_]|$utf8_letter)([A-Za-z0-9_]|$utf8_letter){3,}"
+LC_ALL=C git -C "$root" grep -I -h -o -w -E --untracked "$word_re" -- . ':(exclude)*.md' ':(exclude)*.lock' \
   ':(exclude)*.svg' ':(exclude)*.pbxproj' 2>/dev/null >"$tmp/code_words_raw"
 git -C "$root" -c core.quotePath=false ls-files --cached --others --exclude-standard -- '*.strings' '*.stringsdict' 2>/dev/null |
   while IFS= read -r f; do
     [ -f "$root/$f" ] || continue
     bom="$(LC_ALL=C head -c 2 "$root/$f" | od -An -tx1 | tr -d ' \n')"
     case "$bom" in
-      fffe|feff) iconv -f UTF-16 -t UTF-8 "$root/$f" 2>/dev/null | grep -o -E '[A-Za-z_][A-Za-z0-9_]{3,}' ;;
+      fffe|feff) iconv -f UTF-16 -t UTF-8 "$root/$f" 2>/dev/null |
+        LC_ALL=C awk -v u="$utf8_letter" 'BEGIN { w = "([A-Za-z0-9_]|" u ")+" }
+          { s = $0; while (match(s, w)) { t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+              n = t; gsub(/[\200-\277]/, "", n); if (t !~ /^[0-9]/ && length(n) >= 4) print t } }' ;;
     esac
   done >>"$tmp/code_words_raw"
 LC_ALL=C sort -u "$tmp/code_words_raw" >"$tmp/code_words"
-git -C "$root" ls-files --cached --others --exclude-standard 2>/dev/null |
-  awk -F/ '{ for (i = 1; i < NF; i++) print $i; n = $NF; sub(/\.[^.]+$/, "", n); print n }' | LC_ALL=C sort -u >"$tmp/file_names"
+git -C "$root" -c core.quotePath=false ls-files --cached --others --exclude-standard 2>/dev/null |
+  LC_ALL=C awk -F/ '{ for (i = 1; i < NF; i++) print $i; n = $NF; sub(/\.[^.]+$/, "", n); print n }' | LC_ALL=C sort -u >"$tmp/file_names"
 LC_ALL=C sort -u "$tmp/code_words" "$tmp/file_names" >"$tmp/known"
 
 # MARK: documents
@@ -128,9 +136,16 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
   IFS=$'\n'
   set -f
   # shellcheck disable=SC2046
-  awk -v ignore_file="$tmp/ignore" '
+  LC_ALL=C awk -v ignore_file="$tmp/ignore" -v u="$utf8_letter" '
     # neg, example and placeholder words match docs in Polish and English: repos keep their own language.
+    # C locale: u matches one non-ASCII UTF-8 letter, a word letter of either case.
     BEGIN {
+      word = "([A-Za-z0-9_]|" u ")+"
+      x_suffix = "([a-z0-9]|" u ")X$"
+      camel_upper = "^([A-Z]|" u ")([a-z0-9]|" u ")+[A-Z]([A-Za-z0-9]|" u ")*$"
+      camel_lower = "^([a-z]|" u ")+[A-Z]([A-Za-z0-9]|" u ")*$"
+      snake_upper = "^([A-Z]|" u ")([A-Z0-9]|" u ")*_([A-Z0-9_]|" u ")+$"
+      snake_lower = "^([a-z]|" u ")([a-z0-9]|" u ")*_([a-z0-9_]|" u ")+$"
       neg = "(^|[^A-Za-z])(brak|nie istnieje|nie ma|nigdy|never|usuni(e|ę)t[a-z]*|usun(a|ą)(c|ć)|relokow[a-z]*|przeniesion[a-z]*|dawn(y|a|e|iej)|zamiast|removed|deleted|renamed|moved|formerly|previously|no longer|does not exist|instead of)([^A-Za-z]|$)"
       example = "(np\\.|przyk(ł|l)ad|example|e\\.g\\.)"
       while ((getline ig < ignore_file) > 0) {
@@ -146,7 +161,7 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
     function placeholder(w) {
       if (w ~ /^(Foo|Bar|Baz|Xxx|Example|Nazwa|Name|Moduł|Modul|TODO|TICKET|RUN_ID|YYYY)/) return 1
       if (w ~ /(^|[a-z0-9_])Foo([A-Z0-9_]|$)/ || w ~ /(^|_)foo([A-Z0-9_]|$)/) return 1
-      if (index(w, "Xxx") > 0 || w ~ /[a-z0-9]X$/) return 1
+      if (index(w, "Xxx") > 0 || w ~ x_suffix) return 1
       if (w ~ /^My[A-Z]/ && is_example) return 1
       return 0
     }
@@ -162,18 +177,19 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
       while (match(rest, /`[^`]+`/)) {
         tok = substr(rest, RSTART + 1, RLENGTH - 2); rest = substr(rest, RSTART + RLENGTH)
         s = tok; off = 0
-        while (match(s, /[A-Za-z0-9_]+/)) {
+        while (match(s, word)) {
           w = substr(s, RSTART, RLENGTH)
           before = substr(tok, off + RSTART - 1, 1)
           after = substr(tok, off + RSTART + RLENGTH, 1)
           off += RSTART + RLENGTH - 1
           s = substr(s, RSTART + RLENGTH)
-          if (length(w) < 4 || index(w, "__") > 0 || w ~ /_$/) continue
+          chars = w; gsub(/[\200-\277]/, "", chars)
+          if (length(chars) < 4 || index(w, "__") > 0 || w ~ /_$/) continue
           if (index("{}<>*", before) > 0 && before != "") continue
           if (index("{}<>*", after) > 0 && after != "") continue
           if (placeholder(w) || ignored(w)) continue
-          camel = (w ~ /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/ || w ~ /^[a-z]+[A-Z][A-Za-z0-9]*$/)
-          snake = (w ~ /^[A-Z][A-Z0-9]*_[A-Z0-9_]+$/ || w ~ /^[a-z][a-z0-9]*_[a-z0-9_]+$/)
+          camel = (w ~ camel_upper || w ~ camel_lower)
+          snake = (w ~ snake_upper || w ~ snake_lower)
           if (camel || snake) printf "%s\t%s:%d\n", w, FILENAME, FNR
         }
       }

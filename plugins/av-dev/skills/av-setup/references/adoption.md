@@ -80,6 +80,7 @@ When the old pipeline had its own modes, map them in the plan (section "Mode map
 | one implementer + reviewer (e.g. BOUNDED) | STANDARD | |
 | "full pipeline" with one implementer, tests, security review and a required plan | STANDARD with tightenings | in "Mode selection": plan required, `full` gate before the report, security axis always. Do not map to LARGE, because LARGE means several roles, and then STANDARD would never be used |
 | "full pipeline" triggered by size (e.g. N files in one layer) with one implementer | STANDARD with tightenings | move the size trigger to "Mode selection" (plan required above the threshold); LARGE only when the old pipeline also split work into roles |
+| one implementer plus a separate test-writing agent | STANDARD | test writing becomes a required step of the role skill or the overlay ("Required steps"), not a separate role, unless tests live in a separate layer with its own rules |
 | "full pipeline" with several roles (backend, frontend, js, e2e) | LARGE | STANDARD may then stay almost empty; that is correct when the old process had no middle mode. Say so explicitly in the plan |
 | specialists in parallel, split review (e.g. FULL) | LARGE | move the entry criteria to "Mode selection" |
 | "high risk forces the full mode" | tightening | in `av-implement.md`, section "Mode selection": with high risk, a plan is required (on top of the default review, `full` and the security axis). Do not map to LARGE, because LARGE means a contract or several roles |
@@ -96,11 +97,11 @@ Follow `references/plan-format.md`. The "Knowledge that gets lost" section is re
 
 ```bash
 bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> --old-rev <rev> \
-  --old <CONVERT, DROP and UPDATE files> --new <every file that stays after setup> \
+  --old <CONVERT and DROP files> --keep <UPDATE files> --new <every file that stays after setup> \
   --noise '<names of old agents and commands, e.g. code-reviewer|feature_plan>'
 ```
 
-`<rev>` is the commit before setup (usually `HEAD` at the start); write it into the plan. `--old-rev` reads every old file from that commit, so UPDATE files count with their content before the edit, and their edited tree version stays in the new corpus. Step 5 runs the same command on the same corpus; only then do the two counts compare.
+`<rev>` is the commit before setup (usually `HEAD` at the start); write it into the plan. `--old-rev` reads every old file from that commit. Files passed with `--old` never count as the new corpus, even inside a `--new` directory. Pass UPDATE files with `--keep`: their content before the edit is compared, and their edited tree version stays in the new corpus. Step 5 runs the same command on the same corpus; only then do the two counts compare.
 
 - Result: `LOST <old-file> <token>` for a backtick token with no trace in the new corpus. At the end: `TOKENS n LOST m FILTERED f`.
 - The filter skips orchestration: RUN_ID, CHECK_ID, EVIDENCE, `$ARGUMENTS`, `pipeline_state`, `pipeline_check`, the paths `.claude/agents` and `.claude/commands`. `--noise` (ERE) adds the names of old agents and commands.

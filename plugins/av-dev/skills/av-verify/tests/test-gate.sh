@@ -137,6 +137,32 @@ cfg3="$TMP/cfg3.json"
 jq '.validation.commands = {"envp": {"run": "FOO=1 BAR=2 echo ok"}} | .validation.gates = {"g": ["envp"]}' .ai/av.config.json >"$cfg3"
 out="$(bash "$GATE" --config "$cfg3" --list)"
 has "$out" "WARNING" && fail "list: false warning for a variable prefix" || ok
+mkdir -p .ai/workspace/tools && printf '#!/bin/bash\n' >.ai/workspace/tools/present.sh
+cfg4="$TMP/cfg4.json"
+jq '.validation.commands = {
+      "subst": {"run": "c=$(bash .ai/scripts/x.sh svc) && docker exec \"$c\" make test"},
+      "quoted": {"run": "x=\"$(echo \"a b\" | tr a b)\"; echo \"$x\""},
+      "single": {"run": "A=\u0027a b\u0027 B=\"c d\" echo ok"},
+      "nested": {"run": "X=$(echo $(echo \"q )\") `echo a b`) Y=${Z:-a b} echo ok"},
+      "chain": {"run": "echo ok", "precheck": "c=$(docker ps -q --filter \"name=db x\") && test -n \"$c\""},
+      "abs": {"run": "/usr/bin/env true"},
+      "var": {"run": "$HOME/bin/tool --x"},
+      "okpath": {"run": "A=$(echo \"1 2\") .ai/workspace/tools/present.sh --flag"}
+    } | .validation.gates = {"g": ["subst"]}' .ai/av.config.json >"$cfg4"
+out="$(bash "$GATE" --config "$cfg4" --list)"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "list: assignments with substitution give code $rc: $out"
+has "$out" "WARNING" && fail "list: false file warning for assignments and non-path words: $out" || ok
+cfg5="$TMP/cfg5.json"
+jq '.validation.commands = {
+      "m1": {"run": "A=\"x y\" scripts/missing1.sh --flag"},
+      "m2": {"run": "X=$(echo \"a ) b\") ./scripts/missing2.sh"},
+      "m3": {"run": "echo ok", "precheck": "B=\u0027p q\u0027 C=$(printf \"%s\" \"$(echo r s)\") tools/missing3.sh && true"}
+    } | .validation.gates = {"g": ["m1"]}' .ai/av.config.json >"$cfg5"
+out="$(bash "$GATE" --config "$cfg5" --list)"
+has "$out" "WARNING command m1: file scripts/missing1.sh not found" && ok || fail "list: missing script after a quoted assignment: $out"
+has "$out" "WARNING command m2: file ./scripts/missing2.sh not found" && ok || fail "list: missing script after a substitution: $out"
+has "$out" "WARNING command m3: file tools/missing3.sh not found" && ok || fail "list: missing precheck script after nested quotes: $out"
+[ "$(printf '%s\n' "$out" | grep -c '^WARNING')" -eq 3 ] && ok || fail "list: exactly three file warnings: $out"
 
 # --- 12c. separate logs for baseline and gates, lock, evidence reuse
 bash "$GATE" --baseline --gate quick --run-id r11 >/dev/null

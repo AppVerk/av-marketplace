@@ -22,18 +22,26 @@
 #                    talks about removal, in Polish or English (then a missing identifier is not GONE)
 #   LINEREF_RANGE    the line number is beyond the file length
 #   LINEREF_NOFILE   the file does not exist (also run check_refs.sh)
+#   EXTERNAL         the file is not in git and git ignores its path (installed
+#                    dependencies, build output): its content is not checked
 # Paths are resolved relative to root, and if missing, by suffix in `git ls-files`.
 # Skips documents excluded by --exclude GLOB (repeatable) or by the overlay section
 # "## Excluded docs paths" (Polish alias "## Wykluczone sciezki docs", with or without
 # diacritics) in <paths.overlays>/av-docs-sync.md, lines "- `glob`". Glob syntax like
 # git pathspec :(glob), relative to --root: "*" and "?" do not cross "/", "**" does;
 # a glob without "*" or "?" also excludes everything under it (e.g. `.ai/external_services/`).
-# The summary line ends with EXCLUDED <documents>.
+# The summary line ends with EXCLUDED <documents> EXTERNAL <n> KNOWN <n>.
+# Known false paths: the overlay section "## Known false paths" (Polish alias "## Znane
+# falszywe sciezki", with or without diacritics), lines "- `entry`": `<doc>.md:<line>`
+# (every reference on that docs line) or `<path or glob>` (that referenced path as written,
+# a ":<line>" suffix is dropped). A matched NOFILE or EXTERNAL reference is counted as KNOWN.
+# KNOWN_STALE <entry> (a hint): a path entry that now exists in the repo.
 #
 # Usage:
 #   check_linerefs.sh <file.md|dir> [...] [--root DIR] [--exclude GLOB]... [--strict]
 # Exit code: 0 no hits, 1 hits found (CHANGED, MOVED, GONE, RANGE,
 #   NOFILE), 2 usage error. With --strict code 1 only for RANGE, NOFILE or GONE.
+#   EXTERNAL and KNOWN do not change the code.
 # Requires: bash 3.2+, git, awk.
 
 set -uo pipefail
@@ -47,7 +55,7 @@ while [ $# -gt 0 ]; do
     --root) root="${2:-}"; shift ;;
     --strict) strict=1 ;;
     --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
-    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
@@ -62,6 +70,8 @@ git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root is not 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
+docs_known_paths "$root" >"$tmp/known"
+: >"$tmp/known_used"
 
 git -C "$root" -c core.quotePath=false ls-files --cached --others --exclude-standard >"$tmp/files"
 dirty_ok=1
@@ -106,6 +116,23 @@ moved=0
 gone=0
 range=0
 nofile=0
+external=0
+known=0
+
+known_hit() {
+  local entry
+  [ -s "$tmp/known" ] || return 1
+  entry="$(docs_known_match "$tmp/known" "$@")" || return 1
+  printf '%s\n' "$entry" >>"$tmp/known_used"
+  known=$((known + 1))
+}
+
+# ignored <path> <doc directory>: git ignores the path (relative to root or to the document)
+ignored() {
+  git -C "$root" check-ignore -q -- "$1" 2>/dev/null && return 0
+  case "$1" in ../*|*/../*) return 1 ;; esac
+  [ "$2" != "." ] && git -C "$root" check-ignore -q -- "$2/$1" 2>/dev/null
+}
 
 resolve() {
   local ref="$1"
@@ -203,6 +230,12 @@ while IFS= read -r doc; do
     last="${lines##*-}"
     target="$(resolve "$path")"
     if [ -z "$target" ]; then
+      known_hit "$rel_doc:$ln" "$path" && continue
+      if ignored "$path" "$(dirname "$rel_doc")"; then
+        printf 'EXTERNAL %s:%s %s\n' "$rel_doc" "$ln" "$ref"
+        external=$((external + 1))
+        continue
+      fi
       printf 'LINEREF_NOFILE %s:%s %s\n' "$rel_doc" "$ln" "$ref"
       nofile=$((nofile + 1))
       continue
@@ -265,8 +298,9 @@ while IFS= read -r doc; do
   done <"$tmp/refs"
 done <"$tmp/docs"
 
-printf 'CHECKED %d LINEREF_CHANGED %d LINEREF_RANGE %d LINEREF_NOFILE %d LINEREF_OK %d LINEREF_MOVED %d LINEREF_GONE %d EXCLUDED %d\n' \
-  "$checked" "$changed" "$range" "$nofile" "$ok" "$moved" "$gone" "${excluded:-0}"
+[ -s "$tmp/known" ] && docs_known_stale "$tmp/known" "$tmp/known_used" "$tmp/docs" "$tmp/files" 0
+printf 'CHECKED %d LINEREF_CHANGED %d LINEREF_RANGE %d LINEREF_NOFILE %d LINEREF_OK %d LINEREF_MOVED %d LINEREF_GONE %d EXCLUDED %d EXTERNAL %d KNOWN %d\n' \
+  "$checked" "$changed" "$range" "$nofile" "$ok" "$moved" "$gone" "${excluded:-0}" "$external" "$known"
 if [ "$strict" -eq 1 ]; then
   [ $((range + nofile + gone)) -eq 0 ]
 else

@@ -121,6 +121,74 @@ has "$out11" "UNRESOLVED .ai/avs.md:2 ghost_tool.sh" && ok || fail "unknown bare
 has "$out11" "CHECKED 6 MISSING 0 UNRESOLVED 1 EXTERNAL 0 WORKSPACE 0" && ok || fail "counters with av scripts: $(printf '%s' "$out11" | tail -1)"
 rm "$REPO/.ai/avs.md"
 
+# --- 2j. negation applies only to the path near the negation word in the same sentence
+cat >"$REPO/.ai/negnear.md" <<'MD'
+# n
+Setup: copy `config/app.example.yml` to the app directory; the legacy `scripts/old_setup.sh` was removed.
+Copy `config/removed_defaults.yml` next to the app.
+Run `scripts/bootstrap.sh` before the first build and read the notes on why the old importer was removed.
+Nothing was removed. Copy `config/ghost.yml` first.
+Plik `src/gone/stary_modul.py` zostal usuniety, a nowa konfiguracja modulu zamowien lezy teraz w `config/nowa.yml`.
+MD
+out12="$(bash "$CHECK" .ai/negnear.md --root .)"; rc=$?
+has "$out12" "MISSING .ai/negnear.md:2 config/app.example.yml" && ok || fail "path in another clause than the negation skipped: $out12"
+has "$out12" "old_setup.sh" && fail "path next to the negation reported: $out12" || ok
+has "$out12" "MISSING .ai/negnear.md:3 config/removed_defaults.yml" && ok || fail "negation word inside a path turns off the path: $out12"
+has "$out12" "MISSING .ai/negnear.md:4 scripts/bootstrap.sh" && ok || fail "negation far from the path turns it off: $out12"
+has "$out12" "MISSING .ai/negnear.md:5 config/ghost.yml" && ok || fail "negation in the previous sentence turns off the path: $out12"
+has "$out12" "stary_modul.py" && fail "Polish negation next to the path does not turn it off: $out12" || ok
+has "$out12" "MISSING .ai/negnear.md:6 config/nowa.yml" && ok || fail "Polish line: path far from the negation skipped: $out12"
+has "$out12" "CHECKED 5 MISSING 5 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0" && [ "$rc" -eq 1 ] && ok || fail "counters with narrow negation: $(printf '%s' "$out12" | tail -1) (code $rc)"
+rm "$REPO/.ai/negnear.md"
+
+# --- 2k. known false paths in the overlay: <doc>:<line> and a path or glob, stale entries
+mkdir -p "$REPO/.ai/ov"
+printf '{"paths":{"overlays":".ai/ov"}}\n' >"$REPO/.ai/av.config.json"
+cat >"$REPO/.ai/known.md" <<'MD'
+# k
+Install creates `config/local.yml` and [env](../config/env.yml).
+Generated: `generated/api/client.ts`.
+Existing: `src/modules/Orders_/OrderList.ts`.
+Real drift: `config/ghost.yml`.
+In the backend repository: `api/Ghost.php`.
+Bare: `Ghost.kt`.
+MD
+for header in "Known false paths" "Znane fałszywe ścieżki" "Znane falszywe sciezki"; do
+  cat >"$REPO/.ai/ov/av-docs-sync.md" <<MD
+# Overlay
+## Known false names
+- \`config/ghost.yml\`
+## $header
+- \`.ai/known.md:2\` - created by the installer
+- \`generated/**\`
+- \`api/Ghost.php\`
+- \`Ghost.kt\`
+- \`src/modules/Orders_/OrderList.ts\`
+- \`.ai/known.md:4\`
+- \`other/never_used.md\`
+- \`.ai/not_checked.md:3\`
+## Excluded docs paths
+- \`.ai/unrelated/\`
+MD
+  out13="$(bash "$CHECK" .ai/known.md --root .)"; rc=$?
+  printf '%s\n' "$out13" | grep -E '^(MISSING|UNRESOLVED|EXTERNAL)' | grep -qv 'config/ghost.yml' && fail "$header: known path reported: $out13" || ok
+  has "$out13" "MISSING .ai/known.md:5 config/ghost.yml" && ok || fail "$header: path outside the section ignored: $out13"
+  has "$out13" "KNOWN_STALE src/modules/Orders_/OrderList.ts" && ok || fail "$header: existing path not stale: $out13"
+  has "$out13" "KNOWN_STALE .ai/known.md:4" && ok || fail "$header: line without a missing path not stale: $out13"
+  for e in never_used ".ai/not_checked.md:3" ".ai/known.md:2" "generated/" "api/Ghost.php" "Ghost.kt"; do
+    printf '%s\n' "$out13" | grep '^KNOWN_STALE' | grep -qF -- "$e" && fail "$header: false stale entry $e: $out13" || ok
+  done
+  has "$out13" "CHECKED 7 MISSING 1 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED 0 KNOWN 5" && [ "$rc" -eq 1 ] && ok || fail "$header: counters with known paths: $(printf '%s' "$out13" | tail -1) (code $rc)"
+done
+out13="$(bash "$CHECK" .ai/known.md --root . --strict)"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "known paths hide the real MISSING under --strict (code $rc)"
+sed -i.bak '/config\/ghost.yml/d' "$REPO/.ai/known.md" && rm -f "$REPO/.ai/known.md.bak"
+out13="$(bash "$CHECK" .ai/known.md --root . --strict)"; rc=$?
+has "$out13" "MISSING 0" && has "$out13" "KNOWN 5" && [ "$rc" -eq 0 ] && ok || fail "only known paths and stale hints: code $rc, $out13"
+rm -rf "$REPO/.ai/ov" "$REPO/.ai/av.config.json" "$REPO/.ai/known.md"
+out13="$(bash "$CHECK" .ai/modules/Orders.md --root .)"
+has "$out13" "EXCLUDED 0 KNOWN 0" && ok || fail "summary without the overlay: $out13"
+
 # --- 2d. document given relative to --root from outside the repo directory
 out4="$(cd "$TMP" && bash "$CHECK" .ai/modules/Orders.md --root "$REPO")"
 has "$out4" "RemovedList.ts" && ok || fail "document path relative to --root"

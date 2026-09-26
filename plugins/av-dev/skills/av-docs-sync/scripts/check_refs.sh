@@ -17,8 +17,10 @@
 # or names a dotfile after a directory (config/.toolrc).
 # Skips placeholders (YYYY, <x>, [x], {x}, $VAR, ${VAR}, Foo), package names from manifests,
 # scripts shipped with the av-* skills (bare name or a path under the skills directory),
-# paths ignored by git and lines that themselves say the file is missing
-# (negation words in Polish and English).
+# paths ignored by git (installed dependencies, build output) and paths that the docs
+# themselves call missing: a negation word (Polish or English) in the same sentence
+# (up to ". ", "! ", "? " or ";") and at most 5 words before or after the path.
+# Other paths on that line are still checked.
 # The repo index includes *.xcresult bundles without their contents (hundreds of thousands of files).
 # Skips documents excluded by --exclude GLOB (repeatable) or by the overlay section
 # "## Excluded docs paths" (Polish alias "## Wykluczone sciezki docs", with or without
@@ -27,6 +29,14 @@
 # "?" do not cross "/", "**" does; a glob without "*" or "?" also excludes everything
 # under it (e.g. `.ai/external_services/`). Excluded documents still count as existing paths.
 # The summary line ends with EXCLUDED <documents>.
+# Known false paths: the overlay section "## Known false paths" (Polish alias "## Znane
+# falszywe sciezki", with or without diacritics), lines "- `entry`":
+#   `<doc>.md:<line>`   no path on that docs line is reported (doc relative to --root),
+#   `<path or glob>`    that referenced path is never reported (as written in the docs or
+#                       relative to the document; glob syntax as in the exclusions).
+# Matched findings are counted as KNOWN <n> at the end of the summary line.
+# KNOWN_STALE <entry> (a hint, no effect on the exit code): a <doc>:<line> entry whose
+# checked line has no reported path, or a path entry that now exists in the repo.
 #
 # Usage:
 #   check_refs.sh <file.md|dir> [...] [--root DIR] [--workspace DIR] [--exclude GLOB]... [--strict]
@@ -47,7 +57,7 @@ while [ $# -gt 0 ]; do
     --workspace) workspace="${2:-}"; shift ;;
     --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
     --strict) ;;
-    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
@@ -61,6 +71,8 @@ root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not foun
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
+docs_known_paths "$root" >"$tmp/known"
+: >"$tmp/known_used"
 
 # MARK: repo path index
 
@@ -111,7 +123,7 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
 # MARK: extraction and check
 
 if [ ! -s "$tmp/docs" ]; then
-  echo "CHECKED 0 MISSING 0 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED ${excluded:-0}"
+  echo "CHECKED 0 MISSING 0 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED ${excluded:-0} KNOWN 0"
   exit 0
 fi
 
@@ -120,7 +132,7 @@ fi
   IFS=$'\n'
   set -f
   # shellcheck disable=SC2046
-  awk -v index_file="$tmp/index" -v pkg_file="$tmp/packages" -v ws="${workspace%/}" '
+  LC_ALL=C awk -v index_file="$tmp/index" -v pkg_file="$tmp/packages" -v ws="${workspace%/}" '
     function normalize(p,    n, parts, out, i, k) {
       n = split(p, parts, "/"); k = 0
       for (i = 1; i <= n; i++) {
@@ -192,7 +204,39 @@ fi
       }
       return 0
     }
+    # mask_spans: the line with backtick contents and link targets replaced by "x",
+    # so punctuation inside paths does not end a sentence.
+    function mask_spans(l,    m, rest, off, a, b) {
+      m = l; rest = l; off = 0
+      while (match(rest, /`[^`]+`/)) {
+        a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+      }
+      rest = m; off = 0
+      while (match(rest, /\]\([^)]*\)/)) {
+        a = off + RSTART + 1; b = off + RSTART + RLENGTH - 1
+        m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+      }
+      return m
+    }
+    function fill(n,    f) { f = ""; while (n-- > 0) f = f "x"; return f }
+    # negated(a, b): a negation word in the same sentence as the span a..b of the line,
+    # at most near_words words away (the words of the negation phrase included).
+    function negated(a, b,    left, right, cut, n, w, i, win) {
+      left = substr(masked, 1, a - 1); right = substr(masked, b + 1)
+      while (match(left, /[.!?]([ \t]|$)|;/)) left = substr(left, RSTART + RLENGTH)
+      if (match(right, /[.!?]([ \t]|$)|;/)) right = substr(right, 1, RSTART - 1)
+      n = split(left, w, /[ \t]+/); win = ""
+      for (i = n; i >= 1 && i > n - near_words - 1; i--) win = w[i] " " win
+      n = split(right, w, /[ \t]+/)
+      win = win " |"
+      for (i = 1; i <= n && i <= near_words + 1; i++) win = win " " w[i]
+      return (tolower(win) ~ neg)
+    }
     BEGIN {
+      near_words = 5
       while ((getline line < index_file) > 0) {
         full[line] = 1
         n = split(line, parts, "/"); s = ""
@@ -206,26 +250,26 @@ fi
     FNR == 1 { in_code = 0; docdir = FILENAME; sub(/\/?[^\/]*$/, "", docdir) }
     /^[ \t]*```/ { in_code = !in_code; next }
     in_code { next }
+    function negated_ws(tok) {
+      if (index(tok, ws "/") == 1) { checked++; printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, "tick", tok, tok, tok }
+    }
     {
       line = $0
-      if (tolower(line) ~ neg) {
-        rest = line
-        while (match(rest, /(\]\(|`)[^)` \t]+/)) {
-          tok = substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH)
-          sub(/^(\]\(|`)/, "", tok)
-          if (index(tok, ws "/") == 1) { checked++; printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, "tick", tok, tok, tok }
-        }
-        next
-      }
-      rest = line
+      has_neg = (tolower(line) ~ neg)
+      if (has_neg) masked = mask_spans(line)
+      rest = line; off = 0
       while (match(rest, /\]\([^) \t]+\)/)) {
-        tok = substr(rest, RSTART + 2, RLENGTH - 3); rest = substr(rest, RSTART + RLENGTH)
+        tok = substr(rest, RSTART + 2, RLENGTH - 3); a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+        if (has_neg && negated(a, b)) { negated_ws(tok); continue }
         if (tok ~ /^(https?:|mailto:|tel:|#)/ || placeholder(tok)) continue
         report(tok, "link")
       }
-      rest = line
+      rest = line; off = 0
       while (match(rest, /`[^`]+`/)) {
-        tok = substr(rest, RSTART + 1, RLENGTH - 2); rest = substr(rest, RSTART + RLENGTH)
+        tok = substr(rest, RSTART + 1, RLENGTH - 2); a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+        if (has_neg && negated(a, b)) { if (tok !~ /[ \t]/) negated_ws(tok); continue }
         gsub(/^[ \t]+|[ \t]+$/, "", tok)
         if (length(tok) < 2 || length(tok) > 200 || !looks_like_path(tok) || (tok in pkg)) continue
         if (tok ~ /^[^\/]+\/$/ && !(substr(tok, 1, length(tok) - 1) in full)) continue
@@ -237,6 +281,14 @@ fi
 ) >"$tmp/candidates"
 
 checked="$(awk -F'\t' '$1 == "#CHECKED" { print $2 }' "$tmp/candidates")"
+known=0
+known_hit() {
+  local entry
+  [ -s "$tmp/known" ] || return 1
+  entry="$(docs_known_match "$tmp/known" "$@")" || return 1
+  printf '%s\n' "$entry" >>"$tmp/known_used"
+  known=$((known + 1))
+}
 missing=0
 unresolved=0
 external=0
@@ -278,10 +330,12 @@ while IFS=$'\t' read -r where tok kind stripped ign rel2; do
     while [ "${sib#../}" != "$sib" ]; do sib="${sib#../}"; done
     [ -e "$(dirname "$root")/$sib" ] && continue
     [ -e "$(dirname "$root")/$rel2" ] && continue
+    known_hit "$where" "$stripped" "$rel2" && continue
     external=$((external + 1))
     printf 'EXTERNAL %s %s\n' "$where" "$tok"
     continue
   fi
+  known_hit "$where" "$stripped" "$rel2" && continue
   bare="$(printf '%s' "$stripped" | grep -c /)"
   if [ "$kind" = "tick" ] && [ "$bare" -eq 0 ]; then
     unresolved=$((unresolved + 1))
@@ -292,5 +346,6 @@ while IFS=$'\t' read -r where tok kind stripped ign rel2; do
   fi
 done <"$tmp/candidates"
 
-printf 'CHECKED %s MISSING %d UNRESOLVED %d EXTERNAL %d WORKSPACE %d EXCLUDED %d\n' "${checked:-0}" "$missing" "$unresolved" "$external" "$in_workspace" "${excluded:-0}"
+[ -s "$tmp/known" ] && docs_known_stale "$tmp/known" "$tmp/known_used" "$tmp/docs" "$tmp/index" 1
+printf 'CHECKED %s MISSING %d UNRESOLVED %d EXTERNAL %d WORKSPACE %d EXCLUDED %d KNOWN %d\n' "${checked:-0}" "$missing" "$unresolved" "$external" "$in_workspace" "${excluded:-0}" "$known"
 [ "$missing" -eq 0 ]

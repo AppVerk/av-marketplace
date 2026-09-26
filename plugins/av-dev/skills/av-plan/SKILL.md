@@ -41,8 +41,8 @@ When nobody can answer (work without a human), take the most reasonable assumpti
 | Mode | When |
 |---|---|
 | SMALL | up to 2 files, no contract change and no change in user-visible behavior, outside risk areas, result checkable by a test; plus extra conditions from the overlay section "SMALL mode conditions" |
-| STANDARD | one layer or 2-3 roles with the contract fully described in the plan, no contract change with another system (e.g. API), up to about 8 files; the session loads the role skills of all affected roles |
-| LARGE | new or changed contract with another system, more than 3 roles or more than about 8 files; each role is a separate subagent |
+| STANDARD | one layer or 2-3 roles with the contract fully described in the plan, up to about 8 files; the session loads the role skills of all affected roles. A change of a contract with another system (a public API, events, a schema other systems read) done in one role is STANDARD with high risk, not LARGE |
+| LARGE | the work needs more than 3 roles, or a contract between roles changes and more than one role implements it, or more than about 8 files; each role is a separate subagent |
 
 This is the only source of mode definitions. `av-implement` uses it. Plans from earlier runs may carry the Polish mode names MAŁY/STANDARD/DUŻY; they mean SMALL/STANDARD/LARGE.
 

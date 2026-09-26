@@ -198,6 +198,53 @@ has "$out" "CHECKED 2 " && has "$out" "EXCLUDED 4" && ok || fail "overlay and --
 bash "$CHECK" docs3 --root . --exclude >/dev/null; [ $? -eq 2 ] && ok || fail "--exclude without a glob: code 2"
 rm -rf docs3 .ai/ov .ai/av.config.json
 
+# --- references into directories ignored by git (dependencies, build output) are EXTERNAL
+printf 'node_modules/\nbuild/\n' >.gitignore
+mkdir -p node_modules/pkg docs4
+for i in 1 2 3 4 5; do echo "line $i"; done >node_modules/pkg/index.js
+printf '# i\n`node_modules/pkg/index.js:3`\n`build/out/app.js:10`\n`src/missing_file.go:1`\n' >.ai/ign.md
+printf '# d\n`build/gen.js:2`\n' >docs4/guide.md
+printf 'build/\n' >docs4/.gitignore
+out="$(bash "$CHECK" .ai/ign.md docs4/guide.md --root .)"; rc=$?
+has "$out" "EXTERNAL .ai/ign.md:2 node_modules/pkg/index.js:3" && ok || fail "existing file in an ignored directory is not EXTERNAL: $out"
+has "$out" "EXTERNAL .ai/ign.md:3 build/out/app.js:10" && ok || fail "missing file in an ignored directory is not EXTERNAL: $out"
+has "$out" "EXTERNAL docs4/guide.md:2 build/gen.js:2" && ok || fail "ignored path relative to the document is not EXTERNAL: $out"
+has "$out" "LINEREF_NOFILE .ai/ign.md:4 src/missing_file.go:1" && ok || fail "missing file outside ignored directories is not NOFILE: $out"
+printf '%s\n' "$out" | grep -E '^LINEREF_' | grep -qE 'node_modules|build/' && fail "ignored path reported as LINEREF_*: $out" || ok
+has "$out" "CHECKED 4 LINEREF_CHANGED 0 LINEREF_RANGE 0 LINEREF_NOFILE 1 LINEREF_OK 0 LINEREF_MOVED 0 LINEREF_GONE 0 EXCLUDED 0 EXTERNAL 3 KNOWN 0" && [ "$rc" -eq 1 ] && ok || fail "counters with ignored paths: $(printf '%s' "$out" | tail -1) (code $rc)"
+printf '# i\n`node_modules/pkg/index.js:3`\n`build/out/app.js:10`\n' >.ai/ign.md
+bash "$CHECK" .ai/ign.md --root . --strict >/dev/null; [ $? -eq 0 ] && ok || fail "EXTERNAL changes the strict code"
+bash "$CHECK" .ai/ign.md --root . >/dev/null; [ $? -eq 0 ] && ok || fail "EXTERNAL changes the code"
+git add -f node_modules/pkg/index.js && git commit -qm "vendored file"
+out="$(bash "$CHECK" .ai/ign.md --root .)"
+has "$out" "EXTERNAL .ai/ign.md:2" && fail "tracked file in an ignored directory is EXTERNAL: $out" || ok
+
+# --- known false paths in the overlay: <doc>:<line>, a path or glob, stale path entries
+mkdir -p .ai/ov
+printf '{"paths":{"overlays":".ai/ov"}}\n' >.ai/av.config.json
+printf '# k\n`src/ghost/one.go:1`\n`gen/api/client.ts:4`\n`build/out/app.js:10`\n`src/core/stable.ts:1`\n`src/ghost/two.go:1`\n' >.ai/k.md
+for header in "Known false paths" "Znane fałszywe ścieżki" "Znane falszywe sciezki"; do
+  cat >.ai/ov/av-docs-sync.md <<MD
+# Overlay
+## Known false names
+- \`src/ghost/two.go\`
+## $header
+- \`.ai/k.md:2\` - created by the installer
+- \`gen/**\`
+- \`build/out/app.js:10\`
+- \`src/core/stable.ts\`
+- \`.ai/k.md:5\`
+- \`src/never/used.go\`
+MD
+  out="$(bash "$CHECK" .ai/k.md --root .)"; rc=$?
+  printf '%s\n' "$out" | grep -qE '^(LINEREF_NOFILE|EXTERNAL) .ai/k.md:[234] ' && fail "$header: known reference reported: $out" || ok
+  has "$out" "LINEREF_NOFILE .ai/k.md:6 src/ghost/two.go:1" && ok || fail "$header: reference outside the section ignored: $out"
+  has "$out" "KNOWN_STALE src/core/stable.ts" && ok || fail "$header: existing path not stale: $out"
+  printf '%s\n' "$out" | grep '^KNOWN_STALE' | grep -qE 'k.md|gen/|build/|never' && fail "$header: false stale entry: $out" || ok
+  has "$out" "LINEREF_NOFILE 1 " && has "$out" "EXTERNAL 0 KNOWN 3" && [ "$rc" -eq 1 ] && ok || fail "$header: counters with known paths: $(printf '%s' "$out" | tail -1) (code $rc)"
+done
+rm -rf .ai/ov .ai/av.config.json .ai/k.md .ai/ign.md docs4 .gitignore
+
 bash "$CHECK" >/dev/null; [ $? -eq 2 ] && ok || fail "no arguments"
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
