@@ -209,6 +209,42 @@ bash "$CS" --root "$X" --config "$TMP/neg.json" >"$out"; rc=$?
 [ "$rc" -eq 1 ] && ok || fail "exclusions only: code $rc"
 has "$out" "SETUP_ROLE_INVALID roles[2] neg has only exclusions (!)" "exclusions only: role accepted"
 
+# MARK: source files in any language
+N="$TMP/languages"
+cp -R "$C" "$N"
+mkdir -p "$N/svc/api" "$N/web/ui" "$N/win" "$N/assets" "$N/data" "$N/pkg" "$N/notes" "$N/handbook" "$N/.github/workflows"
+printf 'package main\n' >"$N/svc/main.go"
+printf 'class Handler; end' >"$N/svc/api/handler.rb"
+printf '<template></template>\n' >"$N/web/App.vue"
+printf 'export const B = 1\n' >"$N/web/ui/Button.tsx"
+printf '# Web\n' >"$N/web/README.md"
+printf 'class Form {}\r\n' >"$N/win/Form.cs"
+printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000' >"$N/assets/logo.png"
+head -c 300000 </dev/zero | tr '\0' 'a' >"$N/data/big.json"
+: >"$N/pkg/empty.go"
+printf '# Notes\n' >"$N/notes/README.md"; printf 'x\n' >"$N/notes/a.markdown"; printf 'x\n' >"$N/notes/b.mdx"
+printf 'x\n' >"$N/handbook/guide.txt"; printf 'package doc\n' >"$N/handbook/snippet.go"
+printf 'on: push\n' >"$N/.github/workflows/ci.yml"
+git -C "$N" add -A && git -C "$N" commit -qm languages
+jq '.docs = {"root": "./handbook/"}' "$C/.ai/av.config.json" >"$N/.ai/av.config.json"
+bash "$CS" --root "$N" >"$out"; rc=$?
+[ "$rc" -eq 0 ] && ok || { fail "languages: code $rc"; cat "$out" >&2; }
+has "$out" "SETUP_UNOWNED_DIR svc 2 files without owner: svc 1, svc/api 1" "languages: go and rb (no final newline) counted"
+has "$out" "SETUP_UNOWNED_DIR web 2 files without owner: web 1, web/ui 1" "languages: vue and tsx counted, markdown skipped"
+has "$out" "SETUP_UNOWNED_DIR win 1 files without owner: win 1" "languages: CRLF text counted"
+hasnt "$out" "SETUP_UNOWNED_DIR assets" "languages: binary counted"
+hasnt "$out" "SETUP_UNOWNED_DIR data" "languages: text file over 256 KiB counted"
+hasnt "$out" "SETUP_UNOWNED_DIR pkg" "languages: empty file counted"
+hasnt "$out" "SETUP_UNOWNED_DIR notes" "languages: markdown counted"
+hasnt "$out" "SETUP_UNOWNED_DIR handbook" "languages: docs.root counted"
+hasnt "$out" "SETUP_UNOWNED_DIR .github" "languages: top-level dot directory counted"
+has "$out" "ERRORS 0 WARNINGS 3" "languages: unexpected findings"
+jq '.generatedPaths += ["svc/**"] | .unownedPaths += ["web/**"] | .docs = {}' "$N/.ai/av.config.json" >"$TMP/lang.json"
+bash "$CS" --root "$N" --config "$TMP/lang.json" >"$out"; rc=$?
+hasnt "$out" "SETUP_UNOWNED_DIR svc" "languages: generatedPaths counted"
+hasnt "$out" "SETUP_UNOWNED_DIR web" "languages: unownedPaths counted"
+has "$out" "SETUP_UNOWNED_DIR handbook 2 files without owner: handbook 2" "languages: handbook outside docs.root skipped"
+
 # MARK: no roles, config errors, usage
 jq 'del(.roles)' "$R/.ai/av.config.json" >"$TMP/noroles.json"
 bash "$CS" --root "$C" --config "$TMP/noroles.json" >"$out"; rc=$?

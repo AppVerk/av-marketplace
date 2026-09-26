@@ -245,6 +245,58 @@ MD
 done
 rm -rf .ai/ov .ai/av.config.json .ai/k.md .ai/ign.md docs4 .gitignore
 
+# --- K6: an identifier on several lines gives every candidate range, nearest first, marked
+#     ambiguous; lines with more identifiers from the docs line win; a single hit stays as before
+cat >src/core/orders.ts <<'TS'
+export class Orders {
+  create(): void {}
+  createHandler = 1;
+  render(): void {}
+  update(): void {}
+  archive(): void {}
+}
+TS
+printf 'export const alpha = 1;\nexport const beta = 2;\nexport const gamma = 3;\n' >src/core/multi.ts
+cat >.ai/amb.md <<'MD'
+# Ambiguous
+| Create `create` | `src/core/orders.ts:5-6` |
+| Update `update` | `src/core/orders.ts:5` |
+| Both `create`, `createHandler` | `src/core/orders.ts:2` |
+| Any `alpha`, `gamma` | `src/core/multi.ts:2` |
+MD
+git add -A && git commit -qm amb
+cat >src/core/orders.ts <<'TS'
+export class Orders {
+  render(): void {}
+  update(): void {}
+  archive(): void {}
+  status(): void {}
+  history(): void {}
+  notes(): void {}
+  create(): void {}
+  dispose(): void {}
+  createHandler = 1;
+}
+TS
+printf 'export const alpha = 1;\nexport const beta = 2;\nexport const gamma = 3;\n// end\n' >src/core/multi.ts
+git add -A && git commit -qm amb2
+out="$(bash "$CHECK" .ai/amb.md --root .)"; rc=$?
+has "$out" "LINEREF_MOVED .ai/amb.md:2 src/core/orders.ts:5-6 -> src/core/orders.ts:7-8|9-10 (ambiguous: create on lines 8, 10)" && ok || fail "two candidates for an identifier on two lines: $out"
+has "$out" "LINEREF_MOVED .ai/amb.md:3 src/core/orders.ts:5 -> src/core/orders.ts:3 (update on line 3)" && ok || fail "single hit changed: $out"
+has "$out" "LINEREF_MOVED .ai/amb.md:4 src/core/orders.ts:2 -> src/core/orders.ts:10 (create on line 10)" && ok || fail "line with more identifiers does not win: $out"
+has "$out" "LINEREF_MOVED .ai/amb.md:5 src/core/multi.ts:2 -> src/core/multi.ts:1|3 (ambiguous: alpha on line 1, gamma on line 3)" && ok || fail "candidates with different identifiers: $out"
+has "$out" "LINEREF_MOVED 4 LINEREF_GONE 0" && [ "$rc" -eq 1 ] && ok || fail "ambiguous counters: $(printf '%s' "$out" | tail -1) (code $rc)"
+bash "$CHECK" .ai/amb.md --root . --strict >/dev/null; [ $? -eq 0 ] && ok || fail "strict with ambiguous MOVED only"
+printf 'x\n' >src/core/many.ts
+for i in 1 2 3 4 5 6 7; do printf 'fill\npick()\n' >>src/core/many.ts; done
+printf '# m\n| Pick `pick` | `src/core/many.ts:1` |\n' >.ai/many.md
+git add -A && git commit -qm many
+printf '# top\n' | cat - src/core/many.ts >"$TMP/m" && mv "$TMP/m" src/core/many.ts && git add -A && git commit -qm many2
+out="$(bash "$CHECK" .ai/many.md --root .)"
+has "$out" "LINEREF_MOVED .ai/many.md:2 src/core/many.ts:1 -> src/core/many.ts:4|6|8|10|12 (ambiguous: pick on lines 4, 6, 8, 10, 12 and 2 more)" && ok || fail "candidates capped at 5: $out"
+rm -f .ai/amb.md .ai/many.md src/core/orders.ts src/core/multi.ts src/core/many.ts
+git add -A && git commit -qm amb-clean
+
 bash "$CHECK" >/dev/null; [ $? -eq 2 ] && ok || fail "no arguments"
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

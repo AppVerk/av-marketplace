@@ -138,6 +138,44 @@ bash "$AD" --root "$R" --old-rev HEAD --old ghost.md --new CLAUDE.md .ai >"$out"
 [ "$rc" -eq 2 ] && ok || fail "file in neither the revision nor the tree: code $rc"
 has "$TMP/err.txt" "WARNING file not found: ghost.md" "warning for a file missing in both places"
 
+# MARK: intended removals after an UPDATE rewrite
+printf '# agents\nRules `OLD_RULE`, `GONE_RULE`, `LOST_RULE`, `#pragma once` and `STAYS_HERE`.\n' >"$R/.ai/agents.md"
+git -C "$R" add -A && git -C "$R" commit -qm intended
+printf '# agents\nRewritten. Still `STAYS_HERE`.\n' >"$R/.ai/agents.md"
+cat >"$TMP/intended.txt" <<'EOF'
+# removed on purpose (plan PROJ-7)
+
+OLD_RULE # replaced by the gate
+  `GONE_RULE`
+#pragma once
+NOT_IN_OLD # never an old token
+EOF
+bash "$AD" --root "$R" --old-rev HEAD --keep .ai/agents.md --new CLAUDE.md .ai --intended "$TMP/intended.txt" >"$out" 2>"$TMP/err.txt"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "intended: code with a real loss $rc"
+has "$out" "INTENDED .ai/agents.md OLD_RULE" "intended: token with a reason"
+has "$out" "INTENDED .ai/agents.md GONE_RULE" "intended: token in backticks with indentation"
+has "$out" "INTENDED .ai/agents.md #pragma once" "intended: token starting with # is not a comment"
+has "$out" "LOST .ai/agents.md LOST_RULE" "intended: real loss stays LOST"
+hasnt "$out" "LOST .ai/agents.md OLD_RULE" "intended: intended token printed as LOST"
+hasnt "$out" "NOT_IN_OLD" "intended: token not in the old files printed"
+hasnt "$out" "STAYS_HERE" "intended: present token printed"
+has "$out" "TOKENS 5 LOST 1 FILTERED 0 INTENDED 3" "intended: summary"
+[ "$(grep -E '^(LOST|INTENDED) ' "$out" | awk '{print $3}' | tr '\n' ' ')" = "OLD_RULE GONE_RULE LOST_RULE #pragma " ] && ok || fail "intended: token order changed"
+printf 'LOST_RULE # dropped with the old agent\n' >>"$TMP/intended.txt"
+cp "$TMP/intended.txt" "$R/intended-rel.txt"
+bash "$AD" --root "$R" --old-rev HEAD --keep .ai/agents.md --new CLAUDE.md .ai --intended intended-rel.txt >"$out"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "intended: code with only intended removals $rc"
+has "$out" "TOKENS 5 LOST 0 FILTERED 0 INTENDED 4" "intended: summary without real losses (path from --root)"
+bash "$AD" --root "$R" --old-rev HEAD --keep .ai/agents.md --new CLAUDE.md .ai >"$out"; rc=$?
+has "$out" "LOST .ai/agents.md OLD_RULE" "intended: without --intended every loss is LOST"
+grep -qxF "TOKENS 5 LOST 4 FILTERED 0" "$out" && ok || fail "intended: summary without --intended changed"
+bash "$AD" --root "$R" --old-rev HEAD --keep .ai/agents.md --new CLAUDE.md .ai --intended "$TMP/none.txt" >"$out"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "intended: missing file code $rc"
+has "$out" "USAGE intended file not found: $TMP/none.txt" "intended: message for a missing file"
+hasnt "$out" "TOKENS" "intended: summary with a missing file"
+bash "$AD" --root "$R" --old-rev HEAD --keep .ai/agents.md --new CLAUDE.md .ai --intended >"$out"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "intended: flag without a file code $rc"
+
 # MARK: usage
 bash "$AD" --root "$R" --new .ai >/dev/null; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "no old files: code $rc"

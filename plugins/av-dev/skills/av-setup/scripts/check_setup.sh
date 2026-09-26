@@ -13,6 +13,13 @@
 #   SETUP_ROLE_OVERLAP        tracked file matches the globs of 2 roles (ERROR)
 #   SETUP_ROLE_EMPTY          role glob matches no tracked file (WARNING)
 #   SETUP_UNOWNED_DIR         top-level directory with source files and no owner (WARNING)
+#                             source file, the same rule for every language: a regular
+#                             file tracked by git, text for git (not i/-text in
+#                             git ls-files --eol), not empty and at most 256 KiB (larger
+#                             text files are data or lockfiles), not markdown
+#                             (.md, .markdown, .mdx), not under docs.root or a top-level
+#                             dot directory (.ai/, .claude/, .github/), not matched by
+#                             generatedPaths or unownedPaths
 #   SETUP_REF_MISSING         backtick path in an overlay or skill does not exist (ERROR)
 #   SETUP_REF_SKIPPED         no av-docs-sync/scripts/check_refs.sh (WARNING)
 #   SETUP_GATE_UNKNOWN        --gate X or --only X not in validation (ERROR)
@@ -54,7 +61,7 @@ while [ $# -gt 0 ]; do
     --config) config="${2:-}"; shift ;;
     --owner) owner_mode=1 ;;
     --no-local) no_local=1 ;;
-    -h|--help) sed -n '2,42p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
     -*) echo "USAGE unknown option: $1"; exit 2 ;;
     *) if [ "$owner_mode" -eq 1 ]; then owner_files+=("$1"); else echo "USAGE unknown argument: $1"; exit 2; fi ;;
   esac
@@ -278,11 +285,26 @@ else
   if [ -s "$tmp/overlap" ]; then errors=$((errors + $(wc -l <"$tmp/overlap"))); cat "$tmp/overlap"; fi
 
   checked=$((checked + 1))
-  awk -F'\t' -v re='\\.(swift|php|ts|js|twig|py|kt|java|m|h|xib|storyboard|html|scss|css)$' '
-    $1 == "F" && $3 == "" && $4 == 0 && $5 == 0 && $2 ~ re && index($2, "/") {
+  docs_root="$(jq -r '.docs.root // ".ai" | tostring' "$config")"; docs_root="${docs_root#./}"; docs_root="${docs_root%/}"
+  case "$docs_root" in ""|.) docs_root="" ;; esac
+  git -C "$root" -c core.quotepath=off ls-files --eol -s >"$tmp/eol"
+  awk -F'\t' '{ split($1, m, " "); print m[2] }' "$tmp/eol" | git -C "$root" cat-file --batch-check='%(objectsize)' >"$tmp/sizes" 2>/dev/null
+  awk -F'\t' -v docs="$docs_root" -v max=262144 '
+    FNR == NR { size[FNR] = $1; next }
+    {
+      split($1, m, " "); split($2, e, " "); p = $3; s = size[FNR]
+      if (m[1] != "100644" && m[1] != "100755") next
+      if (e[1] == "i/-text" || s !~ /^[0-9]+$/ || s == 0 || s > max) next
+      if (substr(p, 1, 1) == "." || (docs != "" && index(p, docs "/") == 1)) next
+      if (tolower(p) ~ /\.(md|markdown|mdx)$/) next
+      print p
+    }' "$tmp/sizes" "$tmp/eol" >"$tmp/source"
+  awk -F'\t' '
+    FNR == NR { src[$0] = 1; next }
+    $1 == "F" && $3 == "" && $4 == 0 && $5 == 0 && ($2 in src) && index($2, "/") {
       n = split($2, parts, "/"); s = (n > 2) ? parts[1] "/" parts[2] : parts[1]
       print parts[1] "\t" s
-    }' "$tmp/match" | LC_ALL=C sort | uniq -c |
+    }' "$tmp/source" "$tmp/match" | LC_ALL=C sort | uniq -c |
     awk '{ c = $1; sub(/^[ ]*[0-9]+ /, ""); split($0, a, "\t"); printf "%s\t%d\t%s\n", a[1], c, a[2] }' |
     LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2nr |
     awk -F'\t' '

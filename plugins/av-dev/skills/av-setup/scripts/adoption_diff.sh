@@ -30,19 +30,29 @@
 #   - tokens matching --noise REGEX (ERE, e.g. names of old agents and commands).
 # The corpus skips the workspace/ and sessions/ directories and the old files
 # not passed with --keep.
+# Intended removals (--intended FILE): tokens removed on purpose, e.g. listed
+# in the plan of an UPDATE rewrite. One token per line, optionally in
+# backticks, optionally followed by " # reason"; empty lines and lines
+# starting with "# " are skipped. A LOST token that matches exactly prints as
+# INTENDED instead, in the same place, and does not count as LOST.
 #
 # Output:
 #   LOST <old-file> <token>            token without a trace in the new corpus
+#   INTENDED <old-file> <token>        LOST token listed in --intended (removed on purpose)
 #   TOKENS n LOST m FILTERED f         summary (unique tokens)
+#   TOKENS n LOST m FILTERED f INTENDED i   summary with --intended
 #
 # Usage:
 #   adoption_diff.sh [--root DIR] --old <file>... --new <file|dir>... [--noise REGEX]
 #   adoption_diff.sh [--root DIR] --old-rev REV [--deleted] [--old <file>...] [--keep <file>...]
-#                    --new <file|dir>... [--noise REGEX]
+#                    --new <file|dir>... [--noise REGEX] [--intended FILE]
 #     --deleted adds text files deleted since REV to the old files
 #     (git diff --name-only --diff-filter=D REV: .md, .txt, .toml, .html).
 #     --keep marks UPDATE files: old content from REV, tree version in the corpus.
-# Exit code: 0 no LOST, 1 LOST found, 2 usage error or no old file readable.
+#     --intended FILE (path from the current directory or from --root) lists
+#     intended removals; both forms of usage accept it.
+# Exit code: 0 no LOST (INTENDED does not count), 1 LOST found,
+#   2 usage error, no old file readable or --intended file not found.
 # Requires: bash 3.2+, git, awk.
 
 set -uo pipefail
@@ -51,6 +61,8 @@ root="."
 rev=""
 deleted=0
 noise=""
+intended=""
+intended_set=0
 mode=""
 old=()
 keep=()
@@ -61,10 +73,11 @@ while [ $# -gt 0 ]; do
     --old-rev) rev="${2:-}"; shift ;;
     --deleted) deleted=1 ;;
     --noise) noise="${2:-}"; shift ;;
+    --intended) intended="${2:-}"; intended_set=1; shift ;;
     --old) mode=old ;;
     --new) mode=new ;;
     --keep) mode=keep ;;
-    -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,58p' "$0"; exit 0 ;;
     -*) echo "USAGE unknown option: $1"; exit 2 ;;
     *)
       case "$mode" in
@@ -80,12 +93,30 @@ root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not foun
 [ "$deleted" -eq 1 ] && [ -z "$rev" ] && { echo "USAGE --deleted requires --old-rev"; exit 2; }
 [ "${#keep[@]}" -gt 0 ] && [ -z "$rev" ] && { echo "USAGE --keep requires --old-rev"; exit 2; }
 [ "${#new[@]}" -gt 0 ] || { echo "USAGE missing --new"; exit 2; }
+if [ "$intended_set" -eq 1 ]; then
+  if [ -n "$intended" ] && [ -f "$intended" ]; then :
+  elif [ -n "$intended" ] && [ -f "$root/$intended" ]; then intended="$root/$intended"
+  else echo "USAGE intended file not found: $intended"; exit 2; fi
+  intended="$(cd "$(dirname "$intended")" && pwd)/$(basename "$intended")"
+fi
 if [ -n "$rev" ]; then
   git -C "$root" rev-parse --verify -q "$rev^{commit}" >/dev/null || { echo "USAGE unknown revision: $rev"; exit 2; }
 fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+: >"$tmp/intended"
+if [ "$intended_set" -eq 1 ]; then
+  awk '
+    { sub(/\r$/, ""); sub(/^[ \t]+/, "") }
+    $0 == "" || $0 == "#" || /^#[ \t]/ { next }
+    {
+      sub(/[ \t]+#([ \t].*)?$/, ""); sub(/[ \t]+$/, "")
+      if ($0 ~ /^`[^`]+`$/) $0 = substr($0, 2, length($0) - 2)
+      gsub(/^[ \t]+|[ \t]+$/, "")
+      if ($0 != "") print
+    }' "$intended" >"$tmp/intended"
+fi
 cd "$root" || exit 2
 
 # MARK: old files
@@ -163,7 +194,8 @@ done | sed 's|^\./||' | awk -v skipf="$tmp/skip" 'FILENAME == skipf { skip[$0] =
 # MARK: comparison
 
 default_noise='RUN_ID|CHECK_ID|EVIDENCE|[$]ARGUMENTS|[.]claude/agents|[.]claude/commands|pipeline_state|pipeline_check|^(STATUS|CHANGED_FILES)$'
-AD_NOISE="$default_noise" AD_EXTRA="$noise" awk -F'\t' -v corpus="$tmp/corpus" -v fields="$tmp/fields" '
+AD_NOISE="$default_noise" AD_EXTRA="$noise" awk -F'\t' -v corpus="$tmp/corpus" -v fields="$tmp/fields" \
+  -v intendedf="$tmp/intended" -v show_intended="$intended_set" '
   function orchestration(t) {
     if (t ~ /^[A-Z][A-Z0-9_]*=[A-Za-z0-9_.|-]*( +[A-Z][A-Z0-9_]*=[A-Za-z0-9_.|-]*)*$/) return 1
     if (t ~ /^[A-Z][A-Z0-9_]*$/ && (t in field)) return 1
@@ -175,6 +207,7 @@ AD_NOISE="$default_noise" AD_EXTRA="$noise" awk -F'\t' -v corpus="$tmp/corpus" -
   BEGIN {
     noise = ENVIRON["AD_NOISE"]; extra = ENVIRON["AD_EXTRA"]
     while ((getline name < fields) > 0) field[name] = 1
+    while ((getline name < intendedf) > 0) want[name] = 1
     RS_OLD = RS; RS = "\001"
     if ((getline text < corpus) <= 0) text = ""
     RS = RS_OLD
@@ -184,7 +217,13 @@ AD_NOISE="$default_noise" AD_EXTRA="$noise" awk -F'\t' -v corpus="$tmp/corpus" -
     if (tok in seen) next
     seen[tok] = 1; total++
     if (tok ~ noise || (extra != "" && tok ~ extra) || orchestration(tok)) { filtered++; next }
-    if (index(text, tok) == 0) { lost++; printf "LOST %s %s\n", file, tok }
+    if (index(text, tok) > 0) next
+    if (tok in want) { intended++; printf "INTENDED %s %s\n", file, tok }
+    else { lost++; printf "LOST %s %s\n", file, tok }
   }
-  END { printf "TOKENS %d LOST %d FILTERED %d\n", total, lost, filtered; exit (lost > 0) }
+  END {
+    printf "TOKENS %d LOST %d FILTERED %d", total, lost, filtered
+    if (show_intended) printf " INTENDED %d", intended
+    printf "\n"; exit (lost > 0)
+  }
 ' "$tmp/tokens"

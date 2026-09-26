@@ -24,6 +24,7 @@ Rules:
 | av-implement | SMALL mode conditions | Warunki trybu MAŁY |
 | av-implement | Review in SMALL mode | Review w trybie MAŁY |
 | av-implement | Learnings | Wnioski |
+| av-implement | Docs update | Aktualizacja docs |
 | av-implement | Gates per stage | Bramki per etap |
 | av-review | How to check the axes | Jak sprawdzać osie |
 | av-review | Additional review checks | Dodatkowe kontrole review |

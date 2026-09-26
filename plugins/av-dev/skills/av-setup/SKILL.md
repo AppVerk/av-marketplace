@@ -96,7 +96,7 @@ git -C <repo-root> diff --name-only --diff-filter=D "$c" HEAD | sed 's|.*/||; s|
 In ADOPTION, add `.claude/skills` to `check_refs.sh` when the repo has project skills: the `docs` gate checks them too, so a KEEP skill with a dead path would fail the gate right after setup (`references/adoption.md`, step 2).
 
 1. `MISSING` from `check_refs` is a certain drift.
-2. `NAME_MISSING` from `check_names` is a candidate. Triage it: grep the code, count the real ones, and put the false ones aside for the "Known false names" section of the `av-docs-sync.md` overlay (step 8). With more than 50 candidates, delegate the triage to an Explore subagent. Its result lists every candidate with a verdict (real, false, unsure); count the list against the input and triage missing names yourself.
+2. `NAME_MISSING` from `check_names` is a candidate. Confirmed real name drift counts as certain drift for the `audit --fix` decision below. Triage it: grep the code, count the real ones, and put the false ones aside for the "Known false names" section of the `av-docs-sync.md` overlay (step 8). With more than 50 candidates, delegate the triage to an Explore subagent. Its result lists every candidate with a verdict (real, false, unsure); count the list against the input and triage missing names yourself. A read-only subagent cannot write files: save its table to `<tmp>/triage-names.md` yourself, so the plan and the overlay can cite it.
 3. `LINEREF_RANGE`, `LINEREF_NOFILE`, `LINEREF_GONE` from `check_linerefs` are certain drifts.
 4. Deleted names: files deleted since the last docs commit. Search the docs for each name (`grep -rnwF`). A hit is a drift.
 
@@ -131,7 +131,7 @@ Put the whole config into the plan. In step 6, write exactly the same config, wi
 - Put roles into `roles`, and generated files and tools into `generatedPaths` and `unownedPaths`.
 - In ADOPTION, run `scripts/adoption_diff.sh` according to `references/adoption.md`, step 3. The result goes to "Knowledge that gets lost".
 
-Check the proposed config before you show it: save it to `<tmp>/av.config.json` and run `bash <skill-dir>/../av-verify/scripts/gate.sh --root <repo-root> --config <tmp>/av.config.json --list`. Check the roles with the same file: `bash <skill-dir>/scripts/check_setup.sh --root <repo-root> --config <tmp>/av.config.json`. What counts here is `SETUP_ROLE_*` and `SETUP_UNOWNED_DIR`; missing overlays are expected at this stage. Fix errors in the plan.
+Check the proposed config before you show it: save it to `<tmp>/av.config.json` and run `bash <skill-dir>/../av-verify/scripts/gate.sh --root <repo-root> --config <tmp>/av.config.json --list`. Check the roles with the same file: `bash <skill-dir>/scripts/check_setup.sh --root <repo-root> --config <tmp>/av.config.json`. What counts here is `SETUP_ROLE_*` and `SETUP_UNOWNED_DIR`; missing overlays are expected at this stage. Fix errors in the plan. `SETUP_UNOWNED_DIR` counts any tracked, non-empty text file up to 256 KiB outside `docs.root`, top-level dot directories and markdown, whatever its language; put tracked config or data files (e.g. property lists, IDE project files) in `unownedPaths` or `generatedPaths`.
 
 Show the user: the verdict, the decision table in short (action counts plus items that delete or change existing files), the proposed config and, in ADOPTION, the "Knowledge that gets lost" section. Wait for approval. With `--defaults`, do not wait. With `--dry-run`, end here with a report.
 

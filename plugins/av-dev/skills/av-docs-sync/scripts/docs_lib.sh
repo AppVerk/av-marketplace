@@ -13,7 +13,8 @@
 #                                        kind "known" = "Known false paths" (Polish alias
 #                                        "Znane falszywe sciezki", with or without diacritics).
 #                                        need_section 0 reads the whole file when it has no such section.
-#                                        Names may contain non-ASCII letters (UTF-8 bytes).
+#                                        Names may contain non-ASCII letters (UTF-8 bytes). A backticked
+#                                        "names" item may also be line scoped: "<doc>:<line> <name>".
 #   docs_exclude_globs <root> <globs>    prints the --exclude globs (newline separated) and the
 #                                        globs from the overlay section "Excluded docs paths"
 #   docs_exclude <root> <globs_file> <count_file>
@@ -57,16 +58,19 @@ docs_overlay_file() {
 docs_section_items() {
   # C locale: bytes >= 0x80 (UTF-8 sequences) count as letters of a name.
   LC_ALL=C awk -v kind="$2" -v need_section="$3" '
-    BEGIN { name_re = "^[A-Za-z_\200-\377][A-Za-z0-9_\200-\377]*[*]?$" }
+    BEGIN {
+      name_re = "^[A-Za-z_\200-\377][A-Za-z0-9_\200-\377]*[*]?$"
+      line_re = "^[^ \t].*:[0-9]+[ \t]+[A-Za-z_\200-\377][A-Za-z0-9_\200-\377]*[*]?$"
+    }
     function take(line,    t) {
       if (match(line, /^[ \t]*[-*][ \t]+`[^`]+`/)) {
         t = substr(line, RSTART, RLENGTH); sub(/^[^`]*`/, "", t); sub(/`$/, "", t)
+        gsub(/^[ \t]+|[ \t]+$/, "", t)
+        if (kind == "names" && t !~ name_re && t !~ line_re) return
       } else if (kind == "names") {
         t = line; gsub(/^[ \t]+|[ \t]+$/, "", t)
         if (t !~ name_re) return
       } else return
-      if (kind == "names" && t !~ name_re) return
-      gsub(/^[ \t]+|[ \t]+$/, "", t)
       if (t != "") print t
     }
     { lines[NR] = $0 }

@@ -223,6 +223,88 @@ has "$out" "CHECKED 1 NAME_MISSING 1 EXCLUDED 4" && has "$out" "NAME_MISSING doc
 bash "$CHECK" docs3 --root . --exclude >/dev/null; [ $? -eq 2 ] && ok || fail "--exclude without a glob: code 2"
 rm -rf docs3 .ai/ov .ai/av.config.json
 
+# --- K2: line scoped ignore entries "<doc>:<line> <name>" (exact and prefix) next to the
+#     name and prefix forms; a stale line entry prints KNOWN_STALE; English and Polish headers
+mkdir -p .ai/ov
+printf '{"paths":{"overlays":".ai/ov"}}\n' >.ai/av.config.json
+cat >.ai/scoped.md <<'MD'
+# Scoped
+Widget `ScopedGhostName` on line 2.
+Again `ScopedGhostName` on line 3.
+Prefix `legacy_scoped_one` and `legacy_scoped_two`.
+Global `GlobalGhostName`, prefix `TmpGhostWidget`.
+Plain `KeptScopedGhost`.
+MD
+for header in "Known false names" "Znane fałszywe nazwy" "Znane falszywe nazwy"; do
+  cat >.ai/ov/av-docs-sync.md <<MD
+# Overlay
+## $header
+- \`.ai/scoped.md:2 ScopedGhostName\` - template widget id
+- \`./.ai/scoped.md:4 legacy_scoped*\`
+- \`GlobalGhostName\`
+- \`TmpGhost*\`
+- \`.ai/scoped.md:6 NotOnThatLine\`
+- \`.ai/scoped.md:99 ScopedGhostName\`
+- \`.ai/other.md:2 ScopedGhostName\`
+## Other
+- \`.ai/scoped.md:3 ScopedGhostName\`
+MD
+  out="$(bash "$CHECK" .ai/scoped.md --root .)"; rc=$?
+  has "$out" "NAME_MISSING .ai/scoped.md:2 " && fail "$header: line entry does not ignore its line: $out" || ok
+  has "$out" "NAME_MISSING .ai/scoped.md:3 ScopedGhostName" && ok || fail "$header: line entry ignores another line: $out"
+  has "$out" "legacy_scoped" && fail "$header: line scoped prefix does not ignore: $out" || ok
+  has "$out" "GlobalGhostName" && fail "$header: name form broken next to line entries: $out" || ok
+  has "$out" "TmpGhostWidget" && fail "$header: prefix form broken next to line entries: $out" || ok
+  has "$out" "NAME_MISSING .ai/scoped.md:6 KeptScopedGhost" && ok || fail "$header: unrelated name ignored: $out"
+  has "$out" "CHECKED 2 NAME_MISSING 2 EXCLUDED 0" && [ "$rc" -eq 1 ] && ok || fail "$header: counters with line entries: $(printf '%s' "$out" | tail -1) (code $rc)"
+  has "$out" "KNOWN_STALE .ai/scoped.md:6 NotOnThatLine" && ok || fail "$header: line without the name not stale: $out"
+  has "$out" "KNOWN_STALE .ai/scoped.md:99 ScopedGhostName" && ok || fail "$header: line past the end not stale: $out"
+  for e in ".ai/scoped.md:2 " "legacy_scoped" "GlobalGhostName" "TmpGhost" ".ai/other.md" ".ai/scoped.md:3"; do
+    printf '%s\n' "$out" | grep '^KNOWN_STALE' | grep -qF -- "$e" && fail "$header: false stale entry $e: $out" || ok
+  done
+  [ "$(printf '%s\n' "$out" | tail -1 | cut -c1-8)" = "CHECKED " ] && ok || fail "$header: summary is not the last line: $out"
+done
+printf '# Scoped\nWidget `OtherGhostName` on line 2.\n' >.ai/scoped.md
+cat >.ai/ov/av-docs-sync.md <<'MD'
+## Known false names
+- `.ai/scoped.md:2 ScopedGhostName`
+- `.ai/scoped.md:2 Other*`
+MD
+out="$(bash "$CHECK" .ai/scoped.md --root .)"; rc=$?
+has "$out" "KNOWN_STALE .ai/scoped.md:2 ScopedGhostName" && ok || fail "renamed name on the line not stale: $out"
+has "$out" "KNOWN_STALE .ai/scoped.md:2 Other*" && fail "prefix entry wrongly stale: $out" || ok
+has "$out" "CHECKED 0 NAME_MISSING 0" && [ "$rc" -eq 0 ] && ok || fail "stale hint changes the result: $out (code $rc)"
+printf '# Scoped\nWord `ScopedGhostNameLonger` only.\n' >.ai/scoped.md
+printf '## Known false names\n- `.ai/scoped.md:2 ScopedGhostName`\n' >.ai/ov/av-docs-sync.md
+out="$(bash "$CHECK" .ai/scoped.md --root .)"
+has "$out" "NAME_MISSING .ai/scoped.md:2 ScopedGhostNameLonger" && has "$out" "KNOWN_STALE .ai/scoped.md:2 ScopedGhostName" && ok || fail "exact line entry matches a longer name: $out"
+printf '# plain\n- `.ai/scoped.md:2 ScopedGhostNameLonger`\n' >"$TMP/ignore_line.txt"
+out="$(bash "$CHECK" .ai/scoped.md --root . --ignore-file "$TMP/ignore_line.txt")"
+has "$out" "CHECKED 0 NAME_MISSING 0" && ! has "$out" "KNOWN_STALE" && ok || fail "line entry in --ignore-file: $out"
+out="$(bash "$CHECK" .ai/orders.md --root .)"
+has "$out" "KNOWN_STALE" && fail "stale hint for a document that was not checked: $out" || ok
+rm -rf .ai/ov .ai/av.config.json .ai/scoped.md
+
+# --- K5: the code dictionary does not depend on the docs paths given, and it is complete
+#     on a corpus large enough for threaded git grep to drop matches
+mkdir -p src/templates/form src/gen .claude/skills/role
+printf '{%% block textarea_widget %%}<textarea></textarea>{%% endblock %%}\n' >src/templates/form/fields.html.twig
+printf '# Forms\nBlock `textarea_widget` sets the class.\n' >.ai/forms.md
+printf '# Role\nUse `role_only_ghost` here.\n' >.claude/skills/role/SKILL.md
+LC_ALL=C awk 'BEGIN { for (f = 1; f <= 64; f++) { fn = sprintf("src/gen/mod%02d.ts", f)
+  for (l = 1; l <= 400; l++) printf "const val_%d_%d = callFn(argOne, argTwo, argThree);\n", f, l > fn; close(fn) } }'
+LC_ALL=C awk 'BEGIN { print "# Generated"; for (f = 1; f <= 64; f++) for (l = 1; l <= 400; l += 4) printf "- `val_%d_%d`\n", f, l }' >.ai/gen.md
+out1="$(bash "$CHECK" .ai/forms.md --root .)"
+out2="$(bash "$CHECK" .ai/forms.md .claude/skills --root .)"
+has "$out1" "textarea_widget" && fail "name from a template reported without the extra path: $out1" || ok
+has "$out2" "textarea_widget" && fail "name from a template reported with the extra path: $out2" || ok
+has "$out2" "NAME_MISSING .claude/skills/role/SKILL.md:2 role_only_ghost" && has "$out2" "CHECKED 2 NAME_MISSING 1" && ok || fail "extra docs path not checked: $out2"
+for i in 1 2 3; do
+  out="$(bash "$CHECK" .ai/gen.md .ai/forms.md --root .)"
+  has "$out" "CHECKED 6401 NAME_MISSING 0 " && ok || fail "code dictionary lost names (run $i): $(printf '%s\n' "$out" | head -3 | tr '\n' ' ')"
+done
+rm -rf src/templates src/gen .claude .ai/forms.md .ai/gen.md
+
 bash "$CHECK" >/dev/null; [ $? -eq 2 ] && ok || fail "no arguments"
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"

@@ -158,6 +158,8 @@ Run the `av-verify` skill with the `quick` gate and `RUN_ID`.
 
 ## Step 6: Docs
 
+When the overlay section "Docs update" says "proposal only", do not edit docs: list the needed changes (file, what, why) in the report and skip the rest of this step.
+
 When the change touches the map from the overlay `av-docs-sync.md` (new module, endpoint, dependency, command, renamed item), run the `av-docs-sync` skill in `sync` mode for the run's diff. Up to 6 docs files: do it in this session. Above that, the split rule from `av-docs-sync` applies. Skip small changes with no effect on docs.
 
 Update docs before the review and the `full` gate, so the review sees everything and a docs change does not invalidate the evidence. Fixes after review that change names or behavior need a short new sync.

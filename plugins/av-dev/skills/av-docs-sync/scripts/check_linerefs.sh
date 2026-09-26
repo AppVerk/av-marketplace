@@ -13,7 +13,11 @@
 # Output:
 #   LINEREF_OK       (not printed, only counted) an identifier is in the range
 #   LINEREF_MOVED    an identifier is elsewhere in the file; gives a new range
-#                    shifted to the nearest hit
+#                    shifted to the hit. Only lines with the most identifiers from the docs
+#                    line count. When several lines qualify, it gives every candidate range,
+#                    nearest first, joined with "|" (at most 5) and the note starts with
+#                    "ambiguous:", e.g. `-> a.php:159-162|162-165 (ambiguous: create on lines
+#                    159, 165)`; pick the right one by hand
 #   LINEREF_GONE     no identifier is in the file or in another file
 #                    from the same docs line
 #   LINEREF_CHANGED  the file changed and the content cannot be checked: the line
@@ -55,7 +59,7 @@ while [ $# -gt 0 ]; do
     --root) root="${2:-}"; shift ;;
     --strict) strict=1 ;;
     --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
-    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
@@ -142,23 +146,33 @@ resolve() {
 
 # MARK: range content
 # scan_ids <file> <from> <to> <identifiers>
-# Prints OK, MOVED<TAB>line<TAB>identifier or NONE.
+# Prints OK, NONE or one line MOVED<TAB>line<TAB>identifier per candidate: the lines outside
+# the range with the most distinct identifiers, nearest first (ties: the earlier line).
 scan_ids() {
   awk -v a="$2" -v b="$3" -v ids="$4" '
     BEGIN { n = split(ids, id, " ") }
     found { next }
     {
+      c = 0; fid = ""
       for (i = 1; i <= n; i++) {
         if (index($0, id[i]) == 0) continue
         if (FNR >= a && FNR <= b) { found = 1; next }
-        d = (FNR < a) ? a - FNR : FNR - b
-        if (best == "" || d < best) { best = d; bl = FNR; bid = id[i] }
+        c++; if (fid == "") fid = id[i]
       }
+      if (c > 0) { nh++; hl[nh] = FNR; hc[nh] = c; hid[nh] = fid; if (c > maxc) maxc = c }
     }
     END {
-      if (found) print "OK"
-      else if (best != "") printf "MOVED\t%d\t%s\n", bl, bid
-      else print "NONE"
+      if (found) { print "OK"; exit }
+      if (!nh) { print "NONE"; exit }
+      for (i = 1; i <= nh; i++) if (hc[i] == maxc) {
+        m++; L[m] = hl[i]; I[m] = hid[i]; D[m] = (hl[i] < a) ? a - hl[i] : hl[i] - b
+      }
+      for (i = 2; i <= m; i++) {
+        l = L[i]; t = I[i]; d = D[i]
+        for (j = i - 1; j >= 1 && (D[j] > d || (D[j] == d && L[j] > l)); j--) { L[j + 1] = L[j]; I[j + 1] = I[j]; D[j + 1] = D[j] }
+        L[j + 1] = l; I[j + 1] = t; D[j + 1] = d
+      }
+      for (i = 1; i <= m; i++) printf "MOVED\t%d\t%s\n", L[i], I[i]
     }' "$1"
 }
 
@@ -270,11 +284,29 @@ while IFS= read -r doc; do
       OK)
         ok=$((ok + 1)) ;;
       MOVED*)
-        at="$(printf '%s' "$res" | cut -f2)"
-        id="$(printf '%s' "$res" | cut -f3)"
-        if [ "$at" -lt "$first" ]; then delta=$((at - first)); else delta=$((at - last)); fi
-        if [ "$first" = "$last" ]; then new="$((first + delta))"; else new="$((first + delta))-$((last + delta))"; fi
-        printf 'LINEREF_MOVED %s:%s %s -> %s:%s (%s on line %s)\n' "$rel_doc" "$ln" "$ref" "$path" "$new" "$id" "$at"
+        # one candidate: "-> path:new (id on line N)"; several: every candidate range, nearest
+        # first, joined with "|" (at most 5, the note gives the rest), marked "ambiguous"
+        cands=""; lines_at=""; ids_at=""; ncand=0; same=1; id1=""
+        while IFS=$'\t' read -r _ at id; do
+          ncand=$((ncand + 1))
+          [ -n "$id1" ] || id1="$id"
+          [ "$id" = "$id1" ] || same=0
+          [ "$ncand" -le 5 ] || continue
+          if [ "$at" -lt "$first" ]; then delta=$((at - first)); else delta=$((at - last)); fi
+          if [ "$first" = "$last" ]; then new="$((first + delta))"; else new="$((first + delta))-$((last + delta))"; fi
+          case "|$cands|" in *"|$new|"*) ;; *) cands="${cands:+$cands|}$new" ;; esac
+          lines_at="${lines_at:+$lines_at, }$at"
+          ids_at="${ids_at:+$ids_at, }$id on line $at"
+        done <<EOF_MOVED
+$res
+EOF_MOVED
+        if [ "$ncand" -eq 1 ]; then
+          note="$id1 on line $lines_at"
+        else
+          if [ "$same" -eq 1 ]; then note="ambiguous: $id1 on lines $lines_at"; else note="ambiguous: $ids_at"; fi
+          [ "$ncand" -le 5 ] || note="$note and $((ncand - 5)) more"
+        fi
+        printf 'LINEREF_MOVED %s:%s %s -> %s:%s (%s)\n' "$rel_doc" "$ln" "$ref" "$path" "$cands" "$note"
         moved=$((moved + 1)) ;;
       *)
         elsewhere=0

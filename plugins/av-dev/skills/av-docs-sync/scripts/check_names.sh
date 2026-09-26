@@ -13,6 +13,8 @@
 #
 # Output:
 #   NAME_MISSING file:line name     the name is not in the code (drift candidate)
+#   KNOWN_STALE <doc>:<line> <name> (a hint) a line scoped ignore entry whose docs line
+#                                   no longer contains the name (the document was checked)
 #
 # Skips:
 #   - lines that themselves talk about absence or removal, and code blocks
@@ -26,8 +28,10 @@
 #   - names from the ignore list: section "## Known false names" (Polish alias
 #     "## Znane falszywe nazwy", with or without diacritics) in the overlay
 #     <paths.overlays>/av-docs-sync.md (default .ai/overlays), lines
-#     "- `Name`" (exact) or "- `Prefix*`" (prefix). --ignore-file
-#     replaces the overlay; the file may have that section or just lines with names,
+#     "- `Name`" (exact), "- `Prefix*`" (prefix) or "- `<doc>:<line> Name`"
+#     (only on that docs line, <doc> relative to --root; the name may end with "*").
+#     --ignore-file replaces the overlay; the file may have that section or just lines
+#     with names (a line scoped entry only as a list item in backticks),
 #   - documents excluded by --exclude GLOB (repeatable) or by the overlay section
 #     "## Excluded docs paths" (Polish alias "## Wykluczone sciezki docs", with or
 #     without diacritics), lines "- `glob`"; --ignore-file does not replace it.
@@ -35,9 +39,13 @@
 #     cross "/", "**" does; a glob without "*" or "?" also excludes everything under it
 #     (e.g. `.ai/external_services/`). The summary line ends with EXCLUDED <documents>.
 #
+# The dictionary does not depend on the docs paths given: git grep runs single threaded,
+# because threaded git grep in the C locale can drop matches on some platforms.
+#
 # Usage:
 #   check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE]... [--exclude GLOB]...
-# Exit code: 0 no candidates, 1 candidates found, 2 usage error.
+# Exit code: 0 no candidates, 1 candidates found, 2 usage error. KNOWN_STALE does not
+#   change the code.
 # Requires: bash 3.2+, git, awk, grep, sort, comm; iconv for UTF-16; jq optional.
 
 set -uo pipefail
@@ -51,7 +59,7 @@ while [ $# -gt 0 ]; do
     --root) root="${2:-}"; shift ;;
     --ignore-file) ignore_files="$ignore_files${2:-}"$'\n'; shift ;;
     --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
-    -h|--help) sed -n '2,41p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
@@ -88,10 +96,11 @@ docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
 
 # MARK: dictionary of names from the code
 # C locale with UTF-8 sequences as letters: non-ASCII letters stay inside a word in any locale.
+# --threads=1: threaded git grep in the C locale drops random matches (seen with Apple git).
 
 utf8_letter=$'[\xc3-\xdf][\x80-\xbf]|[\xe0\xe1\xe3-\xef][\x80-\xbf][\x80-\xbf]|[\xf0-\xf4][\x80-\xbf][\x80-\xbf][\x80-\xbf]'
 word_re="([A-Za-z_]|$utf8_letter)([A-Za-z0-9_]|$utf8_letter){3,}"
-LC_ALL=C git -C "$root" grep -I -h -o -w -E --untracked "$word_re" -- . ':(exclude)*.md' ':(exclude)*.lock' \
+LC_ALL=C git -C "$root" grep --threads=1 -I -h -o -w -E --untracked "$word_re" -- . ':(exclude)*.md' ':(exclude)*.lock' \
   ':(exclude)*.svg' ':(exclude)*.pbxproj' 2>/dev/null >"$tmp/code_words_raw"
 git -C "$root" -c core.quotePath=false ls-files --cached --others --exclude-standard -- '*.strings' '*.stringsdict' 2>/dev/null |
   while IFS= read -r f; do
@@ -136,7 +145,7 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
   IFS=$'\n'
   set -f
   # shellcheck disable=SC2046
-  LC_ALL=C awk -v ignore_file="$tmp/ignore" -v u="$utf8_letter" '
+  LC_ALL=C awk -v ignore_file="$tmp/ignore" -v used_file="$tmp/line_used" -v root="$root" -v u="$utf8_letter" '
     # neg, example and placeholder words match docs in Polish and English: repos keep their own language.
     # C locale: u matches one non-ASCII UTF-8 letter, a word letter of either case.
     BEGIN {
@@ -149,13 +158,40 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
       neg = "(^|[^A-Za-z])(brak|nie istnieje|nie ma|nigdy|never|usuni(e|ę)t[a-z]*|usun(a|ą)(c|ć)|relokow[a-z]*|przeniesion[a-z]*|dawn(y|a|e|iej)|zamiast|removed|deleted|renamed|moved|formerly|previously|no longer|does not exist|instead of)([^A-Za-z]|$)"
       example = "(np\\.|przyk(ł|l)ad|example|e\\.g\\.)"
       while ((getline ig < ignore_file) > 0) {
+        if (ig ~ /:[0-9]+[ \t]+[^ \t]+$/) {
+          # line scoped entry "<doc>:<line> <name>": key = normalized "<doc>:<line>"
+          k = ig; sub(/[ \t]+[^ \t]+$/, "", k)
+          nm = ig; sub(/^.*[ \t]/, "", nm)
+          while (substr(k, 1, 2) == "./") k = substr(k, 3)
+          nl++; lkey[nl] = k; lname[nl] = nm; lentry[nl] = ig; has_line[k] = 1
+          continue
+        }
         if (ig ~ /\*$/) prefix[++np] = substr(ig, 1, length(ig) - 1)
         else exact[ig] = 1
       }
+      printf "" > used_file
+    }
+    function name_match(w, nm) {
+      if (nm ~ /\*$/) return index(w, substr(nm, 1, length(nm) - 1)) == 1
+      return w == nm
+    }
+    # contains(line, nm): the raw docs line has the name (or a word with the prefix) as a word
+    function contains(l, nm,    p, pre, i, c, off) {
+      pre = (nm ~ /\*$/); if (pre) nm = substr(nm, 1, length(nm) - 1)
+      if (nm == "") return 0
+      off = 0
+      while ((i = index(substr(l, off + 1), nm)) > 0) {
+        i += off
+        p = (i > 1) ? substr(l, i - 1, 1) : ""; c = substr(l, i + length(nm), 1)
+        if (p !~ /[A-Za-z0-9_\200-\377]/ && (pre || c !~ /[A-Za-z0-9_\200-\377]/)) return 1
+        off = i
+      }
+      return 0
     }
     function ignored(w,    i) {
       if (w in exact) return 1
       for (i = 1; i <= np; i++) if (index(w, prefix[i]) == 1) return 1
+      if (key in has_line) for (i = 1; i <= nl; i++) if (lkey[i] == key && name_match(w, lname[i])) return 1
       return 0
     }
     function placeholder(w) {
@@ -165,7 +201,17 @@ excluded="$(cat "$tmp/excluded" 2>/dev/null)"
       if (w ~ /^My[A-Z]/ && is_example) return 1
       return 0
     }
-    FNR == 1 { in_code = 0 }
+    FNR == 1 {
+      in_code = 0
+      rel = FILENAME
+      if (index(rel, root "/") == 1) rel = substr(rel, length(root) + 2)
+      while (substr(rel, 1, 2) == "./") rel = substr(rel, 3)
+      print rel > used_file
+    }
+    {
+      key = rel ":" FNR
+      if (key in has_line) for (i = 1; i <= nl; i++) if (lkey[i] == key && contains($0, lname[i])) print "#USED\t" lentry[i] > used_file
+    }
     /^[ \t]*```/ { in_code = !in_code; next }
     in_code { next }
     {
@@ -200,13 +246,28 @@ cut -f1 "$tmp/names" | LC_ALL=C sort -u >"$tmp/unique"
 LC_ALL=C comm -23 "$tmp/unique" "$tmp/known" >"$tmp/missing"
 
 checked="$(wc -l <"$tmp/unique" | tr -d ' ')"
-count=0
-while IFS=$'\t' read -r name where; do
-  if LC_ALL=C grep -qxF -- "$name" "$tmp/missing"; then
-    printf 'NAME_MISSING %s %s\n' "${where#$root/}" "$name"
-    count=$((count + 1))
-  fi
-done <"$tmp/names"
+LC_ALL=C awk -F'\t' -v root="$root" -v missing="$tmp/missing" '
+  BEGIN { while ((getline m < missing) > 0) miss[m] = 1 }
+  ($1 in miss) { w = $2; if (index(w, root "/") == 1) w = substr(w, length(root) + 2); print "NAME_MISSING " w " " $1 }
+' "$tmp/names" >"$tmp/report"
+cat "$tmp/report"
+count="$(wc -l <"$tmp/report" | tr -d ' ')"
+
+# MARK: stale line scoped entries (hint): the entry's document was checked, its line lacks the name
+if [ -s "$tmp/line_used" ]; then
+  LC_ALL=C awk -F'\t' -v ignore_file="$tmp/ignore" '
+    $1 == "#USED" { used[$2] = 1; next }
+    { checked[$0] = 1 }
+    END {
+      while ((getline ig < ignore_file) > 0) {
+        if (ig !~ /:[0-9]+[ \t]+[^ \t]+$/ || (ig in used) || (ig in seen)) continue
+        seen[ig] = 1
+        d = ig; sub(/:[0-9]+[ \t]+[^ \t]+$/, "", d)
+        while (substr(d, 1, 2) == "./") d = substr(d, 3)
+        if (d in checked) print "KNOWN_STALE " ig
+      }
+    }' "$tmp/line_used"
+fi
 
 printf 'CHECKED %s NAME_MISSING %d EXCLUDED %d\n' "$checked" "$count" "${excluded:-0}"
 [ "$count" -eq 0 ]

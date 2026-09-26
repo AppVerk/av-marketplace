@@ -76,6 +76,9 @@ The "Handoff" section in each role skill describes what the role hands to others
 ## Learnings
 <optional: format and rules for learnings entries, e.g. moved from an old session summary prompt>
 
+## Docs update
+<optional: "automatic" (default: av-implement runs av-docs-sync in sync mode) or "proposal only" when the team forbids automatic docs edits; then av-implement lists the needed docs changes in the report instead of editing>
+
 ## Gates per stage
 <when to run gates, e.g. after each role: quick; before the report: final gates. Only `av-verify.md`, section "Gate selection", says which gates.>
 ```
@@ -135,7 +138,7 @@ The reviewer finds the owner of a fix with `check_setup.sh --owner <file>` (role
 <hand-written files that sync does not touch>
 
 ## Known false names
-<names in backticks that `check_names.sh` reports although they are not drift; e.g. names from another repo, words from examples>
+<names in backticks that `check_names.sh` reports although they are not drift; e.g. names from another repo, words from examples. Entry forms: `Name` (exact), `Prefix*` (prefix), `<doc>:<line> Name` (only on that docs line)>
 - `Name`
 - `Prefix*`
 
@@ -180,7 +183,7 @@ The same script checks the content of overlays and role skills:
 2. The scan and reading the code give real paths and scripts.
 3. In ADOPTION mode, the most valuable source is the existing agent, command and pipeline files. Move their substantive rules. Skip orchestration, because the generic skill does it. Details in `references/adoption.md`.
 
-Run every command you put in an overlay (grep, `ls`, script) once on the repo before writing it, and check the result. Check grep patterns for review axes on the whole source code, not on a small diff: a pattern must match at least once in the repo or in a deliberately prepared example. Remove a pattern with no matches anywhere, or mark it as unchecked. A command with false matches teaches the agent wrong conclusions. Example: `ls src/` also returns files, while `ls -d src/*/` returns only module directories.
+Run every command you put in an overlay (grep, `ls`, script) once on the repo before writing it, and check the result. A pattern with hundreds of hits on the whole code is too broad to guide a review (it catches syntax, not the problem): narrow it until the hits are the cases the rule is about, or drop it. Check grep patterns for review axes on the whole source code, not on a small diff: a pattern must match at least once in the repo or in a deliberately prepared example. Remove a pattern with no matches anywhere, or mark it as unchecked. A command with false matches teaches the agent wrong conclusions. Example: `ls src/` also returns files, while `ls -d src/*/` returns only module directories.
 
 Keep an overlay short: usually 30-150 lines. Knowledge that is a norm for people (review axes, conventions, domain rules) belongs in the docs; the overlay only links to it. The overlay keeps operational items for the skill: roles, required steps, gate selection, tools. Known review false alarms belong in `code-review.md`.
 
