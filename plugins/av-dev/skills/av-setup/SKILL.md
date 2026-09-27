@@ -70,17 +70,35 @@ The `scan` field says how complete the result is: `duration_sec`, `sections_sec`
 
 `scan.incomplete` lists sections that could not deliver their facts, as `{field, status, reason}`. `complete` is true only when `truncated` and `incomplete` are both empty. Name every `incomplete` entry with its reason in the plan and in the report.
 
-`adapters.php_symfony` holds PHP/Symfony facts declared in `composer.json`, each with `evidence` (path and manifest key), from `scripts/adapters/php-symfony/adapter.sh`. The adapter opens only `composer.json` files and runs when the scan finds one, valid or not. Read `status` before any fact:
+`adapters` holds stack facts from `scripts/adapters/<name>/adapter.sh`, one entry per adapter, always in this order. Each fact has `evidence` (a path, plus a manifest key or a line):
+
+| Key | Runs when the scan finds | Opens |
+|---|---|---|
+| `php_symfony` | a `composer.json`, valid or not | `composer.json` files |
+| `ios_xcode` | a `.xcodeproj` or `.xcworkspace` directory, a `Podfile` or a `Package.swift` | `project.pbxproj`, `contents.xcworkspacedata`, shared `*.xcscheme`, `*.xctestplan`, `Podfile`, `Podfile.lock`, `Package.resolved`, line 1 of `Package.swift` |
+| `android` | a `settings.gradle(.kts)` or a `build.gradle(.kts)` | Gradle scripts, `gradle/*.versions.toml`, the wrapper `distributionUrl`, `AndroidManifest.xml` |
+| `angular` | an `angular.json`, a `package.json` that mentions Angular, or an invalid `package.json` | `package.json`, `angular.json`, npm lockfiles, the `package.json` of a fixed list of key packages in `node_modules` |
+
+Every entry has the same `status`, `ran`, `exit_code`, `reason` and `trigger`. Read `status` before any fact:
 
 | `status` | Meaning | What to do |
 |---|---|---|
 | `ok` | the adapter ran and reported complete facts | use the facts with their evidence |
 | `incomplete` | the adapter ran, but `errors` or `truncated` are not empty, or it reported `complete: false` | use the facts; check the paths from `errors` and `truncated` in the repo before a decision depends on them |
-| `not_applicable` | no `composer.json` found; the adapter did not run | no PHP facts; do not write that PHP or Symfony was checked |
-| `unavailable` | a `composer.json` exists, but the adapter files are missing; the adapter did not run | report the gap; read `composer.json` yourself in step 3 |
-| `error` | the adapter failed (exit code other than 0, or invalid output); its facts are dropped | report `reason` and `exit_code`; read `composer.json` yourself in step 3 |
+| `not_applicable` | the trigger found nothing; the adapter did not run | no facts for this stack; do not write that the stack was checked |
+| `unavailable` | the trigger found manifests, but an adapter file is missing; the adapter did not run | report the gap; read the manifests yourself in step 3 |
+| `error` | the adapter failed (exit code other than 0, or invalid output); its facts are dropped | report `reason` and `exit_code`; read the manifests yourself in step 3 |
 
-`ran` says whether the adapter ran. `trigger` compares the `composer.json` files found with the `stacks` entries: `stacks` skips invalid manifests, the adapter reports them in `errors`. Versions are declared constraints, not installed versions. The adapter infers no architecture, layers or modules, and you do not infer them from its facts either. The adapter has no time limit: a hanging adapter stops the scan.
+`trigger` compares what the scan found with the `stacks` entries: `stacks` skips invalid manifests, the adapter reports them in `errors`.
+
+Rules for adapter facts:
+- They are values read from files, never an evaluated build configuration. Installed versions are `unknown`, except where an adapter reads an explicit package manifest (Angular: the `package.json` of fixed key packages in `node_modules`). Effective build settings and Gradle or CocoaPods evaluation are always `unknown`.
+- Android values have 3 levels: `declared` (a literal), `expression` (unresolved script text) and `text_candidate` (a literal matched by text in `ext` or a version catalog). Do not present a `text_candidate` as the value Gradle uses.
+- iOS versions are declared (`Podfile`, package `requirement`) or locked (`Podfile.lock`, `Package.resolved`). The `Podfile` is read line by line: check `podfile.not_followed` before relying on the pod list.
+- Angular versions are declared (`package.json`), locked (npm lockfile) and installed (key packages in `node_modules`), kept apart.
+- `unknown` entries mark places the files do not settle. Do not fill them by guessing.
+- No adapter infers architecture, layers or modules, and you do not infer them from its facts either.
+- Adapters have no time limit: a hanging adapter stops the scan.
 
 ## Step 2: Stack facts
 

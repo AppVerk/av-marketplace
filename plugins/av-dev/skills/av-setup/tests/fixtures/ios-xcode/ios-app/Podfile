@@ -1,0 +1,45 @@
+# Podfile of the fixture. pod 'Commented'
+source 'https://cdn.cocoapods.org/'
+source 'https://ci:CANARY-source@specs.example.com/private-specs.git'
+platform :ios, '16.0'
+use_frameworks!
+inhibit_all_warnings!
+project 'App.xcodeproj'
+
+=begin
+pod 'InsideBlockComment'
+=end
+
+def shared_pods
+  pod 'Alamofire', '~> 5.8'
+end
+
+abstract_target 'Base' do
+  shared_pods
+  pod "SnapKit", ">= 5.0", "< 6.0"   # double quotes and two constraints
+
+  target 'App' do
+    pod 'Kingfisher', '7.9.1'
+    pod 'Private', :git => 'https://CANARY-git@git.example.com/private.git', :branch => 'main'
+    pod 'LocalPod', :path => '../LocalPod'
+    pod 'Wormholy', :configurations => ['Debug']
+    pod 'Firebase/Analytics'
+    pod name_from_variable
+
+    target 'AppTests' do
+      inherit! :search_paths
+    end
+  end
+end
+
+target :Widget do
+  pod 'Kingfisher'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |t|
+    t.build_configurations.each do |c|
+      c.build_settings['API_KEY'] = 'CANARY-hook'
+    end
+  end
+end

@@ -1,0 +1,7 @@
+{
+  "name": "@mono/shared-ui",
+  "peerDependencies": {
+    "@angular/common": ">=20.0.0",
+    "@angular/core": ">=20.0.0 <22.0.0"
+  }
+}

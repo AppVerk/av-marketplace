@@ -1,0 +1,9 @@
+{
+  "configurations" : "not-a-list",
+  "defaultOptions" : [],
+  "testTargets" : [
+    { "target" : "just-a-string", "selectedTests" : "x" },
+    5
+  ],
+  "version" : "1"
+}

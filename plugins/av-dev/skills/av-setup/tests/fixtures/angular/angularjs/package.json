@@ -1,0 +1,7 @@
+{
+  "name": "legacy-angularjs",
+  "dependencies": {
+    "angular": "1.8.3",
+    "angular-route": "1.8.3"
+  }
+}

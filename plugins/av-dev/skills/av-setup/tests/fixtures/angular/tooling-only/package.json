@@ -1,0 +1,6 @@
+{
+  "name": "tooling-only",
+  "devDependencies": {
+    "@angular/cli": "^21.0.0"
+  }
+}

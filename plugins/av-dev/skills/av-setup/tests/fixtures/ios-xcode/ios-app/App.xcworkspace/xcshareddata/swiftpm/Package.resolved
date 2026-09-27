@@ -1,0 +1,32 @@
+{
+  "originHash" : "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+  "pins" : [
+    {
+      "identity" : "private",
+      "kind" : "remoteSourceControl",
+      "location" : "https://deploy:CANARY-pat@git.example.com/team/private.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "ffffffffffffffffffffffffffffffffffffffff"
+      }
+    },
+    {
+      "identity" : "factory",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/hmlongco/Factory.git",
+      "state" : {
+        "revision" : "061b3afe0358a0da7ce568f8272c847910be3dd7",
+        "version" : "2.2.0"
+      }
+    },
+    {
+      "identity" : "Alpha",
+      "kind" : "localSourceControl",
+      "location" : "/opt/alpha",
+      "state" : {
+        "revision" : "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ],
+  "version" : 3
+}

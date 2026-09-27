@@ -1,0 +1,23 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	objectVersion = 56;
+	objects = {
+		K000000000000000000000P0 = {
+			isa = PBXProject;
+			packageReferences = (
+				K0000000000000000000GONE /* XCRemoteSwiftPackageReference "gone" */,
+			);
+			targets = (
+				K000000000000000000000T1 /* Kit */,
+				K00000000000000000000404 /* Deleted */,
+			);
+		};
+		K000000000000000000000T1 = {
+			isa = PBXNativeTarget;
+			name = Kit;
+			productType = "com.apple.product-type.framework";
+		};
+	};
+	rootObject = K000000000000000000000P0;
+}

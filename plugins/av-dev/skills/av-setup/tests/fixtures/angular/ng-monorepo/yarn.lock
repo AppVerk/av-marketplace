@@ -1,0 +1,4 @@
+# yarn lockfile v1
+
+"@angular/core@~20.1.3":
+  version "20.1.7"

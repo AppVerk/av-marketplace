@@ -1,0 +1,47 @@
+PODS:
+  - Alamofire (5.8.1)
+  - Firebase/Analytics (10.0.0):
+    - Firebase/Core
+  - Firebase/Core (10.0.0)
+  - Kingfisher (7.9.1)
+  - LocalPod (0.1.0)
+  - Private (1.0.0)
+  - "SnapKit (5.7.1)"
+  - Stale (1.0.0)
+
+DEPENDENCIES:
+  - Alamofire (~> 5.8)
+  - Firebase/Analytics
+  - Kingfisher (= 7.9.1)
+  - LocalPod (from `../LocalPod`)
+  - Private (from `https://CANARY-git@git.example.com/private.git`, branch `main`)
+  - "SnapKit (< 6.0, >= 5.0)"
+  - Stale
+
+SPEC REPOS:
+  https://ci:CANARY-source@specs.example.com/private-specs.git:
+    - Alamofire
+  trunk:
+    - Firebase
+    - Kingfisher
+    - SnapKit
+    - Stale
+
+EXTERNAL SOURCES:
+  LocalPod:
+    :path: "../LocalPod"
+  Private:
+    :branch: main
+    :git: https://CANARY-git@git.example.com/private.git
+
+CHECKOUT OPTIONS:
+  Private:
+    :commit: abc123
+    :git: https://CANARY-git@git.example.com/private.git
+
+SPEC CHECKSUMS:
+  Alamofire: 0000000000000000000000000000000000000000
+
+PODFILE CHECKSUM: 1111111111111111111111111111111111111111
+
+COCOAPODS: 1.15.2

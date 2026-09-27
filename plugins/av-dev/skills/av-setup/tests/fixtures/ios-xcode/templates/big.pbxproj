@@ -1,0 +1,97 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+		G000000000000000000000P0 /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = G000000000000000000000L0;
+			packageReferences = (
+				G0000000000000000000R001,
+				G0000000000000000000R002,
+				G0000000000000000000R003,
+			);
+			targets = (
+				G000000000000000000000T1 /* One */,
+				G000000000000000000000T2 /* Two */,
+				G000000000000000000000T3 /* Three */,
+			);
+		};
+		G000000000000000000000T1 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G000000000000000000000L0;
+			name = One;
+			productType = "com.apple.product-type.application";
+		};
+		G000000000000000000000T2 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G000000000000000000000L0;
+			name = Two;
+			productType = "com.apple.product-type.framework";
+		};
+		G000000000000000000000T3 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G000000000000000000000L0;
+			name = Three;
+			productType = "com.apple.product-type.framework";
+		};
+		G000000000000000000000L0 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				G000000000000000000000C1,
+				G000000000000000000000C2,
+				G000000000000000000000C3,
+			);
+			defaultConfigurationName = Release;
+		};
+		G000000000000000000000C1 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		G000000000000000000000C2 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				SWIFT_VERSION = 5.0;
+			};
+			name = Staging;
+		};
+		G000000000000000000000C3 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		G0000000000000000000R001 = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://example.com/a.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.0;
+			};
+		};
+		G0000000000000000000R002 = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://example.com/b.git";
+			requirement = {
+				kind = revision;
+				revision = abcdef;
+			};
+		};
+		G0000000000000000000R003 = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://example.com/c.git";
+			requirement = {
+				kind = versionRange;
+				maximumVersion = 3.0.0;
+				minimumVersion = 2.0.0;
+			};
+		};
+	};
+	rootObject = G000000000000000000000P0 /* Project object */;
+}

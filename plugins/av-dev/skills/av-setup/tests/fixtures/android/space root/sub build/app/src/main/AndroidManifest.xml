@@ -1,0 +1,3 @@
+<manifest package="com.example.space.legacy">
+    <uses-permission android:name="android.permission.INTERNET"/>
+</manifest>

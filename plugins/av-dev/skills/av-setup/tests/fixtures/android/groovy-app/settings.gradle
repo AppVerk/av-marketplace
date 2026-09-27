@@ -1,0 +1,12 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "fixture-groovy"
+include ':app'
+include ':core',
+        ':features:home'
+// include ':commented'
+/* include ':blocked' */

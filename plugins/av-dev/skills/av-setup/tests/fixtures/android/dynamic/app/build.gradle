@@ -1,0 +1,10 @@
+apply plugin: 'com.android.application'
+apply from: '../versions.gradle'
+
+android {
+    namespace 'com.example.dynamic'
+    flavorDimensions "env"
+    productFlavors {
+        dev { applicationIdSuffix ".dev" }
+    }
+}

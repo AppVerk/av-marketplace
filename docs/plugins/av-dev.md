@@ -2,7 +2,7 @@
 
 One agent workflow for every repo. `av-setup` configures the repo once; five working skills then plan, implement, review and verify from that configuration.
 
-**Version:** 0.3.0
+**Version:** 0.4.0
 
 Usage guide with examples: [plugins/av-dev/README.md](../../plugins/av-dev/README.md).
 
@@ -39,7 +39,16 @@ The plugin is written in English. Files it generates in a repo (docs, overlays, 
 
 There are no stack templates. `av-setup` works with any stack: it takes commands and conventions only from the repo itself (scan facts, CI, existing docs, the code), so it does not push one design onto projects built differently.
 
-Stack adapters add declared facts with evidence, never conventions. The PHP/Symfony adapter reads only `composer.json` files and reports Symfony presence, declared versions, convention paths, config formats and test tools under `adapters.php_symfony` in the scan. Its `status` (`ok`, `incomplete`, `not_applicable`, `unavailable`, `error`) and the scan's `incomplete` list tell `av-setup` whether the facts can be used; a failed or missing adapter makes the scan incomplete. The adapter has no time limit.
+Stack adapters add facts read from manifests, each with evidence, never conventions. They never run a build tool.
+
+| Adapter | Scan key | Reports |
+|---------|----------|---------|
+| PHP/Symfony | `adapters.php_symfony` | Symfony presence, declared versions, convention paths, config formats, test tools (`composer.json` only) |
+| iOS/Xcode | `adapters.ios_xcode` | projects, targets, whitelisted build settings, schemes, test plans, CocoaPods and SwiftPM declared and locked versions |
+| Android | `adapters.android` | Gradle builds, modules, plugins, SDK and JVM values, dependencies, version catalogs, wrapper, manifests; values as `declared`, `expression` or `text_candidate` |
+| Angular | `adapters.angular` | Angular presence, declared, locked and installed versions of key packages, `angular.json` projects and targets, test tools |
+
+Every adapter entry has the same `status` (`ok`, `incomplete`, `not_applicable`, `unavailable`, `error`), `ran`, `exit_code`, `reason` and `trigger`. The scan checks the exit code and the output shape. A failed or missing adapter makes the scan incomplete and names the reason in `scan.incomplete`; its facts are dropped. Adapter cuts join `scan.truncated`. Adapters have no time limit.
 
 ## Config
 
@@ -112,4 +121,4 @@ Then run `av-setup` in the repo.
 bash plugins/av-dev/tests/run.sh
 ```
 
-1149 script tests: gates, config merge, slot executor, setup validator, repo scan, PHP/Symfony adapter, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.
+1965 script tests: gates, config merge, slot executor, setup validator, repo scan, stack adapters (PHP/Symfony, iOS/Xcode, Android, Angular) with their scan integration, adoption diff, doc reference checks. A test passes only with exit code 0 and a last line `PASS n FAIL 0`. The runner also checks that each skill's `VERSION` matches `plugin.json`.

@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="p.ONE"/>
+    <uses-permission android:name="p.TWO"/>
+    <uses-permission android:name="p.THREE"/>
+    <uses-permission android:name="p.FOUR"/>
+    <uses-permission android:name="p.FIVE"/>
+</manifest>

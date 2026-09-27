@@ -1,0 +1,15 @@
+plugins {
+    id 'com.android.library'
+}
+apply from: '../shared.gradle'
+def home = System.getenv("HOME")
+if (home) {
+    println 'conditional'
+}
+dependencies {
+    implementation 'a.b:one:1'
+    implementation 'a.b:two:2'
+    implementation 'a.b:three:3'
+    implementation 'a.b:four:4'
+    implementation 'a.b:five:5'
+}

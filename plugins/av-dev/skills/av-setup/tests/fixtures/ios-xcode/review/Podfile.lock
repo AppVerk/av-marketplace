@@ -1,0 +1,18 @@
+PODS:
+  - Net (1.0.0)
+  - Private (2.0.0)
+
+DEPENDENCIES:
+  - Net
+  - Private (from `https://ci:p@ss@git.example.com/private.git`, branch `main`)
+
+SPEC REPOS:
+  https://ci:p@ss@specs.example.com/specs.git:
+    - Net
+
+EXTERNAL SOURCES:
+  Private:
+    :branch: main
+    :git: https://ci:p@ss@git.example.com/private.git
+
+COCOAPODS: 1.16.2

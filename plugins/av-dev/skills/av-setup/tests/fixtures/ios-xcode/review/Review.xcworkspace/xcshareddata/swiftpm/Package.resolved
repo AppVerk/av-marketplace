@@ -1,0 +1,15 @@
+{
+  "pins" : [
+    {
+      "identity" : "kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://ci:p@ss@git.example.com/team/kit.git",
+      "state" : {
+        "revision" : "1111111111111111111111111111111111111111",
+        "version" : "1.2.0"
+      }
+    },
+    5
+  ],
+  "version" : 2
+}

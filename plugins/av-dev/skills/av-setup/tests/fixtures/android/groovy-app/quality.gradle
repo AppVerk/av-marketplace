@@ -1,0 +1,4 @@
+// script plugin: listed as a marker, never parsed
+allprojects {
+    tasks.register("fixtureQuality")
+}

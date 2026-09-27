@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "fixture wrapper, never executed by the adapter"
+exit 1

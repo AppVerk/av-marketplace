@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "projects": {
+    "my app": {
+      "projectType": "application",
+      "root": "",
+      "sourceRoot": "my src",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {"tsConfig": "tsconfig app.json", "browser": "my src/main.ts"},
+          "configurations": {"pro duction": {}}
+        }
+      }
+    }
+  }
+}

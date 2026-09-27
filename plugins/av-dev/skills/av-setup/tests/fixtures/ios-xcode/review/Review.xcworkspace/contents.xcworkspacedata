@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:Sub/../Review.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:../Outside.xcodeproj">
+   </FileRef>
+   <Group
+      location = "container:Libs"
+      name = "Libs">
+      <FileRef
+         location = "group:Kit/Kit.xcodeproj">
+      </FileRef>
+   </Group>
+   <Group
+      location = "absolute:/opt/shared"
+      name = "Shared">
+      <FileRef
+         location = "group:Shared.xcodeproj">
+      </FileRef>
+   </Group>
+</Workspace>

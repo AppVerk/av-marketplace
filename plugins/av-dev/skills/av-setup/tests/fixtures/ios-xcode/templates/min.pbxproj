@@ -1,0 +1,37 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+		K000000000000000000000P0 /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = K000000000000000000000L0;
+			compatibilityVersion = "Xcode 14.0";
+			targets = (
+				K000000000000000000000T1 /* Kit */,
+			);
+		};
+		K000000000000000000000T1 /* Kit */ = {
+			isa = PBXNativeTarget;
+			name = Kit;
+			productType = "com.apple.product-type.framework";
+		};
+		K000000000000000000000L0 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				K000000000000000000000C1 /* Debug */,
+			);
+			defaultConfigurationName = Debug;
+		};
+		K000000000000000000000C1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+			};
+			name = Debug;
+		};
+	};
+	rootObject = K000000000000000000000P0 /* Project object */;
+}

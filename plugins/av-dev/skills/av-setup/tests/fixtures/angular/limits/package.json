@@ -1,0 +1,6 @@
+{
+  "name": "limits",
+  "workspaces": ["a", "b", "c"],
+  "dependencies": {"@angular/core": "*", "@angular/common": "*", "rxjs": "^7.8.0"},
+  "devDependencies": {"typescript": "~5.9.0"}
+}

@@ -1,0 +1,16 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "Factory",
+        "repositoryURL": "https://github.com/hmlongco/Factory",
+        "state": {
+          "branch": null,
+          "revision": "0000000000000000000000000000000000000001",
+          "version": "2.1.0"
+        }
+      }
+    ]
+  },
+  "version": 1
+}

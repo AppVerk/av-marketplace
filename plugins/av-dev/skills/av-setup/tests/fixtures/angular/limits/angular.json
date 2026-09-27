@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "projects": {
+    "p1": {
+      "root": "",
+      "architect": {
+        "t1": {"builder": "x:a", "configurations": {"c1": {}, "c2": {}, "c3": {}}},
+        "t2": {"builder": "x:b"},
+        "t3": {"builder": "x:c"}
+      }
+    },
+    "p2": {"root": "p2"},
+    "p3": {"root": "p3"}
+  }
+}

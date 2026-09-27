@@ -1,0 +1,12 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	objectVersion = 56;
+	objects = {
+		K000000000000000000000T1 = {
+			isa = PBXNativeTarget;
+			name = Kit;
+		};
+	};
+	rootObject = K000000000000000000000T1;
+}

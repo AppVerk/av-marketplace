@@ -1,0 +1,37 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+		S000000000000000000000P0 /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = S000000000000000000000L0;
+			targets = (
+				S000000000000000000000T1 /* My App */,
+			);
+		};
+		S000000000000000000000T1 /* My App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = S000000000000000000000L0;
+			name = "My App";
+			productType = "com.apple.product-type.application";
+		};
+		S000000000000000000000L0 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				S000000000000000000000C1 /* Debug Staging */,
+			);
+			defaultConfigurationName = "Debug Staging";
+		};
+		S000000000000000000000C1 /* Debug Staging */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+			};
+			name = "Debug Staging";
+		};
+	};
+	rootObject = S000000000000000000000P0 /* Project object */;
+}

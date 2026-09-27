@@ -1,0 +1,3 @@
+-----BEGIN PRIVATE KEY-----
+CANARY-p8-key
+-----END PRIVATE KEY-----

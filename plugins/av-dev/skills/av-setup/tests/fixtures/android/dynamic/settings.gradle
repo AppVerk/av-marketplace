@@ -1,0 +1,11 @@
+rootProject.name = 'dynamic'
+include ':app'
+file('modules').eachDir { dir ->
+    include ":modules:${dir.name}"
+}
+project(':legacy').projectDir = new File(settingsDir, '../legacy-lib')
+include ':legacy'
+if (System.getenv("CI")) {
+    include ':ci-only'
+}
+includeBuild 'build-logic'

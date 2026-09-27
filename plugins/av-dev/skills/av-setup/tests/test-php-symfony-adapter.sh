@@ -30,7 +30,11 @@ adapter() {
 check() { jq -e "$3" "$run/$1.json" >/dev/null 2>&1 && ok || fail "$1: $2"; }
 code_is() { [ "$(cat "$run/$1.code")" = "$2" ] && ok || fail "$1: exit code $2 (got $(cat "$run/$1.code"))"; }
 no_stderr() { [ -s "$run/$1.err" ] && fail "$1: stderr: $(head -3 "$run/$1.err" | tr '\n' ' ')" || ok; }
-no_canary() { grep -q CANARY "$run/$1.json" && fail "$1: secret canary leaked" || ok; }
+# no_canary NAME - NAME.json is one JSON object without a CANARY string; invalid or empty output fails
+no_canary() {
+  jq -e -s 'length == 1 and (.[0] | type) == "object"' "$run/$1.json" >/dev/null 2>&1 || { fail "$1: output is not one JSON object"; return; }
+  grep -q CANARY "$run/$1.json" && fail "$1: secret canary leaked" || ok
+}
 
 # MARK: positive Symfony
 
@@ -76,8 +80,8 @@ check sym "installed versions marked unknown" 'any(.apps[0].unknown[]; .field ==
 check sym "no inferred architecture keys" '[paths | map(tostring) | join(".") | select(test("layer|module|domain|bounded|architecture|relation"; "i"))] | length == 0'
 
 adapter sym2 "$fx/symfony-app"
-[ "$(jq -S -c 'del(.started, .duration_sec)' "$run/sym.json")" = "$(jq -S -c 'del(.started, .duration_sec)' "$run/sym2.json")" ] \
-  && ok || fail "sym2: deterministic output"
+a="$(jq -e -S -c 'del(.started, .duration_sec)' "$run/sym.json" 2>/dev/null)" && b="$(jq -e -S -c 'del(.started, .duration_sec)' "$run/sym2.json" 2>/dev/null)" \
+  && [ -n "$a" ] && [ "$a" = "$b" ] && ok || fail "sym2: deterministic output (or invalid JSON)"
 
 # MARK: plain PHP and missing composer.json
 
@@ -162,20 +166,19 @@ check badroot "error JSON" '.error == "directory not found"'
 
 # MARK: scan.sh integration
 
-# scan_case NAME DIR [ADAPTER] - runs scan.sh on DIR. ADAPTER: empty = the skill scan.sh with the real adapter;
-# otherwise a copy of scripts/scan.sh with "missing" = no adapter.sh, "nojq" = no composer-facts.jq,
-# or a stub from integration/stubs/ installed as adapter.sh. JSON in NAME.json, exit code in NAME.code.
+# scan_case NAME DIR [ADAPTER] - runs scan.sh on DIR. ADAPTER: empty = the skill scan.sh with all adapters;
+# otherwise a copy of scripts/ with "missing" = no php-symfony adapter.sh, "nojq" = no composer-facts.jq,
+# or a stub from integration/stubs/ installed as the php-symfony adapter.sh. JSON in NAME.json, exit code in NAME.code.
 scan_case() {
   local name="$1" dir="$2" adp="${3:-}" sk="$run/skill-$1" scan="$SCAN"
   if [ -n "$adp" ]; then
-    mkdir -p "$sk/scripts/adapters/php-symfony"
-    cp "$SCAN" "$sk/scripts/scan.sh"
+    mkdir -p "$sk"
+    cp -R "$SKILL/scripts" "$sk/"
     scan="$sk/scripts/scan.sh"
     case "$adp" in
-      missing) cp "$FACTS_JQ" "$sk/scripts/adapters/php-symfony/" ;;
-      nojq) cp "$ADAPTER" "$sk/scripts/adapters/php-symfony/" ;;
-      *) cp "$FACTS_JQ" "$sk/scripts/adapters/php-symfony/"
-         cp "$fx/integration/stubs/$adp" "$sk/scripts/adapters/php-symfony/adapter.sh" ;;
+      missing) rm "$sk/scripts/adapters/php-symfony/adapter.sh" ;;
+      nojq) rm "$sk/scripts/adapters/php-symfony/composer-facts.jq" ;;
+      *) cp "$fx/integration/stubs/$adp" "$sk/scripts/adapters/php-symfony/adapter.sh" ;;
     esac
   fi
   "$BASH_BIN" "$scan" "$dir" >"$run/$name.json" 2>"$run/$name.err"

@@ -1,0 +1,8 @@
+{
+  "name": 5,
+  "private": "yes",
+  "engines": "node 22",
+  "workspaces": {"packages": "not-an-array"},
+  "dependencies": ["@angular/core"],
+  "devDependencies": {"@angular/core": ["21.0.0"]}
+}

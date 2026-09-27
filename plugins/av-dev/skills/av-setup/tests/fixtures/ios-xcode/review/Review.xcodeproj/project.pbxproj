@@ -1,0 +1,60 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+		V000000000000000000000P0 /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = V000000000000000000000L0;
+			packageReferences = (
+				V0000000000000000000R001,
+			);
+			targets = (
+				V000000000000000000000T1 /* Review */,
+			);
+		};
+		V000000000000000000000T1 /* Review */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = V000000000000000000000L0;
+			name = Review;
+			packageProductDependencies = (
+				V0000000000000000000D001 /* Kit */,
+				V0000000000000000000D404 /* Deleted */,
+			);
+			productType = "com.apple.product-type.application";
+		};
+		V000000000000000000000L0 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				V000000000000000000000C1 /* Debug */,
+				V000000000000000000000404 /* Deleted */,
+			);
+			defaultConfigurationName = Debug;
+		};
+		V000000000000000000000C1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = V000000000000000000000S1 /* App */;
+			baseConfigurationReferenceRelativePath = Config/Base.xcconfig;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Debug;
+		};
+		V0000000000000000000R001 = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://ci:p@ss@git.example.com/team/kit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+		V0000000000000000000D001 /* Kit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = V0000000000000000000R001;
+			productName = Kit;
+		};
+	};
+	rootObject = V000000000000000000000P0 /* Project object */;
+}

@@ -1,0 +1,30 @@
+# version catalog fixture
+[versions]
+agp = "8.6.1"
+kotlin = "2.0.20"
+compileSdk = "35"
+coreKtx = "1.13.1" # trailing comment
+composeBom = "2024.09.00"
+junit = "4.13.2"
+espresso = { strictly = "3.6.1" }
+sentryAuthToken = "CANARY_TOML_TOKEN"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui-test = { module = "androidx.compose.ui:ui-test-junit4" }
+junit = { module = "junit:junit", version.ref = "junit" }
+espresso-core = "androidx.test.espresso:espresso-core:3.6.1"
+turbine = { module = "app.cash.turbine:turbine", version = "1.1.0" }
+
+[bundles]
+androidtest = [
+    "espresso-core",
+    "compose-ui-test",
+]
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

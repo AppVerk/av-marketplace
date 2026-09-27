@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Scheme
+   LastUpgradeVersion = "1600"
+   version = "1.7">
+   <TestAction
+      buildConfiguration = "Debug">
+      <TestPlans>
+         <TestPlanReference
+            reference = "container:../TestPlans/Unit.xctestplan"
+            default = "YES">
+         </TestPlanReference>
+      </TestPlans>
+   </TestAction>
+</Scheme>

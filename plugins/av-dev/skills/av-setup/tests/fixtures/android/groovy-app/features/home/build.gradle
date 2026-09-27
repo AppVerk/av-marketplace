@@ -1,0 +1,19 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    defaultConfig {
+        namespace 'com.example.features.home'
+        minSdk rootProject.ext.minSdkVersion
+    }
+    dataBinding {
+        enabled = true
+    }
+}
+
+dependencies {
+    implementation(project(':core'))
+    testImplementation "io.mockk:mockk:1.13.8"
+}

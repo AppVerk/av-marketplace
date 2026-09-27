@@ -3,6 +3,7 @@
 # Builds small repos (Xcode, Composer with an npm subdirectory, npm, extras, mixed languages,
 # pipeline docs, CI files) and checks the JSON fields. Stacks are neutral: {id, dir, evidence}.
 # The Xcode repo has Polish docs and a Polish exit code comment: they test Polish detection.
+# Framework facts may appear only under adapters (tests/test-*-adapter.sh cover them); the rest stays neutral.
 set -u
 SCAN="$(cd "$(dirname "$0")/.." && pwd)/scripts/scan.sh"
 PASS=0; FAIL=0
@@ -12,6 +13,19 @@ trap 'rm -rf "$TMP"' EXIT
 ok()   { PASS=$((PASS+1)); }
 fail() { FAIL=$((FAIL+1)); printf 'FAIL: %s\n' "$1" >&2; }
 check() { jq -e "$2" "$1" >/dev/null 2>&1 && ok || fail "$3"; }
+# scan DIR OUT - runs scan.sh; exit code 0 and one JSON object on stdout, otherwise a failure
+scan() {
+  local rc
+  bash "$SCAN" "$1" >"$2" 2>"$2.err"; rc=$?
+  [ "$rc" -eq 0 ] && jq -e -s 'length == 1 and (.[0] | type) == "object"' "$2" >/dev/null 2>&1 && ok \
+    || fail "scan.sh $(basename "$1"): exit $rc or stdout is not one JSON object: $(head -c 200 "$2.err")"
+}
+# neutral OUT LABEL REGEX - no quoted REGEX word outside adapters and section timings; a jq error fails too
+neutral() {
+  local fw
+  fw="$(jq -c 'del(.adapters, .scan.sections_sec)' "$1" 2>/dev/null)" && [ -n "$fw" ] && ! grep -qE "$3" <<<"$fw" && ok \
+    || fail "$2: framework guess outside adapters, or the scan output is not valid JSON"
+}
 
 init_repo() {
   git init -q "$1" && git -C "$1" config user.email t@t && git -C "$1" config user.name t
@@ -62,8 +76,15 @@ git -C "$IOS" checkout -q develop
 git -C "$IOS" merge -q --no-ff feature/PROJ-2-orders -m "Merged in feature/PROJ-2-orders (pull request #1)"
 
 out="$TMP/ios.json"
-bash "$SCAN" "$IOS" >"$out"
+scan "$IOS" "$out"
 check "$out" '.stacks == [{"id": "cocoapods", "dir": ".", "evidence": ["Podfile"]}, {"id": "xcode", "dir": ".", "evidence": ["Demo.xcodeproj", "Demo.xcworkspace"]}]' "ios: stack from manifests, workspace inside the project skipped"
+check "$out" '.adapters | keys_unsorted == ["php_symfony", "ios_xcode", "android", "angular"]' "ios: every adapter has an entry, in a fixed order"
+check "$out" '.adapters.ios_xcode | .ran == true and .exit_code == 0 and .trigger.xcode_dirs == 2 and .trigger.stacks_ios_entries == 2
+  and (.status == "ok" or .status == "incomplete")' "ios: ios_xcode adapter runs on the Xcode repo"
+check "$out" '[.adapters.php_symfony, .adapters.android, .adapters.angular | .status] == ["not_applicable", "not_applicable", "not_applicable"]' "ios: other adapters not applicable"
+check "$out" '.scan.complete == ((.scan.truncated | length) == 0 and (.scan.incomplete | length) == 0)
+  and ((.adapters.ios_xcode.status == "incomplete") == any(.scan.incomplete[]; .field == "adapters.ios_xcode"))' "ios: scan.complete follows truncated and incomplete"
+neutral "$out" "ios" '"(ios-xcode|cocoapods_version|product_type|swift_packages|pbxproj)"'
 check "$out" '.git.base_branch_guess == "develop"' "ios: base develop"
 check "$out" '.git.ticket_prefixes.PROJ >= 1 and .git.ticket_prefixes.OPS >= 1' "ios: prefixes"
 check "$out" '.git.merged_branch_names | index("feature/PROJ-2-orders") != null' "ios: merged branch"
@@ -111,11 +132,12 @@ touch "$PHP/docker-compose.yml"
 commit "$PHP" "feat: init"
 
 out="$TMP/php.json"
-bash "$SCAN" "$PHP" >"$out"
+scan "$PHP" "$out"
 check "$out" '.stacks == [{"id": "composer", "dir": ".", "evidence": ["composer.json"]}, {"id": "npm", "dir": "web", "evidence": ["web/package.json"]}]' "php: stacks"
 check "$out" '[.stacks[] | keys] | all(. == ["dir", "evidence", "id"])' "php: no framework fields in stacks"
-jq 'del(.adapters)' "$out" | grep -qE '"(php-symfony|ddd_layout|messenger|doctrine|twig|frontend_hints|framework)"' && fail "php: framework guess outside adapters" || ok
+neutral "$out" "php" '"(php-symfony|ddd_layout|messenger|doctrine|twig|frontend_hints|framework)"'
 check "$out" '.adapters.php_symfony | .status == "ok" and .summary.symfony == {framework: 1} and .apps[0].symfony.declared_version.evidence.key == "require.symfony/framework-bundle"' "php: declared Symfony facts only in adapters.php_symfony"
+check "$out" '.adapters.angular | .status == "not_applicable" and .trigger == {angular_json_files: 0, package_json_angular_mentions: 0, package_json_invalid: 0}' "php: a package.json without Angular does not run the Angular adapter"
 check "$out" '.commands.composer | has("analyse") and (has("post-install-cmd") | not)' "php: composer scripts"
 check "$out" '.commands["package.json:web"].runner == "yarn"' "php: runner from lockfile"
 check "$out" '.commands.ci[0].steps[0] == {"section": "pull-requests:**", "name": "Analyse", "commands": ["composer install", "composer analyse"]}' "php: CI PR step"
@@ -144,9 +166,11 @@ mkdir -p "$NG/.claude" && mv "$NG/.claude-settings.tmp" "$NG/.claude/settings.js
 commit "$NG" "feat(auth): CC-10 add login"
 
 out="$TMP/ng.json"
-bash "$SCAN" "$NG" >"$out"
+scan "$NG" "$out"
 check "$out" '.stacks == [{"id": "npm", "dir": ".", "evidence": ["package.json"]}]' "ng: stack"
-grep -qE '"(angular|unit_test|e2e|i18n|state|bootstrap)"' "$out" && fail "ng: framework fields in output" || ok
+neutral "$out" "ng" '"(angular|unit_test|e2e|i18n|state|bootstrap)"'
+check "$out" '.adapters.angular | .ran == true and .exit_code == 0 and .summary.angular == {framework: 1}
+  and .trigger == {angular_json_files: 0, package_json_angular_mentions: 1, package_json_invalid: 0}' "ng: Angular facts only in adapters.angular"
 check "$out" '.tooling.husky_hooks["pre-commit"] == ["npm run lint"]' "ng: husky"
 check "$out" '.tooling.versions[".nvmrc"] == ["22.12"] and .tooling.versions.engines.node == ">=22"' "ng: versions"
 check "$out" '.tooling.coverage_thresholds["karma.conf.js"] | test("statements: 75")' "ng: coverage threshold"
@@ -189,7 +213,7 @@ printf '#!/bin/bash\n# Runs the tests.\n#\n# Exit code: 0 when green, 1 when a t
 commit "$EXTRA" "chore: init"
 git -C "$EXTRA" commit -q --allow-empty -m "feat: x" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
 out="$TMP/extra.json"
-bash "$SCAN" "$EXTRA" >"$out"
+scan "$EXTRA" "$out"
 grep -q 'Kowalski\|1b4e28ba\|jan.kowalski@' "$out" && fail "extra: personal data in output" || ok
 check "$out" '.commands.ci[0].steps[0].commands | index("echo \"build ok\"") != null' "extra: quote kept"
 check "$out" '[.commands.documented_commands[].cmd] == ["npm run build", "make test"]' "extra: commands from a block without language"
@@ -236,7 +260,7 @@ printf '{"scripts":{"smoke":"bash ../tools/smoke.sh","gen":"node tools/gen.js"}}
 for i in $(seq 1 45); do doc '#!/bin/sh' "g$i" GEN >"$REF/src/gen/g$(printf '%02d' "$i").sh"; done
 commit "$REF" "PROJ-1 init"
 out="$TMP/refs.json"
-bash "$SCAN" "$REF" >"$out"
+scan "$REF" "$out"
 meta() { printf '.commands.scripts_meta | map(select(.path == "%s")) | .[0]' "$1"; }
 check "$out" "$(meta tests/E2E/run-tests.sh) | .exit_codes_doc == \"Exit code: 0 ok, 1 failed.\" and .status_tokens == [\"E2E_OK\"] and .referenced_by == [\"bitbucket-pipelines.yml\", \"composer.json\"]" "refs: CI and composer script with meta and sources"
 check "$out" '.commands.scripts_meta | map(select(.path == "tests/E2E/run-tests.sh")) | length == 1' "refs: script referenced twice listed once"
@@ -260,7 +284,7 @@ printf '/.agents/\n' >"$LAY/.gitignore"
 printf '{"require":{"symfony/framework-bundle":"7"}}\n' >"$LAY/composer.json"
 commit "$LAY" "init"
 out="$TMP/lay.json"
-bash "$SCAN" "$LAY" >"$out"
+scan "$LAY" "$out"
 check "$out" '.module_candidates | map(select(.pattern == "src/*")) | .[0].looks_like_layers == true' "layers: layers detected"
 check "$out" '.ai_setup.agents_ignored == true' "layers: .agents ignored"
 
@@ -292,7 +316,10 @@ for d in controllers models services; do printf 'x = 1\n' >"$POLY/lib/$d/a.rb"; 
 printf '# Poly\n\n```\ngo test ./...\ncargo build\nsome prose line\n```\n' >"$POLY/README.md"
 commit "$POLY" "PROJ-5 init"
 out="$TMP/poly.json"
-bash "$SCAN" "$POLY" >"$out"
+scan "$POLY" "$out"
+check "$out" '.adapters.android | .ran == true and .exit_code == 0 and .summary.gradle_builds == 1
+  and .trigger == {settings_files: 1, build_files: 1, stacks_gradle_entries: 2}' "poly: Gradle files run the Android adapter"
+neutral "$out" "poly" '"(android_type|compile_sdk|namespace|gradle_builds)"'
 check "$out" '.stacks == [
   {"id": "cargo", "dir": ".", "evidence": ["Cargo.toml"]},
   {"id": "go", "dir": ".", "evidence": ["go.mod"]},
@@ -322,7 +349,7 @@ printf '# Fenced\n\n```\n## Phase 1\n## Phase 2\n```\n\nRUN_ID\n' >"$PIPE/docs/f
 printf '## Phase 1\n## Phase 2\nRUN_ID\n' >"$PIPE/.ai/workspace/run.md"
 commit "$PIPE" "PROJ-6 docs"
 out="$TMP/pipe.json"
-bash "$SCAN" "$PIPE" >"$out"
+scan "$PIPE" "$out"
 check "$out" '.ai_setup[".ai"] | length == 60' "pipe: .ai list stays capped"
 check "$out" '.ai_setup.pipeline_docs == [".ai/pipeline/implementation-pipeline.md", ".claude/commands/ship.md", "docs/workflow.md"]' "pipe: by name past the cap and by content, weak, fenced, large and workspace files skipped"
 check "$out" '.ai_setup.orchestration == true' "pipe: orchestration from pipeline docs"
@@ -408,7 +435,7 @@ lint:
 EOF6
 commit "$CIX" "PROJ-7 ci"
 out="$TMP/ci.json"
-bash "$SCAN" "$CIX" >"$out"
+scan "$CIX" "$out"
 ci() { printf '.commands.ci | map(select(.file == "%s")) | .[0]' "$1"; }
 check "$out" "$(ci bitbucket-pipelines.yml) | .steps_total == 5 and .steps == [
   {\"section\": \"definitions\", \"name\": \"Unit tests\", \"commands\": [\"make deps\", \"make test\", \"make coverage\"], \"anchor\": \"unit\"},
@@ -436,7 +463,7 @@ SR="$TMP/settings repo"
 mkdir -p "$SR/.claude"
 git -C "$SR" init -q
 printf '{"env":{"API_TOKEN":"supersecretvalue123"},"permissions":{"deny":["Read(./.env)"]},"hooks":{"PreToolUse":[]},"includeCoAuthoredBy":false}' >"$SR/.claude/settings.json"
-bash "$SCAN" "$SR" >"$TMP/settings.json.out" 2>/dev/null
+scan "$SR" "$TMP/settings.json.out"
 SR_OUT="$TMP/settings.json.out"
 check "$TMP/settings.json.out" '.ai_setup[".claude"].settings_keys | index("env") != null' "settings: env key name listed"
 check "$TMP/settings.json.out" '.ai_setup[".claude"].deny_rules == 1' "settings: deny rules counted"
@@ -471,10 +498,10 @@ printf '# CLAUDE.md\n\n```sh\n.ai/scripts/docs.sh\ndocker compose up -d\n```\n' 
 printf 'curl https://example.invalid\nAPI_TOKEN=flagsecretvalue42\n' >"$FR/.env"
 for i in $(seq 1 65); do printf -- '---\nname: a%s\n---\n' "$i" >"$FR/.claude/agents/a$i.md"; done
 commit "$FR" init
-bash "$SCAN" "$FR" >"$TMP/flags.out" 2>/dev/null
+scan "$FR" "$TMP/flags.out"
 check "$TMP/flags.out" '.scan.schema_version == 2 and (.scan.duration_sec | type) == "number" and (.scan.sections_sec | has("commands") and has("flags"))' "scan: duration fields"
 check "$TMP/flags.out" '.scan.complete == false and (.scan.truncated | any(.field == "ai_setup[.claude/agents]" and .shown == 60 and .total == 65))' "scan: truncated agent list reported"
-check "$SR_OUT" '.scan.complete == true and .scan.truncated == [] and .scan.incomplete == [] and .adapters.php_symfony.status == "not_applicable"' "scan: small repo is complete"
+check "$SR_OUT" '.scan.complete == true and .scan.truncated == [] and .scan.incomplete == [] and ([.adapters[] | .status] | unique) == ["not_applicable"] and ([.adapters[] | .ran] | unique) == [false]' "scan: small repo is complete, no adapter runs"
 # --- command flags: hints with reasons, dry-run aware, composite calls, scripts, docs
 flag() { jq -c --arg s "$1" --arg n "$2" '[.commands.flags.items[] | select(.source == $s and .name == $n)] | .[0] // {}' "$TMP/flags.out"; }
 check "$TMP/flags.out" '(.commands.flags.checked > 0) and (.commands.flags.note | test("unclassified"))' "flags: checked count and note"

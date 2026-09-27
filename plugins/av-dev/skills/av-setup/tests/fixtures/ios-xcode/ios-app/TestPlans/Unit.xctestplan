@@ -1,0 +1,53 @@
+{
+  "configurations" : [
+    {
+      "id" : "00000000-0000-0000-0000-000000000001",
+      "name" : "Default",
+      "options" : {
+        "environmentVariableEntries" : [
+          {
+            "key" : "TOKEN",
+            "value" : "CANARY-plan-env"
+          }
+        ]
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false,
+    "commandLineArgumentEntries" : [
+      {
+        "argument" : "-secret CANARY-plan-arg"
+      }
+    ],
+    "environmentVariableEntries" : [
+      {
+        "key" : "A",
+        "value" : "CANARY-2"
+      }
+    ]
+  },
+  "testTargets" : [
+    {
+      "enabled" : false,
+      "skippedTests" : [
+        "SlowTests",
+        "FlakyTests"
+      ],
+      "target" : {
+        "containerPath" : "container:App.xcodeproj",
+        "identifier" : "B100000000000000000000T3",
+        "name" : "AppUITests"
+      }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:App.xcodeproj",
+        "identifier" : "B100000000000000000000T2",
+        "name" : "AppTests"
+      }
+    }
+  ],
+  "version" : 1
+}

@@ -1,0 +1,37 @@
+{
+  "name": "ng-app",
+  "private": true,
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "deploy": "curl -H 'Authorization: CANARY-script-token' https://example.invalid"
+  },
+  "config": {
+    "token": "CANARY-config-token"
+  },
+  "dependencies": {
+    "@angular/common": "^21.2.12",
+    "@angular/core": "^21.2.12",
+    "@angular/router": "^21.2.12",
+    "@ngx-translate/core": "^17.0.0",
+    "lodash": "^4.17.21",
+    "private-lib": "git+https://deploy:CANARY-git-token@git.example.invalid/org/private-lib.git",
+    "rxjs": "^7.8.2",
+    "tslib": "^2.8.1",
+    "zone.js": "~0.15.1"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^21.2.9",
+    "@angular/cli": "^21.2.10",
+    "@angular/compiler-cli": "^21.2.12",
+    "@playwright/test": "^1.50.0",
+    "@types/jasmine": "~6.0.0",
+    "eslint": "^9.39.4",
+    "jasmine-core": "~6.2.0",
+    "karma": "^6.4.4",
+    "karma-chrome-launcher": "~3.2.0",
+    "typescript": "^5.9.3"
+  }
+}

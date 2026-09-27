@@ -1,0 +1,5 @@
+platform :ios, '15.0'
+
+target 'My App' do
+  pod 'Kingfisher', '~> 7.0'
+end

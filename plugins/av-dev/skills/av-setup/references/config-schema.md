@@ -152,7 +152,7 @@ Rules:
 
 **project**
 - `language`: the language of generated docs, plans and reports. Code and commands are always in English.
-- `stacks`: the `id` values of `stacks[]` in the scan result, for information only (e.g. `["composer", "npm"]`). No template is attached to them. Each scan entry is `{id, dir, evidence}`: `id` is the ecosystem of the manifest or build file (`npm`, `composer`, `xcode`, `gradle`, ...), `dir` its directory, `evidence` the files found. `stacks` reports no frameworks or features. Declared framework facts, with evidence, appear only under `adapters.*` in the scan (e.g. `adapters.php_symfony`, see SKILL.md step 1); they are not stacks and add no template.
+- `stacks`: the `id` values of `stacks[]` in the scan result, for information only (e.g. `["composer", "npm"]`). No template is attached to them. Each scan entry is `{id, dir, evidence}`: `id` is the ecosystem of the manifest or build file (`npm`, `composer`, `xcode`, `gradle`, ...), `dir` its directory, `evidence` the files found. `stacks` reports no frameworks or features. Declared framework facts, with evidence, appear only under `adapters.*` in the scan (`php_symfony`, `ios_xcode`, `android`, `angular`, see SKILL.md step 1); they are not stacks and add no template. Do not copy adapter keys into `stacks`.
 - `skillPrefix`: the prefix of role skill names, e.g. `shop` gives `shop-backend`. By default from the project name (the project manifest, the `origin` URL), not from the directory name: the last segment without the company prefix (`references/role-skills.md`, section "Name").
 
 **docs**

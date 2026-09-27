@@ -1,0 +1,11 @@
+// !$*UTF8*$!
+{
+	objectVersion = 46;
+	objects = {
+		P1 = {
+			isa = PBXNativeTarget;
+			name = "CANARY-pods-target";
+		};
+	};
+	rootObject = P0;
+}

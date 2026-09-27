@@ -1,0 +1,236 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B1000000000000000000F001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000F002 /* AppDelegate.swift */; };
+		B1000000000000000000F003 /* Factory in Frameworks */ = {isa = PBXBuildFile; productRef = B1000000000000000000D001 /* Factory */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B1000000000000000000F002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		B1000000000000000000F004 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Config/Secrets.xcconfig"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		B1000000000000000000F005 /* Widget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Widget;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXGroup section */
+		B1000000000000000000F006 = {
+			isa = PBXGroup;
+			children = (
+				B1000000000000000000F002 /* AppDelegate.swift */,
+				B1000000000000000000F005 /* Widget */,
+			);
+			name = "Weird { name ) with \"braces\"";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B100000000000000000000T1 /* App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B100000000000000000000L1 /* Build configuration list for PBXNativeTarget "App" { ( */;
+			buildPhases = (
+			);
+			dependencies = (
+			);
+			name = App;
+			packageProductDependencies = (
+				B1000000000000000000D001 /* Factory */,
+				B1000000000000000000D002 /* LocalKit */,
+			);
+			productName = App;
+			productType = "com.apple.product-type.application";
+		};
+		B100000000000000000000T2 /* AppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B100000000000000000000L2;
+			name = AppTests;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B100000000000000000000T3 /* AppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B100000000000000000000L2;
+			name = AppUITests;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXAggregateTarget section */
+		B100000000000000000000T4 /* Lint */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = B100000000000000000000L2;
+			name = Lint;
+		};
+/* End PBXAggregateTarget section */
+
+/* Begin PBXProject section */
+		B100000000000000000000P0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					B100000000000000000000T1 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = B100000000000000000000L0 /* Build configuration list for PBXProject "App" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				pl,
+			);
+			mainGroup = B1000000000000000000F006;
+			packageReferences = (
+				B1000000000000000000R001 /* XCRemoteSwiftPackageReference "Factory" */,
+				B1000000000000000000R002 /* XCLocalSwiftPackageReference "LocalKit" */,
+				B1000000000000000000R003 /* XCRemoteSwiftPackageReference "private" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B100000000000000000000T1 /* App */,
+				B100000000000000000000T2 /* AppTests */,
+				B100000000000000000000T3 /* AppUITests */,
+				B100000000000000000000T4 /* Lint */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin XCBuildConfiguration section */
+		B1000000000000000000C0D1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				"OTHER_SWIFT_FLAGS[sdk=iphoneos*]" = "-D CANARY_FLAG";
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		B1000000000000000000C0R1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+		B1000000000000000000C1D1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = B1000000000000000000F004 /* Secrets.xcconfig */;
+			buildSettings = {
+				API_KEY = "CANARY-api-key-in-build-settings";
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.example.app";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B1000000000000000000C1R1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				API_KEY = "CANARY-api-key-in-build-settings";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		B1000000000000000000C2D1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B100000000000000000000L0 /* Build configuration list for PBXProject "App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B1000000000000000000C0D1 /* Debug */,
+				B1000000000000000000C0R1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B100000000000000000000L1 /* list "App" { ( */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B1000000000000000000C1D1 /* Debug */,
+				B1000000000000000000C1R1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B100000000000000000000L2 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (B1000000000000000000C2D1 /* Debug */, );
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B1000000000000000000R002 /* XCLocalSwiftPackageReference "LocalKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LocalKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B1000000000000000000R001 /* XCRemoteSwiftPackageReference "Factory" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/hmlongco/Factory.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+		B1000000000000000000R003 /* XCRemoteSwiftPackageReference "private" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://deploy:CANARY-pat@git.example.com/team/private.git?token=CANARY2";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B1000000000000000000D001 /* Factory */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B1000000000000000000R001 /* XCRemoteSwiftPackageReference "Factory" */;
+			productName = Factory;
+		};
+		B1000000000000000000D002 /* LocalKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LocalKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = B100000000000000000000P0 /* Project object */;
+}

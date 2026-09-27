@@ -1,0 +1,3 @@
+plugins { id 'com.android.library' }
+android { namespace 'com.example.core'; compileSdk 34 }
+dependencies { api 'com.squareup.okhttp3:okhttp:4.12.0' }

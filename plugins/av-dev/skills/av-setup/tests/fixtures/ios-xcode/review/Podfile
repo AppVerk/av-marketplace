@@ -1,0 +1,7 @@
+platform :ios, '16.0'
+
+target 'Review' do
+  pod 'Private',
+    :git => 'https://ci:p@ss@git.example.com/private.git', :branch => 'main'
+  pod 'Net', :headers => ['Authorization: Bearer token-value'], :modular_headers => true
+end
