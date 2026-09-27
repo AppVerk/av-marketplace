@@ -1,0 +1,2 @@
+{"require": {"php": ">=8.1"}}
+{"require": {"symfony/framework-bundle": "7.1.*"}}

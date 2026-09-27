@@ -1,0 +1,9 @@
+{
+  "require": {
+    "php": ">=8.3",
+    "symfony/framework-bundle": "*",
+    "symfony/console": "7.2.*",
+    "symfony/yaml": "7.2.*"
+  },
+  "autoload": { "psr-4": { "App\\": "src/", "Lib\\": "lib/" } }
+}

@@ -13,6 +13,11 @@
 # scan.truncated as {field, shown, total} and makes scan.complete false. Samples by design
 # (git subjects, headings, top extensions, first lines of version files) are not listed there.
 # Env and key files (.env*, *.pem, *.key, ...) are listed by name only and never read.
+# adapters.php_symfony: adapters/php-symfony/adapter.sh, required when a composer.json is found, valid or not.
+# status ok, incomplete, not_applicable (not run), unavailable (required but missing, not run) or error
+# (exit code other than 0 or invalid output). Adapter cuts join scan.truncated with the prefix
+# "adapters.php_symfony."; incomplete, unavailable and error add {field, status, reason} to scan.incomplete.
+# scan.complete is true only when scan.truncated and scan.incomplete are both empty.
 #
 # Usage:
 #   scan.sh [ROOT] [--pretty]
@@ -557,6 +562,61 @@ tests_json() {
     '{dirs: $d, spec_ts_files: $s, test_file_patterns: $p}'
 }
 
+# MARK: adapters
+
+# php_symfony_json - adapters.php_symfony: status, ran, exit_code, reason and trigger, plus the facts of
+# adapters/php-symfony/adapter.sh (reads only composer.json files) when it exits 0 with valid output.
+# The adapter is required when walk finds a composer.json, valid or not, because stacks skips invalid ones.
+# status: ok; incomplete (adapter complete=false, errors or cuts); not_applicable (no composer.json, not run);
+# unavailable (required but missing, not run); error (exit code other than 0, or stdout that is not one
+# php-symfony object with complete, errors and truncated; its facts and cuts are dropped).
+PHP_SYMFONY_DIR="$(cd "$(dirname "$0")" && pwd)/adapters/php-symfony"
+PHP_SYMFONY_VALID='length == 1 and (.[0] | type == "object" and .adapter == "php-symfony" and .schema_version == 1
+  and (.complete | type) == "boolean" and (.errors | type) == "array" and (.truncated | type) == "array"
+  and all(.errors[]; type == "object")
+  and all(.truncated[]; type == "object" and (.field | type) == "string" and (.shown | type) == "number"
+    and ((.total | type) == "number" or .total == null)))'
+
+# php_symfony_state STATUS RAN EXIT_CODE REASON TRIGGER - adapters.php_symfony without adapter facts
+php_symfony_state() {
+  jq -n -c --arg s "$1" --argjson ran "$2" --argjson code "$3" --arg r "$4" --argjson trig "$5" \
+    '{adapter: "php-symfony", status: $s, ran: $ran, exit_code: $code, reason: $r, trigger: $trig}'
+}
+
+php_symfony_json() {
+  local files entries trig f out rc msg
+  files="$(walk "$root" 3 f | grep -c '/composer\.json$')"
+  entries="$(jq '[.[] | select(.id == "composer")] | length' "$tmp/sec.stacks" 2>/dev/null)"
+  trig="$(jq -n -c --argjson f "${files:-0}" --argjson s "${entries:-0}" '{composer_json_files: $f, stacks_composer_entries: $s}')"
+  if [ "${files:-0}" -eq 0 ]; then
+    php_symfony_state not_applicable false null "no composer.json within 3 directory levels outside skipped dirs; adapter not run" "$trig"
+    return 0
+  fi
+  for f in adapter.sh composer-facts.jq; do
+    [ -f "$PHP_SYMFONY_DIR/$f" ] && continue
+    php_symfony_state unavailable false null "composer.json found but adapters/php-symfony/$f is missing; adapter not run" "$trig"
+    return 0
+  done
+  out="$(TMPDIR="$tmp" "${BASH:-bash}" "$PHP_SYMFONY_DIR/adapter.sh" "$root" 2>"$tmp/php_symfony.err")"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    msg="$(jq -r 'select(type == "object") | .error | strings' <<<"$out" 2>/dev/null | head -1)"
+    [ -n "$msg" ] || msg="$(grep -v '^[[:space:]]*$' "$tmp/php_symfony.err" | head -1)"
+    [ -n "$msg" ] || { if [ -n "$out" ]; then msg="no error message in output"; else msg="no output"; fi; }
+    php_symfony_state error true "$rc" "adapter exited with code $rc: $(printf '%s' "$msg" | head -c 200 | tr '\t\r' '  ')" "$trig"
+    return 0
+  fi
+  if ! jq -e -s "$PHP_SYMFONY_VALID" <<<"$out" >/dev/null 2>&1; then
+    php_symfony_state error true 0 "adapter exited with code 0 but stdout is not one php-symfony JSON object with complete, errors and truncated" "$trig"
+    return 0
+  fi
+  jq -c --argjson trig "$trig" '
+    ((.complete != true) or (.errors | length) > 0 or (.truncated | length) > 0) as $inc
+    | del(.root, .name, .started) + {status: (if $inc then "incomplete" else "ok" end), ran: true, exit_code: 0, trigger: $trig,
+        reason: (if $inc then "adapter reported incomplete facts: complete=\(.complete), \(.errors | length) errors, \(.truncated | length) truncated"
+          + (if (.errors | length) > 0 then "; first error: \(.errors[0].path // "?"): \(.errors[0].error // "?")" else "" end) else null end)}' <<<"$out"
+}
+
 # MARK: existing AI setup
 
 # pipeline_docs_json - markdown files that describe an agent pipeline, independent of the capped
@@ -786,6 +846,9 @@ timed modules modules_json
 timed tests tests_json
 timed ai_setup ai_json
 timed secrets secrets_json
+timed php_symfony php_symfony_json
+jq -e 'type == "object" and (.status | type) == "string"' "$tmp/sec.php_symfony" >/dev/null 2>&1 ||
+  echo '{"adapter": "php-symfony", "status": "error", "ran": null, "exit_code": null, "reason": "php_symfony section did not print valid JSON", "trigger": null}' >"$tmp/sec.php_symfony"
 t=$SECONDS
 jq -n -c --argjson c "$(cat "$tmp/sec.commands")" --argjson s "$(flag_scripts)" '{commands: $c, scripts: $s}' |
   jq -c "$FLAGS_JQ" >"$tmp/flags" 2>/dev/null || echo '{"checked": 0, "error": "flag rules failed", "items": []}' >"$tmp/flags"
@@ -797,6 +860,7 @@ result="$(jq -n -c \
   --argjson flags "$(cat "$tmp/flags")" \
   --argjson tooling "$(cat "$tmp/sec.tooling")" --argjson layout "$layout" --argjson mods "$(cat "$tmp/sec.modules")" \
   --argjson tests "$(cat "$tmp/sec.tests")" --argjson ai "$(cat "$tmp/sec.ai_setup")" --argjson secrets "$(cat "$tmp/sec.secrets")" \
+  --argjson phpsf "$(cat "$tmp/sec.php_symfony")" \
   --arg started "$started" --argjson total "$((SECONDS - scan_start))" \
   --argjson times "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {(.[0]): (.[1] | tonumber)}) | add // {}' "$tmp/times")" \
   --argjson cut "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {field: .[0], shown: (.[1] | tonumber), total: (.[2] | tonumber)})' "$tmp/trunc")" '
@@ -805,13 +869,15 @@ result="$(jq -n -c \
      + (if (.commands_cut // 0) > 0 then [([.steps[].commands[]] | length) as $n
          | {field: ("commands.ci[" + .file + "] commands cut to 200 characters"), shown: ($n - .commands_cut), total: $n}] else [] end))
    | add // []) as $cicut
-  | ($cut + $cicut) as $truncated
+  | ($phpsf | if .status == "ok" or .status == "incomplete" then [.truncated[] | {field: ("adapters.php_symfony." + .field), shown, total}] else [] end) as $adcut
+  | ($phpsf | if .status == "ok" or .status == "not_applicable" then [] else [{field: "adapters.php_symfony", status, reason}] end) as $incomplete
+  | ($cut + $cicut + $adcut) as $truncated
   | {scan: {schema_version: 2, started: $started, duration_sec: $total, sections_sec: $times,
-            complete: ($truncated | length == 0), truncated: $truncated},
+            complete: (($truncated | length) == 0 and ($incomplete | length) == 0), truncated: $truncated, incomplete: $incomplete},
    root: $root, name: $name, doc_language_guess: $lang,
    source_files: ($layout | map(.source) | add // 0),
    git: $git, stacks: $stacks, commands: ($cmds + {flags: $flags}), tooling: $tooling,
    layout: ($layout | map(del(.source))), module_candidates: $mods, tests: $tests,
-   ai_setup: $ai, secret_like_files: $secrets}')"
+   ai_setup: $ai, secret_like_files: $secrets, adapters: {php_symfony: $phpsf}}')"
 
 if [ "$pretty" -eq 1 ]; then jq . <<<"$result"; else printf '%s\n' "$result"; fi

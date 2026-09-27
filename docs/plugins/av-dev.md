@@ -2,7 +2,7 @@
 
 One agent workflow for every repo. `av-setup` configures the repo once; five working skills then plan, implement, review and verify from that configuration.
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 
 Usage guide with examples: [plugins/av-dev/README.md](../../plugins/av-dev/README.md).
 
@@ -38,6 +38,8 @@ The plugin is written in English. Files it generates in a repo (docs, overlays, 
 4. From then on, the working skills read the effective config and the overlay for their step.
 
 There are no stack templates. `av-setup` works with any stack: it takes commands and conventions only from the repo itself (scan facts, CI, existing docs, the code), so it does not push one design onto projects built differently.
+
+Stack adapters add declared facts with evidence, never conventions. The PHP/Symfony adapter reads only `composer.json` files and reports Symfony presence, declared versions, convention paths, config formats and test tools under `adapters.php_symfony` in the scan. Its `status` (`ok`, `incomplete`, `not_applicable`, `unavailable`, `error`) and the scan's `incomplete` list tell `av-setup` whether the facts can be used; a failed or missing adapter makes the scan incomplete. The adapter has no time limit.
 
 ## Config
 
@@ -110,4 +112,4 @@ Then run `av-setup` in the repo.
 bash plugins/av-dev/tests/run.sh
 ```
 
-972 script tests: gates, config merge, slot executor, setup validator, repo scan, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.
+1149 script tests: gates, config merge, slot executor, setup validator, repo scan, PHP/Symfony adapter, adoption diff, doc reference checks. The runner also checks that each skill's `VERSION` matches `plugin.json`.

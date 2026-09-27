@@ -68,12 +68,26 @@ The result contains: the number of source files, the ecosystems (`stacks[]`: man
 
 The `scan` field says how complete the result is: `duration_sec`, `sections_sec`, `complete` and `truncated` (every list cut to a limit, as `{field, shown, total}`). With `complete: false`, a missing item in a truncated list is not proof that it does not exist: check that field in the repo itself before a decision depends on it, and name the truncated fields in the plan. The scan never reads env and key files; it lists their names only.
 
+`scan.incomplete` lists sections that could not deliver their facts, as `{field, status, reason}`. `complete` is true only when `truncated` and `incomplete` are both empty. Name every `incomplete` entry with its reason in the plan and in the report.
+
+`adapters.php_symfony` holds PHP/Symfony facts declared in `composer.json`, each with `evidence` (path and manifest key), from `scripts/adapters/php-symfony/adapter.sh`. The adapter opens only `composer.json` files and runs when the scan finds one, valid or not. Read `status` before any fact:
+
+| `status` | Meaning | What to do |
+|---|---|---|
+| `ok` | the adapter ran and reported complete facts | use the facts with their evidence |
+| `incomplete` | the adapter ran, but `errors` or `truncated` are not empty, or it reported `complete: false` | use the facts; check the paths from `errors` and `truncated` in the repo before a decision depends on them |
+| `not_applicable` | no `composer.json` found; the adapter did not run | no PHP facts; do not write that PHP or Symfony was checked |
+| `unavailable` | a `composer.json` exists, but the adapter files are missing; the adapter did not run | report the gap; read `composer.json` yourself in step 3 |
+| `error` | the adapter failed (exit code other than 0, or invalid output); its facts are dropped | report `reason` and `exit_code`; read `composer.json` yourself in step 3 |
+
+`ran` says whether the adapter ran. `trigger` compares the `composer.json` files found with the `stacks` entries: `stacks` skips invalid manifests, the adapter reports them in `errors`. Versions are declared constraints, not installed versions. The adapter infers no architecture, layers or modules, and you do not infer them from its facts either. The adapter has no time limit: a hanging adapter stops the scan.
+
 ## Step 2: Stack facts
 
 The plugin has no stack templates. Repos built on the same stack are designed differently, and a template would push its own conventions onto them.
 
 Everything about the stack comes from this repo:
-1. Scan facts: manifests and build files (`stacks[]`, `commands`, `tools`, `layout`).
+1. Scan facts: manifests and build files (`stacks[]`, `commands`, `tools`, `layout`) and declared facts from adapters (`adapters.*`, each with `evidence`).
 2. CI config and scripts: the commands the team really runs, with their outputs.
 3. Existing docs and team rules.
 4. Reading the code: layers, naming, DI, error handling, tests (step 3).

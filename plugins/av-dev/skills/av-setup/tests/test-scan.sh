@@ -114,7 +114,8 @@ out="$TMP/php.json"
 bash "$SCAN" "$PHP" >"$out"
 check "$out" '.stacks == [{"id": "composer", "dir": ".", "evidence": ["composer.json"]}, {"id": "npm", "dir": "web", "evidence": ["web/package.json"]}]' "php: stacks"
 check "$out" '[.stacks[] | keys] | all(. == ["dir", "evidence", "id"])' "php: no framework fields in stacks"
-grep -qE '"(php-symfony|ddd_layout|messenger|doctrine|twig|frontend_hints|framework)"' "$out" && fail "php: framework guess in output" || ok
+jq 'del(.adapters)' "$out" | grep -qE '"(php-symfony|ddd_layout|messenger|doctrine|twig|frontend_hints|framework)"' && fail "php: framework guess outside adapters" || ok
+check "$out" '.adapters.php_symfony | .status == "ok" and .summary.symfony == {framework: 1} and .apps[0].symfony.declared_version.evidence.key == "require.symfony/framework-bundle"' "php: declared Symfony facts only in adapters.php_symfony"
 check "$out" '.commands.composer | has("analyse") and (has("post-install-cmd") | not)' "php: composer scripts"
 check "$out" '.commands["package.json:web"].runner == "yarn"' "php: runner from lockfile"
 check "$out" '.commands.ci[0].steps[0] == {"section": "pull-requests:**", "name": "Analyse", "commands": ["composer install", "composer analyse"]}' "php: CI PR step"
@@ -473,7 +474,7 @@ commit "$FR" init
 bash "$SCAN" "$FR" >"$TMP/flags.out" 2>/dev/null
 check "$TMP/flags.out" '.scan.schema_version == 2 and (.scan.duration_sec | type) == "number" and (.scan.sections_sec | has("commands") and has("flags"))' "scan: duration fields"
 check "$TMP/flags.out" '.scan.complete == false and (.scan.truncated | any(.field == "ai_setup[.claude/agents]" and .shown == 60 and .total == 65))' "scan: truncated agent list reported"
-check "$SR_OUT" '.scan.complete == true and .scan.truncated == []' "scan: small repo is complete"
+check "$SR_OUT" '.scan.complete == true and .scan.truncated == [] and .scan.incomplete == [] and .adapters.php_symfony.status == "not_applicable"' "scan: small repo is complete"
 # --- command flags: hints with reasons, dry-run aware, composite calls, scripts, docs
 flag() { jq -c --arg s "$1" --arg n "$2" '[.commands.flags.items[] | select(.source == $s and .name == $n)] | .[0] // {}' "$TMP/flags.out"; }
 check "$TMP/flags.out" '(.commands.flags.checked > 0) and (.commands.flags.note | test("unclassified"))' "flags: checked count and note"

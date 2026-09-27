@@ -1,0 +1,4 @@
+{
+  "require": { "php": ">=8.1", "symfony/symfony": "6.4.*" },
+  "autoload": { "psr-4": { "App\\": "my src/" } }
+}

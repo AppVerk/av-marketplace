@@ -1,0 +1,8 @@
+{
+  "name": "acme/sf74",
+  "type": "project",
+  "require": {
+    "php": ">=8.3",
+    "symfony/framework-bundle": "7.4.*"
+  }
+}

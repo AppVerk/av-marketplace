@@ -1,0 +1,8 @@
+{
+  "name": 5,
+  "require": "symfony/framework-bundle",
+  "require-dev": { "symfony/console": ["7.1.*"] },
+  "extra": [],
+  "config": "x",
+  "autoload": { "psr-4": { "A\\": ["src/", 5] }, "classmap": "x" }
+}

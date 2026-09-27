@@ -1,0 +1,4 @@
+{
+  "name": "acme/broken",
+  "require": {
+    "symfony/framework-bundle": "7.4.*"
