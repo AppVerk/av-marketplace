@@ -297,6 +297,19 @@ has "$out" "LINEREF_MOVED .ai/many.md:2 src/core/many.ts:1 -> src/core/many.ts:4
 rm -f .ai/amb.md .ai/many.md src/core/orders.ts src/core/multi.ts src/core/many.ts
 git add -A && git commit -qm amb-clean
 
+# --- env and key files: references are reported, the files are never read (no length, no content)
+mkdir -p docker keys
+printf 'A=1\nSECRET_TOKEN=supersecretvalue\n' >docker/.env
+printf 'x\nprivate_key_body\n' >keys/server.pem
+printf '# Secrets\n- `docker/.env:2` sets `SECRET_TOKEN`.\n- `keys/server.pem:9` holds `private_key_body`.\n' >.ai/secrets.md
+git add -A && git commit -qm secrets
+out="$(bash "$CHECK" .ai/secrets.md --root .)"
+has "$out" "LINEREF_SECRET .ai/secrets.md:2 docker/.env:2" && has "$out" "LINEREF_SECRET .ai/secrets.md:3 keys/server.pem:9" && ok || fail "secret files not marked: $out"
+has "$out" "LINEREF_RANGE .ai/secrets" && fail "secret file length was read: $out" || ok
+has "$out" "supersecretvalue" && fail "secret value in the output: $out" || ok
+has "$out" " SECRET 2" && ok || fail "secret counter: $(printf '%s' "$out" | tail -1)"
+git rm -q -r docker keys .ai/secrets.md && git commit -qm secrets-clean
+
 bash "$CHECK" >/dev/null; [ $? -eq 2 ] && ok || fail "no arguments"
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

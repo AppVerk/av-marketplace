@@ -436,11 +436,59 @@ mkdir -p "$SR/.claude"
 git -C "$SR" init -q
 printf '{"env":{"API_TOKEN":"supersecretvalue123"},"permissions":{"deny":["Read(./.env)"]},"hooks":{"PreToolUse":[]},"includeCoAuthoredBy":false}' >"$SR/.claude/settings.json"
 bash "$SCAN" "$SR" >"$TMP/settings.json.out" 2>/dev/null
+SR_OUT="$TMP/settings.json.out"
 check "$TMP/settings.json.out" '.ai_setup[".claude"].settings_keys | index("env") != null' "settings: env key name listed"
 check "$TMP/settings.json.out" '.ai_setup[".claude"].deny_rules == 1' "settings: deny rules counted"
 check "$TMP/settings.json.out" '.ai_setup[".claude"].hooks == ["PreToolUse"]' "settings: hook names listed"
 check "$TMP/settings.json.out" '.ai_setup[".claude"].co_authored_setting == false' "settings: includeCoAuthoredBy false kept"
 grep -q supersecretvalue123 "$TMP/settings.json.out" && fail "settings: secret value leaked" || ok
+
+# --- scan: completeness and duration
+FR="$TMP/flags repo"
+init_repo "$FR"
+mkdir -p "$FR/scripts" "$FR/.ai/scripts" "$FR/.claude/agents" "$FR/.github/workflows"
+cat >"$FR/composer.json" <<'EOF_C'
+{"scripts": {
+  "fix": "php-cs-fixer fix",
+  "check": "php-cs-fixer fix --dry-run",
+  "reset-db": "bin/console doctrine:database:drop --force",
+  "all": ["@check", "@reset-db"],
+  "clear": "bin/console cache:clear --no-reset"}}
+EOF_C
+cat >"$FR/.github/workflows/ci.yml" <<'EOF_W'
+jobs:
+  build:
+    steps:
+      - name: Everything
+        run: composer all
+      - name: Ship
+        run: scripts/deploy.sh
+EOF_W
+printf '#!/bin/bash\n# Deploys the build.\nrsync -a dist/ host:/srv\nrm -rf dist/\nenv\n' >"$FR/scripts/deploy.sh"
+printf '#!/bin/bash\n# Checks the docs.\n# Exit code: 0 ok, 1 drift.\necho DOCS_OK\n' >"$FR/.ai/scripts/docs.sh"
+printf '# CLAUDE.md\n\n```sh\n.ai/scripts/docs.sh\ndocker compose up -d\n```\n' >"$FR/CLAUDE.md"
+printf 'curl https://example.invalid\nAPI_TOKEN=flagsecretvalue42\n' >"$FR/.env"
+for i in $(seq 1 65); do printf -- '---\nname: a%s\n---\n' "$i" >"$FR/.claude/agents/a$i.md"; done
+commit "$FR" init
+bash "$SCAN" "$FR" >"$TMP/flags.out" 2>/dev/null
+check "$TMP/flags.out" '.scan.schema_version == 2 and (.scan.duration_sec | type) == "number" and (.scan.sections_sec | has("commands") and has("flags"))' "scan: duration fields"
+check "$TMP/flags.out" '.scan.complete == false and (.scan.truncated | any(.field == "ai_setup[.claude/agents]" and .shown == 60 and .total == 65))' "scan: truncated agent list reported"
+check "$SR_OUT" '.scan.complete == true and .scan.truncated == []' "scan: small repo is complete"
+# --- command flags: hints with reasons, dry-run aware, composite calls, scripts, docs
+flag() { jq -c --arg s "$1" --arg n "$2" '[.commands.flags.items[] | select(.source == $s and .name == $n)] | .[0] // {}' "$TMP/flags.out"; }
+check "$TMP/flags.out" '(.commands.flags.checked > 0) and (.commands.flags.note | test("unclassified"))' "flags: checked count and note"
+[ "$(flag composer.json fix | jq -c .flags)" = '["writes_files"]' ] && ok || fail "flags: fix writes files: $(flag composer.json fix)"
+[ "$(flag composer.json check)" = '{}' ] && ok || fail "flags: --dry-run is not a write: $(flag composer.json check)"
+flag composer.json reset-db | jq -e '.flags == ["destructive"] and (.reasons.destructive | index("--force") != null)' >/dev/null && ok || fail "flags: drop --force destructive: $(flag composer.json reset-db)"
+flag composer.json all | jq -e '.calls == ["composer:check", "composer:reset-db"] and .flags_via_calls == ["destructive"]' >/dev/null && ok || fail "flags: composite calls: $(flag composer.json all)"
+[ "$(flag composer.json clear)" = '{}' ] && ok || fail "flags: --no-reset is not destructive: $(flag composer.json clear)"
+flag .github/workflows/ci.yml Everything | jq -e '.calls == ["composer:all"] and .flags_via_calls == ["destructive"]' >/dev/null && ok || fail "flags: CI step reaches the composer script: $(flag .github/workflows/ci.yml Everything)"
+flag .github/workflows/ci.yml Ship | jq -e '.calls == ["script:scripts/deploy.sh"] and (.flags_via_calls | index("network") != null)' >/dev/null && ok || fail "flags: CI step reaches the script: $(flag .github/workflows/ci.yml Ship)"
+flag scripts/deploy.sh scripts/deploy.sh | jq -e '.flags == ["network", "destructive", "secrets_output"]' >/dev/null && ok || fail "flags: script content: $(flag scripts/deploy.sh scripts/deploy.sh)"
+flag CLAUDE.md "docker compose up -d" | jq -e '.flags == ["containers"]' >/dev/null && ok || fail "flags: documented command: $(flag CLAUDE.md 'docker compose up -d')"
+check "$TMP/flags.out" '.commands.scripts_meta | any(.path == ".ai/scripts/docs.sh" and (.referenced_by | index("CLAUDE.md") != null))' "scripts_meta: script from a docs command"
+check "$TMP/flags.out" '[.commands.flags.items[].source] | index(".env") == null' "flags: env file not scanned"
+grep -q flagsecretvalue42 "$TMP/flags.out" && fail "flags: env value leaked" || ok
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

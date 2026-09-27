@@ -26,6 +26,8 @@
 #                    talks about removal, in Polish or English (then a missing identifier is not GONE)
 #   LINEREF_RANGE    the line number is beyond the file length
 #   LINEREF_NOFILE   the file does not exist (also run check_refs.sh)
+#   LINEREF_SECRET   the file is an env or key file (docs_secret_path in docs_lib.sh): its content is
+#                    never read, not even its length; the reference is not checked
 #   EXTERNAL         the file is not in git and git ignores its path (installed
 #                    dependencies, build output): its content is not checked
 # Paths are resolved relative to root, and if missing, by suffix in `git ls-files`.
@@ -34,7 +36,7 @@
 # diacritics) in <paths.overlays>/av-docs-sync.md, lines "- `glob`". Glob syntax like
 # git pathspec :(glob), relative to --root: "*" and "?" do not cross "/", "**" does;
 # a glob without "*" or "?" also excludes everything under it (e.g. `.ai/external_services/`).
-# The summary line ends with EXCLUDED <documents> EXTERNAL <n> KNOWN <n>.
+# The summary line ends with EXCLUDED <documents> EXTERNAL <n> KNOWN <n> SECRET <n>.
 # Known false paths: the overlay section "## Known false paths" (Polish alias "## Znane
 # falszywe sciezki", with or without diacritics), lines "- `entry`": `<doc>.md:<line>`
 # (every reference on that docs line) or `<path or glob>` (that referenced path as written,
@@ -122,6 +124,7 @@ range=0
 nofile=0
 external=0
 known=0
+secret=0
 
 known_hit() {
   local entry
@@ -255,6 +258,11 @@ while IFS= read -r doc; do
       continue
     fi
     case "$target" in *$'\n'*) continue ;; esac
+    if docs_secret_path "$target"; then
+      printf 'LINEREF_SECRET %s:%s %s (env or key file, content not read)\n' "$rel_doc" "$ln" "$ref"
+      secret=$((secret + 1))
+      continue
+    fi
     len="$(wc -l <"$root/$target" 2>/dev/null | tr -d ' ')"
     if [ -n "$len" ] && [ "$last" -gt "$len" ]; then
       printf 'LINEREF_RANGE %s:%s %s (file has %s lines)\n' "$rel_doc" "$ln" "$ref" "$len"
@@ -331,8 +339,8 @@ EOF_MOVED
 done <"$tmp/docs"
 
 [ -s "$tmp/known" ] && docs_known_stale "$tmp/known" "$tmp/known_used" "$tmp/docs" "$tmp/files" 0
-printf 'CHECKED %d LINEREF_CHANGED %d LINEREF_RANGE %d LINEREF_NOFILE %d LINEREF_OK %d LINEREF_MOVED %d LINEREF_GONE %d EXCLUDED %d EXTERNAL %d KNOWN %d\n' \
-  "$checked" "$changed" "$range" "$nofile" "$ok" "$moved" "$gone" "${excluded:-0}" "$external" "$known"
+printf 'CHECKED %d LINEREF_CHANGED %d LINEREF_RANGE %d LINEREF_NOFILE %d LINEREF_OK %d LINEREF_MOVED %d LINEREF_GONE %d EXCLUDED %d EXTERNAL %d KNOWN %d SECRET %d\n' \
+  "$checked" "$changed" "$range" "$nofile" "$ok" "$moved" "$gone" "${excluded:-0}" "$external" "$known" "$secret"
 if [ "$strict" -eq 1 ]; then
   [ $((range + nofile + gone)) -eq 0 ]
 else

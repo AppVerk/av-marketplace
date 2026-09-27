@@ -5,7 +5,14 @@
 # CI steps, tooling, code layout, existing AI setup, git. Reports the files it finds and
 # never guesses frameworks. Does not read secret values or .env files. Prints JSON.
 # commands.scripts_meta covers scripts/ and repo-local shell scripts referenced
-# by CI files, composer.json and package.json scripts and Makefile recipes.
+# by CI files, composer.json and package.json scripts, Makefile recipes and commands in docs.
+# commands.flags: risk hints per command, CI step and script, taken from the command text
+# (writes_files, network, destructive, containers, secrets_output) with the matched words
+# and the scripts it calls; a command without flags is unclassified, not safe.
+# scan: duration per section in seconds and completeness; every list cut to a limit is in
+# scan.truncated as {field, shown, total} and makes scan.complete false. Samples by design
+# (git subjects, headings, top extensions, first lines of version files) are not listed there.
+# Env and key files (.env*, *.pem, *.key, ...) are listed by name only and never read.
 #
 # Usage:
 #   scan.sh [ROOT] [--pretty]
@@ -30,6 +37,19 @@ trap 'rm -rf "$tmp"' EXIT
 
 MAX_LIST=60
 MAX_REF_SCRIPTS=40
+MAX_SCRIPT_LINES=400
+: >"$tmp/trunc"
+
+# trunc FIELD SHOWN TOTAL - records a list cut to a limit; scan.complete becomes false
+trunc() { [ "${3:-0}" -gt "${2:-0}" ] && printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$tmp/trunc"; return 0; }
+
+# secret_path PATH - code 0 for an env or key file: such a file is never read
+secret_path() {
+  case "${1##*/}" in
+    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.mobileprovision|id_rsa*|id_ed25519*) return 0 ;;
+  esac
+  return 1
+}
 CODE_EXT_RE='\.(swift|m|h|c|cc|cpp|hpp|php|ts|tsx|js|jsx|mjs|cjs|py|rb|kt|kts|java|scala|go|rs|cs|fs|dart|ex|exs|vue|svelte|twig|html|scss|css)$'
 SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData -o -name build
   -o -name dist -o -name .angular -o -name .idea -o -name .vscode -o -name var -o -name coverage -o -name .gradle
@@ -243,7 +263,7 @@ parse_ci() {
     function unquote(v) { if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2); return v }
     function new_step() { step++; named = 0; print "M\t" step "\tsection\t" section; if (job != "") meta("job", job); if (jname != "") meta("job_name", jname) }
     function meta(k, v) { if (step == 0) new_step(); gsub(/\t/, " ", v); if (k ~ /name/) v = redact(v); print "M\t" step "\t" k "\t" v }
-    function cmd(c) { if (step == 0) new_step(); gsub(/\t/, " ", c); print "C\t" step "\t" redact(substr(c, 1, 200)) }
+    function cmd(c) { if (step == 0) new_step(); gsub(/\t/, " ", c); if (length(c) > 200) print "T\t" step; print "C\t" step "\t" redact(substr(c, 1, 200)) }
     function alias(v) { if (match(v, /^\*[A-Za-z0-9_.-]+/)) meta("ref", substr(v, 2, RLENGTH - 1)) }
     BEGIN { script_indent = -1; step = 0; section = ""; job = ""; jname = ""; job_child = -1; skey = -1; child = -1; sec_indent = -1; sub_indent = -1; job_indent = -1; steps_item = -1 }
     {
@@ -315,6 +335,7 @@ parse_ci() {
       }
     }' "$1" | jq -R -s -c --argjson max 60 '
       split("\n") | map(select(length > 0) | split("\t"))
+      | (map(select(.[0] == "T")) | length) as $cut
       | (map(select(.[0] == "M")) | reduce .[] as $r ({}; .[$r[1]][$r[2]] = $r[3])) as $m
       | (map(select(.[0] == "C")) | reduce .[] as $r ({}; .[$r[1]] += [$r[2]])) as $c
       | [($m | keys[]), ($c | keys[])] | unique | map(tonumber) | sort
@@ -330,7 +351,7 @@ parse_ci() {
           | if $t == null then . else .name = (.name // $t.name) | .commands = (if .commands == [] then $t.commands else .commands end) end
         end)
       | map(select((.commands | length) > 0) | with_entries(select(.value != null or (.key | IN("section", "name")))))
-      | {steps_total: length, steps: .[:$max]}'
+      | {steps_total: length, commands_cut: $cut, steps: .[:$max]}'
 }
 
 commands_json() {
@@ -349,7 +370,9 @@ commands_json() {
     out="$(jq -c --arg k "$key" --arg r "$runner" --slurpfile p "$pkg" '. + {($k): {runner: $r, scripts: $p[0].scripts}}' <<<"$out")"
   done < <({ [ -f "$root/package.json" ] && echo "$root/package.json"; walk "$root" 3 f | grep '/package\.json$'; } | sort -u | tee "$tmp/pkgs")
   if [ -f "$root/Makefile" ]; then
-    out="$(jq -c --argjson m "$(grep -oE '^[A-Za-z][A-Za-z0-9_-]*:' "$root/Makefile" | tr -d : | sort -u | head -$MAX_LIST | lines_to_json)" '. + {make: $m}' <<<"$out")"
+    grep -oE '^[A-Za-z][A-Za-z0-9_-]*:' "$root/Makefile" | tr -d : | sort -u >"$tmp/make"
+    trunc commands.make "$MAX_LIST" "$(wc -l <"$tmp/make" | tr -d ' ')"
+    out="$(jq -c --argjson m "$(head -$MAX_LIST "$tmp/make" | lines_to_json)" '. + {make: $m}' <<<"$out")"
   fi
   if [ -d "$root/scripts" ]; then
     : >"$tmp/scripts"
@@ -357,6 +380,7 @@ commands_json() {
       case "$f" in *.sh|*.bash|*.py|*.rb|*.mjs|*.cjs|*.js|*.ts|*.php) ;; *) continue ;; esac
       jq -n -c --arg file "$(rel "$f")" --arg doc "$(script_doc "$f")" '{file: $file, doc: $doc}' >>"$tmp/scripts"
     done < <(walk "$root/scripts" 2 f | grep -v '/tests\?/' | LC_ALL=C sort)
+    trunc commands.scripts_dir "$MAX_LIST" "$(wc -l <"$tmp/scripts" | tr -d ' ')"
     out="$(jq -c --argjson s "$(jq -s -c ".[:$MAX_LIST]" "$tmp/scripts")" '. + {scripts_dir: $s}' <<<"$out")"
   fi
   : >"$tmp/ci"
@@ -369,27 +393,17 @@ commands_json() {
   done
   [ -s "$tmp/ci" ] && out="$(jq -c --argjson c "$(jq -s -c . "$tmp/ci")" '. + {ci: $c}' <<<"$out")"
   : >"$tmp/metafiles"
+  : >"$tmp/metaall"
   [ -d "$root/scripts" ] && walk "$root/scripts" 2 f | grep -v '/tests\?/' | grep -E '\.(sh|bash|py|rb|mjs|cjs|js|ts|php)$' |
-    LC_ALL=C sort -u | head -$MAX_LIST >"$tmp/metafiles"
+    LC_ALL=C sort -u >"$tmp/metaall"
+  trunc 'commands.scripts_meta (scripts/)' "$MAX_LIST" "$(wc -l <"$tmp/metaall" | tr -d ' ')"
+  head -$MAX_LIST "$tmp/metaall" >"$tmp/metafiles"
   [ -f "$root/composer.json" ] && jq -r '.scripts // {} | .[] | if type == "array" then .[] else . end | strings' "$root/composer.json" 2>/dev/null |
     ref_words composer.json "$root" >>"$tmp/refwords"
   while IFS= read -r pkg; do
     jq -r '.scripts // {} | .[] | strings' "$pkg" 2>/dev/null | ref_words "$(rel "$pkg")" "$(dirname "$pkg")" >>"$tmp/refwords"
   done <"$tmp/pkgs"
   [ -f "$root/Makefile" ] && grep "^$(printf '\t')" "$root/Makefile" | ref_words Makefile "$root" >>"$tmp/refwords"
-  resolve_refs <"$tmp/refwords" >"$tmp/refs"
-  cut -f1 "$tmp/refs" | awk '!seen[$0]++' | while IFS= read -r f; do
-    grep -qxF "$root/$f" "$tmp/metafiles" || printf '%s\n' "$root/$f"
-  done | head -$MAX_REF_SCRIPTS >>"$tmp/metafiles"
-  LC_ALL=C sort -u "$tmp/metafiles" | while IFS= read -r f; do script_meta "$f"; done >"$tmp/meta"
-  if [ -s "$tmp/meta" ]; then
-    out="$(jq -c --argjson m "$(jq -s -c . "$tmp/meta")" --argjson r "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t"))
-      | reduce .[] as $x ({}; .[$x[0]] = ((.[$x[0]] // []) + [$x[1]] | unique))' "$tmp/refs")" \
-      '. + {scripts_meta: ($m | map(. + {referenced_by: ($r[.path] // [])}))}' <<<"$out")"
-  fi
-  local compose
-  compose="$(ls "$root"/docker-compose*.y*ml "$root"/compose*.y*ml 2>/dev/null | xargs -n1 basename 2>/dev/null | lines_to_json)"
-  [ "$compose" != "[]" ] && out="$(jq -c --argjson d "$compose" '. + {docker_compose: $d}' <<<"$out")"
   : >"$tmp/doccmds"
   local seen=""
   for f in CLAUDE.md .ai/commands.md docs/commands.md README.md Readme.md readme.md; do
@@ -411,7 +425,25 @@ commands_json() {
         print doc "\t" substr(s, 1, 200)
       }' "$root/$f" >>"$tmp/doccmds"
   done
+  while IFS=$'\t' read -r f c; do printf '%s\n' "$c" | ref_words "$f" "$root"; done <"$tmp/doccmds" >>"$tmp/refwords"
+  resolve_refs <"$tmp/refwords" >"$tmp/refs"
+  cut -f1 "$tmp/refs" | awk '!seen[$0]++' | while IFS= read -r f; do
+    grep -qxF "$root/$f" "$tmp/metafiles" || printf '%s\n' "$root/$f"
+  done >"$tmp/refextra"
+  trunc 'commands.scripts_meta (referenced scripts)' "$MAX_REF_SCRIPTS" "$(wc -l <"$tmp/refextra" | tr -d ' ')"
+  head -$MAX_REF_SCRIPTS "$tmp/refextra" >>"$tmp/metafiles"
+  LC_ALL=C sort -u "$tmp/metafiles" | while IFS= read -r f; do script_meta "$f"; done >"$tmp/meta"
+  LC_ALL=C sort -u "$tmp/metafiles" >"$tmp/flagscripts"
+  if [ -s "$tmp/meta" ]; then
+    out="$(jq -c --argjson m "$(jq -s -c . "$tmp/meta")" --argjson r "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t"))
+      | reduce .[] as $x ({}; .[$x[0]] = ((.[$x[0]] // []) + [$x[1]] | unique))' "$tmp/refs")" \
+      '. + {scripts_meta: ($m | map(. + {referenced_by: ($r[.path] // [])}))}' <<<"$out")"
+  fi
+  local compose
+  compose="$(ls "$root"/docker-compose*.y*ml "$root"/compose*.y*ml 2>/dev/null | xargs -n1 basename 2>/dev/null | lines_to_json)"
+  [ "$compose" != "[]" ] && out="$(jq -c --argjson d "$compose" '. + {docker_compose: $d}' <<<"$out")"
   if [ -s "$tmp/doccmds" ]; then
+    trunc commands.documented_commands 40 "$(wc -l <"$tmp/doccmds" | tr -d ' ')"
     out="$(jq -c --argjson d "$(head -40 "$tmp/doccmds" | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {doc: .[0], cmd: .[1]})')" '. + {documented_commands: $d}' <<<"$out")"
   fi
   printf '%s\n' "$out"
@@ -473,7 +505,7 @@ layout_json() {
     jq -n -c --arg dir "$name" --argjson files "$total" \
       --argjson ext "$(head -6 "$tmp/exts" | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {(.[1]): (.[0] | tonumber)}) | add // {}')" \
       --argjson src "$(grep -cE "$CODE_EXT_RE" "$tmp/files")" \
-      --argjson sub "$(jq -s -c 'sort_by(-.files) | .[:25]' "$tmp/subdirs")" \
+      --argjson sub "$(trunc "layout[$name].subdirs" 25 "$(wc -l <"$tmp/subdirs" | tr -d ' ')"; jq -s -c 'sort_by(-.files) | .[:25]' "$tmp/subdirs")" \
       '{dir: $dir, files: $files, top_ext: $ext, subdirs: $sub, source: $src}' >>"$tmp/layout"
   done < <(cd "$root" && ls -d */ 2>/dev/null | sed 's|/$||' | LC_ALL=C sort)
   jq -s -c . "$tmp/layout"
@@ -494,6 +526,7 @@ modules_json() {
     count="$(wc -l <"$tmp/mod" | tr -d ' ')"
     [ "$count" -ge 3 ] || continue
     layers="$(cut -f2 "$tmp/mod" | grep -icxE 'controllers?|forms?|enums?|entity|entities|services?|repository|repositories|events?|listeners?|subscribers?|handlers?|middlewares?|utils?|utilities|validators?|providers?|commands?|security|models?|helpers?|exceptions?|errors?|messages?|views?|components?|config|core|shared|common|layout|i18n|assets|styles|app|lib' )"
+    trunc "module_candidates[$pat].by_size" 200 "$count"
     jq -n -c --arg p "$pat" --argjson c "$count" --argjson layers "$( [ $((layers * 2)) -ge "$count" ] && echo true || echo false )" \
       --argjson s "$(sort -t "$(printf '\t')" -k1,1nr -k2,2 "$tmp/mod" | head -200 | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {name: .[1], files: (.[0] | tonumber)})')" \
       '{pattern: $p, count: $c, looks_like_layers: $layers, by_size: $s}' >>"$tmp/modules"
@@ -506,7 +539,9 @@ tests_json() {
   walk "$root" 3 d | while IFS= read -r d; do
     basename "$d" | grep -qE '^(tests?|e2e|E2E|__tests__|spec)$|Tests$' || continue
     grep -qE "$CODE_EXT_RE" < <(walk "$d" 3 f) && rel "$d"
-  done | sort | head -20 >"$tmp/testdirs"
+  done | sort >"$tmp/testdirsall"
+  trunc tests.dirs 20 "$(wc -l <"$tmp/testdirsall" | tr -d ' ')"
+  head -20 "$tmp/testdirsall" >"$tmp/testdirs"
   local spec=0
   [ -d "$root/src" ] && spec="$(walk "$root/src" 20 f | grep -c '\.spec\.ts$')"
   walk "$root" 10 f | grep -E "$CODE_EXT_RE" | awk -F/ '
@@ -540,7 +575,9 @@ pipeline_docs_json() {
     [ -d "$root/$d" ] || continue
     find -H "$root/$d" \( -path "$root/.ai/workspace" -o -path "$root/.ai/sessions" -o -name node_modules \) -prune \
       -o -type f -name '*.md' -size -257k -print 2>/dev/null
-  done | LC_ALL=C sort | head -$PIPELINE_MAX_FILES >"$tmp/pipecands"
+  done | LC_ALL=C sort >"$tmp/pipeall"
+  trunc 'ai_setup.pipeline_docs (files read)' "$PIPELINE_MAX_FILES" "$(wc -l <"$tmp/pipeall" | tr -d ' ')"
+  head -$PIPELINE_MAX_FILES "$tmp/pipeall" >"$tmp/pipecands"
   {
     while IFS= read -r f; do
       case "$(rel "$f")" in .ai/*|docs/*) ;; *) continue ;; esac
@@ -556,10 +593,17 @@ pipeline_docs_json() {
       l ~ /orchestrat|orkiestrat/ { orc = 1 }
       index($0, ".claude/agents/") { ag = 1 }
       END { flush() }' 2>/dev/null
-  } | while IFS= read -r f; do rel "$f"; done | LC_ALL=C sort -u | head -20 | lines_to_json
+  } | while IFS= read -r f; do rel "$f"; done | LC_ALL=C sort -u >"$tmp/pipedocs"
+  trunc ai_setup.pipeline_docs 20 "$(wc -l <"$tmp/pipedocs" | tr -d ' ')"
+  head -20 "$tmp/pipedocs" | lines_to_json
 }
 
-md_list() { [ -d "$root/$1" ] && find "$root/$1" -name "${2:-*.md}" -not -name .DS_Store 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort | head -$MAX_LIST | lines_to_json || echo null; }
+md_list() {
+  [ -d "$root/$1" ] || { echo null; return 0; }
+  find "$root/$1" -name "${2:-*.md}" -not -name .DS_Store 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort >"$tmp/mdlist"
+  trunc "ai_setup[$1]" "$MAX_LIST" "$(wc -l <"$tmp/mdlist" | tr -d ' ')"
+  head -$MAX_LIST "$tmp/mdlist" | lines_to_json
+}
 
 ai_json() {
   local out="{}" name p entry settings
@@ -580,7 +624,9 @@ ai_json() {
   local ai_md docs_md
   ai_md="null"
   if [ -d "$root/.ai" ]; then
-    ai_md="$(find "$root/.ai" -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort | head -$MAX_LIST | lines_to_json)"
+    find "$root/.ai" -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort >"$tmp/aimd"
+    trunc 'ai_setup[.ai]' "$MAX_LIST" "$(wc -l <"$tmp/aimd" | tr -d ' ')"
+    ai_md="$(head -$MAX_LIST "$tmp/aimd" | lines_to_json)"
   fi
   docs_md="$(md_list docs '*.md')"
   settings="{}"
@@ -635,7 +681,9 @@ secrets_json() {
     printf '%s\n' "$n" | grep -qiE '(^\.env(\..+)?$)|(\.(p12|pem|key|mobileprovision|keystore|jks)$)|secret|credential|^id_rsa' || continue
     printf '%s\n' "$n" | grep -qiE "$CODE_EXT_RE|\.(md|sh|json)$|sample|example|dist" && continue
     rel "$f"
-  done | sort | head -40 | lines_to_json
+  done | sort >"$tmp/secretsall"
+  trunc secret_like_files 40 "$(wc -l <"$tmp/secretsall" | tr -d ' ')"
+  head -40 "$tmp/secretsall" | lines_to_json
 }
 
 # doc_language - "pl" when the docs contain many UTF-8 lead bytes \304 and \305 (most Polish
@@ -648,17 +696,121 @@ doc_language() {
   else echo '"en"'; fi
 }
 
+# MARK: command flags
+
+# The jq program below reads {commands, scripts} and prints commands.flags. Rules match words in
+# the command text only; a match is a hint for the interview (references/interview.md, round 1).
+FLAGS_JQ="$(cat <<'EOF_FLAGS'
+# input: {commands: <commands object of the scan>, scripts: [{path, lines}]} (script lines without comments)
+def rules: [
+  {flag: "writes_files", re: "(^|[\\s;&|(])(fix|format|--fix|--write|generate|codegen|update|upgrade)([\\s;&|)]|$)",
+   unless: "--dry-run|--check|--diff-only|--list-different|--verify|--validate"},
+  {flag: "network", re: "(^|[\\s;&|(/])(install|audit|publish|push|pull|fetch|deploy|upload|login|curl|wget|ssh|scp|rsync|npx)([\\s;&|)]|$)"},
+  {flag: "destructive", re: "(^|[\\s;&|(:])(drop|truncate|reset|flush|flushdb|flushall|prune|purge|wipe|delete|uninstall|undeploy)([\\s;&|):]|$)|rm +-[a-z]*r[a-z]* +[^$\"\\s]|--force"},
+  {flag: "containers", re: "(docker|podman)(-compose| compose)? +(up|down|run|exec|start|stop|restart|rm|rmi|kill|build|system)([\\s;&|)]|$)|(^|[\\s;&|(])(kubectl|helm)([\\s;&|)]|$)"},
+  {flag: "secrets_output", re: "(^|[;&|] *)(printenv|env)( *$| *[;&|])|set +-[a-z]*x|(^|[\\s;&|(/])(trufflehog|gitleaks|detect-secrets)([\\s;&|)]|$)|(cat|less|more|head|tail) +[^;&|]*\\.env([\\s;&|)]|$)"}
+];
+def own_flags($cmds):
+  [rules[] as $r
+   | [$cmds[] | select(test($r.re; "i")) | select(($r.unless // null) == null or (test($r.unless; "i") | not))] as $hit
+   | select($hit | length > 0)
+   | {flag: $r.flag, reasons: ([$hit[] | [match($r.re; "gi").string | gsub("^[\\s;&|(/:]+|[\\s;&|):]+$"; "")] | .[]] | unique | .[:5])}];
+def calls_of($cmds; $composer; $pkg; $make; $spaths):
+  [$cmds[]
+   | ([match("@([A-Za-z0-9_:.-]+)"; "g").captures[0].string | select(. as $n | $composer | index($n)) | "composer:" + .]
+      + [match("(^|[\\s;&|(])composer +(run(-script)? +)?([A-Za-z0-9_:.-]+)"; "g").captures[3].string | select(. as $n | $composer | index($n)) | "composer:" + .]
+      + [match("(^|[\\s;&|(])(npm|pnpm|bun) +run +([A-Za-z0-9_:.-]+)"; "g").captures[2].string | select(. as $n | $pkg | index($n)) | "npm:" + .]
+      + [match("(^|[\\s;&|(])yarn +([A-Za-z0-9_:.-]+)"; "g").captures[1].string | select(. as $n | $pkg | index($n)) | "npm:" + .]
+      + [match("(^|[\\s;&|(])make +([A-Za-z0-9_.-]+)"; "g").captures[1].string | select(. as $n | $make | index($n)) | "make:" + .]
+      + [. as $line | $spaths[] | select(. as $p | $line | contains($p)) | "script:" + .])[]]
+  | unique;
+.scripts as $scripts
+| ($scripts | map(.path)) as $spaths
+| .commands as $c
+| ($c.composer // {} | keys) as $composer
+| ([$c | to_entries[] | select(.key | startswith("package.json:")) | .value.scripts // {} | keys[]] | unique) as $pkg
+| ($c.make // []) as $make
+| ([($c.composer // {} | to_entries[] | {source: "composer.json", name: .key, id: ("composer:" + .key),
+       cmds: (if (.value | type) == "array" then [.value[] | strings] else [.value | strings] end)}),
+    ($c | to_entries[] | select(.key | startswith("package.json:")) | .key as $k
+       | .value.scripts // {} | to_entries[] | {source: $k, name: .key, id: ("npm:" + .key), cmds: [.value | strings]}),
+    ($c.ci // [] | .[] | .file as $f | .steps[]
+       | {source: $f, name: (.name // .job // "(unnamed step)"), section: .section, ref: .ref, cmds: .commands}),
+    ($c.documented_commands // [] | .[] | {source: .doc, name: .cmd, cmds: [.cmd]}),
+    ($scripts[] | {source: .path, name: .path, id: ("script:" + .path), cmds: .lines})]
+  | map(. + {flags: own_flags(.cmds), calls: (calls_of(.cmds; $composer; $pkg; $make; $spaths) - [.id // ""])})) as $items
+| ($items | map(select(.id != null) | {key: .id, value: .}) | from_entries) as $byid
+| def via($seen; $depth):
+    if $depth > 5 then [] else
+      [.calls[] | select(. as $x | $seen | index($x) | not) | . as $id | $byid[$id] // empty
+       | (.flags | map(.flag)) + via($seen + [$id]; $depth + 1)] | add // [] | unique
+    end;
+  ($items | map(. + {flags_via_calls: (via([.id // ""]; 1) - (.flags | map(.flag)))})) as $all
+| {checked: ($all | length),
+   note: "flags are hints from the command text; an item without flags is unclassified, not safe",
+   items: ($all
+     | map(select((.flags | length) > 0 or (.flags_via_calls | length) > 0 or (.calls | length) > 0)
+       | {source, name, flags: (.flags | map(.flag)), reasons: (.flags | map({(.flag): .reasons}) | add // {}),
+          calls, flags_via_calls} + (if .section then {section} else {} end) + (if .ref then {ref} else {} end))
+     | group_by([.source, .name, .flags, .calls])
+     | map(if length > 1 then .[0] + {sections: (map(.section // empty) | unique)} | del(.section) else .[0] end))}
+EOF_FLAGS
+)"
+
+# flag_scripts - [{path, lines}] of the scripts behind commands.scripts_meta and scripts_dir:
+# lines without comments, at most MAX_SCRIPT_LINES per script; env and key files are skipped
+flag_scripts() {
+  local f n
+  { cat "$tmp/flagscripts" 2>/dev/null; } | LC_ALL=C sort -u | while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    secret_path "$f" && continue
+    n="$(grep -cv '^[[:space:]]*\(#\|//\|$\)' "$f" 2>/dev/null)"
+    trunc "commands.flags script $(rel "$f")" "$MAX_SCRIPT_LINES" "${n:-0}"
+    jq -n -c --arg p "$(rel "$f")" --argjson l "$(grep -v '^[[:space:]]*\(#\|//\|$\)' "$f" 2>/dev/null | head -$MAX_SCRIPT_LINES | jq -R -s -c 'split("\n") | map(select(length > 0))')" '{path: $p, lines: $l}'
+  done | jq -s -c .
+}
+
 # MARK: assembly
 
-layout="$(layout_json)"
+started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+scan_start=$SECONDS
+: >"$tmp/times"
+# timed NAME FUNCTION - runs a section, keeps its JSON in $tmp/sec.NAME and its seconds in $tmp/times
+timed() { local t=$SECONDS; "$2" >"$tmp/sec.$1"; printf '%s\t%s\n' "$1" "$((SECONDS - t))" >>"$tmp/times"; }
+timed git git_json
+timed stacks stacks_json
+timed commands commands_json
+timed tooling tooling_json
+timed layout layout_json
+timed modules modules_json
+timed tests tests_json
+timed ai_setup ai_json
+timed secrets secrets_json
+t=$SECONDS
+jq -n -c --argjson c "$(cat "$tmp/sec.commands")" --argjson s "$(flag_scripts)" '{commands: $c, scripts: $s}' |
+  jq -c "$FLAGS_JQ" >"$tmp/flags" 2>/dev/null || echo '{"checked": 0, "error": "flag rules failed", "items": []}' >"$tmp/flags"
+printf 'flags\t%s\n' "$((SECONDS - t))" >>"$tmp/times"
+layout="$(cat "$tmp/sec.layout")"
 result="$(jq -n -c \
   --arg root "$root" --arg name "$(basename "$root")" --argjson lang "$(doc_language)" \
-  --argjson git "$(git_json)" --argjson stacks "$(stacks_json)" --argjson cmds "$(commands_json)" \
-  --argjson tooling "$(tooling_json)" --argjson layout "$layout" --argjson mods "$(modules_json)" \
-  --argjson tests "$(tests_json)" --argjson ai "$(ai_json)" --argjson secrets "$(secrets_json)" '
-  {root: $root, name: $name, doc_language_guess: $lang,
+  --argjson git "$(cat "$tmp/sec.git")" --argjson stacks "$(cat "$tmp/sec.stacks")" --argjson cmds "$(cat "$tmp/sec.commands")" \
+  --argjson flags "$(cat "$tmp/flags")" \
+  --argjson tooling "$(cat "$tmp/sec.tooling")" --argjson layout "$layout" --argjson mods "$(cat "$tmp/sec.modules")" \
+  --argjson tests "$(cat "$tmp/sec.tests")" --argjson ai "$(cat "$tmp/sec.ai_setup")" --argjson secrets "$(cat "$tmp/sec.secrets")" \
+  --arg started "$started" --argjson total "$((SECONDS - scan_start))" \
+  --argjson times "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {(.[0]): (.[1] | tonumber)}) | add // {}' "$tmp/times")" \
+  --argjson cut "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {field: .[0], shown: (.[1] | tonumber), total: (.[2] | tonumber)})' "$tmp/trunc")" '
+  ($cmds.ci // [] | map(
+     (if .steps_total > (.steps | length) then [{field: ("commands.ci[" + .file + "].steps"), shown: (.steps | length), total: .steps_total}] else [] end)
+     + (if (.commands_cut // 0) > 0 then [([.steps[].commands[]] | length) as $n
+         | {field: ("commands.ci[" + .file + "] commands cut to 200 characters"), shown: ($n - .commands_cut), total: $n}] else [] end))
+   | add // []) as $cicut
+  | ($cut + $cicut) as $truncated
+  | {scan: {schema_version: 2, started: $started, duration_sec: $total, sections_sec: $times,
+            complete: ($truncated | length == 0), truncated: $truncated},
+   root: $root, name: $name, doc_language_guess: $lang,
    source_files: ($layout | map(.source) | add // 0),
-   git: $git, stacks: $stacks, commands: $cmds, tooling: $tooling,
+   git: $git, stacks: $stacks, commands: ($cmds + {flags: $flags}), tooling: $tooling,
    layout: ($layout | map(del(.source))), module_candidates: $mods, tests: $tests,
    ai_setup: $ai, secret_like_files: $secrets}')"
 

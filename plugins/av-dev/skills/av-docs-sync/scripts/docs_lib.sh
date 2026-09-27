@@ -24,6 +24,9 @@
 #                                        "*" and "?" do not cross "/", "**/" matches any number of
 #                                        directories, a trailing "/**" everything inside. A glob
 #                                        without "*" or "?" also matches everything under it.
+#   docs_secret_path <path>              code 0 when the path is an env or key file (.env, .env.*, *.env,
+#                                        *.pem, *.key, *.p12, *.pfx, *.jks, *.keystore, *.mobileprovision,
+#                                        id_rsa*, id_ed25519*): scripts never read such a file
 #   docs_known_paths <root>              prints the entries of the overlay section "Known false paths":
 #                                        "<doc>.md:<line>" (every path on that docs line) or
 #                                        "<path or glob>" (that referenced path everywhere, glob
@@ -184,4 +187,12 @@ docs_known_stale() {
       p = rel_path($0)
       for (i = 1; i <= n; i++) if (!(i in hit) && p ~ regex[i]) { hit[i] = 1; print "KNOWN_STALE " entry[i] }
     }' "$4"
+}
+
+docs_secret_path() {
+  local n="${1##*/}"
+  case "$n" in
+    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.mobileprovision|id_rsa*|id_ed25519*) return 0 ;;
+  esac
+  return 1
 }
