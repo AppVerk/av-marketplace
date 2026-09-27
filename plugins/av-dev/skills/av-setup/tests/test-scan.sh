@@ -430,5 +430,17 @@ check "$out" "$(ci .gitlab-ci.yml) | .steps == [
 out="$(bash "$SCAN" "$TMP/missing")"; rc=$?
 [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q '"error"' && ok || fail "missing directory: code $rc"
 
+# --- settings.json: key names only, values never in the result
+SR="$TMP/settings repo"
+mkdir -p "$SR/.claude"
+git -C "$SR" init -q
+printf '{"env":{"API_TOKEN":"supersecretvalue123"},"permissions":{"deny":["Read(./.env)"]},"hooks":{"PreToolUse":[]},"includeCoAuthoredBy":false}' >"$SR/.claude/settings.json"
+bash "$SCAN" "$SR" >"$TMP/settings.json.out" 2>/dev/null
+check "$TMP/settings.json.out" '.ai_setup[".claude"].settings_keys | index("env") != null' "settings: env key name listed"
+check "$TMP/settings.json.out" '.ai_setup[".claude"].deny_rules == 1' "settings: deny rules counted"
+check "$TMP/settings.json.out" '.ai_setup[".claude"].hooks == ["PreToolUse"]' "settings: hook names listed"
+check "$TMP/settings.json.out" '.ai_setup[".claude"].co_authored_setting == false' "settings: includeCoAuthoredBy false kept"
+grep -q supersecretvalue123 "$TMP/settings.json.out" && fail "settings: secret value leaked" || ok
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

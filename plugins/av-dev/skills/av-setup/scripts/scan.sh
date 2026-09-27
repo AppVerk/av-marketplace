@@ -584,17 +584,21 @@ ai_json() {
   fi
   docs_md="$(md_list docs '*.md')"
   settings="{}"
-  [ -f "$root/.claude/settings.json" ] && jq empty "$root/.claude/settings.json" 2>/dev/null && settings="$(jq -c . "$root/.claude/settings.json")"
+  # Only key names and non-secret fields leave jq; values (e.g. the env section) never reach the shell.
+  [ -f "$root/.claude/settings.json" ] && jq empty "$root/.claude/settings.json" 2>/dev/null && settings="$(jq -c '{
+      settings_keys: keys, hooks: ((.hooks // {}) | keys), deny_rules: ((.permissions.deny // []) | length),
+      enabled_mcp: (.enabledMcpjsonServers // null), enabled_plugins: ((.enabledPlugins // {}) | keys),
+      co_authored_setting: (if has("includeCoAuthoredBy") then .includeCoAuthoredBy else null end)}' "$root/.claude/settings.json")"
   out="$(jq -c --argjson ai "$ai_md" --argjson docs "$docs_md" --argjson s "$settings" \
     --argjson agents "$(md_list .claude/agents '*.md')" --argjson cmds "$(md_list .claude/commands '*.md')" \
     --argjson skills "$(md_list .claude/skills SKILL.md)" --argjson prompts "$(md_list .claude/prompts '*.md')" '
     . + {".ai": $ai, docs: $docs,
          ".claude": {agents: $agents, commands: $cmds, skills: $skills, prompts: $prompts,
-                     settings_keys: ($s | keys), hooks: (($s.hooks // {}) | keys),
-                     deny_rules: (($s.permissions.deny // []) | length),
-                     enabled_mcp: ($s.enabledMcpjsonServers // null),
-                     enabled_plugins: (($s.enabledPlugins // {}) | keys),
-                     co_authored_setting: (if ($s | has("includeCoAuthoredBy")) then $s.includeCoAuthoredBy else null end)}}' <<<"$out")"
+                     settings_keys: ($s.settings_keys // []), hooks: ($s.hooks // []),
+                     deny_rules: ($s.deny_rules // 0),
+                     enabled_mcp: ($s.enabled_mcp // null),
+                     enabled_plugins: ($s.enabled_plugins // []),
+                     co_authored_setting: (if ($s | has("co_authored_setting")) then $s.co_authored_setting else null end)}}' <<<"$out")"
   local codex agents_skills
   codex="null"
   [ -d "$root/.codex" ] && codex="$(find "$root/.codex" -mindepth 1 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort | head -$MAX_LIST | lines_to_json)"

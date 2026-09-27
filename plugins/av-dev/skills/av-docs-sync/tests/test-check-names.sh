@@ -310,5 +310,21 @@ rm -rf src/templates src/gen .claude .ai/forms.md .ai/gen.md
 
 bash "$CHECK" >/dev/null; [ $? -eq 2 ] && ok || fail "no arguments"
 
+# --- secrets: env and key files never enter the code corpus
+SEC="$TMP/secrets repo"
+mkdir -p "$SEC/src" "$SEC/config" "$SEC/.ai"
+git -C "$SEC" init -q && git -C "$SEC" config user.email t@t && git -C "$SEC" config user.name t
+printf 'EnvOnlyNameXyz=value\n' >"$SEC/.env"
+printf 'KeyOnlyNameXyz\n' >"$SEC/config/app.key"
+printf 'LocalEnvNameXyz=1\n' >"$SEC/config/.env.local"
+printf 'function RealServiceName() {}\n' >"$SEC/src/app.js"
+printf '# Docs\n`EnvOnlyNameXyz` `KeyOnlyNameXyz` `LocalEnvNameXyz` `RealServiceName`\n' >"$SEC/.ai/x.md"
+git -C "$SEC" add -A -f && git -C "$SEC" commit -qm init
+out="$(bash "$CHECK" .ai --root "$SEC" 2>&1)"
+has "$out" "EnvOnlyNameXyz" && ok || fail "secrets: name only in .env must not count as found"
+has "$out" "KeyOnlyNameXyz" && ok || fail "secrets: name only in a key file must not count as found"
+has "$out" "LocalEnvNameXyz" && ok || fail "secrets: name only in a nested .env.* must not count as found"
+has "$out" "NAME_MISSING .ai/x.md:2 RealServiceName" && fail "secrets: a real code name reported" || ok
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

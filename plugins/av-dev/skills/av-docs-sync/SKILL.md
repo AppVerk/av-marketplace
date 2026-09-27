@@ -120,6 +120,8 @@ The script compares names from backticks (CamelCase, camelCase, snake_case, CONS
 
 The script itself skips: names in strikethrough `~~...~~`, placeholders (`Foo` as part of a name, `Xxx`, a trailing single `X`, names touching `{ } < > *`, `My<Name>` in a line with "e.g." or "example") and names from the ignore list. Keys from `*.strings` and `*.stringsdict` files, also in UTF-16, count as found.
 
+The code corpus of `check_names.sh` never includes env files (`.env`, `.env.*`) or key files, also when they are tracked: their values are not read.
+
 Ignore list: the section `## Known false names` in the overlay `<paths.overlays>/av-docs-sync.md`. One name per line, as a list item with the name in backticks. A name ending with `*` is a prefix, e.g. `Legacy*`. Add there names confirmed as false in triage (aliases from the docs legend, names from other repos). `--ignore-file FILE` replaces the overlay. An entry `` `<doc>:<line> <name>` `` ignores the name only on that docs line (`<doc>` relative to the repo root; the name may end with `*`); `KNOWN_STALE <entry>` marks a line entry whose docs line no longer contains the name.
 
 Excluded docs: `check_refs.sh`, `check_names.sh` and `check_linerefs.sh` skip documents matching `--exclude <glob>` (repeatable) or a glob from the overlay section `## Excluded docs paths`, one `` - `glob` `` per line. Globs work like git `:(glob)` relative to `--root`; a glob without `*` excludes everything under it. The summary line ends with `EXCLUDED n`. Put docs about other repositories there.

@@ -102,8 +102,13 @@ docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
 
 utf8_letter=$'[\xc3-\xdf][\x80-\xbf]|[\xe0\xe1\xe3-\xef][\x80-\xbf][\x80-\xbf]|[\xf0-\xf4][\x80-\xbf][\x80-\xbf][\x80-\xbf]'
 word_re="([A-Za-z_]|$utf8_letter)([A-Za-z0-9_]|$utf8_letter){3,}"
+# Env and key files never enter the corpus: their values must not be read, not even into a temp file.
 LC_ALL=C git -C "$root" grep --threads=1 -I -h -o -w -E --untracked "$word_re" -- . ':(exclude)*.md' ':(exclude)*.lock' \
-  ':(exclude)*.svg' ':(exclude)*.pbxproj' 2>/dev/null >"$tmp/code_words_raw"
+  ':(exclude)*.svg' ':(exclude)*.pbxproj' \
+  ':(exclude,glob)**/.env' ':(exclude,glob)**/.env.*' ':(exclude,glob)**/*.env' \
+  ':(exclude,glob)**/*.pem' ':(exclude,glob)**/*.key' ':(exclude,glob)**/*.p12' ':(exclude,glob)**/*.pfx' \
+  ':(exclude,glob)**/*.jks' ':(exclude,glob)**/*.keystore' ':(exclude,glob)**/*.mobileprovision' \
+  ':(exclude,glob)**/id_rsa*' ':(exclude,glob)**/id_ed25519*' 2>/dev/null >"$tmp/code_words_raw"
 git -C "$root" -c core.quotePath=false ls-files --cached --others --exclude-standard -- '*.strings' '*.stringsdict' 2>/dev/null |
   while IFS= read -r f; do
     [ -f "$root/$f" ] || continue
