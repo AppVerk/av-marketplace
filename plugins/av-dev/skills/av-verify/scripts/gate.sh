@@ -137,7 +137,10 @@ jq -e 'type == "object"' "$cfg" >/dev/null 2>&1 || config_error "config $cfg is 
 
 merged_cfg=""
 config_sources=""
+config_local=""
 if [ "$no_local" -eq 0 ] && [ -f "$cfg.local" ]; then
+  config_local="$cfg.local"
+  case "$config_local" in "$root"/*) config_local="${config_local#"$root"/}" ;; esac
   merged_cfg="$(mktemp "${TMPDIR:-/tmp}/av-config.XXXXXX")" || config_error "cannot create a temporary file"
   trap 'rm -f "$merged_cfg"' EXIT
   merge_out="$(bash "$skill_dir/scripts/config.sh" --root "$root" --config "$cfg" --out "$merged_cfg")" || {
@@ -406,20 +409,22 @@ if [ "$mode" = "status" ]; then
     file="$out_dir/$fname"
     [ -f "$file" ] || continue
     label="CHECK"; [ "$fname" = "baseline.json" ] && label="BASELINE"
-    while IFS=$'\t' read -r name status recstale recfp log rechead; do
+    while IFS=$'\t' read -r name status recstale recfp log rechead reclocal; do
       if [ "$label" = "BASELINE" ]; then
         printf 'BASELINE %s %s baseline head=%s %s\n' "$name" "$status" "$(printf '%s' "$rechead" | cut -c1-8)" "$log"
         continue
       fi
       fresh="STALE"; [ "$recfp" = "$fp" ] && [ "$recstale" = "0" ] && fresh="FRESH"
       note=""; [ "$recstale" = "1" ] && note=" (tree changed during the gate)"
+      [ "$reclocal" != "-" ] && note="$note (local override $reclocal)"
       printf '%s %s %s %s %s%s\n' "$label" "$name" "$status" "$fresh" "$log" "$note"
       if [ "$label" = "CHECK" ] && { [ "$fresh" = "STALE" ] || { [ "$status" != "PASS" ] && [ "$status" != "SKIPPED" ]; }; }; then
         code=1
       fi
     done < <(jq -r '.checks | to_entries[]
                    | [.key, .value.status, (if .value.stale == true then "1" else "0" end),
-                      (.value.fingerprint // "-"), (.value.log // "-"), (.value.head // "-")] | @tsv' "$file")
+                      (.value.fingerprint // "-"), (.value.log // "-"), (.value.head // "-"),
+                      (.value.configLocal // "-")] | @tsv' "$file")
   done
   printf 'FINGERPRINT %s\n' "$fp"
   if [ -d "$out_dir/.lock" ]; then
@@ -714,9 +719,10 @@ fi
 evidence_name="evidence.json"; [ "$baseline" -eq 1 ] && evidence_name="baseline.json"
 evidence="$out_dir/$evidence_name"
 [ -f "$evidence" ] || echo '{"checks":{}}' >"$evidence"
-jq -s --arg head "$head_before" --arg fp "$fp_before" --arg fpa "$fp_after" --argjson stale "$stale" --slurpfile old "$evidence" '
+jq -s --arg head "$head_before" --arg fp "$fp_before" --arg fpa "$fp_after" --argjson stale "$stale" --arg local "$config_local" --slurpfile old "$evidence" '
   reduce .[] as $r ($old[0]; .checks[$r.name] = ($r + {head: $head, fingerprint: $fp}
-    + (if $stale == 1 then {stale: true, fingerprintAfter: $fpa} else {} end)))
+    + (if $stale == 1 then {stale: true, fingerprintAfter: $fpa} else {} end)
+    + (if $local != "" then {configLocal: $local} else {} end)))
 ' "$records" >"$evidence.tmp" && mv "$evidence.tmp" "$evidence"
 rm -f "$records"
 

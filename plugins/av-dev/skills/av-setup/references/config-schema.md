@@ -40,7 +40,7 @@ Example: a person without Codex CLI.
 
 Rules:
 - Validation (`gate.sh --list`) checks the effective config. A wrong override gives a config error (code 2), e.g. `haiku` in `review` or `crossVendor` without two providers.
-- `gate.sh --list` prints `CONFIG_LOCAL` and the overridden keys (`OVERRIDE`, `REMOVE`). The gate prints `CONFIG_LOCAL`. The `av-verify` and `av-implement` reports list the overridden keys, because the result depends on the machine.
+- `gate.sh --list` prints `CONFIG_LOCAL` and the overridden keys (`OVERRIDE`, `REMOVE`). The gate prints `CONFIG_LOCAL` and writes `configLocal` into the evidence of each check; `gate.sh --status` shows it. `agent.sh --resolve` and `--summary` add `config=local`, and slot records have `config_local`. The `av-verify` and `av-implement` reports list the overridden keys, because the result depends on the machine.
 - `--no-local` in `config.sh`, `gate.sh` and `check_setup.sh` skips the override.
 - `av-setup` never creates or edits the `.local` file. It adds it to `.gitignore`. In REFRESH, it compares the scan with the team config (`--no-local`).
 - Commands from `.local` run without asking, like team commands. The machine owner writes the file, not the repo.

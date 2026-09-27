@@ -131,6 +131,11 @@ merge_out="$(bash "$AV_SKILLS_DIR/av-verify/scripts/config.sh" --root "$root" --
   exit 2
 }
 config_desc="$team_cfg"
+config_local=""
+if [ -f "$team_cfg.local" ]; then
+  config_local="$team_cfg.local"
+  case "$config_local" in "$root"/*) config_local="${config_local#"$root"/}" ;; esac
+fi
 [ -f "$team_cfg.local" ] && config_desc="$team_cfg with the local override $team_cfg.local (effective: bash $AV_SKILLS_DIR/av-verify/scripts/config.sh --root $root)"
 
 workspace="$(jq -r '(.paths.workspace // ".ai/workspace") | sub("/+$"; "")' "$cfg")"
@@ -146,6 +151,7 @@ if [ "$mode" = "summary" ]; then
   jq -r '"AGENT_RUN \(.slot)\(if .label != "" then "-" + .label else "" end) \(.provider) \(.model)/\(.effort) via=\(.via // "agent.sh") \(.status) \(.seconds)s" +
          (if (.actual_model // "") != "" then " actual=\(.actual_model)" else "" end) +
          (if (.grants // []) != [] then " grants=\(.grants | join(","))" else "" end) +
+         (if (.config_local // "") != "" then " config=local" else "" end) +
          (if (.reason // "") != "" then " (\(.reason))" else "" end)' "$records"
   exit 0
 fi
@@ -203,6 +209,7 @@ local_slot="no"; [ "$via" = "session" ] && local_slot="yes"
 if [ "$mode" = "resolve" ]; then
   line="SLOT $slot provider=$provider model=$model effort=$effort access=$access harness=$harness local=$local_slot via=$via"
   [ -n "$subagent" ] && line="$line subagent=$subagent"
+  [ -n "$config_local" ] && line="$line config=local"
   printf '%s\n' "$line"
   if [ -n "$subagent" ] && [ "$subagent" != "general-purpose" ] && [ ! -f "$agents_home/${subagent#"$agent_prefix"}.md" ]; then
     printf 'WARNING agent definition %s/%s.md not found; install: ln -s %s/agents/*.md %s/\n' "$agents_home" "${subagent#"$agent_prefix"}" "$skill_dir" "$agents_home"
@@ -231,14 +238,14 @@ record() {
     --arg status "$status" --arg reason "$reason" --argjson seconds "$seconds" \
     --arg am "$actual_model" --arg ae "$actual_effort" --arg session "$session" \
     --arg out "$out" --arg log "$log" --arg changed "$changed" --arg requests "$requests" \
-    --arg grants "$grants_text" --arg resumed "$resume_session" \
+    --arg grants "$grants_text" --arg resumed "$resume_session" --arg config_local "$config_local" \
     '{ts: $ts, run_id: $run, slot: $slot, label: $label, provider: $provider, model: $model, effort: $effort,
       access: $access, via: $via, status: $status, reason: $reason, seconds: $seconds, actual_model: $am,
       actual_effort: $ae, session: $session, out: $out, log: $log,
       changed: ($changed | split("\n") | map(select(. != ""))),
       permission_requests: ($requests | split("\n") | map(select(. != ""))),
       grants: ($grants | split("\n") | map(select(. != ""))),
-      resumed_from: $resumed}' >>"$run_dir/agents.jsonl"
+      resumed_from: $resumed, config_local: $config_local}' >>"$run_dir/agents.jsonl"
 }
 
 # MARK: record a slot run by the Agent tool

@@ -68,7 +68,7 @@ bash <skill-dir>/scripts/gate.sh --root <repo-root> --gate <gate> --run-id <RUN_
 
 ## Config validation and version
 
-`gate.sh` works on the effective config: `.ai/av.config.json` with the override `.ai/av.config.json.local` (script `scripts/config.sh`). The line `CONFIG_LOCAL <file>` means the override is in use; `--list` also prints its keys (`OVERRIDE`, `REMOVE`). The report then has a line `Local config: <keys>`, because the result depends on the machine. `--no-local` skips the override.
+`gate.sh` works on the effective config: `.ai/av.config.json` with the override `.ai/av.config.json.local` (script `scripts/config.sh`). The line `CONFIG_LOCAL <file>` means the override is in use; `--list` also prints its keys (`OVERRIDE`, `REMOVE`). The report then has a line `Local config: <keys>`, because the result depends on the machine. The evidence records it too: each check run with the override has `configLocal`, and `--status` shows `(local override <file>)`. `--no-local` skips the override.
 
 Every mode except `--fingerprint` checks the config. An error is `CONFIG_ERROR <field>: <description>` and code 2. Checked fields:
 - `agents.models.*`: a string with a Claude model (`inherit`, `opus`, `sonnet`, `haiku`, `fable`, `claude-<id>`) or an object `{provider, model, effort}`. `provider`: `claude` or `codex`. Effort for `claude`: `low`, `medium`, `high`, `xhigh`, `max`; for `codex` also `minimal` and `ultra`; `inherit` is always allowed. `review` cannot be `haiku`.

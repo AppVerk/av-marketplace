@@ -46,7 +46,7 @@ Script: `<skill-dir>/scripts/agent.sh`. Always call it as a single command: `bas
 
 `agents.crossVendor: true` requires that code and plan are checked by a different provider than the one that wrote them. `gate.sh --list` enforces this in the config. Swapping a model by hand breaks this rule.
 
-One person's slots are changed in `.ai/av.config.json.local` (gitignored), not in the team config. Example: a person without Codex CLI switches `plan` and `review` to Claude and sets `crossVendor: false`. `agent.sh` reads the effective config. `AGENT_NOT_RUN` because the CLI is missing: give this option in the report as the way out, but do not write the `.local` file yourself.
+One person's slots are changed in `.ai/av.config.json.local` (gitignored), not in the team config. Example: a person without Codex CLI switches `plan` and `review` to Claude and sets `crossVendor: false`. `agent.sh` reads the effective config; with an override, `--resolve` and `--summary` lines end with `config=local`. `AGENT_NOT_RUN` because the CLI is missing: give this option in the report as the way out, but do not write the `.local` file yourself.
 
 Helper subagents (e.g. Explore for searching) are not slots. They stay with the Agent tool.
 

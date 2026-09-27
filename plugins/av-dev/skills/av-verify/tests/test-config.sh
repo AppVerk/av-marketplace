@@ -106,6 +106,13 @@ out="$(bash "$GATE" --gate quick --run-id l1)"; rc=$?
 has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "gate quick: CONFIG_LOCAL missing"
 has "$out" "CHECK fixtures" && fail "gate quick: fixtures despite removal" || ok
 ls "${TMPDIR:-/tmp}"/av-config.* >/dev/null 2>&1 && fail "gate: temporary file left behind" || ok
+jq -e '.checks.unit.configLocal == ".ai/av.config.json.local"' .ai/workspace/runs/l1/evidence.json >/dev/null && ok || fail "gate: evidence does not record the local override"
+out="$(bash "$GATE" --status --run-id l1)"
+has "$out" "CHECK unit PASS FRESH" && has "$out" "(local override .ai/av.config.json.local)" && ok || fail "status: local override not shown: $out"
+out="$(bash "$GATE" --only unit --no-local --run-id l2)"
+jq -e '.checks.unit | has("configLocal") | not' .ai/workspace/runs/l2/evidence.json >/dev/null && ok || fail "gate --no-local: evidence claims a local override"
+out="$(bash "$GATE" --status --run-id l2)"
+has "$out" "local override" && fail "status --no-local run shows a local override: $out" || ok
 
 # --- 8. --config with another file takes its own .local
 cp .ai/av.config.json "$TMP/prop.json"

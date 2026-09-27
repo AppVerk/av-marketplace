@@ -243,6 +243,11 @@ cat >.ai/av.config.json.local <<'EOF2'
 EOF2
 out="$(bash "$AGENT" --slot review --resolve)"
 has "$out" "SLOT review provider=claude model=opus effort=high access=read" && has "$out" "subagent=av-slot-read-high" && ok || fail "local: slot not overridden: $out"
+has "$out" "config=local" && ok || fail "local: resolve does not mark the local override: $out"
+bash "$AGENT" --slot review --run-id rl --record --status OK --seconds 3 --out "$TMP/rl.md" >/dev/null
+jq -e 'select(.slot == "review") | .config_local == ".ai/av.config.json.local"' .ai/workspace/runs/rl/agents.jsonl >/dev/null && ok || fail "local: record lacks config_local"
+out="$(bash "$AGENT" --summary --run-id rl)"
+has "$out" "AGENT_RUN review claude opus/high via=agent OK 3s" && has "$out" "config=local" && ok || fail "local: summary does not mark the override: $out"
 out="$(bash "$AGENT" --slot plan --resolve)"
 has "$out" "provider=codex model=gpt-6-astra effort=high" && ok || fail "local: team slot lost: $out"
 printf '{"agents":{"models":{"review":"haiku"}}}' >.ai/av.config.json.local
