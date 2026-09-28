@@ -23,3 +23,7 @@ node_modules
 
 # superpowers SDD scratch (ledger, briefs, review packages)
 .superpowers/
+
+# Delivery plans and code-review reports (local working artifacts, never committed)
+docs/plans/
+docs/reviews/
