@@ -38,6 +38,8 @@ plugins/your-plugin/
 └── scripts/                 # Shell scripts used by hooks (optional)
 ```
 
+Plugins with an OMP edition also have an `omp/overlay/<name>.json`, from which `plugins-omp/<name>/` is generated; OMP-only plugins live in `omp/native/<name>/`. See [CLAUDE.md](../CLAUDE.md#omp-edition).
+
 ### plugin.json
 
 Defines plugin metadata:
@@ -166,6 +168,10 @@ Every pull request should include:
 - Evidence of testing with Claude Code on at least one real project
 - Adherence to existing plugin patterns and naming conventions
 - Updated version in `plugin.json` (if modifying an existing plugin) — must match `.claude-plugin/marketplace.json`, the row in `README.md`, and the `**Version:**` header in `docs/plugins/<name>.md`. The `Plugin Version Parity` GitHub Actions workflow enforces this; run `python3 scripts/check_plugin_versions.py` locally before pushing.
+- Regenerated OMP edition (if you changed `plugins/<name>/` of a plugin that has an `omp/overlay/<name>.json` — a version bump included — or anything under `omp/` or `scripts/build_omp_edition.py`): `plugins-omp/` and `.omp-plugin/marketplace.json` are generated, so never edit them by hand — run `python3 scripts/build_omp_edition.py` and commit both. OMP-only plugins in `omp/native/<name>/` are versioned in their own `.omp-plugin/plugin.json` and `package.json`, not in the four places above. The `OMP Edition` GitHub Actions workflow (`.github/workflows/omp-edition.yml`) enforces this and runs the generator and delivery tests listed there; the full rules are in [CLAUDE.md](../CLAUDE.md#omp-edition).
+- Passing delivery tests (if you changed `omp/native/delivery/`): run `python3 omp/native/delivery/tests/test_route_task.py`; then install OMP next to the extension with `bun install --no-save --cwd omp/native/delivery @oh-my-pi/pi-coding-agent@latest` (it lands in the gitignored `omp/native/delivery/node_modules/`; linking an existing global install works too: `ln -s ~/.bun/install/global/node_modules omp/native/delivery/node_modules`) and run `bun test tests/delivery.test.ts` from `omp/native/delivery/`. The `OMP Edition` workflow runs both. Test trailer-parsing rules with synthetic NUL-delimited logs through `scan_delivery_log()`; keep CLI tests for Git integration.
+- Passing plan review tests (if you changed `omp/native/plan-review/`): install OMP next to the extension with `bun install --no-save --cwd omp/native/plan-review @oh-my-pi/pi-coding-agent@latest` (or link an existing global install as for delivery) and run `bun test tests/plan-review.test.ts` from `omp/native/plan-review/`. The `OMP Edition` workflow runs it.
+- Passing Claude hooks tests (if you changed `omp/claude-hooks/` or the hooks or scripts of a plugin with an OMP edition): run `bun test` in `omp/claude-hooks/`; it needs `bun`, `git` and `jq`. The `OMP Edition` workflow runs it. When the shared `omp/claude-hooks/claude-hooks.ts` adapter already exists on the PR base branch and changes, bump every overlaid plugin with `hooks/hooks.json` in all four version sources. The `Plugin Version Parity` workflow checks this; run `python3 scripts/check_plugin_versions.py --check-hooks-version-bump BASE_REF` locally to check the same rule.
 - No unrelated changes bundled in the same PR
 
 ## Review Process

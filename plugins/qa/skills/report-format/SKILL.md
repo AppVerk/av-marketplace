@@ -16,16 +16,19 @@ description: Test report format with QA-XXX issue IDs compatible with code-revie
 
 ## Report Structure
 
-Every test report MUST follow this exact structure:
+Every test report MUST follow this structure. `## Setup gaps` is conditional: include it only when a main flow or edge case returns NEED_INFO; omit the section entirely when there are no gaps:
 
 ~~~markdown
 # Test Report: <title>
 
 ## Summary
-- Total: <N> | Pass: <N> | Fail: <N> | Skip: <N>
+- Total: <N> | Pass: <N> | Fail: <N> | Skip: <N> | Need info: <N>
 - Plan: <path to test plan file>
 - Date: <YYYY-MM-DD>
 - Duration: <approximate execution time>
+
+## Setup gaps
+- <kind>: `<identifier>`, `<identifier>` — <scenario IDs; use BE-01 (edge 2) for an edge gap>
 
 ## Issues Found
 
@@ -36,8 +39,9 @@ Every test report MUST follow this exact structure:
 **Category:** Testing
 
 **Problem:**
-- Expected: <what should have happened>
+- Expected: <plan assertion with its grounding tag, copied verbatim>
 - Actual: <what actually happened>
+- Refutation: <tester Refutation trace, or the failing edge line's trace>
 
 **Impact:**
 <what breaks if unfixed — optional but recommended>
@@ -47,7 +51,7 @@ Every test report MUST follow this exact structure:
 
 **Scenario:** <FE-XX or BE-XX>
 **Response:** `<response body or error>` (BE only)
-**Screenshot:** <path to screenshot> (FE only)
+**Screenshot:** <path to screenshot, or `none (debug page; capture suppressed)` / `none (page could not be checked; capture suppressed)`> (FE only)
 
 ### [SEVERITY] QA-002: <issue title>
 ...
@@ -55,9 +59,10 @@ Every test report MUST follow this exact structure:
 ## Detailed Results
 
 ### Pass: FE-01: <scenario name>
+### Skip: FE-03: <scenario name> (reason)
 ### Pass: BE-01: <scenario name>
 ### Fail: BE-03: <scenario name> — see QA-001
-### Skip: FE-03: <scenario name> (reason)
+### Need info: BE-04: <scenario name> (credentials: QA_STRIPE_TEST_KEY)
 ~~~
 
 ---
@@ -68,10 +73,12 @@ Every test report MUST follow this exact structure:
 
 **Algorithm:**
 1. Initialize counter: `qa_count = 0`
-2. For each failed scenario (in order of appearance):
+2. For each **failed assertion** (main flow and each failed edge case, in plan order):
    - Increment `qa_count`
    - Format ID as `QA-{NNN}` with zero-padded 3-digit counter
    - Example: QA-001, QA-002, QA-003
+
+Only a failed main flow or failed edge case mints an issue; a `NEED_INFO` main flow or edge case never does, even when another assertion in its scenario fails.
 
 **Edge case issues from a single scenario get their own ID:**
 - If FE-01 main flow passes but edge case "empty form" fails → that edge case gets QA-001
@@ -88,6 +95,8 @@ Every test report MUST follow this exact structure:
 | **MEDIUM** | Non-core functionality broken, degraded UX | UI element not responding, slow response, missing validation |
 | **LOW** | Cosmetic issues, minor inconsistencies | Wrong error message text, minor layout issue |
 
+For an issue whose **failing assertion** (main `**Expected:**` or its own edge-case line) carries `(unverified — confirm at run time)`, use **LOW** regardless of ordinary wrong-data/status grading. An observed HTTP status ≥ 500 or a tester-reported crash/stack trace instead follows the normal severity rules above. Apply this per assertion, not per scenario.
+
 ---
 
 ## Issue Format Details
@@ -98,6 +107,8 @@ Each issue MUST include the canonical code-review fields:
 2. **`**ID:** QA-NNN`** — repeated for the parser
 3. **`**Location:** ` `` `path:line` `` `** — best-effort source identification (route, endpoint, stack trace). When truly unidentifiable, use placeholder `unknown:0` and add a note in `Problem`. The `/fix` command will prompt the user for the location at fix time.
 
+   If the scenario has `**Blocked-by:** BLK-NN`, take the cited `(file:line)` in that blocker's `## Blockers / Findings` entry, remove the parentheses, and write the bare `file:line` as the first backticked token of `**Location:**` (for `(app.py:12)`, write `` **Location:** `app.py:12` ``). Start the Actual bullet with `Blocked by BLK-NN: <defect>`.
+
    The field has two written forms. The plain form above, and the extended form the decision-gate loop writes when it corrects a location:
 
    ```
@@ -106,7 +117,7 @@ Each issue MUST include the canonical code-review fields:
 
    **Read rule, two clauses:** take the first backticked token as the location, ignoring any trailing parenthetical — this is the form the loop always writes. Where the line carries no backticked token at all — a legacy `**Location:** src/foo.ts:12`, which this loop never writes but every consumer still meets — take the first whitespace-delimited token after the field name instead. Under either clause, a value of `—`, `unknown:0`, or anything that does not parse as `path:line` or `path:line-range` is location-less.
 4. **`**Category:** Testing`** — constant for QA issues; maps to the `QA` prefix in the canonical Category→Prefix table.
-5. **`**Problem:**`** — Expected vs Actual rendered as a bullet list inside this field.
+5. **`**Problem:**`** — bullet list with `Expected` copied verbatim from the plan's failing assertion (including its grounding tag), `Actual` (prefixed `Blocked by BLK-NN: <defect>` when applicable), and `Refutation` copied from the tester's `**Refutation:**` line or failing edge line's trace. Do not invent a trace.
 6. **`**Remediation:**`** — best-effort suggestion in natural language. No code block required (the `fix-auto` agent will generate the code).
 
 Optional fields:
@@ -117,22 +128,23 @@ QA-specific extras (kept for testing context; ignored by the code-review parser)
 
 - **`**Scenario:**`** — `FE-XX` or `BE-XX` reference
 - **`**Response:**`** — response body or error message (BE only)
-- **`**Screenshot:**`** — screenshot path (FE only)
+- **`**Screenshot:**`** — screenshot path (FE only), or `none (debug page; capture suppressed)` / `none (page could not be checked; capture suppressed)` when the FE tester did not capture one for safety. Never substitute a pre-existing artifact.
 
 ---
 
 ## Example: BE Issue
 
 ~~~markdown
-### [HIGH] QA-001: POST /api/users returns 500 instead of 201
+### [CRITICAL] QA-001: POST /api/users returns 500 instead of 201
 
 **ID:** QA-001
 **Location:** `src/api/users.py:45`
 **Category:** Testing
 
 **Problem:**
-- Expected: POST /api/users with valid body should return 201 and create the user.
+- Expected: POST /api/users with valid body should return 201 and create the user. (src/api/users.py:45)
 - Actual: Endpoint returns 500 with `KeyError: 'email'` raised in `users.py:48`.
+- Refutation: re-verified: yes (state re-read, no re-fire); env: n/a; scope: in; harness: ok
 
 **Impact:**
 Blocks new account creation.
@@ -140,8 +152,8 @@ Blocks new account creation.
 **Remediation:**
 Schema requires `email` but the `create_user` handler does not validate the key's presence. Add Pydantic field validation or an early 422 return for the missing field.
 
-**Scenario:** BE-03 — Create new user with valid payload
-**Response:** `{"detail": "Internal Server Error"}`
+**Scenario:** BE-02 — Create new user with valid payload
+**Response:** `{"detail": "Internal Server Error", "token": "***"}` (sanitised; full evidence: `docs/testing/reports/responses/BE-02-body.json`)
 ~~~
 
 ---
@@ -156,8 +168,9 @@ Schema requires `email` but the `create_user` handler does not validate the key'
 **Category:** Testing
 
 **Problem:**
-- Expected: clicking Logout fires POST /api/auth/logout and redirects to /login.
+- Expected: clicking Logout fires POST /api/auth/logout and redirects to /login. (src/components/Header.tsx:23)
 - Actual: click triggers no request; user remains logged in.
+- Refutation: re-verified: yes (fresh snapshot, same result); env: n/a; scope: in; harness: ok
 
 **Impact:**
 User cannot log out — UX regression with potential security implications on shared machines.
@@ -165,15 +178,17 @@ User cannot log out — UX regression with potential security implications on sh
 **Remediation:**
 Verify the onClick handler in `src/components/Header.tsx:23`. The most likely cause is a missing `mutate()` call or an unbound handler.
 
-**Scenario:** FE-05 — Logout flow
-**Screenshot:** `docs/testing/reports/screenshots/qa-002-logout.png`
+**Scenario:** FE-02 — Logout flow
+**Screenshot:** `docs/testing/reports/screenshots/FE-02-fail.png`
 ~~~
 
 ---
 
 ## Detailed Results Format
 
-List ALL scenarios (pass, fail, skip) in order:
+List ALL scenarios (pass, fail, skip, need info) in plan order. Derive one verdict per scenario: `fail` if the main Status or any edge is FAIL; otherwise `need-info` if the main Status or any edge is NEED_INFO; otherwise (loop only) `auth-unverified` for a reclassified main flow; otherwise `skip` if the main Status or any edge is SKIP. The `**DB check:** SKIP` field does not count. Only when the main flow and every edge passed is the verdict `pass`. An edge gap never hides a main-flow FAIL.
+
+For `/qa:loop` only, the sidecar keeps `auth-unverified` as its own verdict. In the report's four-count Summary and Detailed Results, display it under **Skip (auth-unverified)** so `Total = Pass + Fail + Skip + Need info`; count it separately as `auth-unverified` under Coverage. This is a reporting bucket only: never turn the sidecar verdict into `skip`, credit it as PASS, or use it as a fix candidate.
 
 ```markdown
 ## Detailed Results
@@ -181,14 +196,23 @@ List ALL scenarios (pass, fail, skip) in order:
 ### Pass: FE-01: Homepage renders correctly
 ### Pass: FE-02: Login form validation
 ### Fail: FE-03: Logout button — see QA-001
+### Skip: FE-05: Mobile responsive layout (out of harness scope)
 ### Pass: BE-01: GET /api/users returns list
 ### Fail: BE-03: POST /api/users duplicate handling — see QA-002
-### Skip: FE-05: Mobile responsive layout (Playwright MCP unavailable)
+### Need info: BE-04: <name> (credentials: QA_STRIPE_TEST_KEY)
+### Need info: BE-05: <name> (main flow passed; edge 2 need info: fixture: users.seed)
+### Skip: BE-06: <name> (edge 1 skipped: out of harness scope)
+### Skip: BE-07: <name> (auth-unverified; main flow gated)
 ```
 
 - **Pass:** just the status and scenario name
 - **Fail:** status, scenario name, reference to QA-XXX issue
 - **Skip:** status, scenario name, reason in parentheses
+- **Need info:** status, scenario name, kind and missing identifiers (main or edge); list every gap under `## Setup gaps` too
+
+## Setup gaps (conditional)
+
+Place directly after `## Summary` and before `## Issues Found` when any scenario or edge case returns NEED_INFO, **even if a FAIL edge/main flow wins the scenario verdict**. One bullet per kind: `- <kind>: \`<identifier>\`, \`<identifier>\` — <scenario IDs, e.g. BE-01 (edge 2)>`. Include only names/URLs, never values. No `### [SEVERITY]` headings and no `---` separators in this section. Omit it entirely if no gaps exist.
 
 ---
 
@@ -199,7 +223,7 @@ An optional `## Coverage` block may appear in the Summary section, immediately a
 ```
 ## Coverage
 - Exercised: <feature-PASS> feature · <sanity-PASS> sanity · <negative-PASS> enforcement
-- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
+- Not verified: auth-unverified <N> · need-info <M> · mutation-guard SKIP <K> · tool-unavailable <J> · …
 - Confidence: <high | low — reason>
 ```
 
@@ -210,6 +234,8 @@ An optional `## Coverage` block may appear in the Summary section, immediately a
 A `##`-level section placed **AFTER** `## Detailed Results`. It MUST NOT contain any
 `### [SEVERITY] …` headings or `---` separators (so `/fix-report`'s block parser
 ignores it). One row per loop iteration:
+
+`/qa:loop` appends a **Final** row for its authoritative final run, even if no fix iterations ran. In that row `Still failing` includes scenarios with open issues whose main flow passed but an edge did not, annotated `(edge need info)` or `(edge skipped)`. This row does not count as a fix iteration.
 
 | Iteration | Failing in | Now passing | Still failing | Warnings | Regressions | Dispatches |
 |------|-----------|-------------|---------------|----------|-------------|------------|
@@ -277,9 +303,11 @@ All six are **optional** fields of the schema: an existing report carrying none 
 
 Before saving the report, verify:
 
-- [ ] Summary counts match detailed results (total = pass + fail + skip)
+- [ ] Summary counts match detailed verdicts (total = pass + fail + skip + need info); a passing main flow with an unrun edge does not count as pass
 - [ ] Every failed scenario has a `### [SEVERITY] QA-NNN: Title` heading in the Issues Found section
 - [ ] Every QA-NNN issue has the required fields: `ID`, `Location`, `Category: Testing`, `Problem` (with Expected/Actual bullets), `Remediation`
-- [ ] Screenshots referenced in issues actually exist on disk
+- [ ] NEED_INFO main flows and edges appear in Detailed Results and `## Setup gaps`, never as issues
+- [ ] No secret value anywhere in the report or under `docs/testing/reports/responses/` or `docs/testing/reports/screenshots/`; no debug-page snapshot text is quoted or saved in the report
+- [ ] Screenshots referenced in issues were captured after the FE debug-page check and exist on disk; a suppressed screenshot is recorded as `none`, never linked to an older file
 - [ ] No placeholder text (TBD, TODO)
 - [ ] If a Loop History section is present, it contains no `### [SEVERITY]` headings and no `---` separators

@@ -1,0 +1,11 @@
+{
+  "plugin": "qa",
+  "agents": {
+    "fe-tester": {
+      "role": "tester",
+      "add_tools": ["eval"],
+      "description": "Frontend testing agent that executes FE test scenarios from a QA test plan using OMP's built-in browser via eval. Navigates pages, interacts with UI elements, verifies states, and takes screenshots on failure."
+    },
+    "be-tester": { "role": "tester" }
+  }
+}

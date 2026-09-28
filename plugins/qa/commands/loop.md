@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(find:*), Bash(ls:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(command:*), Bash(echo:*), Bash(git:*), Bash(gh:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Bash(mv:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion
+allowed-tools: Bash(find:*), Bash(ls:*), Bash(head:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(command:*), Bash(printf:*), Bash([:*), Bash(echo:*), Bash(git:*), Bash(gh:*), Bash(shasum:*), Bash(jq:*), Bash(cp:*), Bash(mv:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, TaskOutput, Skill, AskUserQuestion
 description: Closed test-fix-retest loop — run a QA plan, auto-fix failures via fix-auto, re-run affected sections, and repeat until green or budget exhausted.
 model: opus
 argument-hint: [plan path] [--mode approve|auto|step] [--max-iterations N] [--max-dispatches D] [--time-budget S] [--severity LEVEL] [--allow-mutations] [--allow-host HOST] [--auto-plan] [--no-auto-plan] [--allow-dirty]
@@ -157,6 +157,8 @@ This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Ste
 
    Fill `## Source` (Type: branch `<current>`, Base: `$BASE`, Date), `## Changes Summary`, `## Detected Tools`, and the FE/BE scenario sections per the skill (including its section-omission rules).
 
+   Apply `/qa:create-plan` Steps 2.5, 4 item 6, 4.5, 4.6 and 6.5 before saving: pin the intended contract, ground every assertion, scan blockers, ground the environment, then refute the plan's apparent passes. Emit `## Setup` when needed, mandatory `## Blockers / Findings`, and assertion-level grounding tags; record bring-up only as a human `Required services` prerequisite.
+
 4. **Construct the path before writing** (bind it explicitly — there is nothing to "capture afterward"), then **Write** the plan to that literal path with the Write tool:
 
    ```bash
@@ -170,7 +172,7 @@ This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Ste
 
 5. **Provenance.** The sidecar created for this run (Step 1.3) records **`auto_generated: true`** for an auto-plan-generated plan. (A user-provided plan leaves it `false`/absent.)
 
-**Assertion fidelity (auto-plan only).** Bias generated assertions toward observable invariants the generator can be confident about (non-5xx, no stack-trace/secret leak in the body, auth-gate present) over guessed exact path+status. Where an exact value must be asserted that the generator could not observe, mark that scenario **provisional** and generate it as its **own** scenario (never co-located with a robust invariant, so Step 3a's scenario-level exclusion can't drop a real finding). The provisional split happens **before** BE-NN/FE-NN numbers are assigned; number once over the final set; collect the provisional IDs. (Also note the provisional IDs in the surfacing output so they survive to Step 1.3 across a context loss.)
+**Assertion fidelity (auto-plan only).** Bias generated assertions toward observable invariants the generator can be confident about (non-5xx, no stack-trace/secret leak in the body, auth-gate present) over guessed exact path+status. Where an exact value must be asserted that the generator could not observe, mark that scenario **provisional**, tag every guessed exact value `(unverified — confirm at run time)` as well, and generate it as its **own** scenario (never co-located with a robust invariant, so Step 3a's scenario-level exclusion can't drop a real finding). The provisional split happens **before** BE-NN/FE-NN numbers are assigned; number once over the final set; collect the provisional IDs. (Also note the provisional IDs in the surfacing output so they survive to Step 1.3 across a context loss.)
 
 6. **Success / validity contract.** After the Write, verify the file exists at `plan_path` **and** is structurally valid — it has the always-present headers `## Source`, `## Changes Summary`, and `## Detected Tools`. *(The FE/BE scenario sections are OPTIONAL per the format's omission rules; their absence is **thin**, not malformed — handled in Step 0.2.3.)* If the file is **missing** or any of those structural headers is **absent** → **abort**:
 
@@ -202,13 +204,15 @@ Do not launch testers. This runs **before** Step 0.3 precisely so a URL-less emp
 
 Probe for the base URL in this order; stop at the first non-empty match:
 
-1. **Explicit URLs in the plan:** Read `plan_path` and extract URLs from the `## Source` section or scenario headers (look for `http://` or `https://` patterns). Take the first match.
-2. **`QA_BASE_URL` env var:** Check if set and non-empty.
-3. **Project config:** Best-effort probe (check for `.env`, `vite.config.ts`, or other project-specific config files for a base URL).
+1. **`## Setup`:** the first backticked token on its `**Base URL:**` line.
+2. **Plan URLs:** the first `http://` or `https://` URL in `## Source` or a scenario heading/bullet.
+3. **`QA_BASE_URL`:** non-empty environment variable.
 
-If **none of these resolve a base URL**, abort:
+Never read project config files (`.env` or framework/build config) at run time. Parse `## Setup` once using the first backticked token of each bullet under `**Required environment variables:**` and `**Required databases:**`. A `**Required environment variables:**` name must match `^QA_[A-Z0-9_]+$`. A `**Required databases:**` bullet must be such a `QA_` name, one of `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `SQLITE_DB`, `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE`, `MYSQL_PWD`, or an `mcp__` server name. Warn about and ignore any other bullet (`Warning: ignoring Setup name '<token>' — not a QA_ name or a supported database name.`): the plan is repository content, and the namespace keeps it from naming an unrelated secret of the launching shell (`GH_TOKEN`, a cloud key) as a credential. For a PostgreSQL DB check require all four `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` declarations; if incomplete, run HTTP but mark the DB check `SKIP — incomplete PostgreSQL connection under ## Setup`. Preserve `## Setup` verbatim for all dispatches, or pass `Setup: none declared`. BE receives only the valid declared database names in `DB connection:`, or `none declared`.
 
-> Error: Base URL undetectable. Cannot guarantee loopback-only safety. Explicitly set QA_BASE_URL, add URLs to the plan's ## Source section, or use --allow-host.
+If none resolves, abort with exactly:
+
+> Error: Base URL undetectable. Cannot guarantee loopback-only safety. Explicitly set QA_BASE_URL, add a Base URL to the plan's ## Setup section, or use --allow-host.
 
 Stop execution.
 
@@ -228,6 +232,25 @@ If the host is neither loopback nor allow-listed:
 Stop execution.
 
 **Re-resolution:** any base URL re-resolved later in the run (Steps 3e, 4) MUST pass this same guard before any tester is dispatched — a host that drifts off loopback mid-run aborts.
+
+#### Step 0.4.5: Preflight declared prerequisites
+
+Before **any** tester dispatch, check the presence of every validated env var name under `## Setup → Required environment variables` and `Required databases`. Skip `mcp__` bullets. Run one Bash line per name with the name substituted literally, reporting only its name and presence:
+
+```bash
+[ -n "${QA_API_TOKEN:-}" ] && printf 'QA_API_TOKEN: OK\n' || printf 'QA_API_TOKEN: MISSING\n'
+```
+
+If any name is `MISSING`, abort before dispatch and print exactly (substituting the count and missing names):
+
+```text
+⚠️ Cannot start QA — <N> required value(s) missing:
+  • <NAME_1>
+  • <NAME_2>
+Set them in the shell that launches the harness (`export NAME=…`), restart it, then re-run the command. Environment variables are captured at process start; exporting them in a running session has no effect.
+```
+
+No Setup or no env-name bullets → proceed without preflight. Do not probe service/database liveness: the tester returns NEED_INFO if a service is absent at run time.
 
 #### Step 0.5: Hash the Plan & Init Counters
 
@@ -267,7 +290,7 @@ if [ -f "$sidecar_file" ]; then
 fi
 ```
 
-Read the sidecar and extract `scenario_issues` (scenario-id → [QA-IDs]) and the report's existing `**Status:**` lines. New issues will be assigned IDs at `max(existing_ids) + 1`.
+Read `scenario_issues` (scenario-id → [QA-IDs]) and `issue_assertion` (QA-ID → main scenario ID or `<ID> (edge n)`) from the sidecar, plus the report's existing `**Status:**` lines. New issues will be assigned IDs at `max(existing_ids) + 1`. For a sidecar written before `issue_assertion` existed, reconstruct missing entries **once** from the report's `**Scenario:**` and `Problem` → `Expected` against the plan's main `**Expected:**` and ordered edge assertions, only when the match is unique. Never infer main versus edge from QA-ID order; leave ambiguous IDs unmapped for the Step 3a safety filter.
 
 **If the sidecar matches but `report_file` is missing or empty** (the report was deleted out from under the sidecar), fall through to a FRESH render but carry the sidecar's existing IDs — new IDs still continue at `max + 1` so they never collide with the sidecar's `scenario_issues`.
 
@@ -280,7 +303,7 @@ If `report_file` exists but `sidecar_file` does not:
 # Create a fresh sidecar stamped with the current PLAN_HASH
 ```
 
-Read the report, extract all `### [SEVERITY] QA-NNN:` headings and any `**Status:**` lines, and build the `scenario_issues` map. Create the sidecar with these IDs; leave `baseline`/`current` to be populated by the authoritative baseline run (Step 2.3).
+Read the report, extract all `### [SEVERITY] QA-NNN:` headings and any `**Status:**` lines, and build `scenario_issues`. Reconstruct `issue_assertion` from each issue's `**Scenario:**` and `Problem` → `Expected` against the plan as in Case 1; ambiguous IDs remain unmapped. Create the sidecar with these IDs; leave `baseline`/`current` to be populated by the authoritative baseline run (Step 2.3).
 
 **Case 3: Hash mismatch**
 
@@ -308,11 +331,15 @@ Create or update the sidecar JSON file with this exact schema:
   "topic": "user-auth",
   "created": "2026-06-17",
   "scenario_issues": { "BE-03": ["QA-001", "QA-002"], "FE-05": ["QA-003"] },
+  "issue_assertion": { "QA-001": "BE-03 (edge 2)", "QA-002": "BE-03", "QA-003": "FE-05" },
   "scenario_kind": { "BE-03": "negative", "BE-04": "feature" },
-  "scenario_reason": { "BE-04": "auth-unverified", "BE-05": "mutation-guard" },
+  "scenario_reason": { "BE-04": "need-info", "FE-05": "cannot-confirm" },
   "provisional_scenarios": [],
-  "baseline": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
-  "current": { "FE-01": "pass", "BE-03": "fail", "FE-05": "fail" },
+  "unverified_issues": [],
+  "auth_gated_issues": [],
+  "need_info": { "BE-04": { "kind": "credentials", "missing": ["QA_STRIPE_TEST_KEY"] }, "BE-03 (edge 2)": { "kind": "fixture", "missing": ["users.seed"] } },
+  "baseline": { "FE-01": "pass", "BE-03": "fail", "BE-04": "need-info", "FE-05": "fail" },
+  "current": { "FE-01": "pass", "BE-03": "fail", "BE-04": "need-info", "FE-05": "fail" },
   "auto_generated": false,
   "pre_loop_dirty": [],
   "fix_touched_files": [],
@@ -321,7 +348,7 @@ Create or update the sidecar JSON file with this exact schema:
 }
 ```
 
-**When writing the sidecar:** set `auto_generated` to `true` if this run generated the plan in Step 0.2.1, else `false` (the example above shows the default) — do not take the literal `false` as unconditional. Persist `pre_loop_dirty` (recorded in Step 0.1.5). On the REUSE/ADOPT idempotency paths (Step 1.2), **preserve** the existing `auto_generated` value rather than overwriting it. Persist `provisional_scenarios` (the IDs decided in Step 0.2.1; empty array if not auto-generated). On REUSE/ADOPT, preserve the existing value (like `auto_generated`). Do NOT write it at Step 0.2.1 — the sidecar does not exist yet.
+**When writing the sidecar:** set `auto_generated` to `true` if this run generated the plan in Step 0.2.1, else `false` (the example above shows the default) — do not take the literal `false` as unconditional. Persist `pre_loop_dirty` (recorded in Step 0.1.5). On the REUSE/ADOPT idempotency paths (Step 1.2), **preserve** the existing `auto_generated` value rather than overwriting it. Persist `provisional_scenarios` (the IDs decided in Step 0.2.1; empty array if not auto-generated), `issue_assertion`, `unverified_issues` and `auth_gated_issues` (QA IDs identified in Step 2.2); on REUSE/ADOPT preserve these and the unaffected `need_info` entries. Do NOT write at Step 0.2.1 — the sidecar does not exist yet.
 
 - `plan_sha256`: the 64-hex SHA-256 hash of the plan file
 - `plan_path`: path to the test plan
@@ -329,11 +356,15 @@ Create or update the sidecar JSON file with this exact schema:
 - `topic`: extracted from the plan filename
 - `created`: date stamp (YYYY-MM-DD)
 - `scenario_issues`: map of scenario-id → array of QA-XXX IDs assigned to that scenario
+- `issue_assertion`: one-to-one map of QA-XXX ID → the scenario's main-flow ID or `<ID> (edge n)` for its failing edge assertion (1-based plan order, same keys as `need_info`). Set it when an issue is assigned or reconciled, **not** by assuming the first `scenario_issues[ID]` entry is the main flow. Preserve mappings when an assertion later passes; a later main-flow failure may receive a higher QA ID than an earlier edge failure. Each mapped QA ID belongs to its `scenario_issues` owner; no two QA IDs may claim the same assertion key.
 - `scenario_kind`: map of scenario-id → "sanity" | "negative" | "feature" (set once at baseline ingest, Step 2.1; classifies what a PASS means for coverage)
-- `scenario_reason`: map of scenario-id → normalized reason for every non-PASS scenario ("mutation-guard" | "tool-unavailable" | "cannot-confirm" | "transport"), refreshed each ingest; drives the Coverage block and unlock-hints
+- `scenario_reason`: map of scenario-id → normalized reason for every non-pass verdict ("mutation-guard" | "need-info" | "auth-unverified" | "tool-unavailable" | "cannot-confirm" | "transport"); refreshed per scenario on ingest; drives Coverage and unlock hints
 - `provisional_scenarios`: array of auto-generated scenario-ids whose assertions are guessed-exact (decided in Step 0.2.1, persisted here); read by Step 3a to treat their failures as plan-suspect
-- `baseline`: map of scenario-id → "pass" | "fail" | "skip" | "auth-unverified" (immutable reference recorded after Step 2; used for regression detection)
-- `current`: map of scenario-id → "pass" | "fail" | "skip" | "auth-unverified" (mutable, updated each iteration to track latest status; used for iteration logic)
+- `unverified_issues`: QA-XXX IDs of individual issues whose mapped assertion (main `**Expected:**` or failing edge case) is tagged `(unverified — confirm at run time)`; assigned in Step 2.2 and refreshed for returned scenarios on each later ingest using `issue_assertion`, never per whole scenario
+- `auth_gated_issues`: QA-XXX IDs whose `issue_assertion` key is the bare scenario ID and whose main-flow result Step 2.1.7 reclassified as `auth-unverified`; refreshed on ingest, excluded from every fix dispatch (Step 3a), even when a failed edge makes the scenario verdict `fail`. Never include the independent edge issues.
+- `need_info`: map of scenario IDs and `<ID> (edge n)` keys to `{ "kind": "credentials|service|fixture|tool", "missing": ["<identifier>", ...] }`. At **every ingest** (baseline, Step 2.1.8 retry, Step 3e, Step 4), delete entries for the scenario IDs returned in that dispatch **and their edge keys** before rebuilding from the new results. Keep entries for sections not re-run; render `## Setup gaps` and unlock hints from the current map.
+- `baseline`: map of scenario-id → "pass" | "fail" | "skip" | "auth-unverified" | "need-info" (immutable reference recorded after Step 2; used for regression detection)
+- `current`: map of scenario-id → "pass" | "fail" | "skip" | "auth-unverified" | "need-info" (mutable, updated each iteration by the aggregated verdict from Step 2.1.5 item 3)
 - `auto_generated`: `true` iff this run's loop generated the plan via auto-plan (Step 0.2.1); `false`/absent for a user-provided or pre-existing plan. Read by the thin/all-SKIP exit (Step 0.2.3 / Step 2.4) to decide graceful-success vs. error
 - `pre_loop_dirty`: array of tracked paths already modified **before** the loop started (recorded in Step 0.1.5, persisted here so it survives across the many tool calls before the fix phase); subtracted from the post-fix set to compute `fix_touched_files`. Persisting it (rather than relying on a shell variable that can be lost mid-run) is what keeps scoped recovery from over-restoring the user's pre-existing edits
 - `fix_touched_files`: array of tracked paths the loop's own fixes edited (post-fix tracked-modified set **minus** `pre_loop_dirty`, accumulated cumulatively across iterations in Step 3g); what scoped recovery (`git restore <fix_touched_files>`) restores — never the user's pre-existing changes
@@ -358,52 +389,30 @@ Skill(skill: "report-format")
 
 Parse the plan to identify FE and BE scenarios. Launch both in parallel if both exist:
 
-**If FE scenarios exist:**
+Use this dispatch template for **every** tester launch in Steps 2.1, 2.1.8, 3e and 4; substitute the FE or BE section **in plan order** and mark guarded scenarios `mutation-guard` (`SKIP` without execution). Re-resolve and guard the Base URL before each launch. Include the `DB connection:` line only for BE:
 
-Apply the mutation guard: if a scenario contains a POST/PUT/PATCH/DELETE request (case-insensitive) in the plan **and** `--allow-mutations` is not set, mark it to SKIP with reason `mutation-guard` in the results (do not execute it). *(FE scenarios are UI-driven, so an action that triggers a write without a literal HTTP verb in the plan — e.g. a Delete button — is not detected; rely on a disposable test DB.)*
+```text
+Plan: <plan_path>
+Setup:
+<paste the plan's ## Setup verbatim; when absent use "Setup: none declared" instead of these two lines>
+Base URL: <resolved and guarded per Steps 0.3–0.4>
+DB connection: <BE only: Required databases names from Setup, or "none declared">
 
-```
-Task(
-  subagent_type: "qa:fe-tester",
-  run_in_background: true,
-  description: "Execute FE test scenarios (baseline)",
-  prompt: "Execute all FE test scenarios from this plan:
+<FE or BE> Test Scenarios:
+<all scenario blocks of that section, with mutation-guard marks>
 
-<paste all FE-XX scenarios from the plan>
-
-Base URL: <resolved from Step 0.3>
-
-Follow the fe-testing skill patterns. For each scenario that should run, execute it and report PASS/FAIL/SKIP.
-
-Scenarios marked mutation-guard should return SKIP with reason 'mutation-guard'.
-
-Return results for every scenario."
-)
+Report NEED_INFO (kind + missing names) for missing prerequisites. Never print secret values.
 ```
 
-**If BE scenarios exist:**
+For FE, if a scenario explicitly contains a POST/PUT/PATCH/DELETE request (case-insensitive) and `--allow-mutations` is absent, mark it `mutation-guard`. The expected-rejection exemption below applies **only to BE**. FE writes triggered by UI actions without a literal HTTP verb are not detected; use a disposable test DB.
 
-Apply the mutation guard: if a scenario specifies a state-changing HTTP method (POST/PUT/PATCH/DELETE, case-insensitive) or a DB-write check in the plan **and** `--allow-mutations` is not set, mark it to SKIP with reason `mutation-guard`.
+Apply the mutation guard without `--allow-mutations` to state-changing BE scenarios (POST/PUT/PATCH/DELETE case-insensitively, or DB-write checks).
 
-```
-Task(
-  subagent_type: "qa:be-tester",
-  run_in_background: true,
-  description: "Execute BE test scenarios (baseline)",
-  prompt: "Execute all BE test scenarios from this plan:
+**Expected-rejection exemption:** Dispatch one of these scenarios unguarded only when **each** main `**Expected:**` and edge-case assertion has exactly one expected HTTP status token: a standalone three-digit number from 100 to 599, ignoring numbers inside `(path:line)` grounding citations. That sole status must be ≥ 400; any 1xx–3xx status on an assertion keeps the whole scenario guarded. Never exempt a scenario if the main Expected or **any** edge assertion is tagged `(unverified — confirm at run time)`. Its optional `**DB Check:**` must be read-only (no `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `CREATE`, `UPSERT`), and no other bullet may describe a write (`create`, `delete`, `update`, `insert`, `seed` steps). Missing or ambiguous status, DB write, or write-ish step keeps the scenario guarded.
 
-<paste all BE-XX scenarios from the plan>
+An unexpected 2xx on an exempt request lands a write **once** — the defect this scenario exposes; keep the test DB disposable. Reapply this same predicate on every baseline retry, section re-run and final run.
 
-Base URL: <resolved from Step 0.3>
-DB connection: <detect from plan or project config>
-
-Follow the be-testing skill patterns. For each scenario that should run, execute it and report PASS/FAIL/SKIP.
-
-Scenarios marked mutation-guard should return SKIP with reason 'mutation-guard'.
-
-Return results for every scenario."
-)
-```
+For each present section launch `Task(subagent_type: "qa:fe-tester" | "qa:be-tester", run_in_background: true, description: "Execute FE/BE test scenarios (baseline)", prompt: <Step 2.1 dispatch template rendered for that section>)`. Launch both in parallel when both exist; do not dispatch absent sections.
 
 Collect results with:
 
@@ -422,19 +431,15 @@ Every tester launch counts toward `--max-dispatches`.
 
 #### Step 2.1.5: Structured Result Ingest
 
-The testers return free-text result blocks (`be-tester.md:60-79`). Before tallying, parse **each** scenario block into a structured record `{ id, verdict, observed_status, reason, kind }`:
+Apply these three independent extractions **on every ingest** (baseline, Step 2.1.8 retry, Step 3e and Step 4). Parse each tester scenario block into `{ id, main_flow, edges, verdict, observed_status, reason, kind }`. A `**DB check:** SKIP` is best-effort evidence, **never** an edge SKIP for aggregation.
 
-- **`verdict`** — the `**Status:**` line (`PASS`/`FAIL`/`SKIP`).
-- **`observed_status`** — the **first integer** after `**Response status:**`, ignoring any `(expected: N)` parenthetical (the tester prints `500 (expected: 201)`); this is the scenario's **main-request** status. **BE only** — FE blocks have no `**Response status:**` line, so `observed_status` is `null` for FE.
-- **`reason`** (non-PASS only) — **normalize** the tester's free prose into one bucket (the testers emit prose, not these tokens):
-  - `mutation-guard` — **orchestrator-assigned** at dispatch (Step 2.1), authoritative; never parsed from output.
-  - `/no .*client|unavailable|not supported/i` → `tool-unavailable`.
-  - `/connection refused|could not connect|timeout/i` → `transport` (feeds the reachability suggestion in Step 5.2; **not** a coverage SKIP reason).
-  - any other prose → `cannot-confirm`.
-- **`kind`** — per Step 2.1.6.
-- **Edge-case sub-blocks** (`be-tester.md:76-79`, nested `- <name>: PASS/FAIL`) are read for their inline verdict only; they have no isolatable `**Response status:**`, so they are NOT reclassified (Step 2.1.7) and inherit the parent's `kind`.
+1. **Gaps:** For every scenario ID in a returned section, first delete its `need_info[ID]` and **all** `need_info["<ID> (edge n)"]` entries from the sidecar. A main `**Status:** NEED_INFO` block supplies `need_info[ID] = {kind, missing}` from its `**Kind:**` and comma-separated `**Missing:**` fields. Independently, each edge line `NEED_INFO — <kind>: <identifiers>` supplies `need_info["<ID> (edge n)"] = {kind, missing}`; `n` is the edge's 1-based order in the plan, even if the main flow is PASS or FAIL. Keep gaps of sections **not** returned in this dispatch. Never store secret values, only identifiers.
+2. **Main flow:** Read the `**Status:**` line (`PASS`/`FAIL`/`SKIP`/`NEED_INFO`) and the **first integer** after `**Response status:**` (before any `(expected: N)`); FE has `null` observed status. Classify kind at Step 2.1.6, apply Step 2.1.7's auth reclassification **only to this main-flow result**, then perform the verdict aggregation below. If no status is parseable, keep the bare verdict or `null` without inventing PASS.
+3. **Verdict/reason:** Aggregate the main flow and **every** edge line using the precedence below, after Step 2.1.7. Persist the resulting `scenario_kind` and `scenario_reason`; keep `observed_status` transient. A missing DB client with runnable HTTP marks only `**DB check:** SKIP`.
 
-Persist `scenario_kind` and `scenario_reason` in the sidecar. `observed_status` is used transiently here (Step 2.1.7) and need not persist. If a block lacks a parseable status/reason, record `null` and degrade gracefully (the scenario keeps its bare verdict).
+Use `issue_assertion` to find the main-flow QA ID: select the unique QA ID in `scenario_issues[ID]` whose `issue_assertion[QA-ID] == ID`, never the first array entry or a text match. After Step 2.2 assigns/reconciles baseline issue IDs, add that ID to `auth_gated_issues` if Step 2.1.7 reclassified the main flow, otherwise remove it; on later ingests refresh it the same way. Leave edge IDs and sections not returned untouched. If a later run first exposes a failing main flow after an existing failed edge (or another new failing assertion), assign/reconcile its QA ID using Step 2.2's assertion key and update the report and `issue_assertion` **before** refreshing these guards; do not reuse the edge's ID.
+
+For every mapped QA ID of a returned scenario, refresh `unverified_issues` from **its own** plan assertion's `(unverified — confirm at run time)` tag using `issue_assertion[QA-ID]`; preserve IDs of sections not returned. In particular, when a newly failed main flow is mapped after an edge, neither the edge's tag nor its QA ID determines the main-flow guard.
 
 #### Step 2.1.6: Scenario-Kind Classification
 
@@ -447,9 +452,35 @@ For each scenario, derive `kind` from its declared `**Expected:**` status + endp
 
 #### Step 2.1.7: Auth-Unverified Reclassification (at ingest, BE only)
 
-For a BE scenario with `kind == feature`: if the parsed `observed_status` ∈ {401, 403} **and** the declared `**Expected:**` is a 2xx, set `verdict = auth-unverified` (executed, but the feature path was gated — no token). Counted and surfaced, **never** credited as PASS. A scenario that *expected* 401 and got 401 stays a normal `negative` PASS. If `observed_status` is `null`, leave the verdict unchanged (best-effort).
+For a BE scenario with `kind == feature`: if the parsed `observed_status` ∈ {401, 403} **and** the declared `**Expected:**` is a 2xx, set the **main-flow result only** to `auth-unverified` (executed, but the feature path was gated). A scenario that expected 401 and got 401 stays a normal `negative` PASS. If `observed_status` is `null`, leave the main flow unchanged (best-effort). Do **not** overwrite an independent edge-case FAIL with auth-unverified.
 
 **Not detected (residual, see §8 of the spec):** 2xx-shaped gating (empty `200 []`, tenant `404`), auth surfaced only via an edge-case sub-test, and any FE gating (no FE HTTP status). Hence the Coverage block reports **"Exercised"**, not "Verified", for feature PASSes.
+
+**Verdict aggregation (Step 2.1.5 item 3, after reclassification):** Use the *reclassified* main-flow result, not the original `**Status:**` line, for this precedence:
+
+1. `fail` if the main-flow result is FAIL **or any edge is FAIL**.
+2. Else `need-info` if the main-flow result is NEED_INFO **or any edge is NEED_INFO**.
+3. Else `auth-unverified` if Step 2.1.7 reclassified the main flow.
+4. Else `skip` if the main-flow result is SKIP or any edge is SKIP; otherwise `pass`.
+
+Thus a main `FAIL` reclassified to `auth-unverified` does not itself win over an edge gap, but an independent edge FAIL still wins; a passing main flow with an unrun edge is not credited. For a non-pass verdict normalize the reason: `need-info` exactly when the verdict is `need-info`; otherwise an orchestrator-assigned `mutation-guard` wins; then an explicit Status/edge verdict wins over free-text guesses (`auth-unverified` stays distinct; `SKIP` with `harness error:` or `out of harness scope:` → `cannot-confirm`). For prose-only outputs `/no .*client|unavailable|not supported/i` → `tool-unavailable`, `/connection refused|could not connect|timeout/i` → `transport`, otherwise `cannot-confirm`. `transport` remains a prose-only reachability hint, not a reason to change an explicit NEED_INFO or FAIL. Refresh the scenario's reason each ingest.
+
+#### Step 2.1.8: Setup-gap pause
+
+After baseline ingest, if `need_info` is non-empty, print one names-only line **per kind**: `need-info <kind>: <identifiers> — <scenario IDs>` (use `<ID> (edge n)` for an edge). `N` in the question counts unique scenario IDs with gaps (not edge rows). In `--mode approve`/`step`, use `AskUserQuestion`:
+
+```text
+question: "N scenario(s) need setup (<kinds>). What now?"
+options:
+  - label: "Re-run baseline"
+    description: "Retry the affected full sections after starting services / creating fixtures"
+  - label: "Continue without them"
+    description: "Keep gaps visible; continue without treating them as failures"
+  - label: "Abort"
+    description: "Stop without writing a report"
+```
+
+`Re-run baseline`: the user may start a service or add a fixture; env vars only count if exported **before the harness started**. Re-dispatch Step 2.1 **once**, only for sections holding current gap entries, but always their **whole sections**, with the Step 2.1 prompt shape and mutation guard reapplied; increment `dispatch_count` for each launch. Re-ingest Step 2.1.5 (delete/rebuild returned IDs' gaps), replace the affected baseline results, and **do not ask again** even if gaps remain. `Continue without them`: proceed. `Abort`: print the gap list and the Step 0.4.5 restart advice, write **no report**, stop. In `auto`, continue without a question.
 
 #### Step 2.2: Render Report (report-format Step 6)
 
@@ -457,14 +488,14 @@ Using the `report-format` skill, build the QA-XXX report **in memory** (the actu
 
 **Mutation-guarded SKIP count (post-baseline):** Now that the Step 2.1 guard pass has classified SKIPs, the count is rendered in the Step 5.2 "Next steps to widen coverage" table (single source of truth).
 
-1. **Count results:** tally pass/fail/skip across all scenarios.
+1. **Count results:** follow report-format's verdict and Summary rules using Step 2.1.5; keep `auth-unverified` in the sidecar and Coverage but show it under Skip (auth-unverified) in the report.
 2. **Assign QA-XXX IDs.** `max(existing)` is the highest QA-ID number across the **union** of: the report's `### … QA-NNN` headings, the sidecar `scenario_issues` IDs, and any QA-IDs referenced in Loop History. If that union is empty or unparseable, start at 0.
-   - If reusing a prior report (Step 1, Case 1), use the existing scenario→QA-ID map; assign new IDs at `max(existing) + 1`.
-   - If adopting a report (Step 1, Case 2), use the extracted IDs; new ones at `max(existing) + 1`.
+   - If reusing or adopting a report (Step 1, Cases 1–2), match each failed assertion by its **key** (`ID` for main flow; `<ID> (edge n)` for an edge) to a unique existing `issue_assertion` entry; reuse only that QA ID. An unmapped legacy issue is not a match. If the assertion is new, assign `max(existing) + 1` without reusing a sibling's ID.
    - If fresh (Step 1, Cases 3–4), start at `qa_count = 0` and assign sequentially: QA-001, QA-002, etc.
-3. **Determine severity** for each failure (per the report-format skill guidance).
-4. **Derive issue fields:** Location, Category, Problem, Remediation, Impact (per report-format).
-5. **Build the report** following the report-format exact template.
+   - For every assigned or reconciled issue, set `issue_assertion[QA-ID]` to that key and add the QA ID to `scenario_issues[ID]` once. Do not rely on array position: an edge can receive QA-001 before a later-failing main flow receives QA-002. On reruns (Steps 2.1.8, 3e, 4), apply this same key-based assignment for newly failing assertions when updating the report; never replace an existing key-to-ID mapping when the assertion passes.
+3. **Determine severity** per report-format for each failing assertion. Track tagged `(unverified — confirm at run time)` issue IDs in `unverified_issues`, reconciling reused IDs on re-render.
+4. **Derive issue fields** per report-format. A reclassified `auth-unverified` main flow still mints an issue, but only its main-flow QA ID (`issue_assertion[QA-ID] == ID`) enters `auth_gated_issues` and is barred from fixes; a separately failing edge remains eligible, even with a main-flow gate or setup gap. A `NEED_INFO` assertion mints none. On REUSE/ADOPT, use restored assertion keys, never array order.
+5. **Build the report** per report-format, rendering current `need_info` gaps independently of the scenario verdict and counting `need-info` by verdict only.
 
 #### Step 2.3: Update Sidecar with Baseline
 
@@ -488,27 +519,32 @@ Edit the sidecar to record:
   "scenario_issues": {
     "FE-02": ["QA-001"],
     "BE-03": ["QA-002", "QA-003"]
+  },
+  "issue_assertion": {
+    "QA-001": "FE-02",
+    "QA-002": "BE-03 (edge 2)",
+    "QA-003": "BE-03"
   }
 }
 ```
 
-The `baseline` map is immutable and serves as the regression reference. The `current` map is a mutable copy initialized to match baseline; it is updated each iteration to reflect the latest pass/fail status.
+The `baseline` map is immutable and serves as the regression reference. The `current` map is a mutable copy initialized to match baseline; both hold the aggregated verdict (Step 2.1.5 item 3: `pass`, `fail`, `skip`, `auth-unverified`, `need-info`), not just the main-flow Status. It is updated on each ingest to reflect the latest full scenario result.
 
 #### Step 2.4: Zero-Failure Exit
 
 Count failures at or above `--severity` (default: all):
 
-- If **zero failures and at least one scenario executed** (an all-SKIP run is handled by the next bullet, which takes precedence) → print:
+- If **zero failures and at least one scenario executed** (the all-`skip`/`need-info` branch below takes precedence), print:
 
-> All passing, nothing to fix.
+> No failing assertions to fix. Check Coverage and Setup gaps for unverified scenarios.
 
-  **Shallow-coverage check.** Let `meaningful = count(verdict == PASS AND kind == feature)`. Coverage is **shallow** when `meaningful == 0` AND ≥1 `feature` scenario did not PASS (it was `auth-unverified`/`skip`/`fail`). On shallow coverage, emit:
+  **Shallow-coverage check.** Let `meaningful = count(verdict == pass AND kind == feature)`. Coverage is **shallow** when `meaningful == 0` AND ≥1 `feature` scenario did not pass (it was `auth-unverified`/`need-info`/`skip`/`fail`). On shallow coverage, emit:
 
   > Warning: shallow coverage — no feature behavior was exercised (N feature scenarios were auth-unverified/skipped/unreachable). This green reflects infrastructure and enforcement checks only.
 
   **Precedence:** this WARNING does NOT fire on the existing mutation-guard-only all-SKIP graceful path (the "backend-write-only — rely on the unit/integration suite" branch below); that branch keeps its own message. The WARNING also does not fire when the plan contains **zero** feature-kind scenarios (a deliberately sanity-only plan — nothing claimed-but-unverified).
 
-  **Low-confidence green:** when the message would print AND coverage is shallow AND `auto_generated == true`, replace the "All passing, nothing to fix" line (still exit **success**) with:
+  **Low-confidence green:** when the message would print AND coverage is shallow AND `auto_generated == true`, replace the "No failing assertions to fix. Check Coverage and Setup gaps for unverified scenarios." line (still exit **success**) with:
 
   > All assertions passed, but coverage is shallow — no feature behavior was exercised (see Coverage). Low-confidence green: the plan was auto-generated and may not reflect runtime auth/setup.
 
@@ -516,24 +552,13 @@ Count failures at or above `--severity` (default: all):
 
   Save the report and sidecar first (Step 2.5 — on reuse/adopt this preserves any existing `**Status:**` lines), then skip the loop (Step 3) AND the final run (Step 4), and exit success.
 
-- If **all scenarios are SKIP**, branch on provenance (`auto_generated`, the sidecar flag set during generation in Step 0.2.1) and the SKIP reasons:
-
+- If **every verdict is `skip` or `need-info`**, branch on provenance (`auto_generated`, set during Step 0.2.1) and reasons:
   - **Auto-generated plan (`auto_generated == true`):**
-    - If **every** SKIP reason is `mutation-guard` → exit **gracefully with success** (not an error):
+    - If **every** reason is `mutation-guard`, exit gracefully with success: `Auto-generated plan is backend-write-only under the mutation guard — nothing executable here; rely on the unit/integration suite.`
+    - Otherwise (`need-info`, `tool-unavailable`, `cannot-confirm`, unparseable/`null` or any other non-guard reason), exit gracefully **with a coverage-zero WARNING**: `Warning: All scenarios skipped or need setup for tooling/parse/prerequisite reasons, not mutation-guard — coverage is zero; verify the generated plan, Setup gaps and tool availability.`
+  - **User-provided plan (`auto_generated` false/absent):** print the `need_info` gap list (names only) and abort: `Error: No executable verifier — cannot gate (all scenarios marked SKIP or NEED_INFO). Check your test plan, Setup gaps and tool availability.`
 
-      > Auto-generated plan is backend-write-only under the mutation guard — nothing executable here; rely on the unit/integration suite.
-
-    - Else (**any** SKIP reason is non-`mutation-guard` — `tool-unavailable`, `cannot-confirm`, or unparseable/`null`) → exit **gracefully** but print a **coverage-zero WARNING**:
-
-      > Warning: All scenarios skipped for tooling/parse reasons, not mutation-guard — coverage is zero; verify the generated plan and tool availability.
-
-  - **User-provided plan (`auto_generated` false/absent)** → abort (no executable verifier):
-
-    > Error: No executable verifier — cannot gate (all scenarios marked SKIP or unavailable). Check your test plan and tool availability.
-
-    Stop execution.
-
-  On either graceful auto-generated path, save the report and sidecar (Step 2.5) first, then skip the loop (Step 3) and the final run (Step 4) and exit success.
+  On either graceful auto-generated path, save the report and sidecar (Step 2.5) first, then skip the loop (Step 3) and final run (Step 4). The user-provided all-unverified path aborts as before (no verifier); its names-only gaps are still surfaced.
 
 #### Step 2.5: Save Report
 
@@ -615,7 +640,7 @@ iteration++
 
 #### Step 3a: Select & Pre-Filter Fix-Set
 
-From the sidecar `current` and `scenario_issues`:
+From the sidecar `current`, `scenario_issues` and `issue_assertion`:
 
 1. Identify all scenarios still failing (current == "fail").
 2. For each failing scenario, extract its QA-XXX issues.
@@ -624,18 +649,17 @@ From the sidecar `current` and `scenario_issues`:
    - **A `**Status:**` line whose value begins `🚫 Rejected`** — the status is terminal, so a rejected issue never enters `fix_candidates` on this or any later run. Match the status value **by prefix, never by whole-line equality** — a rejected line carries a ` — <reason>` tail that is not this loop's to control.
    - **A location-less `**Location:**` field** — read the field by the two-clause rule below; a value of `—`, `unknown:0`, missing entirely, or anything that does not parse as `path:line` or `path:line-range` is location-less
    - **Missing fix-auto-required fields** (Location, Problem, Remediation)
+   - **A missing, duplicated or mismatched `issue_assertion` key** — its QA ID must map uniquely to this scenario's main ID or one of its `<ID> (edge n)` keys; no other QA ID may claim the same key. An unmapped/ambiguous legacy issue or a corrupt mapping cannot be safely attributed to an assertion.
 
    **`**Location:**` read rule, two clauses.** Take the **first backticked token** on the line as the location and **ignore any trailing parenthetical** — this is the form the decision-gate loop always writes when it corrects a location, and its `(was: …)` tail preserves the *original* value, `unknown:0` included. Where the line carries no backticked token at all — a legacy `**Location:** src/foo.ts:12`, which this loop never writes but still meets — take the first whitespace-delimited token after the field name instead. **Never test the whole line:** a whole-line test reads a repaired finding as location-less because of the `unknown:0` preserved in its tail, and silently drops an issue that is fixable.
 
-   For dropped issues, record: `rejected by user`, `needs manual location` or `incomplete fields`. Never dispatch them.
+   For dropped issues, record: `rejected by user`, `needs manual location`, `incomplete fields` or `needs manual assertion mapping`. Never dispatch them.
 
 Call this list `fix_candidates`.
 
-**Provisional plan-suspect guard (T3).** For a failing scenario whose ID is in `provisional_scenarios`:
-- `approve`/`step`: keep it in the HITL gate but flag it `⚠ auto-generated assertion — verify before fixing`.
-- `auto`: **exclude** it from `fix_candidates` and log `auto-generated assertion suspected; not auto-fixing — verify the plan.` (Step 3c only iterates `fix_candidates`, so the "fix source, don't touch the plan" injection is never reached for it.)
+**Auth-gated main-flow guard (all modes).** For each candidate, read its `issue_assertion[QA-ID]`. Only an ID mapped to the **bare scenario ID** can be an auth-gated main-flow issue: remove it when it is in `auth_gated_issues`, and log `auth-gated main flow; not fixing — verify access before changing auth.` Keep it in the report. A candidate mapped to `<ID> (edge n)` is an independent edge issue and stays eligible even when the scenario's main result is `auth-unverified` and the edge FAIL makes `current == "fail"`.
 
-A failure on a **non-provisional** assertion uses the normal fix path (real 5xx/leak bugs are still fixed). Absent `provisional_scenarios` (every user-provided plan) ⇒ no scenario is plan-suspect → normal fix path for all.
+**Plan-suspect guards (per issue).** Read each candidate's `issue_assertion` key to identify the specific failing main `**Expected:**` or edge-case line. A QA issue whose ID is in `unverified_issues` (that assertion carries `(unverified — confirm at run time)`) is suspect regardless of its scenario's provenance; flag it `⚠ unverified assertion — verify before fixing` in `approve`/`step`, and in `auto` exclude **that issue only** from `fix_candidates` with log line `unverified assertion; not auto-fixing — verify the plan.` For an auto-generated scenario in `provisional_scenarios`, likewise flag its issues `⚠ auto-generated assertion — verify before fixing` (`approve`/`step`) or exclude them in `auto` with `auto-generated assertion suspected; not auto-fixing — verify the plan.` Apply both flags when both match. A **grounded sibling issue** from the same scenario remains eligible: do not exclude every QA ID solely because another failed assertion in that scenario was unverified.
 
 #### Step 3b: HITL Gate Per Mode
 
@@ -747,45 +771,11 @@ Store the warning in the sidecar `iterations[]` entry (not a blocker — just a 
 
 #### Step 3e: Re-Run Section(s)
 
-Identify which section(s) contain still-failing scenarios. Re-run the **whole section** (all scenarios in that section, in order) for each affected section:
-
-**If any FE scenario is still failing:**
-
-```
-dispatch_count++
-Task(
-  subagent_type: "qa:fe-tester",
-  run_in_background: true,
-  description: "Re-run FE section (iteration N)",
-  prompt: "<all FE scenarios from the plan; mutation guard applied again>
-Base URL: <re-resolve from Step 0.3, re-validated via Step 0.4>
-Execute all scenarios in order (dependency-safe)."
-)
-
-fe_results = TaskOutput(fe_tester_id, block: true)
-```
-
-**If any BE scenario is still failing:**
-
-```
-dispatch_count++
-Task(
-  subagent_type: "qa:be-tester",
-  run_in_background: true,
-  description: "Re-run BE section (iteration N)",
-  prompt: "<all BE scenarios from the plan; mutation guard applied again>
-Base URL: <re-resolve from Step 0.3, re-validated via Step 0.4>
-Execute all scenarios in order."
-)
-
-be_results = TaskOutput(be_tester_id, block: true)
-```
-
-Only launch and count sections that contain at least one still-failing scenario.
+Re-run each section containing a still-failing scenario in full, in plan order. For each, increment `dispatch_count`, re-resolve/guard the Base URL, reapply the Step 2.1 mutation guard (including its exemption), and launch its tester with the **Step 2.1 dispatch template** and description `Re-run FE/BE section (iteration N)`. Wait for each dispatched tester result; ingest every returned section via all three Step 2.1.5 extractions, deleting/rebuilding only its gap keys. The residual unexpected-write risk of the exemption still applies. Do not launch or count unaffected sections.
 
 #### Step 3f: Check Regressions & Progress
 
-**Regression check:** Read the sidecar `baseline` map. For each scenario, check if it passed at baseline (baseline == "pass") but fails in the newly-received re-run results (current == "fail"). Record any regressions detected.
+**Regression check:** Read the sidecar `baseline` map. For each scenario, compare its aggregated verdict (Step 2.1.5 item 3): a `baseline == "pass"` that now has `verdict == "fail"` (including an edge FAIL) is a regression. `need-info`, `auth-unverified` and `skip` are not regressions or successful retests.
 
 If any regression is detected, stop:
 
@@ -793,13 +783,13 @@ If any regression is detected, stop:
 
 Exit loop. (Regressions are reported in Step 4.2.)
 
-**Progress:** has at least one scenario newly passed this iteration? Compare the `current` map **as it stood at the start of this iteration** (before Step 3g updates it) against the newly-received re-run results. If **at least one scenario went from "fail" to "pass"**, continue. If **no**, stop (no progress):
+**Progress:** has at least one scenario newly passed this iteration? Compare the aggregated `current` verdict (Step 2.1.5 item 3) as it stood at the start of the iteration (before Step 3g) with the newly received verdicts. Only `"fail" → "pass"` (main flow **and all** edges passed) counts; main PASS with an edge `NEED_INFO` or `SKIP` does not.
 
 > No progress this iteration (no newly passing scenarios). Stopping loop.
 
 Exit loop.
 
-**`auth-unverified` across consumers:** it is never `"fail"`, so it is excluded from the fix-set (Step 3a, `current == "fail"`), is never a regression (Step 3f / 4.2, which key on `baseline == "pass" ∧ current == "fail"`), and is inert for the progress check (a scenario the loop is not fixing). A re-run scenario that becomes `auth-unverified` updates `current` normally (Step 3g merge).
+**`auth-unverified` and `need-info` across consumers:** A scenario whose full verdict is either is not `"fail"` and does not enter Step 3a. If an independent edge FAIL makes its verdict `"fail"`, exclude only the auth-gated **main-flow** QA ID via `auth_gated_issues`; the edge issue remains eligible. Neither an `auth-unverified` nor a `need-info` verdict is a regression (Step 3f / 4.2 keys on `baseline == "pass" ∧ current == "fail"`), progress or a credited pass. Merge both into `current` normally when re-run.
 
 #### Step 3g: Update Sidecar
 
@@ -820,7 +810,7 @@ After progress/regression checks, update the sidecar with an entry in `iteration
 
 The `"iteration"` field must be set to the live `iteration` counter (e.g., iteration 1 on the first loop pass, iteration 2 on the second, etc.). If regressions were detected in Step 3f, record them in the `"regressions"` array.
 
-Update the `current` map with the latest pass/fail/skip status — **merge, don't replace:** only overwrite entries for scenarios actually re-run this iteration; leave all other entries (e.g. an un-re-run section's passing scenarios) unchanged:
+Update `current` with the latest **aggregated verdicts (Step 2.1.5 item 3)** (`pass`/`fail`/`skip`/`auth-unverified`/`need-info`) — **merge, don't replace:** only overwrite entries for scenarios actually returned this iteration; keep all others (including an un-re-run section's gaps). Step 2.1.5 separately refreshes those returned scenarios' `need_info` keys.
 
 ```json
 {
@@ -898,41 +888,13 @@ After checking, loop back to Step 3.0.
 
 **Skip this step if the zero-failure exit fired in Step 2.4.**
 
-Re-run the **entire plan** (all FE and BE scenarios, in order):
+Re-run the **entire plan** (all FE and BE scenarios, in order). Re-resolve/validate the base URL (Steps 0.3–0.4), apply the Step 2.1 mutation guard **including its expected-rejection exemption** and disposable-DB residual, then ingest every returned scenario through Step 2.1.5's **three** extractions (delete/rebuild gaps for returned IDs, main flow, verdict). Update `current` and the report's Detailed Results, `## Setup gaps` and counts from the authoritative aggregated verdicts (Step 2.1.5 item 3); gaps for sections not re-run persist.
 
-```
-dispatch_count++
-Task(
-  subagent_type: "qa:fe-tester",
-  run_in_background: true,
-  description: "Final run — FE scenarios",
-  prompt: "<all FE scenarios; mutation guard applied>
-
-Base URL: <resolved from Step 0.3, re-validated via Step 0.4>
-
-Execute all scenarios in order. This is the authoritative final run."
-)
-
-dispatch_count++
-Task(
-  subagent_type: "qa:be-tester",
-  run_in_background: true,
-  description: "Final run — BE scenarios",
-  prompt: "<all BE scenarios; mutation guard applied>
-
-Base URL: <resolved from Step 0.3, re-validated via Step 0.4>
-DB connection: <detect from plan or project config>
-
-Execute all scenarios in order. This is the authoritative final run."
-)
-
-fe_results = TaskOutput(fe_tester_id, block: true)
-be_results = TaskOutput(be_tester_id, block: true)
-```
+For each present FE/BE section increment `dispatch_count`, launch its tester in parallel with `description: "Final run — FE/BE scenarios"` and the **Step 2.1 dispatch template** rendered with all of that section's scenarios and fresh mutation-guard marks. Wait for both launched results. Do not dispatch an absent section.
 
 #### Step 4.1: Write Status (One-Time, Authoritative)
 
-For each scenario that **PASSES** in the final run:
+For each scenario whose **final-run aggregated verdict (Step 2.1.5 item 3) is `pass`** (main flow **and every edge case** passed):
 
 1. Locate all its QA-XXX headings in the report **by the `QA-NNN` token** (not the full heading text).
 2. For each heading, use the Edit tool to insert immediately after the `### [SEVERITY] QA-XXX: Title` line — **exactly once** (if a `**Status:**` line already exists for that issue, update it in place rather than adding a second):
@@ -942,16 +904,17 @@ For each scenario that **PASSES** in the final run:
 ```
 
 Use today's date in YYYY-MM-DD format.
+Write this status whether or not this run dispatched a fix for the issue. The final run is authoritative, and environment or setup changes count.
 
 **A `🚫 Rejected` line is left exactly as found.** Before updating any existing Status line in place, read its value and match **by prefix, never by whole-line equality** — a rejected line carries a ` — <reason>` tail. Where the value begins `🚫 Rejected`, write nothing for that issue: do not update the line in place, and do not add a second `**Status:**` line beside it. The status is terminal, and the reason is the entire record of why the rejection happened. This guard is load-bearing because the sidecar binds scenario → [QA-IDs]: a *sibling* issue passing on the same scenario is enough to reach a rejected issue's heading here, and the in-place update would destroy both the rejection and its reason.
 
-**Still-failing scenarios:** leave their issues unmarked (no `**Status:**` line; they remain retryable by a future run).
+**Every other verdict:** leave its issues unmarked (no new `**Status:**` line; they remain retryable). A main-flow PASS with an edge `NEED_INFO`, `SKIP` or `FAIL` closes **none** of the scenario's issues. Append a **Final** Loop History row using the Step 3h columns even if no fix iteration ran; its `Still failing` column lists every scenario with open issues, including a main-flow PASS with an edge `(edge need info)` or `(edge skipped)`, whether final verdict is `need-info`/`skip`/`fail`. The Final row is not credited as a fix iteration.
 
 **`⚠️ Partially Fixed` is never written** — it would freeze issues out of `/fix-report`. The report stays compatible with `/fix` / `/fix-report`.
 
 #### Step 4.2: Handle Regressions
 
-Read the sidecar `baseline` map. For each scenario, check if it passed at baseline (baseline == "pass") but fails in the final run (final-run-results == "fail"). This is a regression.
+Read the sidecar `baseline` map. For each scenario, compare full aggregated verdicts (Step 2.1.5 item 3): a baseline `"pass"` becoming final-run `"fail"` (including edge FAIL) is a regression; a final `"need-info"`, `"skip"` or `"auth-unverified"` is unverified but not a regression.
 
 For each regression:
 
@@ -969,8 +932,10 @@ For each regression:
 
 #### Step 5.1: Compute Summary Stats
 
-- **final_pass_count** — scenarios passing in the final run
-- **final_fail_count** — scenarios still failing
+- **final_pass_count** — scenarios with full aggregated `pass` verdict (Step 2.1.5 item 3) in final run
+- **final_fail_count** — scenarios with full `fail` verdict in final run
+- **final_need_info_count** — scenarios with `need-info` verdict in final run (edge gaps included)
+- **final_skip_count** — `skip` plus `auth-unverified` for the four-count display only; the sidecar and Coverage still distinguish them
 - **fixed_count** — scenarios with `**Status:** ✅ Fixed` written
 - **warnings_count** — number of issues with anti-hardcoding warnings
 - **regressions_count** — number of regressions detected
@@ -984,7 +949,7 @@ For each regression:
 **Result:** <Pass | Fail | Budget Exhausted | Stopped>
 
 **Final Status:**
-- Pass: N | Fail: N | Skip: N
+- Pass: N | Fail: N | Skip: N | Need info: N
 - Fixed (Status written): N
 - Remaining unfixed: N
 - Warnings: N (anti-hardcoding)
@@ -995,24 +960,25 @@ For each regression:
 ```
 ## Coverage
 - Exercised: <feature-PASS> feature · <sanity-PASS> sanity · <negative-PASS> enforcement
-- Not verified: auth-unverified <N> · mutation-guard SKIP <M> · tool-unavailable <K> · …
+- Not verified: auth-unverified <N> · need-info <M> · mutation-guard SKIP <K> · tool-unavailable <J> · …
 - Confidence: <high | low — reason>
 ```
 
 "Exercised" (not "Verified") because a feature PASS means "reached and returned non-4xx" — an upper bound (see the auth-detection residual in Step 2.1.7).
 
-**Next steps to widen coverage** (render only rows whose count > 0, from `scenario_reason`):
+**Next steps to widen coverage** (render rows whose count > 0 from `scenario_reason`; render `need-info` whenever the current `need_info` map is non-empty, even if its verdict count is 0):
 
 - `mutation-guard` (N): re-run with `--allow-mutations` (test DB must be disposable).
 - `auth-unverified` (N): the app is auth-gated; `/qa:loop` verifies enforcement only. Exercise authenticated behavior via the project's integration/e2e suite. (No `--auth-token` intake in this version.)
+- `need-info` (N): <kind>: <identifiers> — set/start them, restart the harness, re-run. Group the **current `need_info` map** by kind and list its names/hosts only. N counts scenarios with a `need-info` verdict (the map separately lists every edge gap); show `need-info (0)` when only failed scenarios have gaps.
 - `tool-unavailable` (N): install/enable the missing tool (Playwright / curl / DB client).
 - `dispatch-exhausted`: raise `--max-dispatches`.
 
-Counts come from the normalized `scenario_reason`: `mutation-guard` is exact (orchestrator-assigned); the rest are heuristic prose-matches and may under-count — acceptable for an advisory hint.
+Counts come from aggregated verdicts (Step 2.1.5 item 3) and the normalized `scenario_reason`: `mutation-guard` is exact (orchestrator-assigned); `need-info` identifiers come from the current `need_info` map, **not** from prose. Other heuristic prose-matches may under-count — acceptable for an advisory hint.
 
 **Reactive suggestions** (each with its caveat, shown only when triggered):
 
-- **Reachability:** if **every BE scenario** is `FAIL` with a `transport` reason (Details matched `/connection refused|could not connect|timeout/i`) and a `null` `observed_status` (FE SKIPs ignored), print: "no BE scenario returned an HTTP status at `<host:port>` — the dev stack may be down (or every endpoint is 5xx'ing)." Assemble `<host:port>` from the resolved base URL's authority (Step 0.4 already rejected any userinfo, so it is safe to display) — **never** from the raw transport error string.
+- **Reachability:** if **every BE scenario** is `need-info` with kind `service` for its main flow, **or** every BE scenario is `fail` with a prose-only `transport` reason and `null` `observed_status`, print: "no BE scenario returned an HTTP status at `<host:port>` — the dev stack may be down." Assemble `<host:port>` from the resolved base URL's authority (Step 0.4 rejected userinfo), **never** from a raw transport error or secret-bearing response. Do not claim all BE scenarios unreachable when any answered.
 - **Mutation:** if every BE scenario was `mutation-guard` SKIP, print the `--allow-mutations` hint (disposable DB).
 
 No proactive guard-widening nudges: flags that widen a guard appear only in the reactive unlock-hints after the guard actually blocked something.
@@ -1069,17 +1035,17 @@ Write the updated sidecar to `docs/testing/reports/<topic>-loop-state.json` (inc
 
 Resolve in order:
 
-1. Explicit URLs in the plan's `## Source` section or scenario headers
-2. `QA_BASE_URL` env var
-3. Project config (best-effort)
+1. First backticked token of `**Base URL:**` under `## Setup`
+2. First `http://` or `https://` URL in `## Source` or a scenario heading/bullet
+3. Non-empty `QA_BASE_URL`
 
-If none resolve → abort. Cannot guarantee loopback-only safety.
+Never read project config at run time. If none resolves, abort with Step 0.3's exact fail-closed error (including the `--allow-host` clause).
 
 ### Safety Guards (Apply in All Modes)
 
-**Environment guard:** resolved host must be loopback (`localhost`, `127.0.0.1`, `::1`, `*.localhost`) or in `--allow-host`, else abort.
+**Environment guard:** resolved host must be loopback (`localhost`, `127.0.0.1`, `::1`, `*.localhost`) or in `--allow-host`, else abort. Testers also send requests and open pages only on the Base URL's host (`SKIP — off-host URL refused: <host>` otherwise), so an absolute URL inside a scenario cannot bypass this guard.
 
-**Mutation guard:** state-changing BE scenarios (HTTP POST/PUT/PATCH/DELETE or DB-write checks) SKIP with reason `mutation-guard` unless `--allow-mutations` is set. Issues on skipped scenarios are reported as "needs --allow-mutations"; never counted as fixed.
+**Mutation guard:** state-changing BE scenarios (HTTP POST/PUT/PATCH/DELETE or DB-write checks) SKIP with reason `mutation-guard` unless `--allow-mutations` is set **or** every state-changing action is a grounded expected rejection: the main `**Expected:**` and **each** edge assertion must each contain exactly one standalone three-digit HTTP status (100–599), after ignoring `(path:line)` citation numbers; each must be ≥ 400, with no 1xx–3xx status on any assertion and no `(unverified — confirm at run time)` tag on any of them. The optional DB check must be read-only (no `INSERT`/`UPDATE`/`DELETE`/`DROP`/`TRUNCATE`/`CREATE`/`UPSERT`) and no other bullet may describe a write (`create`/`delete`/`update`/`insert`/`seed`). Missing or ambiguous status or action remains guarded; skipped issues are never counted as fixed. An unexpected 2xx on an exempt request lands one write — keep the test DB disposable.
 
 *Mutation classification is syntactic and best-effort (HTTP-verb matching is case-insensitive). It detects HTTP verbs and DB-write patterns in the plan, but does **not** detect GET-with-side-effects, GraphQL mutations without an explicit verb, or **FE UI actions that trigger writes** (e.g. clicking a Delete button). Treat the test DB as disposable regardless of `--allow-mutations`.*
 
@@ -1093,15 +1059,18 @@ If none resolve → abort. Cannot guarantee loopback-only safety.
 |---|---|
 | Invalid args (before I/O) | Clear error message → stop. Examples: unknown `--mode`, non-integer `--max-iterations`, unknown `--severity`. |
 | No plan found | Message → `/qa:create-plan` → stop. |
-| Base URL undetectable | Abort (fail-closed) — cannot guarantee loopback safety. |
+| Base URL undetectable | Abort with Step 0.3's exact message; project config is never read at run time. |
+| Declared env var missing (preflight) | Abort before any dispatch; names only. |
 | Non-loopback host (no `--allow-host`) | Abort (environment guard). |
-| Mutating BE scenario without `--allow-mutations` | SKIP with reason `mutation-guard`; issue marked "needs --allow-mutations". |
-| Tool unavailable (Playwright, curl, DB) | Affected scenarios SKIP / "cannot confirm" (never counted as fixed). If all verifiers unavailable → abort. |
-| Entire baseline is SKIP (user-provided plan) | Abort: "no executable verifier — cannot gate." |
-| Entire baseline is SKIP (auto-generated plan) | Graceful success if every SKIP reason is `mutation-guard` (backend-write-only — rely on unit/integration suite); graceful exit **with a coverage-zero WARNING** if any SKIP is non-`mutation-guard` (`tool-unavailable` / `cannot-confirm` / unparseable). |
-| Feature scenario auth-gated (no token) | Reclassified `auth-unverified`; counted, surfaced, never PASS; unlock-hint shown. |
+| Mutating BE scenario without `--allow-mutations` | SKIP with reason `mutation-guard` unless Step 2.1's grounded, single-rejection-per-assertion exemption applies; guarded issues marked "needs --allow-mutations". |
+| BE scenario whose every action is a grounded expected rejection | Dispatched without `--allow-mutations`; an unexpected 2xx lands one write. Test DB must be disposable. |
+| Tool unavailable (Playwright, curl, perl) | Testers return `NEED_INFO kind=tool`, listed under `## Setup gaps`; an unavailable DB client skips only the DB check while HTTP runs. |
+| Scenario returns NEED_INFO (main flow or an edge) | approve/step: ask (re-run baseline once / continue / abort); auto: continue. Verdict `need-info`: not verified, never a fix candidate, never a regression, never credited. |
+| Entire baseline is `skip` or `need-info` (user-provided plan) | Abort: "no executable verifier — cannot gate", with the gap list. |
+| Entire baseline is `skip` or `need-info` (auto-generated plan) | Graceful success only when every reason is `mutation-guard`; otherwise graceful exit with a coverage-zero WARNING, including `need-info` gaps. |
+| Feature scenario auth-gated (main flow) | Reclassify main result as `auth-unverified` before edge aggregation; keep its main-flow issue in the report but put its QA ID in `auth_gated_issues` and exclude it from all fix dispatches. A failed edge still wins, mints a separate issue and remains eligible. |
 | Shallow coverage (no feature PASS) | WARNING + low-confidence green on auto-generated; still exit success. |
-| Zero baseline failures at/above floor | "All passing, nothing to fix" → skip loop AND final run → exit success. |
+| Zero baseline failures at/above floor | No failing assertions to fix; report any setup gaps, then skip loop and final run. |
 | Issue `Location: unknown:0` / missing fields | Pre-filtered out; "needs manual location"; never dispatched. fix-auto also returns Failed if a location-less issue arrives. |
 | fix-auto fails on an issue | Mark failed for this iteration; keep looping on remaining issues. |
 | fix-auto says "Fixed" but re-run still fails | Re-run is authoritative; scenario stays failing. |
