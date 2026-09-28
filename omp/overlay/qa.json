@@ -7,7 +7,7 @@
       "description": "Frontend testing agent that executes FE test scenarios from a QA test plan using OMP's built-in browser via eval. Navigates pages, interacts with UI elements, verifies states, and takes screenshots on failure."
     },
     "be-tester": { "role": "tester" },
-    "test-planner": { "role": "plan" },
+    "test-planner": { "role": "plan", "advisor": true },
     "test-plan-reviewer": { "role": "advisor" }
   }
 }

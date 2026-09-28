@@ -413,6 +413,8 @@ class TestGenerated(unittest.TestCase):
             "misspelled thinking": ({"role": "executor", "thinking": "hgh"}, "unknown thinking level"),
             "non-string description": ({"role": "executor", "description": True}, "description must be a non-empty string"),
             "blank description": ({"role": "executor", "description": "  "}, "description must be a non-empty string"),
+            "string advisor": ({"role": "executor", "advisor": "on"}, "advisor must be true"),
+            "false advisor": ({"role": "executor", "advisor": False}, "advisor must be true"),
         }
         for label, (spec, error) in cases.items():
             with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
@@ -453,6 +455,25 @@ class TestGenerated(unittest.TestCase):
             build(root / "output", source)
             agent = (root / "output/plugins-omp/sample/agents/worker.md").read_text()
             self.assertIn('model: "@tester"', agent)
+
+    def test_overlay_advisor_pairs_only_that_agent_with_omp_advisor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            put_json(source / "omp/overlay/sample.json", {
+                "plugin": "sample", "agents": {"worker": {"role": "plan", "advisor": True}},
+            })
+            build(root / "output", source)
+            advised = (root / "output/plugins-omp/sample/agents/worker.md").read_text()
+            self.assertRegex(advised, r"(?m)^advisor: true$")
+
+            put_json(source / "omp/overlay/sample.json", {
+                "plugin": "sample", "agents": {"worker": {"role": "plan"}},
+            })
+            build(root / "output", source)
+            unadvised = (root / "output/plugins-omp/sample/agents/worker.md").read_text()
+            self.assertNotRegex(unadvised, r"(?m)^advisor:")
 
     def test_rejects_agent_restrictions_that_would_become_unrestricted(self):
         cases = {

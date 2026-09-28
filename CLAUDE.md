@@ -66,6 +66,9 @@ role. An overlay agent spec can also set `description` to replace the Claude
 Code description in the generated OMP frontmatter; without it the generator
 keeps the source description. Override it when the editions use different
 tools, since OMP shows agent descriptions before loading their instructions.
+`advisor: true` pairs the agent with OMP's Advisor on the `advisor` role; no
+other value is accepted, and the Advisor section of `docs/oh-my-pi.md` lists
+the advised agents.
 
 A generated plugin's `hooks/hooks.json` becomes an OMP extension. The
 generator copies `omp/claude-hooks/claude-hooks.ts` to `extensions/`, writes

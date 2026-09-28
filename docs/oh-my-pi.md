@@ -37,7 +37,7 @@ Agents pick their model through model roles instead of a fixed model:
 | `challenger` | Code Review's challenger and cross-verifier |
 | `analyst` | Code Review's composition analyst, decision analyst and feedback analyzer |
 | `plan` | OMP plan mode, QA's test planner |
-| `advisor` | Plan Review's reviewer, QA's test-plan reviewer |
+| `advisor` | Plan Review's reviewer, QA's test-plan reviewer, the Advisor of QA's test planner |
 
 Map them in `~/.omp/agent/config.yml`, for example:
 
@@ -58,6 +58,19 @@ An unmapped role falls back:
 - `advisor` is an OMP role: unmapped, it first resolves through your `slow` role, or OMP's built-in list of slow models.
 
 Delivery routes a task that lists no files through OMP's `judge` role; see the [Delivery guide](plugins/delivery.md#plan-format).
+
+## Advisor
+
+QA's test planner runs with OMP's Advisor: a second model on the `advisor` role watches the planner's turns while it writes the plan and can steer it. The main session and every other agent run without an Advisor unless you enable one (`advisor.enabled` or `/advisor on` for the session). Switch it off for the planner, or on for another agent, with `task.agentAdvisor` in `~/.omp/agent/config.yml`:
+
+```yaml
+task:
+  agentAdvisor:
+    "qa:test-planner": "off"
+    "delivery:implementer": "on"
+```
+
+A value other than `"on"` or `"off"` is a model pattern for that agent's Advisor.
 
 ## Differences from Claude Code
 

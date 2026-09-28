@@ -59,7 +59,7 @@ COMMAND_KEYS = ("description", "argument-hint")
 COMMAND_DROPPED_KEYS = {"allowed-tools", "model"}
 AGENT_SOURCE_KEYS = {"name", "description", "tools", "disallowedTools", "model", "skills"}
 OVERLAY_KEYS = {"plugin", "agents", "fallback_model"}
-AGENT_SPEC_KEYS = {"role", "add_tools", "thinking", "autoload", "description"}
+AGENT_SPEC_KEYS = {"role", "add_tools", "thinking", "autoload", "description", "advisor"}
 
 NATIVE_MANIFEST_KEYS = {"name", "version", "description", "category"}
 NATIVE_AGENT_KEYS = {
@@ -242,6 +242,11 @@ def build_agent(
         not isinstance(spec["description"], str) or not spec["description"].strip()
     ):
         raise BuildError(f"{src}: description must be a non-empty string in omp/overlay/{plugin}.json")
+    # `advisor: true` pairs the subagent with OMP's Advisor on the `advisor`
+    # role. A model pattern would bypass the role mapping, so only `true` is
+    # accepted; users override it per agent with `task.agentAdvisor`.
+    if "advisor" in spec and spec["advisor"] is not True:
+        raise BuildError(f"{src}: advisor must be true in omp/overlay/{plugin}.json")
 
     # `todo` is parent-owned in OMP: the task executor strips it from every
     # subagent, so granting it would only mislead a reader of the frontmatter.
@@ -286,6 +291,8 @@ def build_agent(
     out.append(("model", yaml_str(", ".join(selectors))))
     if "thinking" in spec:
         out.append(("thinking-level", spec["thinking"]))
+    if spec.get("advisor"):
+        out.append(("advisor", "true"))
     if "autoload" in spec:
         autoload = list(spec["autoload"])
     else:

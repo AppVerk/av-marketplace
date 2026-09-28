@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.8.2
+**Version:** 2.9.0
 
 ## Commands
 
@@ -434,6 +434,8 @@ The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, 
 <a id="upgrade-notes"></a>
 ## Upgrade Notes
 
+**`qa` 2.9.0:** In OMP, `qa:test-planner` runs with OMP's Advisor: a second model on the `advisor` role watches the planner while it writes the plan and can steer it, before `qa:test-plan-reviewer` reviews the result. Expect more model cost per plan. Switch it off with `task.agentAdvisor` (see [Oh My Pi](#oh-my-pi)). The Claude Code edition is unchanged.
+
 **`qa` 2.8.0:** `/qa:create-plan` no longer writes the plan in your session. It dispatches the new `qa:test-planner` agent to write it and the new `qa:test-plan-reviewer` agent to review it, for up to 3 rounds; expect more time and model cost per plan. In OMP they run on the `plan` and `advisor` model roles, the ones plan mode and Plan Review use; see [Oh My Pi](#oh-my-pi). `/qa:loop`'s inline auto-plan is unchanged: it still writes the plan in the loop's session, without a review.
 
 **`qa` 2.7.0:** Runtime base URLs no longer come from `.env` or project config: declare `**Base URL:**` under `## Setup`, provide a URL in the plan's Source/scenarios, or set `QA_BASE_URL`. `/qa:run` is now loopback-only like `/qa:loop`: pass `--allow-host <host>` to test any other host. Declare credentials under `## Setup` and reference them as `$NAME` in scenarios; credential names must start with `QA_` (rename e.g. `API_TOKEN` to `QA_API_TOKEN`), and database names may also be all four `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` (replace old `DATABASE_URL` declarations), `SQLITE_DB` or the four `MYSQL_*` names — any other name is ignored with a warning and never read. Testers no longer read `.env` or mint tokens outside explicit scenario steps, and refuse requests and pages on any host but the Base URL's. Export declared env vars in the shell that **launches** the harness; missing ones abort before tester dispatch, and changes require a restart. DB checks use only declared connections — an available MCP server is no longer picked up automatically; PostgreSQL requires all four `PG*` env vars (no DSN on argv), and MySQL needs `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE` and `MYSQL_PWD`. Bearer headers go to curl via config on stdin, never argv; HTTPie is only for credential-free requests. A missing browser or HTTP client now returns `NEED_INFO kind=tool` rather than SKIP, and reports count Need info separately with a conditional `## Setup gaps` section. Screenshots are `<ID>-fail.png`; backend response dumps are `<ID>-body.json`. BE responses pass through a fail-closed sanitiser that withholds non-JSON and bare-string bodies; `perl` with `JSON::PP` is now required for BE testing. The loop prompts to retry/continue/abort on baseline setup gaps in interactive modes, and does not auto-fix unverified assertions or auth-gated main-flow issues.
@@ -456,6 +458,8 @@ Where the state does arise — a `/review` report fed through the decision stage
 Install with `omp plugin install qa@av-marketplace`. If you added the marketplace earlier, first run `omp plugin marketplace update av-marketplace`. The commands are `/qa:create-plan`, `/qa:run`, and `/qa:loop`.
 
 Both `qa:fe-tester` and `qa:be-tester` run through the `tester` model role (`modelRoles.tester` in `~/.omp/agent/config.yml`). `/qa:create-plan` uses the same roles as OMP planning: `qa:test-planner` runs on the `plan` role, the model plan mode switches to, and `qa:test-plan-reviewer` on the `advisor` role, Plan Review's reviewer model. The command itself runs on the session model, which only detects tools and relays between the two agents. Without a role mapping, OMP falls back to the `opus` selector, then to the session model; an unmapped `advisor` first resolves through OMP's `slow` role (see [Model roles](../oh-my-pi.md#model-roles)).
+
+`qa:test-planner` also runs with OMP's Advisor, on the `advisor` role: it watches the planner's turns and can steer it while the plan is written. To run the planner without it, set `task.agentAdvisor: {"qa:test-planner": "off"}` in `~/.omp/agent/config.yml` (see [Advisor](../oh-my-pi.md#advisor)).
 
 For BE tests in OMP, the tester resolves the shipped sanitiser path with `realpath skill://qa:be-testing/scripts/qa-redact.pl`; it must not guess a path under `~/.omp`. If resolution fails, the tester stops before making a request and reports `NEED_INFO kind=tool`.
 

@@ -3,6 +3,7 @@ name: "qa:test-planner"
 description: "Drafts and revises the QA test plan for /qa:create-plan — resolves the diff source, pins the intended contract, grounds every assertion in the working tree, scans for blockers and saves the plan in the test-plan-format; revises it from plan-reviewer findings. Dispatched by /qa:create-plan with its tool-detection results; not for direct use."
 tools: read, write, edit, bash, grep, glob
 model: "@plan, opus"
+advisor: true
 autoloadSkills: ["qa:test-plan-format"]
 ---
 > **OMP edition — generated file, do not edit.** Source of truth: `plugins/qa/agents/test-planner.md`; regenerate with `python3 scripts/build_omp_edition.py`.
