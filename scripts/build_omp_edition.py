@@ -66,7 +66,7 @@ NATIVE_AGENT_KEYS = {
     "name", "description", "tools", "spawns", "model", "thinking-level", "output",
     "blocking", "autoloadSkills", "read-summarize", "prewalk", "advisor",
 }
-# Project model roles documented in README (including the plan-mode role);
+# Project model roles documented in docs/oh-my-pi.md (including the plan-mode role);
 # `tester` runs the QA testers and `advisor` the plan reviewers (Plan Review,
 # QA's test-plan reviewer). These are user-configurable OMP aliases, not a
 # list of OMP built-in models.
@@ -227,7 +227,7 @@ def build_agent(
         raise BuildError(
             f"{src}: unknown role {role!r} in omp/overlay/{plugin}.json; "
             f"allowed project roles: {', '.join(sorted(MODEL_ROLES))}. "
-            "To add a new role, document it in README.md and add it to MODEL_ROLES."
+            "To add a new role, document it in docs/oh-my-pi.md and add it to MODEL_ROLES."
         )
     extras = spec.get("add_tools", [])
     if not isinstance(extras, list):

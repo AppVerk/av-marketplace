@@ -7,55 +7,26 @@ Claude Code plugins that compose into one development harness — from idea and 
 
 ## Installation
 
+### Claude Code
+
 ```bash
 /plugin marketplace add AppVerk/av-marketplace
+/plugin install code-review@av-marketplace
 ```
 
-After installation, verify with `/help` — you should see the new commands listed.
+Install each plugin you need the same way, or pick them in the Discover tab of `/plugin`. Verify with `/help`: the installed plugins' commands are listed.
 
 ### Oh My Pi (OMP)
 
-An OMP edition is generated from the same sources: Code Review, Commit, QA and the Frontend, PHP and Python developer plugins. It adds two OMP-only plugins, **Delivery** and **Plan Review**:
-
 ```bash
 omp plugin marketplace add AppVerk/av-marketplace
-for p in code-review commit delivery plan-review qa python-developer frontend-developer php-developer; do
-  omp plugin install "$p@av-marketplace"
-done
+omp plugin install \
+  code-review@av-marketplace commit@av-marketplace qa@av-marketplace \
+  delivery@av-marketplace plan-review@av-marketplace \
+  python-developer@av-marketplace frontend-developer@av-marketplace php-developer@av-marketplace
 ```
 
-With Commit installed, Delivery 0.4.0 and older stop at their first commit. If you added the marketplace earlier, run `omp plugin marketplace update av-marketplace` before installing Commit, and upgrade an installed Delivery with `omp plugin upgrade delivery@av-marketplace`. Commit's git guards need `jq` on `PATH`: without it, every `bash` call they do not deny asks for confirmation, and in print mode and subagents, Delivery's agents included, such calls are blocked.
-
-Delivery needs Python 3.9 or newer, available as `python3` on `PATH`: its plan check, task router and preflight run Python. Without it, approving a plan does not start a delivery and the plan runs as usual.
-
-In OMP, QA's FE scenarios use `eval`'s `browser` global instead of Playwright MCP; they run in the browser OMP's settings select (managed Chromium only when no relay, CDP URL, or cmux browser is selected). For QA runs, set `browser.relay` and `browser.cmux` to `false` and unset `browser.cdpUrl` so scenarios do not use your own or an attached browser. While `browser.enabled` is on, OMP removes Playwright MCP servers from the session, so no MCP setup is needed and a configured `@playwright/mcp` server is not used. With `browser.enabled` off, FE scenarios return `NEED_INFO kind=tool` rather than SKIP. BE scenarios use the same CLI clients as in Claude Code. OMP gives every subagent all MCP servers configured for the session, so both `qa:fe-tester` and `qa:be-tester` can call any of them (a `tools:` list cannot narrow this). Before running `/qa:run` or `/qa:loop` against code you do not trust, remove write-capable MCP servers from the OMP config. `/qa:loop` dispatches `code-review:fix-auto`, so it needs Code Review installed. Screenshots of failed FE scenarios land in `docs/testing/reports/screenshots/` as in Claude Code.
-
-Delivery runs approved plans end to end, without slash commands. Plan in OMP plan mode (`/plan`). In a git repository the plan's Approach is written as `### Task N:` blocks, each listing its files; proposing a plan whose task mixes stacks, lists no files or has a malformed `### Task` heading is rejected with the reason. Before creating a branch or committing the plan, delivery stops if the working tree has changes other than the plan itself, or if the plan check finds a problem. Approving a plan that has tasks starts the delivery:
-
-1. the plan is committed to `docs/plans/<date>-<slug>.md`, unless `.gitignore` excludes it — on a new `delivery/<slug>` branch when you are on `main` or `master`;
-2. each task goes to the developer agent that owns its files (Python, React, PHP, or a generic implementer), is reviewed, gets up to 3 fix rounds, and is committed;
-3. the plan's Verification runs, then `/code-review:review` over the delivered commits. If you save the review report, delivery commits that report alone unless `.gitignore` excludes it, then offers `/code-review:fix-all`, whose changes stay uncommitted.
-
-A plan without `### Task` headings runs as usual. `/delivery:execute <plan>` resumes an interrupted delivery, skipping committed tasks, or delivers a plan file you wrote yourself; tasks of such a plan that list no files are routed by Jev (the `judge` model role, e.g. `typesafe/jev-latest`) when it is at least 0.8 confident; below that, or on every such task when the `judge` role resolves to a non-Jev model, delivery asks you. See the [Delivery guide](docs/plugins/delivery.md) for the plan format and prerequisites.
-
-Plan Review has a second model check every plan-mode plan before it reaches the approval dialog. The agent sends the plan to `xd://plan_review`; the reviewer (the `advisor` model role, with read-only tools) reports blockers, concerns and nits, and `xd://propose` stays blocked until a review approves the current plan text or 3 review rounds are used. See the [Plan Review guide](docs/plugins/plan-review.md).
-
-Agents route through model roles instead of a fixed model: reviewers use `code_review`, fixers and developers `executor`, QA testers `tester`, adversarial verification `challenger`, finding analysis (composite grouping, needs-decision findings, PR feedback) `analyst`, plan mode and QA's test planner `plan`, and the plan reviewers (Plan Review's reviewer, QA's test-plan reviewer) `advisor`. Map each role in `~/.omp/agent/config.yml`, for example:
-
-```yaml
-modelRoles:
-  code_review: anthropic/claude-opus-5-5
-  analyst: anthropic/claude-opus-5-5
-  executor: openai-codex/gpt-5.5
-  tester: openai-codex/gpt-5.5
-  challenger: openai-codex/gpt-5.5
-  advisor: openai-codex/gpt-5.5
-```
-
-An unmapped role falls back to the model the Claude Code edition names (`opus`), or to the session model where that edition inherits one.
-The generator accepts only these documented project roles in overlays; to introduce another user-configured role, document it here and add it to `MODEL_ROLES` in `scripts/build_omp_edition.py`.
-
-An overlay agent spec can also set `description` to replace the Claude Code description in generated OMP frontmatter. Without an override, the generator preserves the source description. Use an override when the editions use different tools, since OMP shows agent descriptions before loading their instructions.
+The OMP edition has Code Review, Commit, QA and the three developer plugins, plus two OMP-only plugins: Delivery and Plan Review. The [Oh My Pi guide](docs/oh-my-pi.md) covers updating, prerequisites and model roles.
 
 ## Workflow
 
@@ -93,6 +64,7 @@ Each stage leaves an artifact the next stage consumes: the brainstormed spec is 
 
 - [Recommended Workflow](docs/workflow.md)
 - [Installation & Optional Tools](docs/installation.md)
+- [Oh My Pi (OMP)](docs/oh-my-pi.md)
 - [Plugin Guides](docs/plugins/)
 - [Contributing](docs/contributing.md)
 

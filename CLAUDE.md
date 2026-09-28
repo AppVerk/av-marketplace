@@ -57,7 +57,11 @@ in OMP. Versions are copied from `.claude-plugin/marketplace.json`, so the
 four-place versioning rule above is unchanged.
 
 Overlay roles must be members of `MODEL_ROLES` in the generator and documented
-in the README's model-roles paragraph; `tester` is the QA testers' role.
+in the model-roles section of `docs/oh-my-pi.md`; `tester` is the QA testers'
+role. An overlay agent spec can also set `description` to replace the Claude
+Code description in the generated OMP frontmatter; without it the generator
+keeps the source description. Override it when the editions use different
+tools, since OMP shows agent descriptions before loading their instructions.
 
 A generated plugin's `hooks/hooks.json` becomes an OMP extension. The
 generator copies `omp/claude-hooks/claude-hooks.ts` to `extensions/`, writes

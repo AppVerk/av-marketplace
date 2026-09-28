@@ -404,7 +404,7 @@ class TestGenerated(unittest.TestCase):
 
     def test_rejects_invalid_overlay_role_tools_thinking_and_description(self):
         cases = {
-            "misspelled role": ({"role": "exector"}, "unknown role.*allowed project roles:.*README.md.*MODEL_ROLES"),
+            "misspelled role": ({"role": "exector"}, "unknown role.*allowed project roles:.*docs/oh-my-pi.md.*MODEL_ROLES"),
             "non-string role": ({"role": True}, "unknown role"),
             "misspelled tool": ({"role": "executor", "add_tools": ["ast-edit"]}, "unknown OMP tool"),
             "non-list tools": ({"role": "executor", "add_tools": "lsp"}, "add_tools must be a list"),

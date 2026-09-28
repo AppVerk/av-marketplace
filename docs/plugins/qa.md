@@ -455,7 +455,7 @@ Where the state does arise — a `/review` report fed through the decision stage
 
 Install with `omp plugin install qa@av-marketplace`. If you added the marketplace earlier, first run `omp plugin marketplace update av-marketplace`. The commands are `/qa:create-plan`, `/qa:run`, and `/qa:loop`.
 
-Both `qa:fe-tester` and `qa:be-tester` run through the `tester` model role (`modelRoles.tester` in `~/.omp/agent/config.yml`). `/qa:create-plan` uses the same roles as OMP planning: `qa:test-planner` runs on the `plan` role, the model plan mode switches to, and `qa:test-plan-reviewer` on the `advisor` role, Plan Review's reviewer model. The command itself runs on the session model, which only detects tools and relays between the two agents. Without a role mapping, OMP falls back to the `opus` selector, then to the session model.
+Both `qa:fe-tester` and `qa:be-tester` run through the `tester` model role (`modelRoles.tester` in `~/.omp/agent/config.yml`). `/qa:create-plan` uses the same roles as OMP planning: `qa:test-planner` runs on the `plan` role, the model plan mode switches to, and `qa:test-plan-reviewer` on the `advisor` role, Plan Review's reviewer model. The command itself runs on the session model, which only detects tools and relays between the two agents. Without a role mapping, OMP falls back to the `opus` selector, then to the session model; an unmapped `advisor` first resolves through OMP's `slow` role (see [Model roles](../oh-my-pi.md#model-roles)).
 
 For BE tests in OMP, the tester resolves the shipped sanitiser path with `realpath skill://qa:be-testing/scripts/qa-redact.pl`; it must not guess a path under `~/.omp`. If resolution fails, the tester stops before making a request and reports `NEED_INFO kind=tool`.
 
