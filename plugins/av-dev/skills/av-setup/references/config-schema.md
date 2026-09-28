@@ -52,7 +52,7 @@ Rules:
 ```json
 {
   "version": 1,
-  "requires": { "av-dev": ">=0.2.0" },
+  "requires": { "av-dev": ">=0.1.0" },
   "project": {
     "name": "example-shop",
     "summary": "Web shop: API service and web client (example, do not copy the values).",

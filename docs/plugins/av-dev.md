@@ -2,7 +2,7 @@
 
 One agent workflow for every repo. `av-setup` configures the repo once; five working skills then plan, implement, review and verify from that configuration.
 
-**Version:** 0.4.0
+**Version:** 0.1.0
 
 Usage guide with examples: [plugins/av-dev/README.md](../../plugins/av-dev/README.md).
 
