@@ -184,6 +184,53 @@ has "$out" "RUN ok" && ok || fail "reuse: old evidence used after a code change"
 git checkout -q a.txt
 [ ! -d .ai/workspace/runs/r11/.lock ] && ok || fail "lock: not released after the gate"
 
+# --- 12e. pipefail: a failing program anywhere in a pipeline fails the command (PR #19, point 9)
+cfgp="$TMP/pipe.json"
+jq '.validation.commands += {
+      "pipebad": {"run": "false | tail -1"},
+      "pipegood": {"run": "true | tail -1"},
+      "pipeexp": {"run": "echo UNIT_OK; exit 1 | cat", "expect": "UNIT_OK"},
+      "pipepre": {"run": "echo ran", "precheck": "false | true"},
+      "owner": {"run": "cat .ai/workspace/runs/r31/.lock/owner"}}
+    | .validation.gates += {"pbad": ["pipebad"], "pgood": ["pipegood"], "pexp": ["pipeexp"], "ppre": ["pipepre"], "owner": ["owner"]}' \
+  .ai/av.config.json >"$cfgp"
+out="$(bash "$GATE" --config "$cfgp" --gate pbad --run-id r30)"; rc=$?
+has "$out" "CHECK pipebad FAIL" && [ "$rc" -eq 1 ] && ok || fail "pipefail: false | tail must FAIL ($rc): $out"
+out="$(bash "$GATE" --config "$cfgp" --gate pgood --run-id r30)"; rc=$?
+has "$out" "CHECK pipegood PASS" && [ "$rc" -eq 0 ] && ok || fail "pipefail: true | tail must PASS ($rc): $out"
+out="$(bash "$GATE" --config "$cfgp" --gate pexp --run-id r30)"; rc=$?
+[ "$rc" -eq 1 ] && ok || fail "pipefail: expect text printed but a program in the pipeline failed ($rc): $out"
+out="$(bash "$GATE" --config "$cfgp" --gate ppre --run-id r30)"; rc=$?
+has "$out" "CHECK pipepre NOT_RUN" && [ "$rc" -eq 3 ] && ok || fail "pipefail: a failing precheck pipeline must give NOT_RUN ($rc): $out"
+
+# --- 12f. stale lock after kill -9 or a reboot is taken over (PR #19, point 11)
+L=.ai/workspace/runs/r31/.lock
+bash "$GATE" --gate quick --run-id r31 >/dev/null
+sleep 0 & dead=$!; wait "$dead" 2>/dev/null
+mkdir -p "$L" ".ai/workspace/runs/r31/.bg.$dead" && echo "quick pid $dead" >"$L/owner"
+out="$(bash "$GATE" --status --run-id r31)"; rc=$?
+has "$out" "WARNING stale lock: quick pid $dead is not running" && [ "$rc" -ne 4 ] && ok || fail "stale lock: --status must warn, not BUSY ($rc): $out"
+out="$(bash "$GATE" --gate quick --run-id r31)"; rc=$?
+has "$out" "WARNING stale lock of run r31 (quick pid $dead)" && has "$out" "GATE quick PASS" && [ "$rc" -eq 0 ] && ok || fail "stale lock: not taken over ($rc): $out"
+[ ! -d "$L" ] && [ ! -d ".ai/workspace/runs/r31/.bg.$dead" ] && ok || fail "stale lock: lock or .bg of the dead gate left"
+mkdir -p "$L" && echo "quick pid $$ started Mon Jan  1 00:00:00 2001" >"$L/owner"
+out="$(bash "$GATE" --gate quick --run-id r31)"; rc=$?
+has "$out" "WARNING stale lock" && [ "$rc" -eq 0 ] && ok || fail "reused pid (other start time): not taken over ($rc): $out"
+mkdir -p "$L" && echo "quick pid $$ started $(ps -o lstart= -p $$ | sed 's/[[:space:]]*$//')" >"$L/owner"
+out="$(bash "$GATE" --gate quick --run-id r31)"; rc=$?
+has "$out" "BUSY another gate of run r31" && [ "$rc" -eq 4 ] && ok || fail "live lock with the same start time must stay BUSY ($rc): $out"
+echo "quick" >"$L/owner"
+out="$(bash "$GATE" --gate quick --run-id r31)"; rc=$?
+[ "$rc" -eq 4 ] && ok || fail "lock without a pid (just made) must stay BUSY ($rc)"
+rm -rf "$L"
+fake_ps="$TMP/nops"; mkdir -p "$fake_ps"; printf '#!/bin/sh\nexit 1\n' >"$fake_ps/ps"; chmod +x "$fake_ps/ps"
+mkdir -p "$L" && echo "quick pid $dead" >"$L/owner"
+out="$(PATH="$fake_ps:$PATH" bash "$GATE" --gate quick --run-id r31)"; rc=$?
+[ "$rc" -eq 4 ] && ok || fail "ps unusable: a lock must never be taken over ($rc): $out"
+rm -rf "$L"
+bash "$GATE" --config "$cfgp" --gate owner --run-id r31 >/dev/null
+grep -Eq '^owner pid [0-9]+ started [A-Z][a-z]{2} ' .ai/workspace/runs/r31/owner.owner.log && ok || fail "owner: pid and start time missing: $(cat .ai/workspace/runs/r31/owner.owner.log)"
+
 # --- 12d. config field validation: models, git, roles, paths (R7)
 good="$TMP/good.json"
 jq 'del(.validation.gates.broken)

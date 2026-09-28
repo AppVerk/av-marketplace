@@ -22,11 +22,16 @@
 #
 # Command fields: run, expect, precheck, needs, timeoutSec, cwd,
 #   notRunExitCodes, optional, covers, parallel.
+# run and precheck go to bash with pipefail: in "npm test | tail -50" a failing test fails
+#   the command, not only the last program. Do not cut output with head in a command.
 # parallel: true = the command shares no state with others; it starts in the background
 #   when the gate starts, next to the rest. Results, logs and evidence print in gate order.
 #   A command with covers, or covered by another command of the gate, runs in sequence.
 # Exit codes: 0 PASS, 1 FAIL, 2 config error, 3 incomplete (NOT_RUN or STALE:
 #   the tree changed during the gate), 4 another gate of this run is in progress (BUSY).
+# Lock: <runs>/<RUN_ID>/.lock with the owner "<label> pid <pid> started <start time>". A lock
+#   whose process is gone (kill -9, a crash, a reboot) or whose pid now belongs to another
+#   process is stale: the next gate takes it over with a WARNING, --status reports it.
 # Command environment: AV_SKILLS_DIR = directory with the av-* skills (parent of av-verify).
 # Version: VERSION file in the skill directory (missing = dev); the config may require
 #   "requires": {"av-dev": ">=X.Y.Z"}.
@@ -110,6 +115,25 @@ hash_cmd() {
 }
 
 workspace=".ai/workspace"
+
+# proc_start PID - start time of a running process (ps lstart); empty when it does not run
+proc_start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/[[:space:]]*$//'; }
+
+# lock_stale LOCK - code 0 when the owner of LOCK is gone: its pid does not run, or runs with
+# another start time (the pid was reused). Not stale: an owner without a pid (a gate that has
+# just made the lock), or a machine where ps cannot tell (a live lock must never be taken).
+lock_stale() {
+  local owner pid started now
+  [ -n "$(proc_start $$)" ] || return 1
+  owner="$(cat "$1/owner" 2>/dev/null)" || return 1
+  pid="$(printf '%s' "$owner" | sed -n 's/.* pid \([0-9][0-9]*\).*/\1/p')"
+  [ -n "$pid" ] || return 1
+  now="$(proc_start "$pid")"
+  [ -n "$now" ] || return 0
+  started="$(printf '%s' "$owner" | sed -n 's/.* started \(.*\)$/\1/p')"
+  [ -n "$started" ] && [ "$started" != "$now" ] && return 0
+  return 1
+}
 
 fingerprint() {
   local head
@@ -428,8 +452,12 @@ if [ "$mode" = "status" ]; then
   done
   printf 'FINGERPRINT %s\n' "$fp"
   if [ -d "$out_dir/.lock" ]; then
-    printf 'BUSY gate in progress: %s\n' "$(cat "$out_dir/.lock/owner" 2>/dev/null)"
-    exit 4
+    if lock_stale "$out_dir/.lock"; then
+      printf 'WARNING stale lock: %s is not running; the next gate of this run takes it over\n' "$(cat "$out_dir/.lock/owner" 2>/dev/null)"
+    else
+      printf 'BUSY gate in progress: %s\n' "$(cat "$out_dir/.lock/owner" 2>/dev/null)"
+      exit 4
+    fi
   fi
   exit "$code"
 fi
@@ -472,7 +500,7 @@ run_timed() {
   local cmd="$1" cwd="$2" limit="$3" log="$4" marker="$5" pidfile="${6:-}"
   rm -f "$marker"
   set -m
-  ( cd "$cwd" && exec bash -c "$cmd" ) >"$log" 2>&1 &
+  ( cd "$cwd" && exec bash -o pipefail -c "$cmd" ) >"$log" 2>&1 &
   local pid=$!
   [ -n "$pidfile" ] && printf '%s\n' "$pid" >"$pidfile"
   ( sleep "$limit"; : >"$marker"; kill -TERM -- "-$pid" 2>/dev/null; sleep 3; kill -KILL -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
@@ -492,10 +520,18 @@ run_timed() {
 
 lock="$out_dir/.lock"
 if ! mkdir "$lock" 2>/dev/null; then
-  printf 'BUSY another gate of run %s is in progress (%s); wait for it to finish\n' "$run_id" "$(cat "$lock/owner" 2>/dev/null)"
-  exit 4
+  if lock_stale "$lock"; then
+    stale_owner="$(cat "$lock/owner" 2>/dev/null)"
+    stale_pid="$(printf '%s' "$stale_owner" | sed -n 's/.* pid \([0-9][0-9]*\).*/\1/p')"
+    printf 'WARNING stale lock of run %s (%s): the process is not running; taking it over\n' "$run_id" "$stale_owner"
+    rm -rf "$lock" ${stale_pid:+"$out_dir/.bg.$stale_pid"}
+  fi
+  if ! mkdir "$lock" 2>/dev/null; then
+    printf 'BUSY another gate of run %s is in progress (%s); wait for it to finish\n' "$run_id" "$(cat "$lock/owner" 2>/dev/null)"
+    exit 4
+  fi
 fi
-printf '%s pid %s\n' "$label" "$$" >"$lock/owner"
+printf '%s pid %s started %s\n' "$label" "$$" "$(proc_start $$)" >"$lock/owner"
 bg_dir="$out_dir/.bg.$$"
 mkdir -p "$bg_dir"
 cleanup() {
@@ -559,7 +595,7 @@ for name in $bg_names; do
   (
     started="$(date +%Y-%m-%dT%H:%M:%S)"
     pre=1; rc=0; timed_out=0; duration=0
-    if [ -n "$precheck" ] && ! ( cd "$cwd" && bash -x -c "$precheck" ) >"$log" 2>&1; then
+    if [ -n "$precheck" ] && ! ( cd "$cwd" && bash -o pipefail -x -c "$precheck" ) >"$log" 2>&1; then
       pre=0
     else
       start_s="$(date +%s)"
@@ -618,7 +654,7 @@ check_one() {
         pre=1; rc=1; timed_out=0; duration=0
         printf '\n[background command ended without a result]\n' >>"$log"
       fi
-    elif [ -n "$precheck" ] && ! ( cd "$cwd" && bash -x -c "$precheck" ) >"$log" 2>&1; then
+    elif [ -n "$precheck" ] && ! ( cd "$cwd" && bash -o pipefail -x -c "$precheck" ) >"$log" 2>&1; then
       pre=0
     fi
     if [ "$pre" -eq 0 ]; then
