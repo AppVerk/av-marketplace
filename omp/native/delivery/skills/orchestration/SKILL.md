@@ -50,7 +50,7 @@ Run the steps in order. Every `stop` prints its message and ends the run.
    git switch -c "$B"
    ```
    `BRANCH` becomes `$B`.
-10. **Commit the plan** when `git status --porcelain -- "$PLAN_PATH"` prints anything. The subject is `docs: update delivery plan <SLUG>` when `git ls-files --error-unmatch -- "$PLAN_PATH"` succeeds, otherwise `docs: add delivery plan <SLUG>`. Run `git add -- "$PLAN_PATH"`, then `AV_COMMIT_SKILL=1 git commit -m "<subject>" -- "$PLAN_PATH"`. A failed commit → print git's output and stop. The AV_COMMIT_SKILL=1 prefix lets the Commit plugin's git commit guard pass delivery's commits; keep it on every commit delivery makes.
+10. **Commit the plan** when `git status --porcelain -- "$PLAN_PATH"` prints anything. A plan that git ignores and does not track prints nothing, so it stays uncommitted. The subject is `docs: update delivery plan <SLUG>` when `git ls-files --error-unmatch -- "$PLAN_PATH"` succeeds, otherwise `docs: add delivery plan <SLUG>`. Run `git add -- "$PLAN_PATH"`, then `AV_COMMIT_SKILL=1 git commit -m "<subject>" -- "$PLAN_PATH"`. A failed commit → print git's output and stop. The AV_COMMIT_SKILL=1 prefix lets the Commit plugin's git commit guard pass delivery's commits; keep it on every commit delivery makes.
 11. If `git status --porcelain` prints anything → stop with `Commit or stash your other changes, then run /delivery:execute <PLAN_PATH>.`
 12. `TASKS` = JSON output of `python3 "$ROUTER" plan "$REPO" "$PLAN_PATH"`; a non-zero exit → stop with the router's error.
 13. **Done tasks and base.** `DONE=$(python3 "$ROUTER" done "$REPO" "$PLAN_PATH")`; a non-zero exit → stop with the router's error. When its `conflicts` list is not empty → stop, printing one line per entry: `Task <task> is committed as "<committed_title, or missing>" in <commit>, but <PLAN_PATH> titles it "<plan_title>". Restore the title or drop the commit, then run /delivery:execute <PLAN_PATH>.` Mark no task done on this path. Otherwise the tasks listed in `done` are done and `BASE` is its `base`.
@@ -95,7 +95,7 @@ Mark `Final code review` in progress.
   Changes on branch <BRANCH> in <BASE>..HEAD (git diff <BASE>..HEAD), delivered from <PLAN_PATH>. Review only these changes.
   ```
 
-- If the review saved a report, commit it before anything else touches it: `git add -- "<report path>"`, then `AV_COMMIT_SKILL=1 git commit -m "docs: add review of delivery $SLUG" -- "<report path>"`. Commit only that path. If adding or committing fails, print git's output and stop.
+- If the review saved a report, run `git check-ignore -q -- "<report path>"`. Exit 0 means git ignores the report: leave it uncommitted. Otherwise commit it before anything else touches it: `git add -- "<report path>"`, then `AV_COMMIT_SKILL=1 git commit -m "docs: add review of delivery $SLUG" -- "<report path>"`. Commit only that path. If adding or committing fails, print git's output and stop.
 
 Mark `Final code review` done.
 

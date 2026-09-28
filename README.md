@@ -32,9 +32,9 @@ In OMP, QA's FE scenarios use `eval`'s `browser` global instead of Playwright MC
 
 Delivery runs approved plans end to end, without slash commands. Plan in OMP plan mode (`/plan`). In a git repository the plan's Approach is written as `### Task N:` blocks, each listing its files; proposing a plan whose task mixes stacks, lists no files or has a malformed `### Task` heading is rejected with the reason. Before creating a branch or committing the plan, delivery stops if the working tree has changes other than the plan itself, or if the plan check finds a problem. Approving a plan that has tasks starts the delivery:
 
-1. the plan is committed to `docs/plans/<date>-<slug>.md` — on a new `delivery/<slug>` branch when you are on `main` or `master`;
+1. the plan is committed to `docs/plans/<date>-<slug>.md`, unless `.gitignore` excludes it — on a new `delivery/<slug>` branch when you are on `main` or `master`;
 2. each task goes to the developer agent that owns its files (Python, React, PHP, or a generic implementer), is reviewed, gets up to 3 fix rounds, and is committed;
-3. the plan's Verification runs, then `/code-review:review` over the delivered commits. If you save the review report, delivery commits that report alone, then offers `/code-review:fix-all`, whose changes stay uncommitted.
+3. the plan's Verification runs, then `/code-review:review` over the delivered commits. If you save the review report, delivery commits that report alone unless `.gitignore` excludes it, then offers `/code-review:fix-all`, whose changes stay uncommitted.
 
 A plan without `### Task` headings runs as usual. `/delivery:execute <plan>` resumes an interrupted delivery, skipping committed tasks, or delivers a plan file you wrote yourself; tasks of such a plan that list no files are routed by Jev (the `judge` model role, e.g. `typesafe/jev-latest`) when it is at least 0.8 confident; below that, or on every such task when the `judge` role resolves to a non-Jev model, delivery asks you. See the [Delivery guide](docs/plugins/delivery.md) for the plan format and prerequisites.
 

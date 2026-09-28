@@ -32,7 +32,7 @@ Number tasks 1, 2, 3… in execution order, each number exactly once; put produc
 
 ## Branch and plan location
 
-On `main` or `master`, Delivery creates a `delivery/<slug>` branch (adding a numeric suffix if that name exists). On any other branch, it stays on that branch. When `/delivery:execute` receives a plan file already in the repository, it keeps that plan at its existing path. An external plan file, or a plan approved in OMP plan mode, is saved to `docs/plans/<date>-<slug>.md` (with a numeric suffix if the destination exists). Delivery commits a new or changed plan before the first task; an unchanged plan already in the repository needs no new plan commit.
+On `main` or `master`, Delivery creates a `delivery/<slug>` branch (adding a numeric suffix if that name exists). On any other branch, it stays on that branch. When `/delivery:execute` receives a plan file already in the repository, it keeps that plan at its existing path. An external plan file, or a plan approved in OMP plan mode, is saved to `docs/plans/<date>-<slug>.md` (with a numeric suffix if the destination exists). Delivery commits a new or changed plan before the first task; an unchanged plan already in the repository needs no new plan commit, and a plan your `.gitignore` excludes is never committed.
 
 ## Prerequisites
 
@@ -50,4 +50,4 @@ Delivery runs its git commit commands with the AV_COMMIT_SKILL=1 prefix, so the 
 
 Every task is reviewed before its commit. Findings marked `critical` or `important` return to the same implementing agent for up to 3 fix rounds, with another review after each round. If blocking findings remain, choose `Accept and commit with open findings` or `Stop delivery`. Accepted open findings add the review trailer above; stopping leaves the delivery unfinished.
 
-When the final review saves a report, Delivery commits it alone as `docs: add review of delivery <slug>` before offering `/code-review:fix-all`. Whatever fix-all changes, including the statuses it writes into the report, stays uncommitted for you to review and commit.
+When the final review saves a report, Delivery commits it alone as `docs: add review of delivery <slug>` before offering `/code-review:fix-all`, unless your `.gitignore` excludes the report, in which case it stays uncommitted. Whatever fix-all changes, including the statuses it writes into the report, stays uncommitted for you to review and commit.
