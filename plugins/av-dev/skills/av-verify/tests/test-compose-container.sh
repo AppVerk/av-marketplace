@@ -141,5 +141,61 @@ rows "app${T}one_app_1${T}bbb222${T}$REPO"
 run --root "$REPO" app
 awk '$1 != "ps"' "$FAKE_LOG" | grep -q . && fail "read-only: non-ps docker call" || ok
 
+# --- 14. a worktree under the root is another checkout (review of PR #19, point 5)
+git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$REPO" worktree add -q "$REPO/.claude/worktrees/w1" -b w1 2>/dev/null
+WT="$REPO/.claude/worktrees/w1"
+[ -d "$WT" ] && ok || fail "setup: worktree not created"
+rows "app${T}wt_app_1${T}kkk111${T}$WT"
+run --root "$REPO" app
+[ "$RC" -eq 2 ] && [ -z "$OUT" ] && ok || fail "only the worktree container: code $RC out '$OUT', expected 2"
+has "$ERR" "no running container of service 'app'" && ok || fail "only the worktree container: reason missing ($ERR)"
+rows "app${T}a_wt_app_1${T}kkk111${T}$WT/docker" "app${T}one_app_1${T}bbb222${T}$REPO"
+run --root "$REPO" app
+[ "$RC" -eq 0 ] && [ "$OUT" = "bbb222" ] && ok || fail "worktree and this checkout: code $RC out '$OUT'"
+[ -z "$ERR" ] && ok || fail "worktree and this checkout: unexpected WARNING '$ERR'"
+rows "app${T}wt_app_1${T}kkk111${T}$LINK/repo one/.claude/worktrees/w1/"
+run --root "$REPO" app
+[ "$RC" -eq 2 ] && ok || fail "worktree through the symlink with a trailing slash: code $RC out '$OUT'"
+run --root "$WT" app
+[ "$RC" -eq 0 ] && [ "$OUT" = "kkk111" ] && ok || fail "from the worktree itself its own container counts: code $RC out '$OUT'"
+rows "app${T}one_app_1${T}bbb222${T}$REPO"
+run --root "$WT" app
+[ "$RC" -eq 2 ] && ok || fail "from the worktree the main checkout container must not count: code $RC out '$OUT'"
+
+# --- 15. a worktree that is gone but still registered, and one under a gone path
+git -C "$REPO" worktree add -q "$REPO/.worktrees/w2" -b w2 2>/dev/null
+rm -rf "$REPO/.worktrees/w2"
+rows "app${T}w2_app_1${T}lll222${T}$REPO/.worktrees/w2" "app${T}w2_db${T}lll333${T}$REPO/.worktrees/w2/docker"
+run --root "$REPO" app
+[ "$RC" -eq 2 ] && ok || fail "gone registered worktree: code $RC out '$OUT'"
+
+# --- 16. a nested repo or submodule under the root, existing and gone subdirectory
+mkdir -p "$REPO/vendor/lib/docker"
+git -C "$REPO/vendor/lib" init -q
+rows "app${T}lib_app_1${T}mmm111${T}$REPO/vendor/lib/docker"
+run --root "$REPO" app
+[ "$RC" -eq 2 ] && ok || fail "nested repo: code $RC out '$OUT'"
+rows "app${T}lib_app_1${T}mmm222${T}$REPO/vendor/lib/gone"
+run --root "$REPO" app
+[ "$RC" -eq 2 ] && ok || fail "gone directory in a nested repo: code $RC out '$OUT'"
+rows "app${T}lib_app_1${T}mmm333${T}$REPO/vendor/lib"
+run --root "$REPO" app
+[ "$RC" -eq 2 ] && ok || fail "nested repo root: code $RC out '$OUT'"
+
+mkdir -p "$REPO/moved/lib"
+printf 'gitdir: %s/nowhere/.git/modules/lib
+' "$TMP" >"$REPO/moved/lib/.git"
+rows "app${T}moved_app_1${T}mmm444${T}$REPO/moved/lib"
+run --root "$REPO" app
+[ "$RC" -eq 2 ] && ok || fail "nested repo with a broken .git file: code $RC out '$OUT'"
+
+# --- 17. a plain subdirectory of this checkout still counts, also a gitignored one
+printf 'ignored/\n' >"$REPO/.gitignore"
+mkdir -p "$REPO/ignored/compose"
+rows "app${T}one_app_1${T}nnn111${T}$REPO/ignored/compose"
+run --root "$REPO" app
+[ "$RC" -eq 0 ] && [ "$OUT" = "nnn111" ] && ok || fail "gitignored subdirectory: code $RC out '$OUT'"
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

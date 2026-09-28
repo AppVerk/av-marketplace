@@ -4,7 +4,12 @@
 # Another checkout of the same repo (same compose project name) may run on the
 # machine, so `docker compose exec` could hit its containers. This script picks
 # the container of <service> whose label com.docker.compose.project.working_dir
-# is the repo root or a directory under it (compose files in e.g. docker/).
+# is the repo root or a directory under it (compose files in e.g. docker/) that
+# belongs to this checkout. A worktree, submodule or nested repo under the root
+# (e.g. .claude/worktrees/x) is another checkout: its containers do not count.
+# An existing directory must give this root in `git rev-parse --show-toplevel`.
+# A directory that is gone counts when no `git worktree list` entry of this repo
+# holds it and no directory between it and the root has a .git.
 # It compares the logical and the physical path (pwd -P, e.g. /tmp -> /private/tmp).
 # It reads `docker ps` only: no `docker compose` (env files may be gitignored),
 # and it never starts, stops or execs containers.
@@ -39,7 +44,7 @@ service=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root) [ $# -ge 2 ] || fail "--root needs a directory"; root_arg="$2"; shift ;;
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 && /^#/ { print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     -*) fail "unknown option '$1'" ;;
     *) [ -z "$service" ] || fail "more than one service: '$service' and '$1'"; service="$1" ;;
   esac
@@ -85,6 +90,50 @@ under_root() {
   return 1
 }
 
+# other_checkouts - physical paths of the worktrees of this repo other than the root
+other_checkouts="$(git -C "$root_physical" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' |
+  while IFS= read -r w; do
+    [ -d "$w" ] && w="$(cd "$w" 2>/dev/null && pwd -P)"
+    [ "$w" = "$root_physical" ] || printf '%s\n' "$w"
+  done)"
+
+# physical_wd WD - WD with the symlinks of its existing part resolved
+physical_wd() {
+  local d="$1" rest=""
+  while [ -n "$d" ] && [ ! -d "$d" ]; do rest="/${d##*/}$rest"; d="${d%/*}"; done
+  [ -n "$d" ] || return 1
+  printf '%s%s\n' "$(cd "$d" 2>/dev/null && pwd -P)" "$rest"
+}
+
+# this_checkout WD - code 0 when WD (under the root) belongs to this checkout, not to a
+# worktree, submodule or nested repo below the root
+this_checkout() {
+  local wd p top w
+  wd="$(physical_wd "$1")" || return 1
+  [ "$wd" = "$root_physical" ] && return 0
+  if [ -d "$wd" ]; then
+    top="$(git -C "$wd" rev-parse --show-toplevel 2>/dev/null)" || top=""
+    if [ -n "$top" ]; then
+      top="$(cd "$top" 2>/dev/null && pwd -P)"
+      [ "$top" = "$root_physical" ]
+      return
+    fi
+  fi
+  while IFS= read -r w; do
+    [ -n "$w" ] || continue
+    case "$wd" in "$w"|"$w"/*) return 1 ;; esac
+  done <<CHECKOUTS
+$other_checkouts
+CHECKOUTS
+  p="${wd%/*}"
+  while [ "${#p}" -gt "${#root_physical}" ]; do
+    [ -e "$p/.git" ] && return 1
+    p="${p%/*}"
+  done
+  [ -e "$wd/.git" ] && return 1
+  return 0
+}
+
 matches=""
 while IFS="$TAB" read -r name id wd; do
   [ -n "$id" ] && [ -n "$wd" ] || continue
@@ -96,6 +145,7 @@ while IFS="$TAB" read -r name id wd; do
     wd_physical="$(cd "$wd" 2>/dev/null && pwd -P)"
     [ -n "$wd_physical" ] && under_root "$wd_physical" && hit=1
   fi
+  [ "$hit" -eq 1 ] && ! this_checkout "$wd" && hit=0
   [ "$hit" -eq 1 ] && matches="${matches}${name}${TAB}${id}
 "
 done <<LISTING
