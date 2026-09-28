@@ -1,6 +1,6 @@
 # Oh My Pi (OMP)
 
-The OMP edition is generated from the same sources as the Claude Code plugins. It contains Code Review, Commit, QA and the Frontend, PHP and Python Developer plugins, plus two plugins that exist only in OMP:
+The OMP edition is generated from the same sources as the Claude Code plugins. The OMP column of [Available Plugins](../README.md#available-plugins) shows which plugins it contains. Two of them exist only in OMP:
 
 - [Delivery](plugins/delivery.md) delivers an approved plan-mode plan task by task: each task goes to the developer agent that owns its files, is reviewed, and gets its own commit.
 - [Plan Review](plugins/plan-review.md) has a second model review every plan-mode plan before it reaches the approval dialog.
@@ -9,13 +9,10 @@ The OMP edition is generated from the same sources as the Claude Code plugins. I
 
 ```bash
 omp plugin marketplace add AppVerk/av-marketplace
-omp plugin install \
-  code-review@av-marketplace commit@av-marketplace qa@av-marketplace \
-  delivery@av-marketplace plan-review@av-marketplace \
-  python-developer@av-marketplace frontend-developer@av-marketplace php-developer@av-marketplace
+omp plugin install <plugin>@av-marketplace
 ```
 
-`omp plugin install` accepts several plugin IDs; list only the plugins you need. Delivery hands tasks to the developer plugins, and `/qa:loop` needs Code Review. Start a new OMP session after installing: a running session does not load the extensions that Commit, Delivery and Plan Review ship.
+`omp plugin install` accepts several plugin IDs at once. Delivery hands tasks to the developer plugins, and `/qa:loop` needs Code Review. Start a new OMP session after installing: a running session does not load the extensions that Commit, Delivery and Plan Review ship.
 
 Delivery needs Python 3.9 or newer as `python3`, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
 

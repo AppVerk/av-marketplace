@@ -36,7 +36,11 @@ Missing the fourth is how `docs/plugins/qa.md` drifted a release behind.
 ## Marketplace registration
 
 A new plugin is registered in `.claude-plugin/marketplace.json` with `name`,
-`source`, `description`, `version` and `category`.
+`source`, `description`, `version` and `category`, and gets a row in the README
+"Available Plugins" table. `scripts/check_plugin_versions.py` checks the row's
+`ID`, `Claude Code` and `OMP` columns against `.claude-plugin/marketplace.json`
+and the generated `.omp-plugin/marketplace.json`, so a plugin that gains or
+loses an OMP edition updates its row.
 
 ## OMP edition
 
@@ -90,8 +94,10 @@ skills the agent body loads unconditionally.
 
 OMP-only plugins live in `omp/native/<name>/` and are copied into
 `plugins-omp/` as-is, minus `tests/`. Their version lives in their own
-`.omp-plugin/plugin.json` and is bumped there; they are not in the Claude
-catalog. Agent and skill names must carry the `<name>:` prefix — the build
-fails otherwise. A native plugin that ships an OMP extension declares it in
-its own `package.json` (`omp.extensions`); its name and version must equal
-`.omp-plugin/plugin.json`, and the build fails otherwise.
+`.omp-plugin/plugin.json` and is bumped there and in their row of the README
+"Available Plugins" table, which `scripts/check_plugin_versions.py` checks;
+they are not in the Claude catalog. Agent and skill names must carry the
+`<name>:` prefix — the build fails otherwise. A native plugin that ships an
+OMP extension declares it in its own `package.json` (`omp.extensions`); its
+name and version must equal `.omp-plugin/plugin.json`, and the build fails
+otherwise.

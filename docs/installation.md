@@ -2,14 +2,14 @@
 
 ## Quick Start
 
-These commands are for Claude Code. For Oh My Pi (`omp`), follow the [Oh My Pi guide](oh-my-pi.md) instead: only some plugins have an OMP edition, and the guide lists them.
+These commands are for Claude Code. For Oh My Pi (`omp`), follow the [Oh My Pi guide](oh-my-pi.md) instead. [Available Plugins](../README.md#available-plugins) lists the plugin IDs and which tool supports each one.
 
 ```bash
 /plugin marketplace add AppVerk/av-marketplace
-/plugin install code-review@av-marketplace
+/plugin install <plugin>@av-marketplace
 ```
 
-Install each plugin you need the same way, or pick them in the Discover tab of `/plugin`.
+You can also pick plugins in the Discover tab of `/plugin`.
 
 Verify the installation:
 
