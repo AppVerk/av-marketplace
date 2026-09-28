@@ -19,10 +19,12 @@ From the scan result, take `ai_setup`: agents, commands, skills, prompts, `pipel
 Also find the files that **refer to** the orchestration:
 
 ```bash
-grep -rlwE "<agent names>|<command names>|<project skill names>|implementation-pipeline|pipeline_state|orkiestrator|orchestrator|BOUNDED|FULL|SELF_CHECK" \
+grep -rlwE "<agent names>|<command names>|<project skill names>|<old mode names>|implementation-pipeline|pipeline_state|orkiestrator|orchestrator" \
   --include='*.md' --include='*.html' --include='*.json' --include='*.toml' . | grep -v -e workspace/ -e sessions/
 grep -rlnE "[Ff]az[aeiy] [0-9]|[Pp]hase [0-9]" --include='*.md' . | grep -v -e workspace/ -e sessions/
 ```
+
+`<old mode names>` come from the inventory: the names the old pipeline gave its modes. Do not grep generic words such as `FULL` on their own: they match too much. The Polish words (`orkiestrator`, `[Ff]az[aeiy]`) are there on purpose: repos keep their own language, and many old pipelines were written in Polish.
 
 The patterns are quoted, because zsh expands `*.md` without quotes. `-w` protects against hits like `architect` in the word "architecture". Names that are ordinary words (e.g. the `translate` skill) give hits in code and examples. Review every hit; it is only a candidate for UPDATE.
 
@@ -41,7 +43,7 @@ Typical mapping:
 | implementation and resume commands (`feature_implement`, `feature_continue`) | CONVERT | rules -> `av-implement.md` |
 | docs commands (`docs_update`, `docs_audit`) | CONVERT | code->docs map, audit perspectives -> `av-docs-sync.md` |
 | build command (`build`) | CONVERT | command -> `validation.commands.build` |
-| implementing agent (`backend-developer`, `frontend-designer`, `js-specialist`, `mobile-data-layer`, `mobile-presentation`, `web-developer`) | CONVERT | file scope -> role in `roles` in the config; layer rules -> role skill `.claude/skills/<prefix>-<role>/` (`references/role-skills.md`) |
+| implementing agent (e.g. `backend-developer`, `frontend-developer`, `mobile-developer`, `web-developer`) | CONVERT | file scope -> role in `roles` in the config; layer rules -> role skill `.claude/skills/<prefix>-<role>/` (`references/role-skills.md`) |
 | review agent (`code-reviewer`, `security-reviewer`, `view-reviewer`, `web-reviewer`) | CONVERT | axes and checklists -> `code-review.md`; check tools and owners -> `av-review.md` |
 | security agent (`security-reviewer`, `security-auditor`) | CONVERT | rules -> security axis in `code-review.md` |
 | agent that verifies with commands (`build-verifier`, `test-runner`, `simulator-verifier`, `e2e-test-runner`) | CONVERT | commands -> `validation`; result interpretation -> `av-verify.md` |
@@ -76,8 +78,8 @@ When the old pipeline had its own modes, map them in the plan (section "Mode map
 
 | Old | New | Notes |
 |---|---|---|
-| mode without a reviewer, with a deterministic test (e.g. SELF_CHECK) | SMALL | entry conditions of the old mode -> "SMALL mode conditions"; when the old mode skipped review, write "no" in "Review in SMALL mode" |
-| one implementer + reviewer (e.g. BOUNDED) | STANDARD | |
+| mode without a reviewer, with a deterministic test | SMALL | entry conditions of the old mode -> "SMALL mode conditions"; when the old mode skipped review, write "no" in "Review in SMALL mode" |
+| one implementer + reviewer | STANDARD | |
 | "full pipeline" with one implementer, tests, security review and a required plan | STANDARD with tightenings | in "Mode selection": plan required, `full` gate before the report, security axis always. Do not map to LARGE, because LARGE means several roles, and then STANDARD would never be used |
 | "full pipeline" triggered by size (e.g. N files in one layer) with one implementer | STANDARD with tightenings | move the size trigger to "Mode selection" (plan required above the threshold); LARGE only when the old pipeline also split work into roles |
 | one implementer plus a separate test-writing agent | STANDARD | test writing becomes a required step of the role skill or the overlay ("Required steps"), not a separate role, unless tests live in a separate layer with its own rules |

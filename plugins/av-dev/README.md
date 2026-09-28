@@ -237,7 +237,22 @@ bash <plugin>/skills/av-verify/scripts/config.sh --root . --sources
 
 ## Claude and Codex slots
 
-Each step of a run is a slot with its own provider, model and effort:
+Each step of a run is a slot with its own provider, model and effort. The default from `av-setup` needs only Claude Code:
+
+```json
+"agents": {
+  "independentReview": true,
+  "crossVendor": false,
+  "models": {
+    "plan":      "inherit",
+    "implement": "inherit",
+    "review":    "opus",
+    "verify":    "haiku"
+  }
+}
+```
+
+Opt-in, when the team has Codex: Claude and Codex in turns, so code and plans are checked by a different provider than the one that wrote them (`crossVendor: true`):
 
 ```json
 "agents": {
@@ -254,7 +269,7 @@ Each step of a run is a slot with its own provider, model and effort:
 }
 ```
 
-- `crossVendor: true`: code and plans are checked by a different provider than the one that wrote them.
+- Keep `verify` on the session or a cheap Claude model: it runs gates. On Codex it works, but it reads the skills and logs first and is 2-3 times slower.
 - Claude slots run as plugin agents `av-dev:av-slot-<effort>`.
 - Read slots (`review`, `planReview`) must not change code. The run takes a code fingerprint before and after each read slot, Claude or Codex; a change gives FAIL and the result does not count. This detects a change after the fact; it is not a sandbox.
 - Codex slots run through `codex exec`. You must be logged in to Codex (`codex login`, see [Install](#install)). Needs a Codex CLI with automatic review (`codex exec --approve-for-me`).
@@ -263,7 +278,7 @@ Each step of a run is a slot with its own provider, model and effort:
   - These settings win over `sandbox_mode` in `~/.codex/config.toml`.
 - The plugin hook `agent_guard.sh` lets the orchestrator start slots without prompts, also in auto mode. You need no allow rule for `agent.sh`; remove an old `agent.sh:*` rule, because it also allows `--grant full`.
 - When a slot still needs more access (a folder outside the repo, no sandbox), the run asks you, and Claude Code shows a prompt for the exact `--grant` command.
-- No Codex on your machine: switch its slots to Claude in `.ai/av.config.json.local` and set `crossVendor: false`.
+- The team uses the Codex variant and you have no Codex: switch its slots to Claude in `.ai/av.config.json.local` and set `crossVendor: false`.
 
 ## Language
 

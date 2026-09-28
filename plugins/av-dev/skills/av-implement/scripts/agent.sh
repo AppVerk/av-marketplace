@@ -231,7 +231,13 @@ if [ "$mode" = "resolve" ]; then
   [ -n "$config_local" ] && line="$line config=local"
   printf '%s\n' "$line"
   if [ -n "$subagent" ] && [ "$subagent" != "general-purpose" ] && [ ! -f "$agents_home/${subagent#"$agent_prefix"}.md" ]; then
-    printf 'WARNING agent definition %s/%s.md not found; install: ln -s %s/agents/*.md %s/\n' "$agents_home" "${subagent#"$agent_prefix"}" "$skill_dir" "$agents_home"
+    if [ -n "$agent_prefix" ]; then
+      printf 'WARNING agent definition %s/%s.md not found; the plugin ships it in %s: update or reinstall the plugin (/plugin install av-dev@av-marketplace), then start a new session\n' "$agents_home" "${subagent#"$agent_prefix"}" "$agents_home"
+    elif [ -d "$AV_SKILLS_DIR/../agents" ]; then
+      printf 'WARNING agent definition %s/%s.md not found; install: ln -s %s/*.md %s/ and start a new session\n' "$agents_home" "${subagent#"$agent_prefix"}" "$(cd "$AV_SKILLS_DIR/../agents" && pwd)" "$agents_home"
+    else
+      printf 'WARNING agent definition %s/%s.md not found; install: copy the av-slot-*.md files from the agents/ directory of the av-dev plugin into %s/ and start a new session\n' "$agents_home" "${subagent#"$agent_prefix"}" "$agents_home"
+    fi
   fi
   exit 0
 fi

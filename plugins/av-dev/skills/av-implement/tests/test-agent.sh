@@ -111,6 +111,13 @@ out="$(bash "$AGENT" --config "$TMP/pr.json" --slot planReview --resolve)"
 has "$out" "subagent=av-slot-read-high" && ok || fail "resolve planReview read with effort: $out"
 out="$(AV_AGENTS_DIR="$TMP/none" bash "$AGENT" --slot implement --resolve)"
 has "$out" "WARNING agent definition $TMP/none/av-slot-xhigh.md not found" && ok || fail "resolve: definition warning missing: $out"
+has "$out" "install: ln -s $AGENT_DEFS/*.md $TMP/none/" && ok || fail "resolve: install hint does not point to the real agents directory: $out"
+has "$out" "av-implement/agents" && fail "resolve: install hint points to a directory that does not exist: $out" || ok
+LONE="$TMP/lone-install/skills"
+mkdir -p "$LONE"
+for s in av-implement av-verify; do cp -R "$(cd "$(dirname "$AGENT")/../.." && pwd)/$s" "$LONE/"; done
+out="$(AV_AGENTS_DIR="$TMP/none" bash "$LONE/av-implement/scripts/agent.sh" --slot implement --resolve)"
+has "$out" "copy the av-slot-*.md files from the agents/ directory of the av-dev plugin into $TMP/none/" && ok || fail "resolve: hint without an agents directory: $out"
 out="$(bash "$AGENT" --slot verify --resolve)"
 has "$out" "local=yes via=session" && ok || fail "resolve verify local: $out"
 out="$(bash "$AGENT" --slot implement --resolve --harness codex)"
@@ -404,6 +411,8 @@ has "$out" "WARNING" && fail "plugin: warning despite definition: $out" || ok
 rm "$PLUG/agents/av-slot-xhigh.md"
 out="$(env -u AV_AGENTS_DIR bash "$PLUG/skills/av-implement/scripts/agent.sh" --slot implement --resolve)"
 has "$out" "WARNING agent definition $PLUG/agents/av-slot-xhigh.md not found" && ok || fail "plugin: warning missing: $out"
+has "$out" "update or reinstall the plugin" && ok || fail "plugin: hint should say to update or reinstall the plugin: $out"
+has "$out" "ln -s" && fail "plugin: hint suggests a symlink, which gives a name without the plugin prefix: $out" || ok
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
