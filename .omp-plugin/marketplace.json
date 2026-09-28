@@ -33,14 +33,14 @@
       "name": "frontend-developer",
       "source": "./frontend-developer",
       "description": "Enforces TypeScript + React best practices, coding standards, TDD workflow, and modern tooling (Tailwind, Zustand, TanStack Query, React Hook Form, TanStack Router)",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "category": "development"
     },
     {
       "name": "php-developer",
       "source": "./php-developer",
       "description": "Enforces PHP best practices, coding standards, TDD workflow, and modern tooling for Symfony, Doctrine ORM, and DDD projects",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "category": "development"
     },
     {
@@ -54,14 +54,14 @@
       "name": "python-developer",
       "source": "./python-developer",
       "description": "Master the Python programming language for efficient and effective development",
-      "version": "3.0.4",
+      "version": "3.0.5",
       "category": "development"
     },
     {
       "name": "qa",
       "source": "./qa",
       "description": "Automated QA testing plugin — analyzes code changes, generates test plans, executes FE and BE tests, and self-drives a test→fix→retest loop (`/qa:loop` generates a plan when none exists). Reports compatible with code-review.",
-      "version": "2.8.0",
+      "version": "2.8.2",
       "category": "testing"
     }
   ]

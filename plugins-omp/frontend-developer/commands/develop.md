@@ -186,13 +186,17 @@ Before writing any code:
 
 **You MUST follow this cycle. Writing implementation code before tests is a violation.**
 
-### Detect Mode from Task Keywords
+### Detect Mode
 
-| Mode | Keywords |
-|------|----------|
-| **Fix** | "fix", "bug", "error", "broken", "failing", "issue" |
-| **Implement** | "add", "create", "build", "implement", "new" *(default)* |
-| **Refactor** | "refactor", "clean", "extract", "move", "rename" |
+Decide the working mode from what `$ARGUMENTS` asks for, not from individual words in it:
+
+| Mode | When |
+|------|------|
+| **Fix** | Existing behaviour is wrong: a bug, error, crash, failing check or vulnerability. The work restores correct behaviour and starts from a test that reproduces the problem. |
+| **Refactor** | Restructure existing code without changing its observable behaviour: rename, extract, move, split, merge, deduplicate, clean up. Existing tests stay green. |
+| **Implement** | New behaviour or capability that does not exist yet: a feature, endpoint, command, option, UI element or integration. |
+
+A task that corrects wrong behaviour is Fix even when it also asks for cleanup. When neither Fix nor Refactor clearly applies, use Implement.
 
 ### Fix Mode
 

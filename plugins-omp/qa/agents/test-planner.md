@@ -110,18 +110,15 @@ Before observing runtime behavior, list the intended success path and **every de
 
 ### Step 3: Analyze Changes
 
-Classify each changed file as FE or BE:
+Classify each changed file by what it does, not only by its extension or directory names:
 
-**Frontend indicators:**
-- File extensions: `.tsx`, `.jsx`, `.vue`, `.svelte`, `.css`, `.scss`, `.html`
-- Paths containing: `components/`, `pages/`, `views/`, `layouts/`, `styles/`, `public/`, `assets/`, `frontend/`, `client/`, `web/`, `app/` (in FE context)
+| Class | When |
+|-------|------|
+| **FE** | Runs in or shapes what the browser shows: components, pages, client-side scripts and state, stylesheets, templates rendered into pages, UI strings, frontend build config. |
+| **BE** | Runs on the server or defines its contract: API handlers and routes, server actions and middleware, services, models, migrations, API schemas. |
+| **neither** | No application behaviour to test: documentation, CI, repository tooling, linters, container or infrastructure config. |
 
-**Backend indicators:**
-- File extensions: `.py`, `.php`, `.go`, `.java`, `.rb`, `.rs`
-- Paths containing: `api/`, `views/`, `controllers/`, `models/`, `migrations/`, `serializers/`, `services/`, `repositories/`, `backend/`, `server/`
-- Configuration: `urls.py`, `routes.py`, `routes.php`, `router.go`
-
-**Ambiguous files** (could be either): `.ts`, `.js` — look at import patterns and path context.
+FE files lead to FE scenarios and BE files to BE scenarios; `neither` files get no scenarios.
 
 For each changed file, identify:
 - What component/endpoint/model was changed

@@ -163,7 +163,7 @@ This generates a plan in place of the dead-stop, mirroring the `qa:test-planner`
    git diff --name-only "$BASE"...HEAD
    ```
 
-3. **Analyze & detect tools.** Classify each changed file as FE or BE using the planner's indicators (its Step 3), and detect available testing tools (Playwright MCP, HTTP client, DB access) as in `/qa:create-plan` Step 2. Then render the plan body using the format skill:
+3. **Analyze & detect tools.** Classify each changed file as FE, BE or neither by the planner's criteria (its Step 3), and detect available testing tools (Playwright MCP, HTTP client, DB access) as in `/qa:create-plan` Step 2. Then render the plan body using the format skill:
 
    ```
    Skill(skill: "test-plan-format")
