@@ -2,7 +2,7 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.8.0
+**Version:** 2.8.1
 
 ## Commands
 
@@ -32,7 +32,7 @@ Analyze code changes and generate a detailed test plan with FE and BE scenarios,
 
 The command detects testing tools (Playwright MCP, curl/httpie, psql/sqlite3/mysql, database MCP servers; an available MCP server is not assumed to point to the test DB) and dispatches `qa:test-planner`, which:
 1. Resolves the diff source (PR, branch, commits, or staged changes) and pins the intended success and error-path contract before observing runtime behavior
-2. Classifies changed files as FE or BE and reads related producers (routers, models, schemas, docs, OpenAPI specs and installed framework behavior) to ground each assertion
+2. Classifies changed files as FE, BE or neither by what each file does, and reads related producers (routers, models, schemas, docs, OpenAPI specs and installed framework behavior) to ground each assertion
 3. Scans for contract blockers and records them in mandatory `## Blockers / Findings` (`None found.` if none); affected scenarios retain their intended expectation and carry `**Blocked-by:** BLK-NN`
 4. Grounds `## Setup` (loopback base URL, required environment-variable names, services and database connections) from the repository at plan-authoring time; credentials are `$QA_…` references, not literal values
 5. Copies the command's tool-detection results into `## Detected Tools`
