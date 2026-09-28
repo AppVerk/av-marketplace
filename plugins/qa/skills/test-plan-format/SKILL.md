@@ -33,7 +33,10 @@ Every test plan MUST follow this structure; omit optional sections, unused Setup
 - App at `http://127.0.0.1:8765` (must be running before `/qa:run`; the plugin never starts it)
 
 **Required databases:**
-- `DATABASE_URL` — env var holding the DSN of the test database
+- `PGHOST` — host of the test PostgreSQL database (libpq reads it from the environment)
+- `PGUSER` — test database user
+- `PGDATABASE` — test database name
+- `PGPASSWORD` — password read by libpq from the environment
 
 ## Source
 - Type: <PR #N / branch <name> / last N commits / staged changes>
@@ -82,7 +85,7 @@ Defects in the code under test that obstruct how it must be tested. Mandatory �
 - **Headers:** Authorization: Bearer $QA_API_TOKEN
 - **Payload:** `<JSON body>`
 - **Expected:** <status code>, <response body description> (path:line)
-- **DB Check:** `<SQL query>` via `$DATABASE_URL` — <expected state>
+- **DB Check:** `SELECT COUNT(*) FROM resources WHERE status = 'active'` via the declared `PGHOST` / `PGUSER` / `PGDATABASE` / `PGPASSWORD` connection — <expected count>
 - **Edge cases:**
   - <edge case with expected status and response> (path:line)
   - <second edge case with expected status and response> (path:line)
@@ -110,15 +113,17 @@ Every `**Expected:**` assertion and each edge-case expectation needs its own evi
 - `(exact text — brittle)` marks quoted human-readable text that must be matched as a substring, not for equality. Use only when status and body shape cannot disambiguate the behavior; include a source citation or unverified tag as well.
 
 Prefer stable status codes and response structure (keys/types) over exact message text. For a function-derived value (hash, slug, formatted filename), assert its generating rule and cite the producer rather than guessing an exact result; an exact literal needs a fixture or test that pins it. Replace the template's `(path:line)` with an actual cited path and line in each plan.
+The BE tester sees only the output of `qa-redact`: it replaces values under sensitive name segments (`key`, `url`, `session`, etc.) and values equal to declared environment variables with `***`. For those fields, assert an observable property such as key presence or the type of an unaffected surrounding field/object, not the hidden value or its original type. For example, assert that `flags[0]` has a `key` field, not that `flags[0].key` equals `feature_x`; an assertion on masked data cannot establish PASS or FAIL and is reported as `SKIP — cannot confirm: value masked by qa-redact (<key>)` at run time. Keep other independently observable assertions, such as HTTP status codes, testable.
 
 ## Setup rules
 
 - `## Setup` goes directly after `# Test Plan:`, before `## Source`. Omit the entire section when no prerequisites are needed; omit unused labels independently.
-- At run time, resolve the base URL from `**Base URL:**` here, then the first URL in `## Source` or a scenario heading/bullet, then `QA_BASE_URL`. Project config is read only when authoring the plan, never at run time; if no URL resolves, testing aborts.
-- Consumers read only the first backticked token of the `**Base URL:**` line or each `- ` bullet; following text is for humans. Environment variable names must match `^[A-Z_][A-Z0-9_]*$`. `**Required databases:**` bullets must be either a valid env var name holding a DSN or SQLite path, or a declared `mcp__` server name bound to the test database. Any other bullet is ignored with a warning. The plan generator never emits an `mcp__` bullet: only a human who knows the server's database may declare one.
-- A credential in a header, cookie or login step (bearer token, API key, email/password) must be a `$NAME` reference with `NAME` declared under `**Required environment variables:**`; never use a literal or a placeholder such as `TOKEN`. A plan whose scenarios require auth but declare no name is defective. A deliberately invalid input in a negative edge case is not a credential.
+- At run time, resolve the base URL from `**Base URL:**` here, then the first URL in `## Source` or a scenario heading/bullet, then `QA_BASE_URL`. Project config is read only when authoring the plan, never at run time; if no URL resolves, testing aborts. The resolved host must be loopback (`localhost`, `127.0.0.1`, `::1`, `*.localhost`) unless the user passes `--allow-host` on the command line, and testers send requests and open pages only on that host: every scenario URL is a path under the Base URL or an absolute URL on its host, never a third-party host.
+- Consumers read only the first backticked token of the `**Base URL:**` line or each `- ` bullet; following text is for humans. A `**Required environment variables:**` name must match `^QA_[A-Z0-9_]+$`. A `**Required databases:**` bullet must be such a `QA_` name, one of `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `SQLITE_DB`, `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE`, `MYSQL_PWD` (Postgres/MySQL connection parts or a SQLite path; never a Postgres DSN), or a declared `mcp__` server name bound to the test database. Any other bullet is ignored with a warning, and testers never read a variable outside this set: the namespace keeps a plan from naming an unrelated secret of the launching shell. The plan generator never emits an `mcp__` bullet: only a human who knows the server's database may declare one.
+- A credential in a header, cookie or login step (bearer token, API key, email/password) must be a `$QA_…` reference with that name declared under `**Required environment variables:**` — never the project's own variable name (`API_KEY`), a literal, or a placeholder such as `TOKEN`. A plan whose scenarios require auth but declare no name is defective. A deliberately invalid input in a negative edge case is not a credential.
 - Minimize prerequisites: every declared environment variable name must be referenced by a scenario; omit labels that are unused. Starting the app or dependency is a human prerequisite under `**Required services:**`, never a scenario step.
-- Run a DB check only through a connection declared under `**Required databases:**`: `psql "$DATABASE_URL" -tAc '<SQL>'`, `sqlite3 "$SQLITE_DB" '<SQL>'`, or `mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -e '<SQL>'` with `MYSQL_PWD` read by the client from the environment. Declare all four MySQL names; never put credentials in a command line. A declared `mcp__` server may be used instead; an available but undeclared MCP server must not be used. If no DB connection is declared, the API test still runs and its DB check is `SKIP`.
+- Run a DB check only through a connection declared under `**Required databases:**`: declare **all four** `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` and run `psql -tAc '<SQL>'` (libpq reads the connection from the environment); `sqlite3 "$SQLITE_DB" '<SQL>'`; or `mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -e '<SQL>'` with `MYSQL_PWD` read by the client from the environment. Declare all four MySQL names; never put passwords, DSNs, or request credentials in process argv. A declared `mcp__` server may be used instead; an available but undeclared MCP server must not be used. If no DB connection is declared, the API test still runs and its DB check is `SKIP`.
+- Write DB checks against only the columns asserted; never put `SELECT *` in a plan. For CLI row checks, project just the needed columns to JSON and pipe the result through the installed `qa-redact.pl` before inspection or reporting. An MCP tool returns its results to the tester unsanitised: with a declared `mcp__` server request only a narrow non-sensitive aggregate; a row check requires a declared CLI connection, otherwise its DB check is `SKIP`.
 
 ## Harness scope
 
@@ -182,8 +187,10 @@ Before saving the plan, verify:
 - [ ] API paths match actual routes from the codebase
 - [ ] No placeholder text (TBD, TODO, fill in later)
 - [ ] `## Setup` is present whenever scenarios require a URL, credential or DB connection
-- [ ] Every credential uses `$NAME` declared under Setup, never a literal or placeholder such as `TOKEN`
+- [ ] Every credential uses a `$QA_…` name declared under Setup, never a literal, a non-`QA_` name or a placeholder such as `TOKEN`
+- [ ] Every scenario URL is a path under the Base URL or an absolute URL on its host
 - [ ] Every `**Expected:**` and edge-case expectation has a grounded `(path:line)` or `(unverified — confirm at run time)` tag
+- [ ] BE expectations and edge cases do not rely on a value or original type replaced with `***` by `qa-redact` (including declared environment variable values); assert observable presence or surrounding type instead
 - [ ] `## Blockers / Findings` is present (or reads `None found.`)
 - [ ] No scenario step is outside the browser / HTTP / DB harness scope
 - [ ] For ≥2 independent boolean inputs, a `state-combination-planning` 2^N table appears above affected scenarios with a disposition for every row

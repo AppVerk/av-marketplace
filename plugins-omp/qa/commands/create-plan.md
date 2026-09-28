@@ -62,14 +62,10 @@ Create the following tasks immediately:
 Resolve the base branch **once** before either diff path (including when an argument is supplied):
 
 ```bash
-BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
-BASE=${BASE#origin/}
-if [ -z "$BASE" ]; then
-  if git show-ref --verify --quiet refs/heads/main; then BASE=main
-  elif git show-ref --verify --quiet refs/heads/master; then BASE=master
-  else BASE=main
-  fi
-fi
+BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null); BASE=${BASE#origin/}
+[ -z "$BASE" ] && git rev-parse --verify main   >/dev/null 2>&1 && BASE=main
+[ -z "$BASE" ] && git rev-parse --verify master >/dev/null 2>&1 && BASE=master
+[ -z "$BASE" ] && BASE=main
 ```
 
 **Default behavior (no argument):**
@@ -167,7 +163,7 @@ Emit `## Blockers / Findings` after `## Changes Summary`, with `None found.` if 
 
 ### Step 4.6: Ground the test environment
 
-Still under progress task 3, read repository config **at plan-authoring time** to ground the base URL: a dev-server port in `vite.config.*`, `package.json` scripts, `docker-compose*.yml`, `Makefile`, README run instructions or the server entry point's bind address. Omit `**Base URL:**` if none is grounded; never guess a live endpoint. Read the project's test settings to identify **only the name** of a DB connection env var (`DATABASE_URL`, `SQLITE_DB` or the framework equivalent; MySQL requires `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE` and `MYSQL_PWD`). Never copy values from `.env` or emit an `mcp__` bullet; only a human who knows its target DB can declare an MCP connection. For authenticated scenarios, read the middleware/dependency that checks credentials, declare each required credential as a `$NAME` under Setup and use that name in the scenario. An existing test account is a human Setup prerequisite, not a value to put in the plan.
+Still under progress task 3, read repository config **at plan-authoring time** to ground the base URL: a dev-server port in `vite.config.*`, `package.json` scripts, `docker-compose*.yml`, `Makefile`, README run instructions or the server entry point's bind address. Write a loopback host (`127.0.0.1` for a `0.0.0.0` bind): `/qa:run` and `/qa:loop` refuse any other host unless the user passes `--allow-host`. Omit `**Base URL:**` if none is grounded; never guess a live endpoint. Read the project's test settings to find which DB connection it uses, then declare **only names** from the supported set: for Postgres, all four `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` (libpq reads these from the harness environment; never put `DATABASE_URL` or a DSN in `psql` argv); for SQLite, `SQLITE_DB` (file path); for MySQL, all four `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE`, `MYSQL_PWD`. When the project reads another variable, state in the description how the exported supported names must point at that same test connection; do not put values in the plan. Never copy values from `.env` or emit an `mcp__` bullet; only a human who knows its target DB can declare an MCP connection. For authenticated scenarios, read the middleware/dependency that checks credentials, declare each required credential under Setup as a `QA_`-prefixed `$NAME` (e.g. `QA_API_TOKEN`, never the project's own `API_KEY`) and use that name in the scenario. An existing test account is a human Setup prerequisite, not a value to put in the plan.
 
 **Task Update:** Mark task 3 as `completed`, task 4 as `in_progress`.
 
@@ -219,10 +215,10 @@ Using the skill's format, generate the test plan:
 4. Fill in **Detected Tools** based on tool detection results, noting any available database MCP server without declaring its connection.
 5. Generate **FE Test Scenarios** (if FE changes detected):
    - One scenario per changed component/page/feature; include concrete steps using actual UI element names from the code and at least 2 relevant edge cases.
-   - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag from Step 4 item 6. Credentials in form steps are declared `$NAME` references.
+   - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag from Step 4 item 6. Credentials in form steps are declared `$QA_…` references.
 6. Generate **BE Test Scenarios** (if BE changes detected):
    - One scenario per changed endpoint; use actual API paths, methods, payloads and (where a connection is declared) DB checks with actual table/column names. Include at least 2 relevant edge cases (error handling, auth, validation).
-   - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag. Credentials in headers and payloads are declared `$NAME` references.
+   - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag. Credentials in headers and payloads are declared `$QA_…` references; request URLs are paths under the Base URL, never another host.
 7. Keep every step to browser actions / HTTP requests / DB queries against an already-running app. Bring-up belongs under `**Required services:**`; unobservable checks belong under `## Out of harness scope` with a one-clause harness reason and no FE/BE scenario heading. A code defect is a Blocker, not an out-of-scope check.
 8. For ≥2 independent boolean inputs, place the `state-combination-planning` 2^N table above the affected scenarios, with a scenario or a justified disposition for every row.
 

@@ -51,7 +51,7 @@ Every test report MUST follow this structure. `## Setup gaps` is conditional: in
 
 **Scenario:** <FE-XX or BE-XX>
 **Response:** `<response body or error>` (BE only)
-**Screenshot:** <path to screenshot> (FE only)
+**Screenshot:** <path to screenshot, or `none (debug page; capture suppressed)` / `none (page could not be checked; capture suppressed)`> (FE only)
 
 ### [SEVERITY] QA-002: <issue title>
 ...
@@ -59,10 +59,10 @@ Every test report MUST follow this structure. `## Setup gaps` is conditional: in
 ## Detailed Results
 
 ### Pass: FE-01: <scenario name>
+### Skip: FE-03: <scenario name> (reason)
 ### Pass: BE-01: <scenario name>
 ### Fail: BE-03: <scenario name> — see QA-001
-### Skip: FE-03: <scenario name> (reason)
-### Need info: BE-03: <scenario name> (credentials: STRIPE_TEST_KEY)
+### Need info: BE-04: <scenario name> (credentials: QA_STRIPE_TEST_KEY)
 ~~~
 
 ---
@@ -107,7 +107,7 @@ Each issue MUST include the canonical code-review fields:
 2. **`**ID:** QA-NNN`** — repeated for the parser
 3. **`**Location:** ` `` `path:line` `` `** — best-effort source identification (route, endpoint, stack trace). When truly unidentifiable, use placeholder `unknown:0` and add a note in `Problem`. The `/fix` command will prompt the user for the location at fix time.
 
-   If the scenario has `**Blocked-by:** BLK-NN`, use the cited `(file:line)` in that blocker's `## Blockers / Findings` entry as Location and start the Actual bullet with `Blocked by BLK-NN: <defect>`.
+   If the scenario has `**Blocked-by:** BLK-NN`, take the cited `(file:line)` in that blocker's `## Blockers / Findings` entry, remove the parentheses, and write the bare `file:line` as the first backticked token of `**Location:**` (for `(app.py:12)`, write `` **Location:** `app.py:12` ``). Start the Actual bullet with `Blocked by BLK-NN: <defect>`.
 
    The field has two written forms. The plain form above, and the extended form the decision-gate loop writes when it corrects a location:
 
@@ -128,7 +128,7 @@ QA-specific extras (kept for testing context; ignored by the code-review parser)
 
 - **`**Scenario:**`** — `FE-XX` or `BE-XX` reference
 - **`**Response:**`** — response body or error message (BE only)
-- **`**Screenshot:**`** — screenshot path (FE only)
+- **`**Screenshot:**`** — screenshot path (FE only), or `none (debug page; capture suppressed)` / `none (page could not be checked; capture suppressed)` when the FE tester did not capture one for safety. Never substitute a pre-existing artifact.
 
 ---
 
@@ -196,13 +196,13 @@ For `/qa:loop` only, the sidecar keeps `auth-unverified` as its own verdict. In 
 ### Pass: FE-01: Homepage renders correctly
 ### Pass: FE-02: Login form validation
 ### Fail: FE-03: Logout button — see QA-001
+### Skip: FE-05: Mobile responsive layout (out of harness scope)
 ### Pass: BE-01: GET /api/users returns list
 ### Fail: BE-03: POST /api/users duplicate handling — see QA-002
-### Skip: FE-05: Mobile responsive layout (out of harness scope)
+### Need info: BE-04: <name> (credentials: QA_STRIPE_TEST_KEY)
+### Need info: BE-05: <name> (main flow passed; edge 2 need info: fixture: users.seed)
 ### Skip: BE-06: <name> (edge 1 skipped: out of harness scope)
 ### Skip: BE-07: <name> (auth-unverified; main flow gated)
-### Need info: BE-03: <name> (credentials: STRIPE_TEST_KEY)
-### Need info: BE-05: <name> (main flow passed; edge 2 need info: fixture: users.seed)
 ```
 
 - **Pass:** just the status and scenario name
@@ -307,7 +307,7 @@ Before saving the report, verify:
 - [ ] Every failed scenario has a `### [SEVERITY] QA-NNN: Title` heading in the Issues Found section
 - [ ] Every QA-NNN issue has the required fields: `ID`, `Location`, `Category: Testing`, `Problem` (with Expected/Actual bullets), `Remediation`
 - [ ] NEED_INFO main flows and edges appear in Detailed Results and `## Setup gaps`, never as issues
-- [ ] No secret value anywhere in the report or under `docs/testing/reports/responses/`
-- [ ] Screenshots referenced in issues actually exist on disk
+- [ ] No secret value anywhere in the report or under `docs/testing/reports/responses/` or `docs/testing/reports/screenshots/`; no debug-page snapshot text is quoted or saved in the report
+- [ ] Screenshots referenced in issues were captured after the FE debug-page check and exist on disk; a suppressed screenshot is recorded as `none`, never linked to an older file
 - [ ] No placeholder text (TBD, TODO)
 - [ ] If a Loop History section is present, it contains no `### [SEVERITY]` headings and no `---` separators

@@ -1,7 +1,7 @@
 ---
 name: be-testing
 description: Backend testing patterns — API request construction, response verification, database state checks, error handling testing, and adaptive tool detection.
-allowed-tools: Bash(curl:*), Bash(httpie:*), Bash(http:*), Bash(wget:*), Bash(psql:*), Bash(sqlite3:*), Bash(mysql:*), Bash(mongosh:*), Bash(redis-cli:*), Bash(command:*), Bash(printf:*), Bash(perl:*), Bash(sed:*), Bash(cut:*), Bash(jq:*), Bash(grep:*), Bash(cat:*), Bash(head:*), Bash(tail:*), Read, Write, Bash(mkdir:*)
+allowed-tools: Bash(curl:*), Bash(httpie:*), Bash(http:*), Bash(wget:*), Bash(psql:*), Bash(sqlite3:*), Bash(mysql:*), Bash(mongosh:*), Bash(redis-cli:*), Bash(command:*), Bash(printf:*), Bash([:*), Bash(cut:*), Bash(jq:*), Bash(grep:*), Bash(cat:*), Bash(head:*), Bash(tail:*), Bash(mktemp:*), Bash(rm:*), Read, Write, Bash(mkdir:*)
 ---
 
 # Backend Testing Patterns
@@ -27,7 +27,7 @@ command -v jq >/dev/null 2>&1 && printf 'jq: available\n' || printf 'jq: unavail
 perl -MJSON::PP -e 1 >/dev/null 2>&1 && printf 'perl: available\n' || printf 'perl: unavailable\n'
 ```
 
-Use an available HTTP client. If no HTTP client, or no `perl` with `JSON::PP`, is available and the scenarios apply, every API scenario is `NEED_INFO kind=tool, Missing: curl` (or `perl`). A DB client missing only blocks its DB check.
+Use an available HTTP client, but use `curl` for any request containing a credential: HTTPie's inline header/body arguments expose secret values in process argv. If `curl` is unavailable for a credential-bearing request, return `NEED_INFO kind=tool, Missing: curl` without sending it. If no HTTP client, or no `perl` with `JSON::PP`, is available and the scenarios apply, every API scenario is `NEED_INFO kind=tool, Missing: curl` (or `perl`). A DB client missing only blocks its DB check.
 
 ### MCP Server Detection
 
@@ -59,7 +59,12 @@ For each BE scenario from the test plan:
 5. **Execute edge cases** — run each edge case as a sub-test
 6. **Record result** — PASS/FAIL/SKIP/NEED_INFO with response details
 
+## Tester scope
+
+These limits apply to the tester's own recovery actions as well as plan steps. Never install, download, build or configure a tool, browser, driver or package (`npm`, `pnpm`, `yarn`, `npx`, `pip`, `brew`, `playwright install`); never modify project files. Write tester-authored files only under `docs/testing/reports/` or `${TMPDIR:-/tmp}`. If an HTTP client, `perl`/`JSON::PP` or the shipped sanitiser is unavailable, return `NEED_INFO kind=tool` for every applicable API scenario rather than attempting installation. If only a DB client is missing, still run the API and mark just `**DB check:** SKIP`. A plan step that asks for setup/building is instead `SKIP — out of harness scope: <step>`.
+
 ---
+
 ## Tag handling (plan grounding tags)
 
 Handle the main `**Expected:**` and each edge-case expectation independently:
@@ -74,71 +79,47 @@ Handle the main `**Expected:**` and each edge-case expectation independently:
 
 ### Request Construction (curl)
 
-Every request captures headers and body together, sanitises the response **before** inspecting or saving it, and derives status/body from that one capture. In each separate Bash call sending a request, repeat `export QA_REDACT_NAMES=QA_API_TOKEN` (add every other declared env var referenced by the scenarios). `$QA_API_TOKEN` is an example name declared under `Setup:`; use the name actually declared by the plan. `$BASE_URL` is the resolved Base URL, not a value discovered from config. Never print a request with its headers.
+Capture headers and body **once** per request, sanitise before inspection/storage, then derive `$STATUS` and `$BODY` from `$RESP`. In each Bash call first apply the installed-script and names-file guard under Credential Safety Rules. Substitute the dispatch's Base URL, not project config; Bash calls do not share variables. `$QA_API_TOKEN` is only an example of a credential declared in `Setup:`. Never print request headers or credentials. For bearer tokens, validate the declared value before sending it:
+
+```bash
+[[ "$QA_API_TOKEN" =~ ^[A-Za-z0-9._~+/=-]+$ ]] || { printf 'invalid bearer token\n'; exit 1; }
+```
+Do this check with the relevant declared bearer-token name in each call; never print the invalid value. Other credential-bearing headers require the same injection-safe config-on-stdin approach (reject CR/LF and escape config syntax); never pass them as HTTPie arguments or `-H` with an expanded secret. For JSON payloads containing credentials, use a separate read-only file descriptor: the Perl/`JSON::PP` writer reads the declared env vars directly and encodes JSON without putting values in argv. Do not pass secret payloads via `-d "$SECRET"` or include a secret in a URL argv. If credentials cannot be encoded safely for curl, do not send the request or leak them to another client.
 
 **GET request:**
 
 ```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -H "Authorization: Bearer $QA_API_TOKEN" -H "Content-Type: application/json" "$BASE_URL/api/resources" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
+BASE_URL='<Base URL from the dispatch prompt>'
+RESP=$(printf 'header = "Authorization: Bearer %s"\n' "$QA_API_TOKEN" | curl -K - -si -H "Content-Type: application/json" "$BASE_URL/api/resources" | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE") || { printf 'qa-redact: capture failed\n'; exit 1; }
 STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
 BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
 ```
 
-**POST request:**
+**Mutating request with a non-secret payload:** Send it once. For PUT/PATCH/DELETE, change only the method, endpoint and scenario-specified payload; keep the same guard, capture, and status/body extraction. Never replay a write to re-verify a failure.
 
 ```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -X POST -H "Authorization: Bearer $QA_API_TOKEN" -H "Content-Type: application/json" -d '{"name": "test", "email": "test@example.com"}' "$BASE_URL/api/resources" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
+BASE_URL='<Base URL from the dispatch prompt>'
+RESP=$(printf 'header = "Authorization: Bearer %s"\n' "$QA_API_TOKEN" | curl -K - -si -X POST -H "Content-Type: application/json" -d '{"name": "test", "email": "test@example.com"}' "$BASE_URL/api/resources" | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE") || { printf 'qa-redact: capture failed\n'; exit 1; }
 STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
 BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
 ```
 
-**PUT request:**
+**POST with credentials in the JSON body** (after validating the bearer token as above; `$QA_USER_EMAIL` and `$QA_USER_PASSWORD` are declared under `Setup:`; do not print their values):
 
 ```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -X PUT -H "Authorization: Bearer $QA_API_TOKEN" -H "Content-Type: application/json" -d '{"name": "updated"}' "$BASE_URL/api/resources/1" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-```
-
-**DELETE request:**
-
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -X DELETE -H "Authorization: Bearer $QA_API_TOKEN" "$BASE_URL/api/resources/1" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-```
-
-**PATCH request:**
-
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -X PATCH -H "Authorization: Bearer $QA_API_TOKEN" -H "Content-Type: application/json" -d '{"status": "active"}' "$BASE_URL/api/resources/1" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
+BASE_URL='<Base URL from the dispatch prompt>'
+RESP=$(printf 'header = "Authorization: Bearer %s"\n' "$QA_API_TOKEN" | curl -K - -si -X POST -H "Content-Type: application/json" --data-binary @/dev/fd/3 "$BASE_URL/login" 3< <(perl -MJSON::PP -e 'print encode_json({email=>$ENV{QA_USER_EMAIL},password=>$ENV{QA_USER_PASSWORD}})') | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE") || { printf 'qa-redact: capture failed\n'; exit 1; }
 STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
 BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
 ```
 
 ### Request Construction (httpie)
 
-HTTPie must print both headers and body so the same sanitiser can handle them:
-
-**GET request:**
+Use HTTPie only for requests without credentials (including credentials in a payload or URL); it passes its inline headers and fields on argv. For a credential-bearing scenario, use the curl config-on-stdin form above. Without curl, return `NEED_INFO kind=tool, Missing: curl` for that scenario or edge rather than leaking it via HTTPie. HTTPie still prints both headers and body for uncredentialed requests so the same sanitiser handles them:
 
 ```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(http --print=hb GET "$BASE_URL/api/resources" Authorization:"Bearer $QA_API_TOKEN" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-```
-
-**POST request:**
-
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(http --print=hb POST "$BASE_URL/api/resources" Authorization:"Bearer $QA_API_TOKEN" name=test email=test@example.com | perl "${TMPDIR:-/tmp}/qa-redact.pl")
+BASE_URL='<Base URL from the dispatch prompt>'
+RESP=$(http --print=hb GET "$BASE_URL/api/resources" | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE") || { printf 'qa-redact: capture failed\n'; exit 1; }
 STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
 BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
 ```
@@ -166,15 +147,18 @@ printf '%s' "$BODY" | grep -q '"status": "active"' && printf 'PASS\n' || printf 
 
 ### PostgreSQL (psql)
 
+Declare **all four** `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` under `Setup: → Required databases`, exported in the environment of the harness. libpq reads them without expanding a DSN/password into `psql` argv. Do not supply a connection URI, `-h`, `-U`, `-d`, or a password flag on the command line; do not use `DATABASE_URL` for this client (a malformed URI can also appear in libpq error output). Suppress raw client errors; never print connection errors containing credentials.
+
+Select only the columns needed for the assertion; never run `SELECT *` from a plan. Return JSON even for counts so the raw CLI output passes through the installed sanitiser **before** the tester sees it. Before each DB call use the script and names-file guard from Credential Safety Rules (and `set -o pipefail`) in that same Bash invocation; if the client or sanitiser fails, do not read its output, mark only `**DB check:** SKIP — unavailable, and continue the HTTP test. Suppress raw client stderr. If the sanitiser withholds non-JSON output or masks the asserted value, mark the DB check `SKIP — cannot confirm`, never fall back to raw output. `DB_RESULT` is sanitised; report only the assertion-relevant count or excerpt from it, never a full row or raw query output.
+
 ```bash
-# Check record exists
-psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM resources WHERE name = 'test';"
-# Check field value
-psql "$DATABASE_URL" -tAc "SELECT status FROM resources WHERE id = 1;"
-# Check record was deleted
-psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM resources WHERE id = 1;"
-# Check with multiple conditions
-psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM orders WHERE user_id = 1 AND status = 'completed';"
+DB_RESULT=$(psql -tAc "SELECT json_build_object('count',COUNT(*)) FROM resources WHERE name = 'test';" 2>/dev/null | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE") || { unset DB_RESULT; printf 'DB check: SKIP — unavailable\n'; }
+```
+
+For a row-level assertion, project only the asserted columns as JSON; sensitive keys and declared env values are masked by `qa-redact`. Do not assert a value hidden by the sanitiser:
+
+```bash
+DB_RESULT=$(psql -tAc "SELECT coalesce(json_agg(t),'[]'::json) FROM (SELECT id, status FROM resources WHERE id = 1) t;" 2>/dev/null | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE") || { unset DB_RESULT; printf 'DB check: SKIP — unavailable\n'; }
 ```
 
 Flags: `-t` (tuples only), `-A` (unaligned output), `-c` (SQL).
@@ -182,141 +166,76 @@ Flags: `-t` (tuples only), `-A` (unaligned output), `-c` (SQL).
 ### SQLite
 
 ```bash
-sqlite3 "$SQLITE_DB" "SELECT COUNT(*) FROM resources WHERE name = 'test';"
-sqlite3 "$SQLITE_DB" "SELECT status FROM resources WHERE id = 1;"
+DB_RESULT=$(sqlite3 "$SQLITE_DB" "SELECT json_object('count',COUNT(*)) FROM resources WHERE name = 'test';" 2>/dev/null | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE") || { unset DB_RESULT; printf 'DB check: SKIP — unavailable\n'; }
 ```
+
+For a row: `SELECT json_group_array(json_object('id',id,'status',status)) FROM resources WHERE id = 1;` through the same sanitised capture.
 
 ### MySQL
 
 Declare `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE`, and `MYSQL_PWD` in `Setup:`. The client reads the password from `MYSQL_PWD` in the environment, never from a command-line argument:
 
 ```bash
-mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -e "SELECT COUNT(*) FROM resources WHERE name = 'test';"
+DB_RESULT=$(mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" "$MYSQL_DATABASE" -N -e "SELECT JSON_OBJECT('count',COUNT(*)) FROM resources WHERE name = 'test';" 2>/dev/null | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE") || { unset DB_RESULT; printf 'DB check: SKIP — unavailable\n'; }
 ```
 
-Flag: `-N` (skip column names).
+For a row: `SELECT COALESCE(JSON_ARRAYAGG(JSON_OBJECT('id',id,'status',status)), JSON_ARRAY()) FROM resources WHERE id = 1;` through the same sanitised capture. Flag: `-N` skips column names.
+
+### MCP database checks
+
+MCP tool results enter the tester's context before they can be piped through `qa-redact`. With a declared MCP server, query only a narrow non-sensitive aggregate (for example, `SELECT COUNT(*) ...`); never request `SELECT *`, a row or a sensitive column through MCP. A row-level check needs a declared CLI connection and the sanitised JSON capture above; without one, mark only that DB check `SKIP` and still run HTTP. The declared-server restriction is an instruction, **not** a tool-level permission boundary: session-visible MCP tools can still be called. Remove write-capable database MCP servers before QA runs.
 
 ### Connection reference
 
-Run a DB check only through a connection declared under `## Setup → Required databases`: an env var name with its corresponding CLI client (`DATABASE_URL` for `psql`, `SQLITE_DB` for `sqlite3`, or the four `MYSQL_*` names for MySQL), or an `mcp__` server name declared as pointing to that same test database. Never use a preconfigured but undeclared MCP server. No declared connection → `**DB check:** SKIP — no DB connection declared under ## Setup`, while the HTTP part still runs. Missing CLI client → `**DB check:** SKIP` while the API runs. No literal host, user, password or path in a DB command. If a DSN must be mentioned in output, mask it as `postgres://USER:***@HOST:5432/DB`.
+Run a DB check only through a connection declared under `## Setup → Required databases`: all four `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` for `psql` (read by libpq from the environment), `SQLITE_DB` (or a declared `QA_` SQLite path) for `sqlite3`, the four `MYSQL_*` names for MySQL, or an `mcp__` server name declared as pointing to that same test database. `DATABASE_URL` is not a supported `psql` reference: its password must never enter argv or an unsanitised libpq error. Never use a preconfigured but undeclared MCP server; this is an agent instruction, not an access-control boundary. No declared connection → `**DB check:** SKIP — no DB connection declared under ## Setup`, while the HTTP part still runs. Missing CLI client → `**DB check:** SKIP` while the API runs. No literal host, user, password or path in a DB command.
 
 ---
 
 ## Credential Safety Rules
 
 - Never print an env var value, header, cookie, token or DSN into output, reports or dumps. Print only presence via `[ -n "${QA_API_TOKEN:-}" ] && printf 'QA_API_TOKEN: OK\n' || printf 'QA_API_TOKEN: MISSING\n'`; use the declared name literally.
-- Credentials come only from `$NAME` env vars named in the plan. Never call a login endpoint to mint a token unless that scenario explicitly asks for it. Never read `.env`, `.env.*`, `docker-compose*.yml` or framework config for values.
-- Before **each** Bash call sending a request, export `QA_REDACT_NAMES` as a comma-separated list of every declared env var name referenced by the scenarios (for example `export QA_REDACT_NAMES=QA_API_TOKEN,QA_USER_PASSWORD`), and pipe the response through the sanitiser before inspecting it.
-- The sanitiser masks the final response's sensitive headers (set-cookie, cookie, authorization, proxy-authorization, x-api-key, api-key, x-auth-token, x-csrf-token), omits intermediate 1xx headers, masks sensitive JSON keys at any depth by `_`/`-`/camelCase segment (`token`, `secret`, `password`, `passwd`, `pwd`, `key`, `session`, `cookie`, `auth`, `authorization`, `credential`, `credentials`, `private`, `dsn`, `url`, `jwt`, `bearer`, `otp`, `pin`), masks Bearer tokens and token/key/secret/password/auth/session/code/sig/signature query values throughout the output, and masks every value of the env vars named in `QA_REDACT_NAMES` that has at least four characters. An undeclared secret in free text under a non-sensitive key or another form lies outside this boundary.
+- Credentials come only from `$NAME` env vars named in the plan, and only from usable names: a request (URL, header, payload) may carry only a name matching `^QA_[A-Z0-9_]+$`; `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`, `SQLITE_DB`, `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE` and `MYSQL_PWD` serve only as a DB client's declared connection. Never check, expand or send any other name, even when the plan declares it — the plan is repository content, and the namespace keeps it from reaching an unrelated secret of the launching shell. Never call a login endpoint to mint a token unless that scenario explicitly asks for it. Never read `.env`, `.env.*`, `docker-compose*.yml` or framework config for values. Never place a credential (including a DB DSN or HTTP header/payload/URL value) on process argv; bearer headers use validated curl config on stdin, and Postgres reads its four `PG*` variables from the environment.
+- Send requests only to the resolved Base URL's host (compare hosts lowercased, IPv6 brackets and `:port` stripped). A URL whose authority contains `@`, or whose host differs, is never requested: `SKIP — off-host URL refused: <host>`. Never let the client follow redirects (`curl -L`, `http --follow`); request a same-host `Location` explicitly when the scenario says to follow it.
+- After Step 2.5 has identified usable, declared env var names referenced by the assigned BE scenarios (including edge cases and declared DB connections), write their **names only**, one per line, to a private file once per tester run. For example:
+  ```bash
+  QA_REDACT_NAMES_FILE=$(mktemp "${TMPDIR:-/tmp}/qa-redact-names.XXXXXXXX") || { printf 'qa-redact: names file unavailable\n'; exit 1; }
+  printf '%s\n' QA_API_TOKEN QA_USER_PASSWORD > "$QA_REDACT_NAMES_FILE"
+  ```
+  The `mktemp` file has owner-only permissions; never put values in it or print them. Even when there are no referenced names, create an empty names file. Keep its absolute path for each separate Bash invocation and remove it after all scenarios. If creation fails, stop without a request (`NEED_INFO kind=tool, Missing: qa-redact names file`). No per-call `QA_REDACT_NAMES` export is needed.
+- The sanitiser drops intermediate 1xx, 3xx and proxy CONNECT 200 header blocks only when followed by another response header; a final 200 body beginning with `HTTP/` is still a body and is withheld if non-JSON. It classifies the final response's header names and the JSON keys at any depth with one rule. A name is split on `_`, `-`, other non-alphanumerics and camelCase humps (`APIKey` → `api`, `key`), and a plural `s` is dropped from each part; the name is sensitive when a part is `token`, `secret`, `password`, `passwd`, `pwd`, `passphrase`, `key`, `session`, `cookie`, `auth`, `authorization`, `credential`, `private`, `dsn`, `url`, `uri`, `jwt`, `bearer`, `otp`, `pin`, `sig` or `signature`, or when the parts run together contain `token`, `secret`, `passw`, `apikey`, `accesskey`, `privatekey`, `sessionid`, `sessid`, `csrf`, `xsrf`, `credential`, `connectionstring`, `recoverycode`, `verificationcode` or `backupcode`. A sensitive header's value, or a sensitive key's whole value, becomes `***` (`client_secret`, `apiKeys`, `IDToken`, `csrftoken`, `mongoUri`, `recovery_codes`, `Set-Cookie`, `access-token` are masked; `author`, `authorId`, `code` and `Access-Control-*` headers are not). Across the whole output it also masks `Bearer` tokens; the value of every query or fragment parameter (after `?`, `&`, `;` or `#`) whose name contains `token`, `key`, `secret`, `passw`, `pwd`, `auth`, `session`, `code`, `sig` or `credential` (`access_token`, `X-Amz-Signature`, `#id_token=`); the password in URI userinfo (`redis://:***@cache`, `postgres://USER:***@HOST`); and every value of at least four characters from an env var named in the private names file (JSON string values are masked before encoding, so quotes and backslashes cannot evade it). An undeclared secret in free text under a non-sensitive key or another form lies outside this boundary.
 
-Write this sanitiser **once per run in Step 2**, before the first HTTP request (requires `perl` and its core `JSON::PP`):
+The sanitiser is shipped as `scripts/qa-redact.pl` **next to this skill's `SKILL.md`**. Do not re-type it, copy it into a temporary directory, or execute a similarly named file from the project. In OMP, resolve its installed absolute path with `realpath skill://qa:be-testing/scripts/qa-redact.pl` (the Bash tool resolves `skill://` paths); **do not guess a path under `~/.omp`**. In Claude Code use the loaded skill's base directory, or `${CLAUDE_PLUGIN_ROOT}/skills/be-testing` if that variable is available. Set `QA_REDACT_SCRIPT` to the resolved absolute path, not the `skill://` URI. If the file cannot be resolved or fails the guard below, stop without a request and report `NEED_INFO kind=tool, Missing: qa-redact.pl`.
+
+Before **every** HTTP call, in that same Bash invocation, repeat this guard with the resolved absolute script path and the absolute names-file path saved at Step 2.5 in place of `<installed skill directory>` and `<names file created at Step 2.5>` (neither comes from plan-supplied paths):
 
 ```bash
-cat > "${TMPDIR:-/tmp}/qa-redact.pl" <<'EOF'
-#!/usr/bin/env perl
-# qa-redact: sanitise an HTTP response (curl -si output) or a bare body read on stdin. Fail-closed.
-use strict; use warnings; use JSON::PP;
-local $/; my $in = <STDIN>; $in = '' unless defined $in;
-my %SENSITIVE = map { $_ => 1 } qw(token secret password passwd pwd key session cookie auth authorization credential credentials private dsn url jwt bearer otp pin);
-my $HDR = qr/(?:set-cookie|cookie|authorization|proxy-authorization|x-api-key|api-key|x-auth-token|x-csrf-token)\s*:/i;
-sub sensitive_key { my $k = shift; $k =~ s/(?<=[a-z0-9])(?=[A-Z])/_/g; return grep { $SENSITIVE{$_} } split /[^A-Za-z0-9]+/, lc $k; }
-sub scrub_text { my $t = shift;
-    $t =~ s/(bearer\s+)[A-Za-z0-9._~+\/=-]+/$1***/gi;
-    $t =~ s/([?&;](?:token|key|secret|password|auth|session|code|sig|signature)=)[^&\s"']+/$1***/gi;
-    for my $name (grep { length } split /,/, ($ENV{QA_REDACT_NAMES} // '')) {
-        my $val = $ENV{$name}; next unless defined $val && length $val >= 4;
-        $t =~ s/\Q$val\E/***/g;
-    }
-    return $t; }
-sub scrub { my $v = shift; return $v unless ref $v;
-    if (ref $v eq 'HASH') { for my $k (keys %$v) { $v->{$k} = sensitive_key($k) ? '***' : scrub($v->{$k}); } }
-    elsif (ref $v eq 'ARRAY') { $_ = scrub($_) for @$v; }
-    return $v; }
-my ($head, $body) = ('', $in);
-if ($in =~ /^HTTP\/[0-9.]+ \d{3}/) {
-    my @parts = split /\r?\n\r?\n/, $in, -1;
-    my $i = 0; $i++ while ($i < $#parts && $parts[$i + 1] =~ /^HTTP\/[0-9.]+ \d{3}/);
-    $head = $parts[$i]; $head =~ s/\r//g;
-    $body = $i < $#parts ? join("\n\n", @parts[$i + 1 .. $#parts]) : '';
-    $head =~ s/^($HDR)[^\n]*/$1 ***/gm;
-}
-my $out = '';
-if ($body !~ /^\s*$/) {
-    my $json = eval { JSON::PP->new->allow_nonref->decode($body) };
-    if ($@ || !defined $json) { $out = sprintf("[body withheld by qa-redact: not valid JSON, %d bytes]\n", length $body); }
-    elsif (!ref $json && $json !~ /^(?:-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|true|false|null)$/) { $out = sprintf("[body withheld by qa-redact: scalar body, %d bytes]\n", length $body); }
-    else { $out = JSON::PP->new->canonical->indent->space_after->allow_nonref->encode(scrub($json)); }
-}
-print scrub_text($head eq '' ? $out : "$head\n\n$out");
-EOF
+QA_REDACT_SCRIPT="<installed skill directory>/scripts/qa-redact.pl"
+QA_REDACT_NAMES_FILE="<names file created at Step 2.5>"
+[ -f "$QA_REDACT_NAMES_FILE" ] && [ -r "$QA_REDACT_NAMES_FILE" ] && [ ! -L "$QA_REDACT_NAMES_FILE" ] && [ -O "$QA_REDACT_NAMES_FILE" ] || { printf 'qa-redact: names file unavailable\n'; exit 1; }
+[ -f "$QA_REDACT_SCRIPT" ] && [ -r "$QA_REDACT_SCRIPT" ] && [ ! -L "$QA_REDACT_SCRIPT" ] || { printf 'qa-redact: unavailable or unsafe script\n'; exit 1; }
+perl -c "$QA_REDACT_SCRIPT" >/dev/null 2>&1 || { printf 'qa-redact: invalid script\n'; exit 1; }
+set -o pipefail
 ```
 
-Read and persist HTTP responses **only** through `RESP=$(… | perl "${TMPDIR:-/tmp}/qa-redact.pl")`. Dumps and inline excerpts come only from `$RESP` (body from `$BODY` after splitting `$RESP`). Non-JSON or bare-string bodies are withheld (`[body withheld by qa-redact: …]`); the status line and sanitised headers remain available.
+Only then send the request. Append `|| { printf 'qa-redact: capture failed\n'; exit 1; }` to the `RESP=$(… | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE")` assignment so neither client nor sanitiser failure can be treated as an empty successful response. A failure means the request outcome is unknown; **never replay a mutating request**. No raw HTTP may be printed or persisted in any failure branch.
+
+Read and persist HTTP responses **only** through `RESP=$(… | perl "$QA_REDACT_SCRIPT" "$QA_REDACT_NAMES_FILE")` after this guard. Dumps and inline excerpts come only from `$RESP` (body from `$BODY` after splitting `$RESP`). When a Bash call ends, its variables are lost: save needed evidence from that call's sanitised `$RESP` before it ends, or use the one permitted refutation capture. **Never send another request solely to write an artifact.** Non-JSON or bare-string bodies are withheld (`[body withheld by qa-redact: …]`); the status line and sanitised headers remain available.
 
 ---
 
 ## Error Handling Test Patterns
 
-Use the single captured `$RESP`/`$STATUS`/`$BODY` for each request. Each example is a separate Bash call: export all declared scenario env var names in `QA_REDACT_NAMES` at its top.
+Construct each case from the plan's method, expected status and payload using the guarded, single-capture pattern above; a status below is an example, not a replacement for the plan's expectation:
 
-### Missing required field
+| Case | Request variation | Typical assertion |
+|------|-------------------|-------------------|
+| Missing required field | POST a JSON payload omitting that field | 422 and validation body |
+| Unauthenticated | Omit Authorization (do not mint a token) | 401 |
+| Insufficient permissions | Use the plan's declared regular-user credential | 403 |
+| Resource not found | GET a nonexistent resource | 404 |
+| Duplicate creation | Only if the plan specifies both actions, create once and attempt the duplicate once | 409; never repeat either POST during refutation |
 
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -X POST -H "Authorization: Bearer $QA_API_TOKEN" -H "Content-Type: application/json" -d '{"name": "test"}' "$BASE_URL/api/resources" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-# Expected: 422 with a validation error in $BODY
-```
-
-### Unauthenticated request
-
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si "$BASE_URL/api/resources" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-# Expected: 401
-```
-
-### Insufficient permissions
-
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN,QA_REGULAR_USER_TOKEN
-RESP=$(curl -si -X DELETE -H "Authorization: Bearer $QA_REGULAR_USER_TOKEN" "$BASE_URL/api/admin/users/1" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-# Expected: 403
-```
-
-### Resource not found
-
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -H "Authorization: Bearer $QA_API_TOKEN" "$BASE_URL/api/resources/99999" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-# Expected: 404
-```
-
-### Duplicate creation
-
-Only when the scenario explicitly specifies both actions, create the resource once, then attempt the duplicate once. Never re-fire either POST as a refutation/retry:
-
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -X POST -H "Authorization: Bearer $QA_API_TOKEN" -H "Content-Type: application/json" -d '{"email": "test@example.com"}' "$BASE_URL/api/users" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-```
-
-```bash
-export QA_REDACT_NAMES=QA_API_TOKEN
-RESP=$(curl -si -X POST -H "Authorization: Bearer $QA_API_TOKEN" -H "Content-Type: application/json" -d '{"email": "test@example.com"}' "$BASE_URL/api/users" | perl "${TMPDIR:-/tmp}/qa-redact.pl")
-STATUS=$(printf '%s\n' "$RESP" | head -n 1 | cut -d' ' -f2)
-BODY=$(printf '%s\n' "$RESP" | sed '1,/^$/d')
-# Expected: 409
-```
+For all cases use `$RESP`/`$STATUS`/`$BODY` from the sanitiser, not raw output or a second request for status. The FAIL refutation battery below applies to each mismatch.
 
 ---
 
@@ -330,7 +249,7 @@ For each scenario, return results in this format:
 - **Request:** <METHOD> <URL only — no headers>
 - **Response status:** <actual status code>
 - **Response body:** <decision-relevant sanitised excerpt from $RESP or path docs/testing/reports/responses/<ID>-body.json for long responses>
-- **DB check:** <PASS/FAIL/SKIP — actual value vs expected>
+- **DB check:** <PASS/FAIL/SKIP — asserted count or decision-relevant excerpt from sanitised DB_RESULT vs expected; never raw output or full rows>
 - **Details:** <what was verified / what went wrong>
 - **Refutation:** <required directly after Details when Status is FAIL; e.g. re-verified: yes (state re-read, no re-fire); env: n/a; scope: in; harness: ok>
 - **Edge cases:**
@@ -360,8 +279,9 @@ A FAIL is a claim — refute it before reporting ANY `FAIL`: the scenario `**Sta
 2. **Environment artifact?** A missing env var → `NEED_INFO kind=credentials`; the app/dependency never reachable in this scenario (connection refused, DNS failure, timeout before any response) → `NEED_INFO kind=service, Missing: <base URL or host>`; missing seed/file → `NEED_INFO kind=fixture`; required binary missing → `NEED_INFO kind=tool`. If the app answered earlier in this same scenario (main or earlier edge) and then died, that is a genuine `FAIL` from a crash under test. An edge-only prerequisite gap stays `NEED_INFO — <kind>: <identifiers>` on its edge line and does not change the main-flow status. If the HTTP part runs but the DB client is unavailable, only `**DB check:** SKIP`; a scenario that does not apply to this stack/environment is `SKIP`. An assertion miss or wrong status is `FAIL`, never `NEED_INFO`.
 3. **Deliberate omission / scope mismatch?** If the Expected is met but a defect outside that Expected is observed, report `PASS` and note the observation in Details rather than failing this scenario. A missing declared prerequisite uses check 2, not a scope exception.
 4. **Harness error?** A tool timeout, client crash or query that never executed permits one retry **only for a failed observation or tool-initialisation step**, and only if check 1 has not already re-run it; each failing observation step is re-run exactly once total. A mutating action is never replayed. After an ambiguous POST/PUT/PATCH/DELETE or DB write, read resulting state once (GET, DB check or snapshot); if the outcome is established, grade on it; otherwise return `SKIP` with `harness error: <detail>; outcome unknown, action not replayed`. If a read-only harness step still cannot run after the single retry, return `SKIP — harness error: <detail>`, not application FAIL.
+5. **Masked assertion?** Check the sanitised response, never the raw response. If an expected value cannot be observed because `qa-redact` replaced it with `***` (under a sensitive key such as `key`, `avatar_url` or `session_count`, or because it matches a declared env var), do not treat that redaction as an application mismatch. Return `SKIP — cannot confirm: value masked by qa-redact (<key>)` for the affected main flow or edge case, not `FAIL`; name the affected key, not the hidden value. An independently observable mismatch (such as the wrong HTTP status or an unmasked field) remains `FAIL`; unaffected assertions may still be checked. Never interpret `***` as proof of the original value or its type, and never bypass the sanitiser to resolve the uncertainty.
 
-**Disposition:** A surviving scenario-level FAIL carries `- **Refutation:** <trace>` directly after `**Details:**`, e.g. `re-verified: yes (same result); env: n/a; scope: in; harness: ok`. A surviving edge FAIL has that trace inside its own details clause. A refuted FAIL becomes PASS, SKIP or NEED_INFO as appropriate; an edge-only NEED_INFO never changes the main-flow status. Do not replay any mutating action in any branch of this battery.
+**Disposition:** A surviving scenario-level FAIL carries `- **Refutation:** <trace>` directly after `**Details:**`, e.g. `re-verified: yes (same result); env: n/a; scope: in; harness: ok`. A surviving edge FAIL has that trace inside its own details clause. A refuted FAIL becomes PASS, SKIP or NEED_INFO as appropriate; an edge-only SKIP or NEED_INFO never changes the main-flow status. Do not replay any mutating action in any branch of this battery.
 
 ---
 
@@ -372,3 +292,5 @@ A FAIL is a claim — refute it before reporting ANY `FAIL`: the scenario `**Sta
 - Timeout (>30 s), connection refused or empty reply → battery check 2: never reachable in this scenario → `NEED_INFO kind=service, Missing: <base URL>`; answered earlier in this scenario then died → `FAIL` with trace.
 - Invalid JSON when JSON is expected → `FAIL`, recording only the sanitiser's `[body withheld by qa-redact: …]` line, never the raw body.
 - Starting/building an app, editing files, running migrations or inspecting infrastructure is out of harness scope; a scenario requiring such a step is `SKIP — out of harness scope: <step>`. Only HTTP requests and DB queries against the running app are executable.
+- A request URL on a host other than the Base URL's, or with `@` in its authority → never sent; `SKIP — off-host URL refused: <host>` (see Credential Safety Rules).
+- A `$NAME` outside the usable names (see Credential Safety Rules) → never checked or expanded; the main flow is `NEED_INFO kind=credentials` with `Missing: <NAME> (not a QA_ name — declare a QA_ credential under ## Setup)`, an edge that alone uses it reads `NEED_INFO — credentials: <NAME> (not a QA_ name)`.
