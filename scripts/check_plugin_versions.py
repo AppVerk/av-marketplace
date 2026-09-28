@@ -2,12 +2,16 @@
 """Check plugin version parity across the marketplace.
 
 Enforces that every local plugin has the same version declared in all four
-canonical locations:
+canonical locations, plus per-skill VERSION files when the plugin has them:
 
   1. plugins/<name>/.claude-plugin/plugin.json        -> ".version"
   2. .claude-plugin/marketplace.json                  -> ".plugins[name==<name>].version"
   3. README.md                                        -> row in the "Available Plugins" table
   4. docs/plugins/<name>.md                           -> "**Version:** X.Y.Z" header
+  5. plugins/<name>/skills/*/VERSION (optional)       -> whole file, e.g. "0.1.0"
+
+A plugin whose skills read their own VERSION (av-dev: gate.sh compares it with
+"requires" in a repo config) must keep those files in step with plugin.json.
 
 Also flags orphan entries in marketplace.json or README.md that no longer have
 a corresponding plugins/<slug>/ directory.
@@ -148,6 +152,18 @@ def _doc_version(slug: str) -> tuple[str | None, str | None]:
     if not match:
         return None, f"unparsable: {rest!r}"
     return match.group("version"), None
+
+
+def _skill_versions(slug: str) -> dict[str, str | None]:
+    """Return {"skills/<skill>/VERSION": version or None} for a plugin's per-skill VERSION files."""
+    versions: dict[str, str | None] = {}
+    for path in sorted((PLUGINS_DIR / slug / "skills").glob("*/VERSION")):
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            value = ""
+        versions[f"skills/{path.parent.name}/VERSION"] = value or None
+    return versions
 
 
 def _parse_semver(version: str) -> tuple[int, int, int] | None:
@@ -302,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
             "README.md": readme.get(slug),
             doc_label: doc_version,
         }
+        sources.update(_skill_versions(slug))
 
         missing = [label for label, value in sources.items() if not value]
         if missing:
@@ -356,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         for line in errors:
             print(f"  - {line}", file=sys.stderr)
         print(
-            "\nUpdate the affected file(s) so all four sources agree, "
+            "\nUpdate the affected file(s) so all version sources agree, "
             "then re-run this script.",
             file=sys.stderr,
         )

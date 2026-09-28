@@ -1,0 +1,73 @@
+name: AV Dev Tests
+
+on:
+  push:
+    branches: [master]
+    paths: ["plugins/av-dev/**", ".github/workflows/av-dev-tests.yml"]
+  pull_request:
+    branches: [master]
+    paths: ["plugins/av-dev/**", ".github/workflows/av-dev-tests.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: av-dev-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu:
+    name: Tests and shellcheck on Ubuntu (bash 5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+
+      - name: Assert tools are available
+        run: |
+          for t in bash git jq awk ps shellcheck; do
+            command -v "$t" >/dev/null 2>&1 || { echo "::error::$t is required but not found on PATH"; exit 1; }
+          done
+          bash --version | head -1
+
+      - name: Configure git for the test repositories
+        run: |
+          git config --global user.email ci@example.test
+          git config --global user.name ci
+
+      - name: Lint scripts
+        run: find plugins/av-dev -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
+
+      - name: Run plugin tests
+        run: bash plugins/av-dev/tests/run.sh
+
+  macos:
+    name: Tests on macOS (/bin/bash 3.2)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+
+      - name: Put /bin/bash 3.2 first on PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/bash32"
+          ln -sf /bin/bash "$RUNNER_TEMP/bash32/bash"
+          echo "$RUNNER_TEMP/bash32" >>"$GITHUB_PATH"
+
+      - name: Assert bash 3.2 and tools
+        run: |
+          bash --version | head -1
+          bash -c '[ "${BASH_VERSINFO[0]}" -eq 3 ]' || { echo "::error::bash on PATH is not 3.x; the README promises bash 3.2"; exit 1; }
+          for t in git jq awk ps; do
+            command -v "$t" >/dev/null 2>&1 || { echo "::error::$t is required but not found on PATH"; exit 1; }
+          done
+
+      - name: Configure git for the test repositories
+        run: |
+          git config --global user.email ci@example.test
+          git config --global user.name ci
+
+      - name: Run plugin tests
+        run: bash plugins/av-dev/tests/run.sh

@@ -286,3 +286,5 @@ Run the plugin tests:
 ```bash
 bash plugins/av-dev/tests/run.sh
 ```
+
+CI (`.github/workflows/av-dev-tests.yml`) runs them on every change in `plugins/av-dev/`: on Ubuntu with shellcheck, and on macOS with `/bin/bash` 3.2.
