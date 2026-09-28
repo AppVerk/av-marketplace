@@ -256,6 +256,7 @@ Each step of a run is a slot with its own provider, model and effort:
 
 - `crossVendor: true`: code and plans are checked by a different provider than the one that wrote them.
 - Claude slots run as plugin agents `av-dev:av-slot-<effort>`.
+- Read slots (`review`, `planReview`) must not change code. The run takes a code fingerprint before and after each read slot, Claude or Codex; a change gives FAIL and the result does not count. This detects a change after the fact; it is not a sandbox.
 - Codex slots run through `codex exec`. You must be logged in to Codex (`codex login`, see [Install](#install)). Needs a Codex CLI with automatic review (`codex exec --approve-for-me`).
   - `plan`, `implement`, `verify`: sandbox `workspace-write` with automatic review. A command the sandbox blocks (a build, a simulator, the network) asks for escalation and a Codex reviewer model decides, like auto mode in Claude Code. No prompts for you.
   - `review`, `planReview`: sandbox `read-only`.

@@ -3,6 +3,7 @@
 # Replaces the claude and codex CLIs with fakes that record arguments, env and prompt.
 set -u
 AGENT="$(cd "$(dirname "$0")/.." && pwd)/scripts/agent.sh"
+GATE="$(cd "$(dirname "$0")/../.." && pwd)/av-verify/scripts/gate.sh"
 AGENT_DEFS="$(cd "$(dirname "$0")/.." && pwd)/agents"
 [ -d "$AGENT_DEFS" ] || AGENT_DEFS="$(cd "$(dirname "$0")/../../.." && pwd)/agents"
 PASS=0; FAIL=0
@@ -315,6 +316,37 @@ out="$(bash "$AGENT" --slot implement --run-id r1 --record --status OK --seconds
 out="$(bash "$AGENT" --slot implement --run-id r1 --record --status MAYBE --seconds 1)"; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "record bad status: $rc"
 
+# --- 8b. a read slot run by the Agent tool: fingerprint before the slot, check at --record
+fp_now() { bash "$GATE" --root "$REPO" --fingerprint | sed -n 's/^FINGERPRINT //p'; }
+out="$(bash "$AGENT" --slot review --run-id r10 --record --status OK --seconds 5 --out "$TMP/r10.md")"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "requires --fp-before" && ok || fail "record read without --fp-before: $rc $out"
+[ -f .ai/workspace/runs/r10/agents.jsonl ] && fail "record read without --fp-before: entry written" || ok
+out="$(bash "$AGENT" --slot review --run-id r10 --record --status OK --seconds 5 --out "$TMP/r10.md" --fp-before nothex)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "expected the 16 hex characters" && ok || fail "record read with a bad fingerprint: $rc $out"
+fp="$(fp_now)"
+out="$(bash "$AGENT" --slot review --run-id r10 --record --status OK --seconds 5 --out "$TMP/r10.md" --fp-before "$fp")"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "AGENT_RECORDED review via=agent.sh OK 5s" && ok || fail "record read, tree unchanged: $rc $out"
+fp="$(fp_now)"
+echo change >>a.txt
+out="$(bash "$AGENT" --slot review --run-id r10 --record --status OK --seconds 6 --out "$TMP/r10.md" --fp-before "$fp" --label r2)"; rc=$?
+[ "$rc" -eq 1 ] && has "$out" "AGENT_FAIL review-r2 read slot changed the working tree (fingerprint $fp -> " && ok || fail "record read, tree changed: $rc $out"
+[ "$(tail -n 1 .ai/workspace/runs/r10/agents.jsonl | jq -r '.status + " " + .reason')" = "FAIL read slot changed the working tree" ] && ok || fail "record read, tree changed: wrong entry"
+has "$(bash "$AGENT" --summary --run-id r10)" "AGENT_RUN review-r2 codex gpt-6-astra/xhigh via=agent.sh FAIL 6s actual=gpt-6-astra (read slot changed the working tree)" && ok || fail "record read, tree changed: summary: $(bash "$AGENT" --summary --run-id r10)"
+git checkout -q a.txt
+fp="$(fp_now)"
+mkdir -p .ai/workspace/scratch && echo x >.ai/workspace/scratch/note.md
+out="$(bash "$AGENT" --slot review --run-id r10 --record --status OK --seconds 5 --out "$TMP/r10.md" --fp-before "$fp" --label ws)"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "record read: a workspace file is not a tree change: $rc $out"
+fp="$(fp_now)"
+out="$(bash "$AGENT" --slot review --run-id r10 --record --status FAIL --seconds 5 --out "$TMP/r10.md" --fp-before "$fp" --label f)"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "AGENT_RECORDED review-f via=agent.sh FAIL" && ok || fail "record read FAIL, tree unchanged: $rc $out"
+echo new >b-new.txt
+out="$(bash "$AGENT" --slot implement --run-id r10 --record --status OK --seconds 5 --out "$TMP/r10.md" --harness claude)"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "AGENT_RECORDED implement via=agent OK" && ok || fail "record write slot without --fp-before: $rc $out"
+out="$(bash "$AGENT" --slot planReview --run-id r10 --record --status OK --seconds 5 --out "$TMP/r10.md" --fp-before "$fp")"; rc=$?
+[ "$rc" -eq 1 ] && has "$out" "AGENT_FAIL planReview read slot changed the working tree" && ok || fail "record planReview, new untracked file: $rc $out"
+rm -f b-new.txt
+
 # --- 9. dry-run and summary
 before="$(wc -l <.ai/workspace/runs/r1/agents.jsonl)"
 out="$(bash "$AGENT" --slot plan --run-id r1 --prompt-file "$TMP/prompt.md" --dry-run)"; rc=$?
@@ -343,7 +375,8 @@ EOF2
 out="$(bash "$AGENT" --slot review --resolve)"
 has "$out" "SLOT review provider=claude model=opus effort=high access=read" && has "$out" "subagent=av-slot-read-high" && ok || fail "local: slot not overridden: $out"
 has "$out" "config=local" && ok || fail "local: resolve does not mark the local override: $out"
-bash "$AGENT" --slot review --run-id rl --record --status OK --seconds 3 --out "$TMP/rl.md" >/dev/null
+fp="$(bash "$GATE" --root "$REPO" --fingerprint | sed -n 's/^FINGERPRINT //p')"
+bash "$AGENT" --slot review --run-id rl --record --status OK --seconds 3 --out "$TMP/rl.md" --fp-before "$fp" >/dev/null
 jq -e 'select(.slot == "review") | .config_local == ".ai/av.config.json.local"' .ai/workspace/runs/rl/agents.jsonl >/dev/null && ok || fail "local: record lacks config_local"
 out="$(bash "$AGENT" --summary --run-id rl)"
 has "$out" "AGENT_RUN review claude opus/high via=agent OK 3s" && has "$out" "config=local" && ok || fail "local: summary does not mark the override: $out"

@@ -6,7 +6,7 @@
 #   agent.sh --slot S --resolve                              who runs the slot and how (via)
 #   agent.sh --slot S --run-id ID --prompt-file P            run the CLI executor and save the result
 #   agent.sh --slot S --run-id ID --resume SESSION --grant G resume a session with a granted permission
-#   agent.sh --slot S --run-id ID --record --status OK --seconds N --out FILE
+#   agent.sh --slot S --run-id ID --record --status OK --seconds N --out FILE [--fp-before FP]
 #                                                            record a slot run by the Agent tool
 #   agent.sh --summary --run-id ID                           who ran which slot (for the report)
 # Options:
@@ -46,8 +46,11 @@
 #   sends any call with --grant to a human prompt.
 # Result: <runs>/<RUN_ID>/agents/<slot>[-label].md (the executor's last message),
 #   .log (CLI output), an entry in <runs>/<RUN_ID>/agents.jsonl.
-# Read access is a rule in the prompt plus a check: a tree change outside the
-#   workspace after the run gives FAIL.
+# Read access is a rule in the prompt plus a check after the fact, not a sandbox: a tree
+#   change outside the workspace during the run gives FAIL. agent.sh takes the fingerprint
+#   before and after its own CLI run. For a slot run by the Agent tool the orchestrator takes
+#   it before the slot (gate.sh --fingerprint) and passes it to --record --fp-before, which
+#   is required for read slots. Ignored files and writes outside the repo are not seen.
 # Codes: 0 OK, 1 FAIL, 2 config or invocation error, 3 NOT_RUN (CLI missing),
 #   5 NEEDS_PERMISSION.
 # Tests replace the CLIs with AV_CLAUDE_BIN and AV_CODEX_BIN, and the agents directory
@@ -103,6 +106,7 @@ rec_status=""
 rec_seconds=""
 rec_out=""
 rec_actual=""
+rec_fp_before=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -121,6 +125,7 @@ while [ $# -gt 0 ]; do
     --seconds) rec_seconds="${2:-}"; shift 2 ;;
     --out) rec_out="${2:-}"; shift 2 ;;
     --actual) rec_actual="${2:-}"; shift 2 ;;
+    --fp-before) rec_fp_before="${2:-}"; shift 2 ;;
     --resolve) mode="resolve"; shift ;;
     --summary) mode="summary"; shift ;;
     --record) mode="record"; shift ;;
@@ -262,6 +267,15 @@ record() {
       resumed_from: $resumed, config_local: $config_local, sandbox: $sandbox}' >>"$run_dir/agents.jsonl"
 }
 
+# MARK: working tree state
+
+tree_state() {
+  git -C "$root" status --porcelain --untracked-files=all 2>/dev/null | grep -v -F " $workspace/" | sort
+}
+fingerprint() {
+  bash "$GATE" --root "$root" --config "$team_cfg" --fingerprint 2>/dev/null | sed -n 's/^FINGERPRINT //p'
+}
+
 # MARK: record a slot run by the Agent tool
 
 if [ "$mode" = "record" ]; then
@@ -270,7 +284,22 @@ if [ "$mode" = "record" ]; then
   [ -n "$rec_out" ] && out="$rec_out"
   log=""
   actual="${rec_actual:-$model}"
-  record "$rec_status" "" "$rec_seconds" "$actual" "$effort" "" "" "" "$via"
+  rec_reason=""
+  if [ "$access" = "read" ]; then
+    [ -n "$rec_fp_before" ] || usage_error "--record of a read slot requires --fp-before <FINGERPRINT from gate.sh --fingerprint taken before the slot>"
+    printf '%s' "$rec_fp_before" | grep -Eq '^[0-9a-f]{16}$' || usage_error "--fp-before: expected the 16 hex characters of gate.sh --fingerprint, got '$rec_fp_before'"
+    fp_after="$(fingerprint)"
+    [ -n "$fp_after" ] || usage_error "cannot compute the fingerprint: bash $GATE --root $root --fingerprint"
+    if [ "$fp_after" != "$rec_fp_before" ]; then
+      rec_status="FAIL"
+      rec_reason="read slot changed the working tree"
+    fi
+  fi
+  record "$rec_status" "$rec_reason" "$rec_seconds" "$actual" "$effort" "" "" "" "$via"
+  if [ -n "$rec_reason" ]; then
+    printf 'AGENT_FAIL %s %s (fingerprint %s -> %s); the slot result is not valid, check git status\n' "$base" "$rec_reason" "$rec_fp_before" "$fp_after"
+    exit 1
+  fi
   printf 'AGENT_RECORDED %s via=%s %s %ss\n' "$base" "$via" "$rec_status" "$rec_seconds"
   exit 0
 fi
@@ -474,13 +503,6 @@ if [ "$provider" = "codex" ] && [ "$model" != "inherit" ]; then
     fi
   fi
 fi
-
-tree_state() {
-  git -C "$root" status --porcelain --untracked-files=all 2>/dev/null | grep -v -F " $workspace/" | sort
-}
-fingerprint() {
-  bash "$GATE" --root "$root" --config "$team_cfg" --fingerprint 2>/dev/null | sed -n 's/^FINGERPRINT //p'
-}
 
 before_state="$(tree_state)"
 before_fp="$(fingerprint)"
