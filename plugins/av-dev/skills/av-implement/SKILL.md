@@ -52,23 +52,27 @@ Helper subagents (e.g. Explore for searching) are not slots. They stay with the 
 
 ### Permissions
 
-Rule: an executor from another provider runs with the same permissions as when its CLI is used by hand. Nothing bypasses safeguards.
+Rule: an executor from another provider gets safeguards equal to a Claude subagent in this session. Nothing bypasses them, and the executor never widens its own permissions.
 
 | Executor | Permissions |
 |---|---|
 | `via=agent` (Claude) | same as the session; auto mode and user rules check every action |
-| `codex exec` | sandbox `workspace-write` or `sandbox_mode` from `~/.codex/config.toml`; writes in the repo and the temp directory, no network |
+| `codex exec`, slots `plan`, `implement`, `verify` (and any `--access write`) | sandbox `workspace-write` with automatic review: a command blocked by the sandbox (a build, a simulator, the network) asks for escalation, a reviewer model decides, no human in the loop. The Codex counterpart of auto mode. `agent.sh` records `sandbox=auto-review` |
+| `codex exec`, other `read` slots (`review`, `planReview`) | sandbox `read-only`, no escalation; `sandbox=read-only` |
 | `claude -p` (only when Codex is the orchestrator) | user settings; write slot with `acceptEdits`; the rest according to allow rules |
+
+The Codex policy of a slot is passed explicitly and wins over `sandbox_mode` in `~/.codex/config.toml`. A Codex CLI without automatic review (`codex exec --approve-for-me`) gives `AGENT_NOT_RUN`: update the CLI, never fall back to `danger-full-access`.
 
 Missing permission: the executor ends its work with `PERMISSION_REQUEST` lines, and `claude -p` returns denials. `agent.sh` returns `AGENT_NEEDS_PERMISSION` with `PERMISSION` lines. Then:
 1. Ask the user (AskUserQuestion): show each request, its reason and the proposed scope of the approval. Options: approve, deny, stop the run. Never grant an approval yourself.
 2. Approval: `agent.sh --slot <slot> --run-id <RUN_ID> --resume <session> --grant <G> [--grant ...] [--label <label>]`. Use the narrowest scope that is enough:
-   - Codex: `dir:<absolute path>` (write outside the repo), `network` (network), `full` (no sandbox, only when the user chose it explicitly).
+   - Codex: `dir:<absolute path>` (write outside the repo), `network` (network), `full` (no sandbox, only when the user chose it explicitly). Automatic review already covers most blocked commands in write slots; a grant is the exception.
    - Claude: `tool:<rule>`, e.g. `tool:Bash(scripts/test.sh:*)`.
 3. Denial: do not resume the session. Assess the partial result. A missing key action is NEEDS_HUMAN with a reason.
 4. An approval covers one resume. Record it in the run state and in the report (`agent.sh --summary` shows `grants=`).
+5. The resume call with `--grant` shows a Claude Code prompt (guard below). That prompt is the human approval of the exact command; the question in step 1 gives the context.
 
-Running `agent.sh` in auto mode may need a narrow allow rule in `~/.claude/settings.json`: `"permissions": {"allow": ["Bash(bash <absolute path>/av-implement/scripts/agent.sh:*)"]}` (or `/permissions`, Allow tab, User settings). If the classifier denies `agent.sh`: do not work around it with another command and do not change the settings yourself. Stop with NEEDS_HUMAN and give the rule.
+Guard: the plugin hook `scripts/agent_guard.sh` (PreToolUse, Bash) lets a plain call of `agent.sh` run without a prompt, also in auto mode. Any call with `--grant`, a variable prefix, `cd`, `&&`, `;`, a pipe or a substitution goes to a Claude Code prompt, so a human confirms every grant. Do not add an allow rule for `agent.sh`: a rule like `agent.sh:*` also matches `--grant full`. Without the plugin (skills in `~/.claude/skills`), the user registers the same hook in `~/.claude/settings.json`: `"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "bash <absolute path>/av-implement/scripts/agent_guard.sh"}]}]}`. If a call is denied: do not work around it with another command and do not change the settings yourself. Stop with NEEDS_HUMAN and give the hook.
 
 ## Run state
 

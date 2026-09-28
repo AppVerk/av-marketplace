@@ -24,6 +24,11 @@ export CODEX_HOME="$TMP/codex-home" AV_AGENTS_DIR="$TMP/agents"
 
 cat >"$BIN/fake-codex" <<'EOF'
 #!/bin/bash
+if [ "${1:-}" = "exec" ] && [ "${2:-}" = "--help" ]; then
+  printf 'Usage: codex exec [OPTIONS]\n'
+  [ -n "${FAKE_NO_AUTO:-}" ] || printf '      --approve-for-me\n'
+  exit 0
+fi
 printf '%s\n' "$@" >"$FAKE_DIR/codex.args"
 printf 'slot=%s run=%s\n' "${AV_AGENT_SLOT:-}" "${AV_AGENT_RUN_ID:-}" >"$FAKE_DIR/codex.env"
 cat >"$FAKE_DIR/codex.prompt"
@@ -119,7 +124,9 @@ out="$(bash "$AGENT" --slot review --run-id r1 --prompt-file "$TMP/prompt.md" --
 [ "$rc" -eq 0 ] && ok || fail "codex: code $rc: $out"
 has "$out" "AGENT_OK review-r1" && has "$out" "actual=gpt-6-astra" && ok || fail "codex: AGENT_OK missing: $out"
 args="$(cat "$TMP/codex.args")"
-has "$args" 'sandbox_mode="workspace-write"' && ok || fail "codex: default sandbox missing"
+has "$args" 'sandbox_mode="read-only"' && has "$args" 'approval_policy="never"' && ok || fail "codex read slot: read-only sandbox missing: $args"
+has "$args" "auto_review" && fail "codex read slot: escalation allowed" || ok
+has "$out" "sandbox=read-only" && ok || fail "codex read slot: AGENT line without sandbox: $out"
 has "$args" "dangerously" && fail "codex: bypasses the sandbox" || ok
 has "$args" "gpt-6-astra" && has "$args" 'model_reasoning_effort="xhigh"' && has "$args" "$REPO" && ok || fail "codex: model/effort/root: $args"
 has "$out" "RESUME $AV_CODEX_BIN resume s-123" && ok || fail "codex: resume command missing: $out"
@@ -127,13 +134,37 @@ has "$(cat "$TMP/codex.env")" "slot=review run=r1" && ok || fail "codex: AV_AGEN
 p="$(cat "$TMP/codex.prompt")"
 has "$p" "Review the run." && has "$p" "Do not delegate further" && has "$p" "Access: read only" && ok || fail "codex: incomplete prompt"
 has "$p" "PERMISSION_REQUEST:" && ok || fail "codex: prompt without the permission rule"
+has "$p" "sandbox read-only without escalation" && ok || fail "codex read slot: prompt without the sandbox rule"
 has "$(cat .ai/workspace/runs/r1/agents/review-r1.md)" "APPROVED: codex result" && ok || fail "codex: result file missing"
 rec="$(tail -n 1 .ai/workspace/runs/r1/agents.jsonl)"
-[ "$(printf '%s' "$rec" | jq -r '[.slot,.label,.provider,.model,.effort,.status,.actual_effort,.session,.via] | join(" ")')" = "review r1 codex gpt-6-astra xhigh OK xhigh s-123 agent.sh" ] && ok || fail "codex: wrong agents.jsonl entry: $rec"
+[ "$(printf '%s' "$rec" | jq -r '[.slot,.label,.provider,.model,.effort,.status,.actual_effort,.session,.via,.sandbox] | join(" ")')" = "review r1 codex gpt-6-astra xhigh OK xhigh s-123 agent.sh read-only" ] && ok || fail "codex: wrong agents.jsonl entry: $rec"
 printf 'sandbox_mode = "danger-full-access"\n' >"$TMP/codex-home/config.toml"
 bash "$AGENT" --slot review --run-id r1 --prompt-file "$TMP/prompt.md" --label cfg >/dev/null
-has "$(cat "$TMP/codex.args")" "sandbox_mode" && fail "codex: overrides sandbox_mode from the user config" || ok
+has "$(cat "$TMP/codex.args")" 'sandbox_mode="read-only"' && ok || fail "codex: danger-full-access from the user config reaches a read slot"
+bash "$AGENT" --slot plan --run-id r1 --prompt-file "$TMP/prompt.md" --label cfg >/dev/null
+args="$(cat "$TMP/codex.args")"
+has "$args" 'sandbox_mode="workspace-write"' && has "$args" 'approvals_reviewer="auto_review"' && ok || fail "codex: danger-full-access from the user config reaches a write slot: $args"
 : >"$TMP/codex-home/config.toml"
+
+# --- 2b. codex write slot and verify: workspace-write with automatic review
+out="$(bash "$AGENT" --slot plan --run-id r8 --prompt-file "$TMP/prompt.md")"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "access=write harness=claude via=agent.sh sandbox=auto-review" && ok || fail "codex write: $rc $out"
+args="$(cat "$TMP/codex.args")"
+has "$args" 'sandbox_mode="workspace-write"' && has "$args" 'approval_policy="on-request"' && has "$args" 'approvals_reviewer="auto_review"' && ok || fail "codex write: auto review missing: $args"
+has "$args" "danger-full-access" && fail "codex write: full access without a grant" || ok
+has "$args" "dangerously" && fail "codex write: bypasses the sandbox" || ok
+p="$(cat "$TMP/codex.prompt")"
+has "$p" "require_escalated" && has "$p" "automatic review decides" && ok || fail "codex write: prompt without the escalation rule"
+[ "$(tail -n 1 .ai/workspace/runs/r8/agents.jsonl | jq -r .sandbox)" = "auto-review" ] && ok || fail "codex write: sandbox not recorded"
+has "$(bash "$AGENT" --summary --run-id r8)" "sandbox=auto-review" && ok || fail "codex write: summary without sandbox"
+jq '.agents.models.verify = {"provider":"codex","model":"gpt-6-astra"}' .ai/av.config.json >"$TMP/verify.json"
+out="$(bash "$AGENT" --config "$TMP/verify.json" --slot verify --run-id r8 --prompt-file "$TMP/prompt.md")"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "access=read" && has "$out" "sandbox=auto-review" && ok || fail "codex verify: gates need escalation: $rc $out"
+rm -f "$TMP/codex.args"
+out="$(FAKE_NO_AUTO=1 bash "$AGENT" --slot plan --run-id r8 --prompt-file "$TMP/prompt.md" --label old)"; rc=$?
+[ "$rc" -eq 3 ] && has "$out" "AGENT_NOT_RUN plan-old codex CLI has no automatic review" && ok || fail "codex without auto review: $rc $out"
+[ -f "$TMP/codex.args" ] && fail "codex without auto review: CLI was run" || ok
+[ "$(tail -n 1 .ai/workspace/runs/r8/agents.jsonl | jq -r '.status + " " + .sandbox')" = "NOT_RUN auto-review" ] && ok || fail "codex without auto review: wrong entry"
 
 # --- 3. codex asks for a permission: NEEDS_PERMISSION, then resume with grant
 out="$(FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r6 --prompt-file "$TMP/prompt.md")"; rc=$?
@@ -151,7 +182,9 @@ rec="$(tail -n 1 .ai/workspace/runs/r6/agents.jsonl)"
 [ "$(printf '%s' "$rec" | jq -r '.status + " " + .resumed_from + " " + (.grants | join(","))')" = "OK s-123 network,dir:/opt/cache" ] && ok || fail "resume codex: wrong entry: $rec"
 has "$(cat .ai/workspace/runs/r6/agents/plan.log)" "==== resume s-123" && ok || fail "resume codex: log overwritten"
 out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant full)"
-has "$(cat "$TMP/codex.args")" 'sandbox_mode="danger-full-access"' && ok || fail "resume codex full: $out"
+args="$(cat "$TMP/codex.args")"
+has "$args" 'sandbox_mode="danger-full-access"' && ok || fail "resume codex full: $out"
+[ "$(printf '%s\n' "$args" | grep -n 'sandbox_mode=' | tail -n 1 | cut -d: -f2-)" = 'sandbox_mode="danger-full-access"' ] && ok || fail "resume codex full: the grant is not the last sandbox_mode: $args"
 
 # --- 4. claude through agent.sh: permission denial, resume with a rule
 out="$(FAKE_DENY=1 bash "$AGENT" --slot implement --run-id r7 --prompt-file "$TMP/prompt.md" --harness codex)"; rc=$?

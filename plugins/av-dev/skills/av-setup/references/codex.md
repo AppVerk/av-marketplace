@@ -26,7 +26,7 @@ Goal: one copy of instructions and skills. Manual ports (e.g. `.codex/agents/*.t
 
 The `av-*` skills live outside the repo: in `~/.claude/skills/` or in the `av-dev` plugin. Codex needs a separate install of them. Check the location of Codex user skills in its current documentation. Do not guess the path. In the report, give the symlink command when the location is known.
 
-A slot executor on Codex (`agent.sh`, `provider: codex`) does not need this install. It runs in a sandbox from `~/.codex/config.toml` (default `workspace-write`); a human grants missing permissions through the orchestrator. `agent.sh` gives it the skills directory path in the prompt header, and Codex reads `SKILL.md` straight from disk. The install is needed only when a human runs av-* skills directly in Codex.
+A slot executor on Codex (`agent.sh`, `provider: codex`) does not need this install. Write slots and `verify` run in the `workspace-write` sandbox with automatic review (escalation decided by a reviewer model, like auto mode); read slots run `read-only`. The slot policy wins over `~/.codex/config.toml`. A human grants anything beyond that through the orchestrator. `agent.sh` gives it the skills directory path in the prompt header, and Codex reads `SKILL.md` straight from disk. The install is needed only when a human runs av-* skills directly in Codex.
 
 ## What not to touch
 

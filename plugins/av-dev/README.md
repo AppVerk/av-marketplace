@@ -28,6 +28,17 @@ Reference page: [docs/plugins/av-dev.md](../../docs/plugins/av-dev.md).
 
 Requirements: `bash` 3.2+, `git`, `jq` (`brew install jq`).
 
+Codex models: only if any slot in your config has `"provider": "codex"`. You must be logged in to Codex, otherwise these slots fail.
+
+```bash
+npm install -g @openai/codex                  # Codex CLI with automatic review
+codex login                                   # log in with your Codex account, once per machine
+codex login status                            # check: logged in
+codex exec --help | grep -- --approve-for-me  # check: the CLI is new enough
+```
+
+No Codex account: switch the Codex slots to Claude in `.ai/av.config.json.local` (see [Claude and Codex slots](#claude-and-codex-slots)).
+
 ## Quick start
 
 1. Open Claude Code in the repo root.
@@ -245,14 +256,12 @@ Each step of a run is a slot with its own provider, model and effort:
 
 - `crossVendor: true`: code and plans are checked by a different provider than the one that wrote them.
 - Claude slots run as plugin agents `av-dev:av-slot-<effort>`.
-- Codex slots run through `codex exec` in your Codex sandbox. Log in first: `codex login`.
-- In auto mode, allow the executor once in `~/.claude/settings.json`:
-
-  ```json
-  "permissions": { "allow": ["Bash(bash <plugin>/skills/av-implement/scripts/agent.sh:*)"] }
-  ```
-
-- When a Codex slot needs more access (network, a folder outside the repo), the run asks you and resumes with a narrow grant.
+- Codex slots run through `codex exec`. You must be logged in to Codex (`codex login`, see [Install](#install)). Needs a Codex CLI with automatic review (`codex exec --approve-for-me`).
+  - `plan`, `implement`, `verify`: sandbox `workspace-write` with automatic review. A command the sandbox blocks (a build, a simulator, the network) asks for escalation and a Codex reviewer model decides, like auto mode in Claude Code. No prompts for you.
+  - `review`, `planReview`: sandbox `read-only`.
+  - These settings win over `sandbox_mode` in `~/.codex/config.toml`.
+- The plugin hook `agent_guard.sh` lets the orchestrator start slots without prompts, also in auto mode. You need no allow rule for `agent.sh`; remove an old `agent.sh:*` rule, because it also allows `--grant full`.
+- When a slot still needs more access (a folder outside the repo, no sandbox), the run asks you, and Claude Code shows a prompt for the exact `--grant` command.
 - No Codex on your machine: switch its slots to Claude in `.ai/av.config.json.local` and set `crossVendor: false`.
 
 ## Language
@@ -267,7 +276,8 @@ The plugin is written in English. Files it generates in your repo use `project.l
 | `CHECK <cmd> NOT_RUN` | the environment is missing (precheck failed or a not-run exit code) | start the service or device from `needs`, run the gate again |
 | `STALE` | the code changed after the check | run the gate again; do not edit files while a gate runs |
 | `AGENT_NEEDS_PERMISSION` | a Codex slot needs more access | approve or refuse when asked; the run resumes |
-| `AGENT_NOT_RUN` | the CLI of the slot provider is missing | install and log in, or switch the slot in `.ai/av.config.json.local` |
+| `AGENT_NOT_RUN` | the CLI of the slot provider is missing, or the Codex CLI has no automatic review | install or update it (`npm install -g @openai/codex`), or switch the slot in `.ai/av.config.json.local` |
+| `AGENT_FAIL` on a Codex slot, the log says you are not logged in | Codex CLI without a login | `codex login`, then run the task again |
 | `SETUP_LOCAL_TRACKED` | `.ai/av.config.json.local` is in git | `git rm --cached .ai/av.config.json.local` |
 
 Run the plugin tests:

@@ -93,7 +93,8 @@ Example: a developer without Codex CLI switches Codex slots to Claude.
 Slots: `plan`, `planReview`, `implement`, `review`, `verify`. Each slot sets a provider (`claude` or `codex`), a model and an effort.
 
 - Claude slots run through the Agent tool with the plugin agents `av-dev:av-slot-<effort>` (write) and `av-dev:av-slot-read-<effort>` (read only).
-- Codex slots run through `av-implement/scripts/agent.sh` and `codex exec` in the user's sandbox. A missing permission stops the slot; the orchestrator asks the user and resumes with a narrow grant.
+- Codex slots run through `av-implement/scripts/agent.sh` and `codex exec`; the user must be logged in (`codex login`). Write slots and `verify` use the `workspace-write` sandbox with automatic review: a blocked command asks for escalation and a Codex reviewer model decides, like auto mode. Read slots are `read-only`. The slot policy wins over `~/.codex/config.toml`.
+- The plugin hook `agent_guard.sh` lets a plain `agent.sh` call run without a prompt; a call with `--grant` always goes to a human prompt. No allow rule for `agent.sh` is needed.
 - `crossVendor: true` requires code and plans to be checked by a different provider than the one that wrote them.
 - `haiku` is rejected for `review`: a cheap model can falsely confirm correctness.
 

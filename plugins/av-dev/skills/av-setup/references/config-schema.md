@@ -228,7 +228,7 @@ Commands from the config are the only commands that `av-verify` runs without ask
   - `planReview` without an entry inherits `review`.
   - A `claude` slot with effort `inherit` runs as a `general-purpose` subagent with the session effort. Set `effort` to run it on a slot definition (`av-slot-<effort>`). A missing slot is `inherit`.
   - `gate.sh --list` rejects other values, and `haiku` in `review` (code 2). Do not give `haiku` to review. A cheap model can falsely confirm correctness. For running commands with an objective exit code, it is enough. In adoption, choose the stronger of two: the model from the old agent's frontmatter or the default from this schema.
-  - A Claude slot runs the Agent tool with the `av-slot-<effort>` definition (session permissions). A Codex slot runs `av-implement/scripts/agent.sh` through `codex exec` in the user's sandbox, with a permission prompt when permissions are missing. Rules: skill `av-implement`, sections "Slots and providers" and "Permissions".
+  - A Claude slot runs the Agent tool with the `av-slot-<effort>` definition (session permissions). A Codex slot runs `av-implement/scripts/agent.sh` through `codex exec`: write slots and `verify` in the `workspace-write` sandbox with automatic review, read slots `read-only`; a grant beyond that needs a human prompt. Rules: skill `av-implement`, sections "Slots and providers" and "Permissions".
 - `crossVendor` (optional, bool): `true` requires `review` to have a different provider than `implement`, and `planReview` (or `review`) a different one than `plan`. Models from different companies make mistakes in different places, so mutual checking catches more. Alternating example:
 
   ```json
