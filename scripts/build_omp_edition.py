@@ -73,7 +73,7 @@ MODEL_ROLES = {"code_review", "executor", "challenger", "analyst", "plan", "test
 # OMP_TOOLS mirrors OMP's tools/builtin-names.ts; scripts/check_omp_tools.py
 # verifies the names against an installed OMP package in CI.
 OMP_TOOLS = {
-    "read", "bash", "edit", "ast_grep", "ast_edit", "ask", "debug", "eval",
+    "read", "bash", "edit", "ast_grep", "ast_edit", "ask", "debug", "ida", "eval",
     "github", "glob", "grep", "find", "lsp", "checkpoint", "rewind",
     "context_notes", "new_context", "security_scan", "task", "wait", "todo",
     "web_search", "write", "memory_edit", "retain", "recall", "reflect",
