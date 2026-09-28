@@ -16,8 +16,13 @@
 #   --label TEXT              result file suffix, e.g. r1, data
 #   --harness claude|codex    current session; default from env (CODEX_THREAD_ID, CLAUDECODE)
 #   --timeout SEC             default agents.timeoutSec or 3600
-#   --grant G                 repeatable, only with --resume. claude: tool:<rule>, e.g.
-#                             tool:Bash(npm test:*); codex: dir:<path>, network, full
+#   --grant G                 repeatable, only with --resume of a session whose last record
+#                             for this slot, label and provider is NEEDS_PERMISSION.
+#                             claude: tool:Tool(specifier), e.g. tool:Bash(npm test:*), or an
+#                             MCP tool name; no bare tool, no list, no specifier of only * or :.
+#                             codex: dir:<absolute path> (not /, not the home directory or its
+#                             parents, no . or .., no quote, backslash or control character;
+#                             symlinks resolved; several dir: grants are all kept), network, full
 #   --dry-run                 print the command, do not run it
 # Config: the effective config, i.e. the team config with the <config>.local override
 #   (av-verify/scripts/config.sh). Locally you can e.g. change a slot's provider.
@@ -120,7 +125,7 @@ while [ $# -gt 0 ]; do
     --summary) mode="summary"; shift ;;
     --record) mode="record"; shift ;;
     --dry-run) dry_run=1; shift ;;
-    -h|--help) sed -n '2,44p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 && /^#/ { print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     *) usage_error "unknown argument: $1" ;;
   esac
 done
@@ -289,18 +294,74 @@ printf '%s' "$limit" | grep -Eq '^[1-9][0-9]*$' || usage_error "invalid timeout:
 claude_bin="${AV_CLAUDE_BIN:-claude}"
 codex_bin="${AV_CODEX_BIN:-codex}"
 
+# A grant must be as narrow as it looks: one directory, one tool rule.
+grant_dir() {
+  local d="$1" part rest home_real
+  case "$d" in /*) ;; *) usage_error "--grant dir: needs an absolute path, got '$d'" ;; esac
+  case "$d" in *'"'*|*\\*|*[[:cntrl:]]*) usage_error "--grant dir: path with a quote, backslash or control character: '$d'" ;; esac
+  rest="${d#/}"
+  while [ -n "$rest" ]; do
+    part="${rest%%/*}"
+    case "$part" in .|..) usage_error "--grant dir: path with '.' or '..': '$d'" ;; esac
+    [ "$part" = "$rest" ] && rest="" || rest="${rest#*/}"
+  done
+  while [ "${d%/}" != "$d" ] && [ "$d" != "/" ]; do d="${d%/}"; done
+  case "$d" in *//*) usage_error "--grant dir: path with an empty segment: '$1'" ;; esac
+  [ -d "$d" ] && d="$(cd "$d" && pwd -P)"
+  home_real="$(cd "$HOME" 2>/dev/null && pwd -P)"
+  case "$d" in
+    /) usage_error "--grant dir: / gives write access to the whole disk" ;;
+    "$HOME"|"$home_real") usage_error "--grant dir: the home directory is too broad: '$d'" ;;
+  esac
+  case "$HOME/" in "$d"/*) usage_error "--grant dir: '$d' contains the home directory" ;; esac
+  case "$home_real/" in "$d"/*) usage_error "--grant dir: '$d' contains the home directory" ;; esac
+  printf '%s' "$d"
+}
+
+grant_tool() {
+  local r="$1" name spec
+  case "$r" in
+    mcp__?*__?*)
+      printf '%s' "$r" | grep -Eq '^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$' || usage_error "--grant tool: invalid MCP tool name '$r'"
+      printf '%s' "$r"; return ;;
+  esac
+  printf '%s' "$r" | grep -Eq '^[A-Za-z][A-Za-z0-9_]*\([^()]+\)$' \
+    || usage_error "--grant tool: needs one rule Tool(specifier), e.g. Bash(npm test:*), got '$r'"
+  name="${r%%(*}"
+  spec="${r#*(}"; spec="${spec%)}"
+  case "$spec" in
+    *[![:space:]*:]*) ;;
+    *) usage_error "--grant tool: $name($spec) allows everything; name the command or path" ;;
+  esac
+  printf '%s' "$r"
+}
+
 grant_args=()
 grant_text=""
+grant_dirs=()
 for g in ${grants[@]+"${grants[@]}"}; do
   case "$provider:$g" in
-    claude:tool:?*) grant_args+=(--allowedTools "${g#tool:}") ;;
-    codex:dir:/?*) grant_args+=(-c "sandbox_workspace_write.writable_roots=[\"${g#dir:}\"]") ;;
+    claude:tool:*) rule="$(grant_tool "${g#tool:}")" || { printf '%s\n' "$rule"; exit 2; }; grant_args+=(--allowedTools "$rule") ;;
+    codex:dir:*) dir="$(grant_dir "${g#dir:}")" || { printf '%s\n' "$dir"; exit 2; }; grant_dirs+=("$dir") ;;
     codex:network) grant_args+=(-c "sandbox_workspace_write.network_access=true") ;;
     codex:full) grant_args+=(-c "sandbox_mode=\"danger-full-access\"") ;;
     *) usage_error "invalid --grant '$g' for $provider; claude: tool:<rule>; codex: dir:<absolute path>, network, full" ;;
   esac
   grant_text="$grant_text $g"
 done
+if [ "${#grant_dirs[@]}" -gt 0 ]; then
+  roots="$(printf '%s\n' "${grant_dirs[@]}" | sort -u | jq -R . | jq -sc .)"
+  grant_args+=(-c "sandbox_workspace_write.writable_roots=$roots")
+fi
+
+# Resume only a session that asked for a permission: its last record for this
+# slot, label and provider is NEEDS_PERMISSION.
+if [ -n "$resume_session" ]; then
+  last_status="$(jq -rs --arg s "$resume_session" --arg slot "$slot" --arg label "$label" --arg p "$provider" \
+    '[.[] | select(.session == $s and .slot == $slot and .label == $label and .provider == $p)] | last | .status // ""' \
+    "$run_dir/agents.jsonl" 2>/dev/null)"
+  [ "$last_status" = "NEEDS_PERMISSION" ] || usage_error "--resume $resume_session: no pending permission request of slot $base ($provider) in $run_dir/agents.jsonl (last status: ${last_status:-none}); resume only a session that ended with AGENT_NEEDS_PERMISSION"
+fi
 
 permission_rules() {
   if [ "$provider" = "codex" ] && { [ "$access" = "write" ] || [ "$slot" = "verify" ]; }; then

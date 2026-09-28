@@ -92,6 +92,11 @@ EOF
 git add -A && git commit -qm init
 echo "Review the run." >"$TMP/prompt.md"
 
+# --- 0. help prints the whole header
+out="$(bash "$AGENT" --help)"
+has "$out" "agent.sh - av-dev slot executor" && has "$out" "# Requires: bash 3.2+, git, jq." && ok || fail "help: header cut: $(printf '%s' "$out" | tail -n 1)"
+has "$out" "set -uo" && fail "help: prints code after the header" || ok
+
 # --- 1. resolve: via session, agent (with an effort definition), agent.sh
 out="$(bash "$AGENT" --slot review --resolve)"
 has "$out" "SLOT review provider=codex model=gpt-6-astra effort=xhigh access=read harness=claude local=no via=agent.sh" && ok || fail "resolve review: $out"
@@ -181,6 +186,9 @@ has "$(cat "$TMP/codex.prompt")" "human approval for: network dir:/opt/cache" &&
 rec="$(tail -n 1 .ai/workspace/runs/r6/agents.jsonl)"
 [ "$(printf '%s' "$rec" | jq -r '.status + " " + .resumed_from + " " + (.grants | join(","))')" = "OK s-123 network,dir:/opt/cache" ] && ok || fail "resume codex: wrong entry: $rec"
 has "$(cat .ai/workspace/runs/r6/agents/plan.log)" "==== resume s-123" && ok || fail "resume codex: log overwritten"
+out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant full)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "no pending permission request of slot plan (codex)" && has "$out" "last status: OK" && ok || fail "resume of a finished session: $rc $out"
+FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r6 --prompt-file "$TMP/prompt.md" >/dev/null
 out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant full)"
 args="$(cat "$TMP/codex.args")"
 has "$args" 'sandbox_mode="danger-full-access"' && ok || fail "resume codex full: $out"
@@ -200,10 +208,68 @@ has "$args" "--resume" && has "$args" "c-1" && has "$args" "Bash(npm test:*)" &&
 out="$(bash "$AGENT" --slot planReview --run-id r7 --prompt-file "$TMP/prompt.md" --harness codex)"
 args="$(cat "$TMP/claude.args")"
 has "$args" "acceptEdits" && fail "claude read: acceptEdits in a read slot" || ok
+bad_tool() {  # bad_tool <expected text> <rule>
+  rm -f "$TMP/claude.args"
+  out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant "tool:$2" --harness codex)"; rc=$?
+  [ "$rc" -eq 2 ] && has "$out" "$1" && [ ! -f "$TMP/claude.args" ] && ok || fail "grant tool:$2: expected '$1', got $rc: $out"
+}
+FAKE_DENY=1 bash "$AGENT" --slot implement --run-id r7 --prompt-file "$TMP/prompt.md" --harness codex >/dev/null
+bad_tool "needs one rule Tool(specifier)" "Bash"
+bad_tool "needs one rule Tool(specifier)" "Edit"
+bad_tool "needs one rule Tool(specifier)" "Bash,Edit"
+bad_tool "needs one rule Tool(specifier)" "Bash(npm test:*),Edit(src/**)"
+bad_tool "needs one rule Tool(specifier)" "Bash(echo (x))"
+bad_tool "needs one rule Tool(specifier)" ""
+bad_tool "allows everything" "Bash(*)"
+bad_tool "allows everything" "Bash(:*)"
+bad_tool "allows everything" "Edit(**)"
+bad_tool "allows everything" "Bash( * )"
+bad_tool "invalid MCP tool name" "mcp__srv__x;y"
+out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant tool:mcp__github__get_issue --harness codex)"; rc=$?
+[ "$rc" -eq 0 ] && has "$(cat "$TMP/claude.args")" "mcp__github__get_issue" && ok || fail "grant MCP tool: $rc $out"
 out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant network --harness codex)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "invalid --grant 'network' for claude" && ok || fail "wrong grant for claude: $rc $out"
 out="$(bash "$AGENT" --slot plan --run-id r7 --resume s-1 --grant dir:rel)"; rc=$?
-[ "$rc" -eq 2 ] && ok || fail "grant relative dir: $rc"
+[ "$rc" -eq 2 ] && has "$out" "needs an absolute path" && ok || fail "grant relative dir: $rc $out"
+
+# --- 4b. grants are as narrow as they look
+bad_grant() {  # bad_grant <expected text> <grant...>: code 2 with the message, CLI not run
+  local want="$1"; shift
+  local a=() g
+  for g in "$@"; do a+=(--grant "$g"); done
+  rm -f "$TMP/codex.args" "$TMP/claude.args"
+  out="$(bash "$AGENT" --slot plan --run-id r9 --resume s-9 "${a[@]}")"; rc=$?
+  [ "$rc" -eq 2 ] && has "$out" "$want" && [ ! -f "$TMP/codex.args" ] && ok || fail "grant $*: expected '$want', got $rc: $out"
+}
+bad_grant "the whole disk" "dir:/"
+bad_grant "the whole disk" "dir://"
+bad_grant "'.' or '..'" "dir:/.."
+bad_grant "'.' or '..'" "dir:/opt/../etc"
+bad_grant "'.' or '..'" "dir:/opt/./cache"
+bad_grant "empty segment" "dir:/opt//cache"
+bad_grant "quote, backslash or control" 'dir:/opt/a"]
+sandbox_mode="danger-full-access'
+bad_grant "quote, backslash or control" 'dir:/opt/a\\b'
+bad_grant "quote, backslash or control" "dir:/opt/a$(printf '\b')b"
+bad_grant "home directory is too broad" "dir:$HOME"
+bad_grant "home directory is too broad" "dir:$HOME/"
+bad_grant "contains the home directory" "dir:$(dirname "$HOME")"
+bad_grant "needs an absolute path" "dir:"
+mkdir -p "$TMP/grant-a" "$TMP/grant-b"
+ln -s "$TMP/grant-a" "$TMP/grant-link"
+FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r9 --prompt-file "$TMP/prompt.md" >/dev/null
+out="$(bash "$AGENT" --slot plan --run-id r9 --resume s-123 --grant "dir:$TMP/grant-link/" --grant "dir:$TMP/grant-b" --grant "dir:/opt/cache" --grant network)"; rc=$?
+real_a="$(cd "$TMP/grant-a" && pwd -P)"; real_b="$(cd "$TMP/grant-b" && pwd -P)"
+roots="$(grep 'writable_roots=' "$TMP/codex.args")"
+[ "$rc" -eq 0 ] && [ "$(grep -c 'writable_roots=' "$TMP/codex.args")" -eq 1 ] && ok || fail "several dir: grants: one setting expected: $rc $(cat "$TMP/codex.args")"
+has "$roots" "\"$real_a\"" && has "$roots" "\"$real_b\"" && has "$roots" '"/opt/cache"' && ok || fail "several dir: grants: roots missing (symlink resolved, missing dir kept): $roots"
+printf '%s' "${roots#*=}" | jq -e 'type == "array" and length == 3' >/dev/null && ok || fail "several dir: grants: not a JSON/TOML array: $roots"
+out="$(bash "$AGENT" --slot plan --run-id r7 --resume s-unknown --grant network)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "last status: none" && ok || fail "resume of an unknown session: $rc $out"
+out="$(bash "$AGENT" --slot review --run-id r6 --resume s-123 --grant network)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "no pending permission request of slot review" && ok || fail "resume with another slot: $rc $out"
+out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant network --label x)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "slot plan-x" && ok || fail "resume with another label: $rc $out"
 out="$(bash "$AGENT" --slot plan --run-id r7 --resume s-1)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "requires at least one --grant" && ok || fail "resume without grant: $rc $out"
 out="$(bash "$AGENT" --slot plan --run-id r7 --prompt-file "$TMP/prompt.md" --grant network)"; rc=$?

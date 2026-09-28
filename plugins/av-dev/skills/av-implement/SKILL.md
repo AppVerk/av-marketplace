@@ -67,7 +67,9 @@ Missing permission: the executor ends its work with `PERMISSION_REQUEST` lines, 
 1. Ask the user (AskUserQuestion): show each request, its reason and the proposed scope of the approval. Options: approve, deny, stop the run. Never grant an approval yourself.
 2. Approval: `agent.sh --slot <slot> --run-id <RUN_ID> --resume <session> --grant <G> [--grant ...] [--label <label>]`. Use the narrowest scope that is enough:
    - Codex: `dir:<absolute path>` (write outside the repo), `network` (network), `full` (no sandbox, only when the user chose it explicitly). Automatic review already covers most blocked commands in write slots; a grant is the exception.
-   - Claude: `tool:<rule>`, e.g. `tool:Bash(scripts/test.sh:*)`.
+   - Claude: `tool:<Tool(specifier)>`, e.g. `tool:Bash(scripts/test.sh:*)`, or an MCP tool name.
+   - `agent.sh` rejects grants broader than they look (code 2): `dir:` of `/`, the home directory or its parents, with `.`, `..`, a quote or a control character; `tool:` without a specifier, a list, or a specifier of only `*` and `:` (e.g. `Bash(*)`). Several `dir:` grants are all kept.
+   - Resume only the session from `AGENT_NEEDS_PERMISSION`, with the same slot and label: `agent.sh` checks that its last record in `agents.jsonl` is `NEEDS_PERMISSION`.
 3. Denial: do not resume the session. Assess the partial result. A missing key action is NEEDS_HUMAN with a reason.
 4. An approval covers one resume. Record it in the run state and in the report (`agent.sh --summary` shows `grants=`).
 5. The resume call with `--grant` shows a Claude Code prompt (guard below). That prompt is the human approval of the exact command; the question in step 1 gives the context.
