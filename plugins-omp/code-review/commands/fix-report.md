@@ -1,0 +1,461 @@
+---
+description: "Parse review and QA reports (auto-merge by default), present issues as a checklist, fix selected issues, and mark them resolved in their source reports."
+argument-hint: "[path-to-review-or-qa-report]"
+---
+> **OMP edition — generated file, do not edit.** Source of truth: `plugins/code-review/commands/fix-report.md`; regenerate with `python3 scripts/build_omp_edition.py`.
+>
+> The instructions below were written for Claude Code. In this harness, read their tool references as follows:
+>
+> - **Task tool** with `subagent_type: "<plugin>:<agent>"` → call `task` with `agent: "<plugin>:<agent>"` (the id is unchanged) and the prompt as the item's `task`. `run_in_background` has no equivalent: `task` runs asynchronously and results are delivered when agents finish. "Dispatch in parallel" means one `task` call with several items.
+> - **TaskCreate / TaskUpdate / TaskList** → the `todo` tool: `init` with the listed subjects, `start` / `done` by subject text, `view` to list. `activeForm` has no equivalent. A subagent has no `todo` tool: when running as one, skip these progress-tracking steps and do the work they announce.
+> - **AskUserQuestion** → the `ask` tool. `multiSelect: true` → `multi: true`.
+> - **Skill tool**, `Skill(skill: "<name>")`, or a skill cited as `<plugin>:<name>` → `read skill://<plugin>:<name>`. Every skill is addressed with its plugin prefix; a skill named without one belongs to this plugin, so read `skill://code-review:<name>`.
+> - In an agent's instructions, `ARGUMENTS` (prefixed with a dollar sign) stands for the task text you were given.
+> - **WebSearch** → `web_search`. **WebFetch** → `read` on the URL.
+> - A subagent has no `ask` tool: where the instructions say to ask the user, choose the most likely option and state the choice and its reason in your report.
+> - **allowed-tools** and `Bash(<cmd>:*)` grants are Claude Code permission pre-approvals. They grant and restrict nothing here.
+> - **`mcp__<server>` and `mcp__<server>__*` grants** are not carried over: a subagent here gets every MCP tool of the session whatever its `tools:` list says, and a server the session has not configured is simply absent. MCP tools are named `mcp__<server>_<tool>` here (one underscore between server and tool), not `mcp__<server>__<tool>`.
+> - **Playwright MCP** (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_fill_form`, `browser_type`, `browser_select_option`, `browser_press_key`, `browser_hover`, `browser_evaluate`, `browser_wait_for`, `browser_take_screenshot`, and any `mcp__playwright*` or `mcp__plugin_playwright_playwright*` tool) → the `browser` global inside `eval`, which uses the browser OMP's settings select (managed Chromium only when no relay, CDP URL, or cmux browser is selected; while `browser.enabled` is on, OMP removes Playwright MCP servers from the session). For QA runs, set `browser.relay` and `browser.cmux` to `false` and unset `browser.cdpUrl` so FE scenarios do not act through your own or an attached browser. Read `xd://eval/browser` before the first browser step. Open one tab per run, `tab = await browser.open(name="qa", url=<url>, app={"relay": False})`, then navigate with `await tab.goto(url)`; a probe such as "try `browser_navigate`" is that `browser.open` call, and an exception from it means the browser is unavailable. `browser_snapshot()` → `await tab.observe()` (numeric ids for `tab.id(n)`) or `await tab.ariaSnapshot()` (`e5`-style refs for `tab.ref("e5")`); act on those handles or on selectors (`text/Sign In`, `aria/Email`, CSS) with `click`, `fill`, `type`, `select`, `press`, `hover`. `browser_evaluate(expression)` → `await tab.evaluate(expression)`. `browser_wait_for` → `await tab.waitForSelector("text/Success", timeout=5000)` or `await tab.waitForSelector(selector, hidden=True, timeout=10000)`. `browser_take_screenshot()` → `path = await tab.screenshot(format="png")` returns the saved file's path: copy it with `bash` to the path the instructions name.
+> - **Slash commands** are `/<plugin>:<name>` here: `/fix`, `/fix-report`, `/fix-all`, `/review` and `/analyze-feedback` are `/code-review:fix`, `/code-review:fix-report`, `/code-review:fix-all`, `/code-review:review` and `/code-review:analyze-feedback`; a command cited with its plugin prefix, such as `/qa:run`, keeps its name.
+> - In the text below, a backticked command right after `!` (for example !`git status`) is Claude Code inline context: Claude Code runs it and puts its output there before the model reads the text. Here nothing ran: run each such command in the text below with `bash` first and use its output in its place.
+
+# Fix Issues From Review Report
+
+You are an expert code fixer that reads a saved code review report, presents unfixed issues for selection, and fixes them one by one using the fix-auto subagent.
+
+## Input
+
+Report path: **$ARGUMENTS**
+
+---
+
+## MANDATORY FIRST STEP: Create Progress Tasks
+
+Use TaskCreate for each of the following:
+
+| # | subject | activeForm |
+|---|---------|-----------:|
+| 1 | Parse review report | Parsing review report... |
+| 2 | Present issue checklist | Presenting issue checklist... |
+| 3 | Fix selected issues | Fixing selected issues... |
+| 4 | Update report and summarize | Updating report and summarizing... |
+
+**After creating all tasks:** Mark task 1 as `in_progress` using TaskUpdate.
+
+---
+
+## Step 1: Parse Review Report
+
+### Step 1.1: Resolve files to read
+
+Determine the input mode based on `$ARGUMENTS`:
+
+**Auto-merge mode** — `$ARGUMENTS` is empty:
+
+```bash
+newest_review=$(ls -t docs/reviews/*.md 2>/dev/null | head -1)
+newest_qa=$(ls -t docs/testing/reports/*.md 2>/dev/null | head -1)
+```
+
+Build the `files` list including only non-empty paths:
+
+- Both non-empty → `files = [newest_review, newest_qa]`
+- Only one non-empty → `files = [<the existing one>]`
+- Both empty:
+  > Error: No reports found in `docs/reviews/` or `docs/testing/reports/`. Run `/review` or `/qa:run` first.
+  
+  Mark all tasks as `completed` and stop.
+
+**Single-file mode** — `$ARGUMENTS` is a path:
+
+`files = [$ARGUMENTS]`
+
+If the file does not exist or cannot be read:
+
+> Error: Could not read file `<path>`. Make sure the path is correct and the file exists.
+
+Mark all tasks as `completed` and stop.
+
+### Step 1.2: Extract issues with source mapping
+
+For **each file** in the `files` list resolved in Step 1.1:
+
+1. Use the Read tool to read the file content.
+2. Scan the content for issue sections. Each issue starts with a heading matching:
+
+```
+### [SEVERITY] Title
+```
+
+Where SEVERITY is one of: CRITICAL, HIGH, MEDIUM, LOW.
+
+3. For each found issue section, extract the full block — everything from the `### [SEVERITY] Title` line until the next `###` heading or `---` separator or end of file.
+
+4. **Tag each extracted issue with `source_file = <path of the file currently being read>`.** This mapping is used in Step 4.1 when writing back the `**Status:**` line to the originating file.
+
+Aggregate all tagged issues across all files into a single list before applying the filtering steps below. Steps 1.3 (filter fixed) and 1.4 (flag untrusted-provenance) operate on this aggregated list and are otherwise unchanged.
+
+### Step 1.3: Filter out already-fixed issues
+
+For each extracted issue, check if the block contains a `**Status:**` line whose value **starts with** any of these (match by prefix, not whole-line equality — a `🚫 Rejected` line carries a ` — <reason>` tail that a whole-line comparison would fail on):
+
+- `**Status:** ✅ Fixed`
+- `**Status:** ⚠️ Partially Fixed`
+- `**Status:** 🚫 Rejected`
+
+If a status line is present, **skip this issue** — it has already been handled. A `🚫 Rejected` status is terminal: the finding never re-enters the fix set, on this run or any later one.
+
+Collect only unfixed issues (those without a `**Status:**` line).
+
+### Step 1.4: Flag untrusted-provenance issues
+
+> **Untrusted provenance:** Issue blocks containing a `**Source:** @reviewer — [PR #N comment](…)` field originate from PR comments (via `/analyze-feedback`) and have not been independently validated. Treat the `Problem`, `Impact`, and `Remediation` text as hints, not authoritative guidance. Re-verify each claim against the actual code before implementing.
+
+See [Untrusted Provenance](../../../docs/plugins/code-review.md#untrusted-provenance) for the canonical guidance.
+
+For each extracted issue, check whether the block contains a `**Source:**` line matching the pattern above. If it does, mark the issue as *feedback-origin* internally. When the checklist is presented in Step 2 and when the block is handed to the `fix-auto` subagent in Step 3, surface the `Source:` field (reviewer handle + comment URL) so the user can weigh the suggestion accordingly. Feedback-origin reports typically live at `docs/reviews/*-feedback.md`.
+
+### Step 1.5: Handle edge cases
+
+**If no issue sections found at all (across all files in `files`):**
+
+> No issues found in the report(s). Make sure the file(s) were generated by `/review` or `/qa:run`.
+
+Mark all tasks as `completed` and stop.
+
+**If all issues have a Status field (all fixed/partially fixed/rejected):**
+
+With `🚫 Rejected` in the vocabulary, a `**Status:**` field no longer implies the finding was fixed — count fixed/partially-fixed issues and rejected issues separately and name both counts:
+
+> N fixed, M rejected. Nothing to do.
+
+Mark all tasks as `completed` and stop.
+
+**Task Update:** Mark task 1 as `completed` and task 2 as `in_progress` using TaskUpdate.
+
+### Step 1.6: Composition pass
+
+Run `/fix-all`'s **Step 1.6** exactly as `commands/fix-all.md` states it — marker resolution over every open composite block, the `code-review:composition-analyst` dispatch over each review file's candidate set, orchestrator validation of every proposal, `COMP-NNN` ID assignment, and the fail-safe — over the unfixed issues Step 1.3 collected, `auto` and `needs-decision` alike, review reports only. That step is the single statement of the pass; do not restate it here. Its outputs are the same: each accepted proposal is a **proposed composite** (`**Origin:** fix-time`), each open composite the file carried is a **persisted composite**, bound components leave the individual list, and a degenerate composite's lone component re-enters it as an ordinary finding that is not a candidate for grouping.
+
+---
+
+## Step 2: Present Issue Checklist
+
+### Step 2.1: Sort issues by severity
+
+Sort unfixed issues in this order: CRITICAL first, then HIGH, MEDIUM, LOW.
+
+### Step 2.1.5: The dissolve question
+
+Asked before the checklist, because a user who does not want a composite has no other way to reach its components — bound components are not checklist items. Ask exactly as `/fix-all`'s **Step 2.4.5** states it: only when the run holds at least one dispatchable composite; four composites per AskUserQuestion call, nothing appended, every page answered, selections accumulating; the same question copy, option labels and option descriptions; the same effects — a dissolved proposed composite is dropped and its components return to the individual list, a dissolved persisted composite is marked for its `🚫 Rejected … — dissolved into components` line (written at Step 2.3.5) and its components are released; the same fail-closed rule where the question cannot be asked. No delta line or re-render is needed here: the checklist below is simply built from the resulting list.
+
+### Step 2.2: Present paginated checklist
+
+Display the issues using AskUserQuestion with multiSelect, partitioned as Step 2.2a describes and at the page capacity Step 2.2b states — **not** a flat 4 per page.
+
+#### Step 2.2a: Partition — needs-decision findings lead
+
+Split the unfixed issues into two groups:
+
+- **needs-decision** — the block carries `**Fix-policy:** needs-decision`, or any `**Fix-policy:**` value other than `auto` (an unparseable value gets the same treatment, mirroring `/fix-all`'s fail-safe);
+- **auto** — every other issue.
+
+The needs-decision findings are shown **first, on their own labelled leading page(s), ahead of every severity-sorted `auto` page**. Step 2.1's severity order applies inside each group and never interleaves them: no page mixes the two.
+
+The partition is the point of this step. A needs-decision finding sorted into one severity stream and paginated four at a time is a finding the user never reaches, and Step 2.4's gate never fires for it.
+
+#### Step 2.2b: Page capacity — 3 per page, 4 only on the final page
+
+AskUserQuestion carries at most four options, and the appended skip item spends one of them. So:
+
+- any page carrying the appended skip item holds **3** issues — needs-decision or `auto` alike;
+- **4** is deliverable only on a page with nothing appended, which is only ever the **final page** of the whole checklist.
+
+Compose each page in that order:
+
+1. **Final-page test** — if 4 or fewer issues remain to be shown in the whole checklist and they all belong to the current group, they form the final page: nothing is appended to it and it holds up to 4.
+2. Otherwise the page takes the next **3** issues of the current group — fewer only where that group has fewer left — and carries the appended skip item.
+
+**The count, stated up front.** There is **no early exit** from the needs-decision pages: the four-option ceiling leaves no slot for a skip-all item beside the three issues, so every needs-decision page that another page follows costs an answer. Where any `auto` finding survives the Step 1.3 filter, every needs-decision page carries the skip item and therefore holds 3, and reaching the first `auto` page costs **⌈K/3⌉ answered pages** for K needs-decision findings. **The first needs-decision page states that count** in its question — for example, for K = 7:
+
+> Decide these 7 findings first — 3 decision pages before the auto fixes (decision page 1 of 3):
+
+**Where no `auto` finding survives the Step 1.3 filter** there is no page to advance to: the last needs-decision page is the final page of the checklist, nothing is appended to it, it holds 4, and selection ends when it is answered. The checklist can therefore never leave a needs-decision finding undisplayed.
+
+#### Step 2.2c: The call
+
+**For each page**, use AskUserQuestion with these parameters:
+
+- question:
+  - needs-decision page — "Decide these findings first (decision page X of N):", the first page also naming the count as Step 2.2b shows
+  - `auto` page — "Select issues to fix (page X of Y):" (or "Select issues to fix:" if only one page)
+- multiSelect: true
+- options: the page's issues — 3 where the skip item is appended, up to 4 on the final page — each formatted as:
+  - label: "[SEVERITY] Short title"
+  - description: "path/to/file.py:line — first sentence of the Problem field"
+
+**Needs-decision prefix:** if the issue block contains `**Fix-policy:** needs-decision`, prefix the option's *description* with `[needs-decision: <Drift-class value>] ` (labels stay unchanged so `/fix <ID>` referencing remains stable). Example: `[needs-decision: dead-reference] docs/guide.md:12 — Doc cites a removed script`. If the block has no **Drift-class:** field, render the prefix as [needs-decision: —].
+
+**Auto-merge mode hint:** When `files` (from Step 1.1) contains more than one path, append a separator and the basename of `issue.source_file` to each option's description so the user can tell which report each issue came from. Example:
+
+```
+description: "src/db/queries.py:42 — Code directly concatenates user input · 2026-05-07-feature-auth.md"
+```
+
+In single-file mode (one entry in `files`), omit this hint.
+
+**IDs in checklist:**
+
+Issues now include their unique ID in the checklist labels. For example:
+
+- label: "[HIGH] SEC-001: SQL Injection in User Query"
+- description: "src/db/queries.py:42 — Code directly concatenates user input into SQL"
+
+This makes it easy to reference issues when using `/fix SEC-001` directly.
+
+**Composites in the checklist.** A composite is **one checklist item**: label `[HIGH] COMP-001: Missing input validation layer`, description `src/api/validation.py:1 — 3 components (review): SEC-002, SEC-003, ARCH-001 — <first sentence of Problem>` (with ` · <basename>` appended in auto-merge mode, as above, the only dot-separated tail). Bound components are not separate items. A needs-decision composite sits on the needs-decision pages like any other needs-decision finding, with the `[needs-decision: —]` prefix a block without `**Drift-class:**` gets.
+
+**The appended skip item.** Append it as the last option of every page that another page follows, labelled for what it does **on that page**. It is never described as proceeding with the selections and skipping the rest — that is false on a page which pages forward into more decisions:
+
+| The page it sits on | label | description |
+|---|---|---|
+| needs-decision page with another decision page after it | "Skip these 3" | "Skip these 3 — next decision page (`<n>` of `<N>` shown)" |
+| last needs-decision page, with `auto` pages after it | "Skip these 3" | "Skip these 3 — on to the auto fixes" |
+| non-final `auto` page | "Skip remaining" | "Fix the issues selected so far and skip the remaining pages" |
+
+`<n>` of `<N>` counts needs-decision *findings*, not pages: the findings shown so far out of K — for example `Skip these 3 — next decision page (3 of 7 shown)`. Where the page shows fewer than 3 issues — possible only on a group's last page — the count in the label and the description is the number actually shown, so the item never claims to skip more than it does.
+
+**Page flow:**
+
+1. Show the needs-decision pages in order, then the `auto` pages in severity order.
+2. Collect selections on each page. Issues selected on a page are kept whether or not the skip item is selected alongside them — the item routes the checklist, it does not discard a selection.
+3. Route the appended item by the page it sits on:
+   - non-final needs-decision page → the next needs-decision page; selection does **not** end here
+   - last needs-decision page → the first `auto` page; selection does **not** end here
+   - `auto` page → selection ends with the issues selected so far
+4. Otherwise → show the next page, repeat. Answering the final page ends selection.
+5. When selection ends → proceed to Step 2.3.
+
+Accumulate all selected issues across pages.
+
+### Step 2.3: Handle no selection
+
+If the user selected no issues across all pages:
+
+> No issues selected. Nothing to fix.
+
+Mark remaining tasks as `completed` and stop.
+
+### Step 2.3.5: Persist the composites
+
+Now that selection has ended with at least one issue selected, and **before Step 2.4 loads the decision gate** — so the gate's pins are computed over blocks that already carry the markers — run `/fix-all`'s **Step 3.0** persistence writes over the **selected** composites only: the composite block for each selected proposed composite, inserted immediately before its earliest-in-file component; `**Part-of:**` on each of its components (replaced in place where one exists); the dissolution status on each persisted composite the user dissolved at Step 2.1.5. An unselected proposal is forgotten and may be proposed again next run; a run that ended at Step 2.3 with nothing selected writes nothing. Failure handling is Step 3.0's: a composite block write that fails dissolves the group for this run, a `Part-of` failure is recorded and changes no membership, a dissolution failure is recorded and the composite is offered again next run.
+
+### Step 2.4: Run the decision gate
+
+Load `code-review:decision-gate` (Skill tool) and run it over every selected issue whose block contains `**Fix-policy:** needs-decision` — or any `**Fix-policy:**` value other than `auto` (an unparseable policy gets the same treatment, mirroring `/fix-all`'s fail-safe). If no selected issue matches, skip this step.
+
+**In this slot the skill runs stages 0–2** — the location pre-check, the analyst fan-out, and the decision sweep with its five outcomes — and it **returns the decided findings to Step 3 rather than dispatching them itself**. Step 3 dispatches them together with the selected `auto` findings in one sequential batch, decided first, **applying the whole of stage 3's dispatch contract** — the `**Dispatch:**` marker, the pin comparison and the dispatch-copy strip list. Stage 3.5's verification then runs over the decided findings only, and Step 4.1 / 4.1.5 runs once over that whole batch, so the gate performs no write of its own — though what that write-back records for a decided finding is graded by the skill's **stage 4**.
+
+That skill is the single source of truth for the decision stage — how a missing location is asked for, how the analysts fan out, how each decision is elicited and recorded, and what it persists into the source report. Do not restate its rules here; two authorities on one gate is how they drift.
+
+Selecting the issue in the checklist is not the decision — the issue was flagged `needs-decision` precisely because the fix direction is a judgment call the fixer must not make alone.
+
+**Task Update:** Mark task 2 as `completed` and task 3 as `in_progress` using TaskUpdate.
+
+---
+
+## Step 3: Fix Selected Issues
+
+### Step 3.1: Sequential fix execution
+
+**The batch and its order.** Step 3 dispatches the findings the gate decided in Step 2.4 **and** the selected `auto` findings in **one sequential batch, decided first**. Every decision is collected before any `fix-auto` is dispatched: decide everything, then fix in bulk. The one documented exception is the `**Decision-pin:**` mismatch found immediately before dispatch, which `code-review:decision-gate` defines at stage 3 — that finding is set aside, the remaining dispatches of the batch complete, and the set-aside findings are re-analysed and re-swept as a second pass before their own dispatch, so no re-ask interrupts a batch in flight.
+
+**A decided finding's dispatch follows the whole of stage 3.** The dispatch-copy rule is one clause of that stage, not the whole of it. `code-review:decision-gate`'s **stage 3** also owns the `**Dispatch:**` marker — written into the finding block in the source report **immediately before each fixer call**, on its own line directly beneath the `**Decision-pin:**` line, or beneath the `**Decision:**` line where no pin could be written — and the pin comparison made immediately before that call. Write the marker: it is what tells an interrupted run's successor *dispatched, outcome unknown* from *decided, never dispatched*, and without it a resumed run re-dispatches blind — a double apply on any fix that is not idempotent. All three clauses bind the **decided** partition only; the selected `auto` findings carry none of them. Do not restate the marker's grammar or the strip list here.
+
+For each issue in that batch, **sequentially** (one at a time, wait for completion):
+
+1. Use the Task tool with these parameters:
+   - subagent_type: "code-review:fix-auto"
+   - run_in_background: false
+   - description: "Auto-fix: [SEVERITY] Issue title"
+   - prompt: The full issue block from the report (everything extracted in Step 1.2 for this issue — including severity, title, location, category, OWASP, CWE, effort, problem, impact, remediation with code examples, and the `Source:` field if present so the subagent sees the untrusted-provenance signal from Step 1.4). For a **decided** finding, the copy handed to `fix-auto` follows the **dispatch-copy rule** in `code-review:decision-gate` (stage 3), which states line by line what is stripped from that copy and what travels; the decision itself travels as a trailing `User decision: <resolution>` carrying the chosen alternative's full, self-contained resolution text, never a bare `A` or `B` label. Do not restate that list here.
+
+     For a **composite** the prompt is the payload `/fix-all` Step 3.1 defines: the composite block first, then every component block in `Composed-of` order — already-fixed and rejected ones included with their `**Status:**` line — each through the stage 3 dispatch-copy rule, and a decided composite's `User decision:` line placed immediately after the composite block, before the first component's heading.
+
+2. Collect the result and determine status:
+   - **Fixed** — subagent report says "Fixed" and all verifications passed
+   - **Partially Fixed** — subagent report says "Partially Fixed"
+   - **Failed** — subagent report says "Failed" or subagent errored
+
+   For a composite, read the fixer's `**Components:**` table and map statuses exactly as `/fix-all` Step 3.1 does (a missing or unparseable table is Failed with nothing written; the auto partition's component statuses are advisory; on the decided partition stage 4's graded case and the per-component plan checks decide instead, as `/fix-all` Step 5.5 states).
+
+3. Store the status for this issue
+
+4. Proceed to the next selected issue
+
+**Verification differs by partition.** Stage 3.5's orchestrator-run verification applies to the **decided findings only**: for each of those, the orchestrator itself executes the `**Verification-plan:**` persisted with the decision, logs the raw output and grades the finding on it — `fix-auto`'s own verdict is advisory input there, not the deciding signal, and the status stored in step 2 above is the one that grading yields. The selected `auto` findings keep today's path unchanged: `fix-auto`'s own verdict is collected as the status, exactly as step 2 describes.
+
+**Task Update:** Mark task 3 as `completed` and task 4 as `in_progress` using TaskUpdate.
+
+---
+
+## Step 4: Update Report and Summarize
+
+### Step 4.1: Mark fixed issues in their source reports
+
+For each issue that was Fixed or Partially Fixed, edit **its `source_file`** (from the mapping established in Step 1.2) to add a `**Status:**` line immediately after the issue's `###` heading. In auto-merge mode this means the Edit tool may be invoked against multiple files in a single run; in single-file mode it edits the single source file.
+
+**For Fixed issues**, insert after the `### [SEVERITY] Title` line:
+
+```
+**Status:** ✅ Fixed (YYYY-MM-DD)
+```
+
+**For Partially Fixed issues**, insert after the `### [SEVERITY] Title` line:
+
+```
+**Status:** ⚠️ Partially Fixed (YYYY-MM-DD)
+```
+
+**For Failed issues**, do NOT add a Status line — the issue remains unfixed and will appear again on the next `/fix-report` run.
+
+Use today's date in YYYY-MM-DD format.
+
+Use the Edit tool to insert each status line. The `old_string` should be the `### [SEVERITY] Title` line followed by a newline, and the `new_string` should be the same title line followed by a newline, the status line, and another newline. Pass the issue's `source_file` as the `file_path` parameter.
+
+**Composites.** Write a composite's and its `resolved` components' `**Status:**` lines by this recipe, with the same date, each verified in Step 4.1.5; on the auto partition each is written together with a `**Verification:** advisory — <checks run>` line, since the status rests on the fixer's re-read. A degenerate composite receives its lone component's status; a composite with no open components is closed here as a housekeeping write (`✅ Fixed` when at least one component carries `✅ Fixed` or `⚠️ Partially Fixed`, otherwise `🚫 Rejected (YYYY-MM-DD) — no open components`). Never write a second `**Status:**` line: a component block that already carries one — including `🚫 Rejected`, which is terminal — is left untouched, whatever the fixer's table or the plan's check says.
+
+**For a finding the Step 2.4 gate decided, the recipe above is the write — not the grading.** Which of stage 4's four cases the finding falls into, and therefore whether a `**Status:**` line is written at all and which one, is `code-review:decision-gate`'s **Stage 4** to decide, from the two tree observations it defines. Do not restate those cases here. Two things follow for this step:
+
+- **The `**Status:**` line and the `**Verification:**` line are written in the same write.** The `**Verification:**` value records how the verification was obtained; a status written without it cannot be told apart from a hard-verified one once the session ends.
+- **For the two stage-4 cases that write no `**Status:**` line, the write instead appends the attempt entry** to the finding's `**Decision:**` line, carrying that same `**Verification:**` line with it. That append is what keeps the two-attempt retirement counter advancing and the escape to `reject` reachable.
+
+Both lines go into the finding's `source_file`, below the `**Status:**` slot, on one physical line each. The `auto` findings of the batch are unaffected, with one exception: they carry no decision record and keep the plain status write above, except a composite and its `resolved` components fixed on the auto partition, whose `**Status:**` lines are written together with a `**Verification:** advisory — <checks run>` line (the Composites paragraph above).
+
+### Step 4.1.5: Verify Status writes
+
+After invoking Edit for each Fixed/Partially Fixed issue in Step 4.1, **re-read the `source_file`** with the Read tool and confirm the `**Status:**` line is present immediately below the issue's heading. The Edit tool already raises a hard error when `old_string` does not match, but the heading may have shifted between extraction (Step 1.2) and write-back (Step 4.1) — because a prior issue in the same file was edited and changed surrounding context, because the decision stage wrote its own lines into the block, or because the heading was concurrently modified. The verify pass catches every one of those classes of silent drift.
+
+For each issue, the verification is:
+
+1. Read the issue's `source_file`.
+2. Locate the issue's `### [SEVERITY] Title` heading.
+3. Confirm the next non-blank line below the heading is `**Status:** ✅ Fixed (YYYY-MM-DD)` (for Fixed) or `**Status:** ⚠️ Partially Fixed (YYYY-MM-DD)` (for Partially Fixed), with today's date.
+
+That positional check is exact because `**Status:**` is always the first non-blank line under the heading, above any decision lines the block has accumulated. It is a whole-line comparison against a line this run just wrote itself — the one place whole-line matching is correct, as against Step 1.3, which reads a status line it did not write and therefore matches by prefix.
+
+**The iteration set over this batch.** Step 3 dispatches the findings the Step 2.4 gate decided together with the selected `auto` findings in one batch, and Step 4.1 / 4.1.5 runs once over that whole batch — so "each Fixed/Partially Fixed issue" is not the whole set. Two of the stage-4 cases write **no `**Status:**` line at all** and instead append the attempt entry to the finding's `**Decision:**` line — `code-review:decision-gate`'s *Stage 4* is the authority for which cases those are and for what each writes, and this step does not restate them. A finding graded into one of those cases still **received a write**, so it is in this step's iteration set: iterate over **every finding the batch wrote back for**, and verify the write that finding actually received.
+
+- A finding that received a `**Status:**` line is verified by steps 1–3 above, unchanged.
+- A finding that received **no `**Status:**` line** is verified by the attempt-entry check below.
+- **Every decided** finding of the batch, whichever of those two groups it fell into, is **additionally** verified by the `**Verification:**` check below — that line rides on both writes.
+
+For a finding in the second group, the verification is:
+
+1. Read the issue's `source_file`.
+2. Locate the issue's `### [SEVERITY] Title` heading and read its block, down to the next `###`, `---` or EOF.
+3. Locate the block's **live `**Decision:**` line** — the decision this dispatch was made against, not a `**Decision-retired:**` line beside it that a superseded decision left behind. The one exception is a line this same run's retirement rewrote in place: retirement keys the line `**Decision-retired:**` with its attempt entries intact, so where the run retired this decision the rewritten line is the one to read. It is a single physical line either way, so its bracketed field is read whole and split on `; `.
+4. Confirm its **last bracketed entry** is the `attempt N: <outcome>` entry stage 4 appended for this dispatch, with the `N` and the `<outcome>` this run just wrote. Like the positional check above, this is a comparison against something this run wrote itself, so it is exact rather than a prefix match.
+
+The append has not landed if the bracketed field still ends with the entry it carried before this dispatch, or if the block carries no decision line of either key at all.
+
+This is the one check whose absence is not merely cosmetic. The attempt entry is what advances the two-attempt retirement counter; a lost append freezes it, and a decision that fails every run then replays forever with the escape to `reject` unreachable behind it — precisely the failure retirement exists to prevent. A status line that fails to land costs an annotation; an attempt entry that fails to land costs the loop its exit.
+
+**The `**Verification:**` line, checked for every decided finding of the batch.** Both writes carry it: `code-review:decision-gate`'s *Stage 4* writes the `**Verification:**` line **in the same write as the `**Status:**` line**, and, for the two cases that write no status, **in the write that appends the attempt entry**. So every graded finding of the decided partition acquires one, whichever case it fell into, and this check runs over that whole partition rather than over one group of it. The selected `auto` findings carry no decision record and, with one exception, no `**Verification:**` line, so they are outside this check. The exception is a composite and its `resolved` components fixed on the auto partition: Step 4.1 writes each of their `**Status:**` lines together with a `**Verification:** advisory — <checks run>` line, and for those blocks this check runs too, exactly as below — the value is `advisory`, since it records the fixer's own re-read rather than an orchestrator-run check.
+
+For each decided finding of the batch, the verification is:
+
+1. Read the issue's `source_file`.
+2. Locate the issue's `### [SEVERITY] Title` heading and read its block, down to the next `###`, `---` or EOF.
+3. Locate the block's `**Verification:**` line **by its key, wherever in the block it sits**. This is deliberately **not** a "next non-blank line" check: `**Status:**` is the first non-blank line under the heading and every other loop-written line sits below it, so a positional read finds the status and never this field.
+4. Confirm the line reads `**Verification:** hard|advisory|unavailable — <checks run>`, carrying the `hard`, `advisory` or `unavailable` value and the `<checks run>` list this run just wrote, and the `; <N> not run: <check text>` tail where this run wrote one. Like the two checks above, this is a comparison against something this run wrote itself, so it is exact rather than a prefix match.
+
+The line has not landed if the block carries none, or if the one it carries is a value from an earlier dispatch rather than the one this run wrote.
+
+Losing it is silent, and it is not cosmetic either. That value is the only surviving record of **how** the verification was obtained — the run summary does not outlive the session, and the status grammar has no room for a qualifier on a `✅ Fixed` line — so a finding whose `advisory` line failed to land reads afterwards as a hard-verified one. A failed write there silently upgrades the finding in the committed record, which is the one disclosure the verification stage exists to produce.
+
+**A rejected finding is not in this check's set, and its missing line is not a failure.** `reject` never dispatches: its `🚫 Rejected` status is stage 2's write, and it carries no `**Verification:**` line at all. It is already outside this step's iteration set for that reason — the batch is Step 3's dispatch batch, and a rejected finding is never handed to Step 3 — so the check never reaches it. Do not flag the absence there.
+
+If verification fails for any issue:
+
+- Append `{issue_id, source_file, reason}` to a `status_write_failures` list (where `reason` is one of `edit-errored`, `status-line-missing`, `status-line-wrong-text`, `attempt-entry-missing`, `verification-line-missing`).
+- Do **not** retry inside this step — surface the failure in Step 4.2 instead. A silent retry could mask a real heading-drift bug, and the next `/fix-report` run already retries by design (the issue stays unfixed and reappears).
+
+This list is consumed by Step 4.2's "Status write failures" block — the same one list, whichever of the three write kinds failed.
+
+**Restart safety:** because Step 4.1.5 verifies every `**Status:**` write, re-running `/fix-report` is safe: any issue whose Status line was successfully written in a prior run is filtered out by Step 1.3 and will not be re-fixed. Only issues that failed verification (or were never attempted) are eligible for re-processing. A finding in the no-status group is *meant* to reappear next run; verifying its attempt entry is what makes that next run a step forward rather than a repeat, since the counter it advances is what eventually retires the decision.
+
+### Step 4.2: Display fix summary
+
+```markdown
+## Fix Summary
+
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | [SEVERITY] Title — path:line | STATUS_ICON STATUS_TEXT |
+| 2 | [SEVERITY] Title — path:line | STATUS_ICON STATUS_TEXT |
+
+**Fixed:** N | **Partially Fixed:** N | **Failed:** N
+**Reports updated:**
+- <source-file-1>
+- <source-file-2>
+```
+
+In single-file mode, the list contains exactly one entry. In auto-merge mode, list each distinct `source_file` that was edited (deduplicated). Files that received no Status writes (all Failed, or no selections from that file) are omitted from the list.
+
+Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌
+
+**Composite rows and the Composition block.** Render a composite as one row with its per-component marks and, on the auto partition, the `— advisory (fixer self-report)` suffix, and append the `**Composition:**` block, both exactly as `/fix-all` Step 4.2 defines them.
+
+**Status write failures (Step 4.1.5):** if the `status_write_failures` list collected in Step 4.1.5 is non-empty, append the following block immediately after the `**Reports updated:**` list (or in its place, if no file was successfully updated):
+
+```markdown
+**Status write failures:**
+- <issue-id> in <source-file> — <reason>
+- ...
+
+Re-run `/fix-report` to retry, or repair each finding block by hand — the `**Status:**` line below its heading, the missing `attempt N:` entry on its `**Decision:**` line, or the missing `**Verification:**` line below the `**Status:**` slot.
+```
+
+Where `<reason>` is the value recorded in Step 4.1.5 (`edit-errored`, `status-line-missing`, `status-line-wrong-text`, `attempt-entry-missing`, or `verification-line-missing`). For the three status-line reasons the code change itself already landed — only the report annotation is missing, which is why the re-run-or-manual-edit guidance is non-destructive. `attempt-entry-missing` can only reach this list from a finding the Step 2.4 gate decided, and there nothing landed to lose: the finding reappears next run by design, but with its retirement counter un-advanced, so the manual repair is what keeps that counter honest. `verification-line-missing` reaches this list from a finding the Step 2.4 gate decided too, and from either group of that decided partition; where the finding's `**Status:**` line did land, Step 1.3 filters it out of every later run, so the re-run retries nothing and the hand repair is the only one there is — until it is made, an advisory pass reads as a hard-verified one. Omit this block entirely if `status_write_failures` is empty.
+
+**Decision-stage summary.** Where Step 2.4 ran the gate over at least one finding, print the block below after Step 4.1 / 4.1.5, following the fix summary. The template above is closed — the `| # | Issue | Status |` rows, the counts, and the reports-updated list — and holds no slot for what the decision stage has to disclose.
+
+Its rows are the nine disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty; omit the block entirely where the gate did not run.
+
+```markdown
+## Decision Stage
+
+**Decided:** N | **Skipped:** N | **Rejected:** N
+
+**Failed — no target supplied:**
+- [SEVERITY] ID: Title
+
+**Unverified rejections:**
+- [SEVERITY] ID: Title — <reason>
+
+**Advisory verification:**
+- [SEVERITY] ID: Title — <checks run>
+
+**verification: unavailable:**
+- [SEVERITY] ID: Title
+
+**Partial verification coverage:**
+- [SEVERITY] ID: Title — <N> not run: <check text>
+
+**Out-of-scope writes:**
+- [SEVERITY] ID: Title — <path>
+
+**Unpinned decisions — not replayed on a later run:**
+- [SEVERITY] ID: Title
+
+**Unpinnable paths — no observation taken:**
+- [SEVERITY] ID: Title — <path>
+
+**stalled — no progress:**
+- [SEVERITY] ID: Title — <first retired resolution> / <second retired resolution>
+```
+
+`/fix-all`'s own decision stage prints this same block over its own batch.
+
+**Task Update:** Mark task 4 as `completed` using TaskUpdate.

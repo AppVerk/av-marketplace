@@ -1,0 +1,14 @@
+{
+  "PreToolUse": [
+    {
+      "tool": "bash",
+      "claudeTool": "Bash",
+      "command": "scripts/block-git-commit.sh"
+    },
+    {
+      "tool": "bash",
+      "claudeTool": "Bash",
+      "command": "scripts/block-git-push.sh"
+    }
+  ]
+}

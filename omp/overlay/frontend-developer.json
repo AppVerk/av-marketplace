@@ -1,0 +1,6 @@
+{
+  "plugin": "frontend-developer",
+  "agents": {
+    "developer": { "role": "executor", "add_tools": ["lsp", "ast_edit"], "autoload": ["coding-standards", "tdd-workflow", "state-combination-modeling"] }
+  }
+}

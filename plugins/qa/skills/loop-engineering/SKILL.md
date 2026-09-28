@@ -29,7 +29,7 @@ Every closed loop in this marketplace MUST meet the **Universal** items. The **C
 
 ### Conditional (MUST when the loop persists state, mutates the workspace, and/or auto-corrects)
 
-9. **Guard provenance — don't auto-fix a suspect assertion.** *(Auto-correcting loops.)* Auto-generated or guessed assertions are not auto-fixed against correct source; the failure may be the assertion, not the code. A read-only loop has nothing to auto-fix and satisfies this trivially. → qa:loop's *Provisional plan-suspect guard (T3)* (excludes such scenarios from `fix_candidates`).
+9. **Guard provenance — don't auto-fix a suspect assertion.** *(Auto-correcting loops.)* Auto-generated or guessed assertions are not auto-fixed against correct source; the failure may be the assertion, not the code. A read-only loop has nothing to auto-fix and satisfies this trivially. → qa:loop's *Plan-suspect guards (per issue)* (in `auto`, excludes from `fix_candidates` each QA issue whose failing assertion is tagged `(unverified — confirm at run time)`, from any plan, and every issue of a `provisional_scenarios` scenario, while a grounded sibling issue stays eligible, and `approve`/`step` flag them instead).
 10. **Persist state in a durable sidecar with input hash-pinning, and be idempotent.** *(Stateful loops.)* Loop-critical state lives on disk, not in the conversation; the input is hashed to detect mid-run tampering; re-running on identical input reuses prior state by hash and never duplicates results or re-applies corrections. The orchestrator's own memory is lossy across many tool calls. → qa:loop's sidecar + plan hash; Step 1 "Resolve Report + Sidecar (Idempotency)".
 11. **Keep writes scoped and recoverable.** *(Mutating loops.)* Touch only what you changed; never destroy the user's pre-existing work; leave changes uncommitted for human control. → qa:loop's `fix_touched_files = post − pre_loop_dirty`; scoped `git restore`.
 
@@ -58,7 +58,7 @@ Rules: prefer strong oracles; a soft oracle MUST self-label its verdict *advisor
 
 - *Verifier authority* (glossary) — fresh re-run gates; the fixer's verdict is advisory.
 - *Verifier-gaming residual (v1)* — the honest "a capable fixer can still game a visible check" caveat.
-- *Provisional plan-suspect guard (T3)* — auto-generated assertions excluded from auto-fix.
+- *Plan-suspect guards (per issue)* — unverified (any plan) and provisional auto-generated assertions excluded from auto-fix per QA issue, not per scenario.
 - *Safety Guards (Apply in All Modes)* — the fail-closed environment and mutation guards.
 - *Status write-back* (glossary) — written once, only from the authoritative final run.
 - The `## Coverage` block and the auth-unverified outcome — "Exercised vs Not verified" disclosure.

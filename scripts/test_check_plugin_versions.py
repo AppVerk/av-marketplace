@@ -26,16 +26,18 @@ def _write(path: Path, text: str) -> None:
 
 
 class TempMarketplace:
-    """A minimal marketplace with one plugin "demo" at one version in all four places."""
+    """A minimal marketplace with one Claude Code plugin "demo" at one version in all four places."""
 
     def __init__(self, root: Path, version: str = "1.2.3") -> None:
         self.root = root
         _write(root / "plugins/demo/.claude-plugin/plugin.json", json.dumps({"name": "demo", "version": version}))
         _write(root / ".claude-plugin/marketplace.json", json.dumps({"plugins": [{"name": "demo", "version": version}]}))
+        _write(root / ".omp-plugin/marketplace.json", json.dumps({"plugins": []}))
         _write(
             root / "README.md",
-            "# M\n\n## Available Plugins\n\n| Plugin | Version |\n|---|---|\n"
-            f"| [Demo](docs/plugins/demo.md) | {version} |\n\n## Other\n",
+            "# M\n\n## Available Plugins\n\n"
+            "| Plugin | Version | ID | Claude Code | OMP | Description |\n|---|---|---|:-:|:-:|---|\n"
+            f"| [Demo](docs/plugins/demo.md) | {version} | `demo` | ✓ | — | Demo plugin |\n\n## Other\n",
         )
         _write(root / "docs/plugins/demo.md", f"# Demo\n\n**Version:** {version}\n")
 
@@ -43,10 +45,15 @@ class TempMarketplace:
         _write(self.root / f"plugins/demo/skills/{skill}/VERSION", text)
 
     def run(self) -> tuple[int, str]:
+        marketplace = self.root / ".claude-plugin" / "marketplace.json"
+        omp_marketplace = self.root / ".omp-plugin" / "marketplace.json"
         patches = {
             "REPO_ROOT": self.root,
             "PLUGINS_DIR": self.root / "plugins",
-            "MARKETPLACE_JSON": self.root / ".claude-plugin" / "marketplace.json",
+            "NATIVE_DIR": self.root / "omp" / "native",
+            "MARKETPLACE_JSON": marketplace,
+            "OMP_MARKETPLACE_JSON": omp_marketplace,
+            "AVAILABILITY_CATALOGS": {"Claude Code": marketplace, "OMP": omp_marketplace},
             "README_MD": self.root / "README.md",
             "DOCS_DIR": self.root / "docs" / "plugins",
         }

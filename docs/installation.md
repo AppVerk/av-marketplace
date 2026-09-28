@@ -2,9 +2,14 @@
 
 ## Quick Start
 
+These commands are for Claude Code. For Oh My Pi (`omp`), follow the [Oh My Pi guide](oh-my-pi.md) instead. [Available Plugins](../README.md#available-plugins) lists the plugin IDs and which tool supports each one.
+
 ```bash
 /plugin marketplace add AppVerk/av-marketplace
+/plugin install <plugin>@av-marketplace
 ```
+
+You can also pick plugins in the Discover tab of `/plugin`.
 
 Verify the installation:
 
@@ -18,9 +23,11 @@ You should see commands like `/review`, `/commit`, `/develop`, `/audit`, and `/s
 
 | Tool | Required | Purpose |
 |------|----------|---------|
-| Claude Code CLI | Yes | Latest version recommended |
+| Claude Code CLI or Oh My Pi (`omp`) | Yes | Latest version recommended |
 | Git 2.x+ | Yes | Version control |
 | GitHub CLI (`gh`) | No | Pull request integration for `/review` and `/analyze-feedback` |
+| Python 3.9+ (`python3`) | For Delivery (Oh My Pi) | Plan check, task routing and preflight of the Delivery plugin — see the [Delivery guide](plugins/delivery.md#prerequisites) |
+| `jq` | For Commit | Both editions' git commit and push guards parse their input with `jq` |
 
 ## Optional Tools
 

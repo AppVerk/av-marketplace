@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
@@ -32,3 +34,7 @@ jobs:
 
       - name: Check plugin version parity
         run: python3 scripts/check_plugin_versions.py
+
+      - name: Check shared OMP hooks adapter version bumps
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check_plugin_versions.py --check-hooks-version-bump "${{ github.event.pull_request.base.sha }}"
