@@ -9,7 +9,9 @@
 # Output:
 #   MISSING     path with a directory, or a link, that does not exist (certain drift),
 #   UNRESOLVED  bare file name without a directory that was not found (to review),
-#   EXTERNAL    path outside the repo (../other-repo/...) or on a line about another repo;
+#   EXTERNAL    path outside the repo (../other-repo/...) or on a line about another repo
+#               (other/backend/sibling repo, "innym repozytorium", a repo name with - or _;
+#               words inside paths and link texts do not count, nor this repo's own name);
 #               one that exists next to root is not reported,
 #   WORKSPACE   reference to a working file (--workspace, default .ai/workspace);
 #               docs should not link plans and reports.
@@ -131,8 +133,9 @@ fi
   cd "$root" || exit 2
   IFS=$'\n'
   set -f
+  self_name="$(basename "$root" | tr '[:upper:]' '[:lower:]')"
   # shellcheck disable=SC2046
-  LC_ALL=C awk -v index_file="$tmp/index" -v pkg_file="$tmp/packages" -v ws="${workspace%/}" '
+  LC_ALL=C awk -v index_file="$tmp/index" -v pkg_file="$tmp/packages" -v ws="${workspace%/}" -v self="$self_name" '
     function normalize(p,    n, parts, out, i, k) {
       n = split(p, parts, "/"); k = 0
       for (i = 1; i <= n; i++) {
@@ -192,7 +195,7 @@ fi
       rel2 = normalize(docdir "/" strip(tok))
       cls = kind
       if (substr(strip(tok), 1, 3) == "../" && escapes(docdir, strip(tok))) cls = "external"
-      else if (tolower(line) ~ other_repo) cls = "external"
+      else if (about_other_repo(line, a, b)) cls = "external"
       printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, cls, strip(tok), ign, rel2
     }
     function escapes(dir, t,    n, parts, i, depth) {
@@ -222,6 +225,34 @@ fi
       return m
     }
     function fill(n,    f) { f = ""; while (n-- > 0) f = f "x"; return f }
+    # about_other_repo: the sentence with the path (span pa..pb of the line) says the path
+    # lives in another repository. The words are
+    # read outside paths (backtick spans with "/" or ".", link targets and link texts are
+    # blanked), so "src/Repository/X.php" or "[OrderRepository](...)" do not count, and
+    # "repository" needs a qualifier: other/backend/sibling repo, "innym repozytorium", or a
+    # repo name with "-" or "_" (nfamily-api repository) other than the name of this repo.
+    function about_other_repo(l, pa, pb,    m, rest, off, a, b, t, i, left, right) {
+      m = l; rest = l; off = 0
+      while (match(rest, /`[^`]+`/)) {
+        a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        t = substr(rest, RSTART + 1, RLENGTH - 2)
+        if (t ~ /[\/.]/) m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+      }
+      rest = m; off = 0
+      while (match(rest, /\[[^]]*\]\([^)]*\)/)) {
+        a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+      }
+      m = tolower(m)
+      left = substr(m, 1, pa - 1); right = substr(m, pb + 1)
+      while (match(left, /[.!?]([ \t]|$)|;/)) left = substr(left, RSTART + RLENGTH)
+      if (match(right, /[.!?]([ \t]|$)|;/)) right = substr(right, 1, RSTART - 1)
+      m = left " " right
+      if (self != "") while ((i = index(m, self)) > 0) m = substr(m, 1, i - 1) "this" substr(m, i + length(self))
+      return (m ~ other_repo)
+    }
     # negated(a, b): a negation word in the same sentence as the span a..b of the line,
     # at most near_words words away (the words of the negation phrase included).
     function negated(a, b,    left, right, cut, n, w, i, win) {
@@ -245,7 +276,13 @@ fi
       while ((getline line < pkg_file) > 0) pkg[line] = 1
       # neg and other_repo match docs in Polish and English: repos keep their own language.
       neg = "(^|[^A-Za-z])(brak|nie istnieje|nie ma|nigdy|never|usuni(e|ę)t[a-z]*|usun(a|ą)(c|ć)|relokow[a-z]*|przeniesion[a-z]*|dawn(y|a|e|iej)|nie w|not in|removed|deleted|moved|formerly|previously|no longer|does not exist|missing)([^A-Za-z]|$)"
-      other_repo = "(repozytori|repository|w repo |in repo |sibling)"
+      repo_word = "(repo|repos|repository|repositories|repozytori[a-z]*)"
+      repo_name = "[a-z0-9]+[-_][a-z0-9_-]*[a-z0-9]"
+      other_repo = "(^|[^a-z])((other|another|separate|sibling|different|backend|frontend|mobile|api|admin|web|server|client|shared)[ -]+" repo_word \
+        "|(inn(e|y|ym|ego|ych|ymi)|osobn[a-z]*|s(ą|a)siedni[a-z]*|drugi[a-z]*) +" repo_word \
+        "|" repo_word " +(backendu?|frontendu?|mobile|api|admina?|web|serwer[a-z]*|klient[a-z]*)" \
+        "|" repo_name "`?[ -]+" repo_word \
+        "|" repo_word " +`?" repo_name ")([^a-z0-9_-]|$)"
     }
     FNR == 1 { in_code = 0; docdir = FILENAME; sub(/\/?[^\/]*$/, "", docdir) }
     /^[ \t]*```/ { in_code = !in_code; next }

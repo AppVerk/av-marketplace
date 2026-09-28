@@ -72,6 +72,45 @@ has "$out3" "EXTERNAL .ai/ext.md:8 api/Orders/Baz.php" && ok || fail "Polish lin
 has "$out3" "MISSING 0 UNRESOLVED 0 EXTERNAL 3 WORKSPACE 0" && ok || fail "extra counters: $(printf '%s' "$out3" | tail -1)"
 rm "$REPO/.ai/ext.md"
 
+# --- 2d. "repository" alone is this repo: a deleted file stays MISSING (Symfony, Polish prose)
+cat >"$REPO/.ai/repo.md" <<'EOF'
+# r
+Repository: `src/Repository/OrderRepository.php`.
+In this repository: `src/Handler/Gone.php`.
+W tym repozytorium: `src/Handler/Gone2.php`.
+Konfiguracja repozytorium: `config/x.yml`.
+See [OrderRepository](src/Repository/Gone3.php).
+The repository class `src/Repository/Gone4.php` handles orders.
+Repozytorium Doctrine: `src/Repository/Gone5.php`.
+Bare: `src/gone6.ts`. In the backend repository: `api/Y.php`.
+In the nfamily-api repository: `app/Api/X.php`.
+W repozytorium nfamily-api: `app/Api/Y2.php`.
+See the other repo: `lib/z.ts`.
+Plik w innym repozytorium: `lib/w.ts`.
+In the `nfamily-api` repository: `app/Api/Z.php`.
+Sibling repo: `docs/q.md`.
+Handler `src/Gone7.php`, see `lib/backend-repository/README.md`.
+Set up per repo: `av-setup` writes `.ai/gone-config.json`.
+EOF
+out6="$(bash "$CHECK" .ai/repo.md --root . --strict)"; rc=$?
+for t in src/Repository/OrderRepository.php src/Handler/Gone.php src/Handler/Gone2.php config/x.yml src/Repository/Gone3.php src/Repository/Gone4.php src/Repository/Gone5.php src/gone6.ts src/Gone7.php lib/backend-repository/README.md .ai/gone-config.json; do
+  printf '%s\n' "$out6" | grep '^MISSING' | grep -qF -- "$t" && ok || fail "this repo, deleted file not MISSING: $t"
+done
+for t in api/Y.php app/Api/X.php app/Api/Y2.php lib/z.ts lib/w.ts app/Api/Z.php docs/q.md; do
+  printf '%s\n' "$out6" | grep '^EXTERNAL' | grep -qF -- "$t" && ok || fail "another repo not EXTERNAL: $t"
+done
+has "$out6" "MISSING 11 UNRESOLVED 0 EXTERNAL 7" && [ "$rc" -eq 1 ] && ok || fail "repository words: counters or --strict: $(printf '%s' "$out6" | tail -1) (code $rc)"
+rm "$REPO/.ai/repo.md"
+SELF="$TMP/my-app"
+mkdir -p "$SELF/.ai" && (cd "$SELF" && git init -q)
+printf '# s
+W repozytorium my-app: `src/gone.ts`.
+In the MY-APP repository: `src/gone2.ts`.
+In the other-app repository: `src/x.ts`.
+' >"$SELF/.ai/self.md"
+out7="$(bash "$CHECK" "$SELF/.ai/self.md" --root "$SELF")"
+has "$out7" "MISSING 2 UNRESOLVED 0 EXTERNAL 1" && ok || fail "the name of this repo is not another repo: $out7"
+
 # --- 2e. negation "not in" / "nie w", ignoring by bare name
 printf '# z\nEvents live in `src/events/`, not in `src/domain/event/`.\nZdarzenia leza w `src/events/`, nie w `src/domain/event/`.\nLocally: `local.env`.\n' >"$REPO/.ai/neg.md"
 out5="$(bash "$CHECK" .ai/neg.md --root .)"
