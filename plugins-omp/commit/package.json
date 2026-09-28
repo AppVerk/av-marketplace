@@ -1,0 +1,11 @@
+{
+  "name": "commit",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "omp": {
+    "extensions": [
+      "./extensions/claude-hooks.ts"
+    ]
+  }
+}

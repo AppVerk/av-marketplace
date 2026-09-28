@@ -1,0 +1,9 @@
+{
+  "name": "plan-review",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "omp": {
+    "extensions": ["./extensions/plan-review.ts"]
+  }
+}

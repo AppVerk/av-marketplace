@@ -1,28 +1,19 @@
 ---
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(command:*), Bash(echo:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(head:*), Bash(mkdir:*), Bash(jq:*), Bash(date:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Glob, Grep, TaskCreate, TaskUpdate, TaskList, Skill
-description: Analyze code changes (PR, branch, commits) and generate a detailed QA test plan with FE and BE scenarios, edge cases, and tool detection.
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(command:*), Bash(echo:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(head:*), Bash(mkdir:*), Bash(jq:*), Bash(date:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, Skill
+description: Analyze code changes (PR, branch, commits) and generate a detailed QA test plan with FE and BE scenarios, edge cases, and tool detection; a reviewer agent checks the plan against the repository before it is handed over.
 model: opus
 argument-hint: [PR number, branch name, or natural language description of changes to analyze]
 ---
 
 # QA Test Plan Generator
 
-You are a QA specialist. Your job is to analyze code changes and generate a comprehensive test plan.
+You coordinate QA test-plan authoring. The `qa:test-planner` agent analyzes the changes and writes the plan; the `qa:test-plan-reviewer` agent checks it against the repository, and the planner resolves what the review finds. You detect tools, dispatch both agents and relay between them. Never write or edit the plan yourself: a finding the planner does not resolve stays open and goes to the user.
 
 ## Arguments
 
 **Input:** `$ARGUMENTS`
 
-Parse the argument to determine the source of changes:
-
-| Argument | Interpretation |
-|----------|---------------|
-| (empty) | Default: check for open PR on current branch, fallback to branch diff |
-| `#123` or `PR #123` | Diff from PR #123 |
-| `feature/xyz` | Diff of branch `feature/xyz` vs main |
-| `ten branch` / `this branch` / `current branch` | Diff of current branch vs main |
-| `last N commits` / `ostatnie N commitów` | Diff of last N commits |
-| `staged` / `staged changes` | Staged changes only |
+Pass the argument to the planner verbatim. It resolves the source of changes: by default the open PR of the current branch (falling back to the branch diff), otherwise a PR number (`#123`), a branch name, `this branch` / `ten branch`, `last N commits` / `ostatnie N commitów`, or `staged`.
 
 ---
 
@@ -34,97 +25,13 @@ Create the following tasks immediately:
 
 | # | subject | activeForm |
 |---|---------|-----------|
-| 1 | Resolve diff source | Resolving diff source... |
-| 2 | Analyze changes | Analyzing changes... |
-| 3 | Gather context | Gathering context... |
-| 4 | Detect available tools | Detecting available tools... |
-| 5 | Generate test plan | Generating test plan... |
-| 6 | Save test plan | Saving test plan... |
+| 1 | Detect available tools | Detecting available tools... |
+| 2 | Draft test plan | Drafting test plan... |
+| 3 | Review test plan | Reviewing test plan... |
 
-### Step 2: Resolve Diff Source
+### Step 2: Detect Available Tools
 
 **Task Update:** Mark task 1 as `in_progress`.
-
-**Default behavior (no argument):**
-
-1. Check if current branch has an open PR:
-```bash
-gh pr view --json number,title,headRefName,baseRefName 2>/dev/null
-```
-
-2. If PR exists, get its diff:
-```bash
-gh pr diff <number>
-```
-
-3. If no PR, get branch diff:
-```bash
-MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
-git diff $MAIN_BRANCH...HEAD
-```
-
-**With argument:**
-
-- PR number: `gh pr diff <number>`
-- Branch name: `git diff $MAIN_BRANCH...<branch>`
-- Last N commits: `git diff HEAD~N...HEAD`
-- Staged changes: `git diff --staged`
-
-Also get the list of changed files:
-```bash
-# For PR
-gh pr diff <number> --name-only
-
-# For branch
-git diff --name-only $MAIN_BRANCH...HEAD
-
-# For last N commits
-git diff --name-only HEAD~N...HEAD
-
-# For staged
-git diff --name-only --staged
-```
-
-**Task Update:** Mark task 1 as `completed`, task 2 as `in_progress`.
-
-### Step 3: Analyze Changes
-
-Classify each changed file as FE or BE:
-
-**Frontend indicators:**
-- File extensions: `.tsx`, `.jsx`, `.vue`, `.svelte`, `.css`, `.scss`, `.html`
-- Paths containing: `components/`, `pages/`, `views/`, `layouts/`, `styles/`, `public/`, `assets/`, `frontend/`, `client/`, `web/`, `app/` (in FE context)
-
-**Backend indicators:**
-- File extensions: `.py`, `.php`, `.go`, `.java`, `.rb`, `.rs`
-- Paths containing: `api/`, `views/`, `controllers/`, `models/`, `migrations/`, `serializers/`, `services/`, `repositories/`, `backend/`, `server/`
-- Configuration: `urls.py`, `routes.py`, `routes.php`, `router.go`
-
-**Ambiguous files** (could be either): `.ts`, `.js` — look at import patterns and path context.
-
-For each changed file, identify:
-- What component/endpoint/model was changed
-- What kind of change (new feature, modification, deletion, refactoring)
-- What behavior should be tested
-
-**Task Update:** Mark task 2 as `completed`, task 3 as `in_progress`.
-
-### Step 4: Gather Context
-
-Read related files to understand the full picture:
-
-1. **For changed endpoints:** read the router/URL config, serializer/schema, model
-2. **For changed components:** read parent components, shared state (stores), API calls
-3. **For changed models/migrations:** read related endpoints that use this model
-4. **Look for documentation:**
-   - `docs/` directory — any relevant docs
-   - OpenAPI/Swagger spec: look for `openapi.json`, `openapi.yaml`, `swagger.json`, `swagger.yaml` in root or `docs/`
-   - README files in affected directories
-5. **Check existing tests** — understand what's already tested and what's missing
-
-**Task Update:** Mark task 3 as `completed`, task 4 as `in_progress`.
-
-### Step 5: Detect Available Tools
 
 Check which testing tools are available in the environment:
 
@@ -148,58 +55,95 @@ command -v mysql >/dev/null 2>&1 && echo "mysql: available" || echo "mysql: unav
 ```
 
 **Database MCP servers:**
-Check the available tools list for MCP servers that provide database access (e.g., `mcp__postgres`, `mcp__supabase`, `mcp__neon`, `mcp__mysql`, `mcp__mongodb`, `mcp__redis`). MCP servers are preferred over CLI clients — they're pre-configured with connection details.
+Check the available tools list for database MCP servers (e.g., `mcp__postgres`, `mcp__supabase`, `mcp__neon`, `mcp__mysql`, `mcp__mongodb`, `mcp__redis`).
 
-**Task Update:** Mark task 4 as `completed`, task 5 as `in_progress`.
+Write the results as a `Detected tools:` block: one `<tool>: available` or `<tool>: unavailable` line per tool above, then one line per available database MCP server. The planner copies it into the plan's `## Detected Tools`.
 
-### Step 6: Generate Test Plan
+**Task Update:** Mark task 1 as `completed`, task 2 as `in_progress`.
 
-Load the test-plan-format skill:
+### Step 3: Draft the Plan
 
 ```
-Skill(skill: "test-plan-format")
+Task(
+  subagent_type: "qa:test-planner",
+  run_in_background: false,
+  description: "Draft QA test plan",
+  prompt: "Mode: draft
+Arguments: <$ARGUMENTS verbatim, or (empty)>
+Detected tools:
+<the Step 2 block>"
+)
 ```
 
-Using the skill's format, generate the test plan:
+The planner answers with one JSON object. On `{"error": ...}`, a failed dispatch, an answer that is not the expected JSON, or no file at its `plan` path, stop:
 
-1. Fill in the **Source** section with the resolved diff source
-2. Write the **Changes Summary** based on the analysis
-3. Fill in **Detected Tools** based on tool detection results
-4. Generate **FE Test Scenarios** (if FE changes detected):
-   - One scenario per changed component/page/feature
-   - Include concrete steps using actual UI element names from the code
-   - Include at least 2 edge cases per scenario
-5. Generate **BE Test Scenarios** (if BE changes detected):
-   - One scenario per changed endpoint
-   - Include actual API paths, methods, and payload structures from the code
-   - Include DB checks with actual table/column names
-   - Include at least 2 edge cases per scenario (error handling, auth, validation)
+> Test plan generation failed: <reason>
 
-**Task Update:** Mark task 5 as `completed`, task 6 as `in_progress`.
+Keep `plan`, `source` and `changed_files` for the review.
 
-### Step 7: Save Test Plan
+**Task Update:** Mark task 2 as `completed`, task 3 as `in_progress`.
 
-```bash
-mkdir -p docs/testing/plans
-```
+### Step 4: Review the Plan
 
-Generate the topic slug from the changes (e.g., `user-authentication`, `order-management`, `dashboard-redesign`).
+Run at most 3 review rounds. In round `n`:
 
-Get today's date:
-```bash
-date +%Y-%m-%d
-```
+1. Dispatch the reviewer:
 
-Save the plan using the Write tool to:
-`docs/testing/plans/YYYY-MM-DD-<topic>-test-plan.md`
+   ```
+   Task(
+     subagent_type: "qa:test-plan-reviewer",
+     run_in_background: false,
+     description: "Review QA test plan (round <n>)",
+     prompt: "Plan: <plan>
+   Diff source: <source>
+   Changed files:
+   <changed_files, one path per line>
+   Round: <n> of 3
+   Previous findings:
+   <none, or every earlier finding with the number it was sent under, followed by the planner's disposition and note>"
+   )
+   ```
 
-**Task Update:** Mark task 6 as `completed`.
+2. The reviewer's answer must be one JSON object `{"findings": [...]}` whose findings each carry a `severity` of `blocker`, `concern` or `nit`. On a failed dispatch or any other answer, the review could not run: end the review and keep the plan unreviewed, with the reason.
+3. No `blocker` or `concern` → the plan is approved; end the review.
+4. `n` is 3 → end the review; this round's blockers and concerns stay open for the user.
+5. Otherwise number this round's findings, continuing after the last number of earlier rounds, and dispatch the planner:
 
-### Step 8: Propose Next Step
+   ```
+   Task(
+     subagent_type: "qa:test-planner",
+     run_in_background: false,
+     description: "Revise QA test plan (round <n>)",
+     prompt: "Mode: revise
+   Plan: <plan>
+   Diff source: <source>
+   Round: <n> of 3
+   Findings:
+   <this round's findings, one per line: number, [severity] location: issue Fix: fix>"
+   )
+   ```
 
-After saving the plan, display:
+   The planner answers `{"plan": ..., "dispositions": [...]}`. On `{"error": ...}`, a failed dispatch or any other answer, end the review; this round's blockers and concerns stay open. Otherwise record each disposition with its finding and start round `n + 1`.
 
-> **Test plan saved to `docs/testing/plans/<filename>`.**
+**Task Update:** Mark task 3 as `completed`.
+
+### Step 5: Propose Next Step
+
+Display:
+
+> **Test plan saved to `<plan>`.**
+>
+> Plan review: <exactly one of the following>
+> - approved in round <n> of 3.
+> - <k> blocker(s) or concern(s) still open after round <n> — check them before running the plan:
+>   - [<severity>] <location>: <issue> Fix: <fix>
+> - could not run (<reason>); the plan is unreviewed.
+>
+> <only if the approving round reported nits> Optional nits (not applied):
+>   - <location>: <issue>
+>
+> <only if the planner declined findings> Findings the planner declined:
+>   - [<severity>] <location>: <issue> — <planner's note>
 >
 > Review the plan and when ready, run the tests with:
 >
@@ -207,4 +151,4 @@ After saving the plan, display:
 >
 > or specify the plan path:
 >
-> `/qa:run docs/testing/plans/<filename>`
+> `/qa:run <plan>`

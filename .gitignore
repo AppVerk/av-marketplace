@@ -5,6 +5,10 @@ CLAUDE.local.md
 # Worktrees
 .worktrees/
 
+# OMP machine state (project agents/commands/WATCHDOG stay tracked)
+.omp/plugins/
+.omp/sessions/
+
 # FewWord context plugin
 .fewword/scratch/
 .fewword/index/
@@ -14,5 +18,12 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Node packages (the OMP Edition workflow installs OMP under omp/native/delivery/)
+node_modules
+
 # superpowers SDD scratch (ledger, briefs, review packages)
 .superpowers/
+
+# Delivery plans and code-review reports (local working artifacts, never committed)
+docs/plans/
+docs/reviews/

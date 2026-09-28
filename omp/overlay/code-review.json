@@ -1,0 +1,14 @@
+{
+  "plugin": "code-review",
+  "agents": {
+    "security-auditor": { "role": "code_review" },
+    "code-quality-auditor": { "role": "code_review" },
+    "documentation-auditor": { "role": "code_review" },
+    "cross-verifier": { "role": "challenger" },
+    "challenger": { "role": "challenger" },
+    "composition-analyst": { "role": "analyst" },
+    "decision-analyst": { "role": "analyst" },
+    "feedback-analyzer": { "role": "analyst" },
+    "fix-auto": { "role": "executor", "add_tools": ["lsp", "ast_edit"] }
+  }
+}
