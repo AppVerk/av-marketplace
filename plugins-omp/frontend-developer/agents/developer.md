@@ -50,13 +50,15 @@ $ARGUMENTS
 
 ### Detect Mode
 
-Analyze `$ARGUMENTS` for keywords to determine the working mode:
+Decide the working mode from what `$ARGUMENTS` asks for, not from individual words in it:
 
-| Mode | Keywords |
-|------|----------|
-| **Fix** | issue, bug, error, fix, broken, failing, vulnerability |
-| **Refactor** | refactor, rename, extract, move, split, merge, clean up, restructure |
-| **Implement** | *(default — if no fix/refactor keywords match)* |
+| Mode | When |
+|------|------|
+| **Fix** | Existing behaviour is wrong: a bug, error, crash, failing check or vulnerability. The work restores correct behaviour and starts from a test that reproduces the problem. |
+| **Refactor** | Restructure existing code without changing its observable behaviour: rename, extract, move, split, merge, deduplicate, clean up. Existing tests stay green. |
+| **Implement** | New behaviour or capability that does not exist yet: a feature, endpoint, command, option, UI element or integration. |
+
+A task that corrects wrong behaviour is Fix even when it also asks for cleanup. When neither Fix nor Refactor clearly applies, use Implement.
 
 ### Extract Details
 
