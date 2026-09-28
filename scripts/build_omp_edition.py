@@ -67,9 +67,10 @@ NATIVE_AGENT_KEYS = {
     "blocking", "autoloadSkills", "read-summarize", "prewalk", "advisor",
 }
 # Project model roles documented in README (including the plan-mode role);
-# `tester` runs the QA testers. These are user-configurable OMP aliases, not
-# a list of OMP built-in models.
-MODEL_ROLES = {"code_review", "executor", "challenger", "analyst", "plan", "tester"}
+# `tester` runs the QA testers and `advisor` the plan reviewers (Plan Review,
+# QA's test-plan reviewer). These are user-configurable OMP aliases, not a
+# list of OMP built-in models.
+MODEL_ROLES = {"code_review", "executor", "challenger", "analyst", "plan", "tester", "advisor"}
 # OMP_TOOLS mirrors OMP's tools/builtin-names.ts; scripts/check_omp_tools.py
 # verifies the names against an installed OMP package in CI.
 OMP_TOOLS = {

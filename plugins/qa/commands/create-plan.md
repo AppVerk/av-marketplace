@@ -1,28 +1,19 @@
 ---
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(command:*), Bash(echo:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(head:*), Bash(mkdir:*), Bash(jq:*), Bash(date:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Glob, Grep, TaskCreate, TaskUpdate, TaskList, Skill
-description: Analyze code changes (PR, branch, commits) and generate a detailed QA test plan with FE and BE scenarios, edge cases, and tool detection.
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(command:*), Bash(echo:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(head:*), Bash(mkdir:*), Bash(jq:*), Bash(date:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, Skill
+description: Analyze code changes (PR, branch, commits) and generate a detailed QA test plan with FE and BE scenarios, edge cases, and tool detection; a reviewer agent checks the plan against the repository before it is handed over.
 model: opus
 argument-hint: [PR number, branch name, or natural language description of changes to analyze]
 ---
 
 # QA Test Plan Generator
 
-You are a QA specialist. Your job is to analyze code changes and generate a comprehensive test plan.
+You coordinate QA test-plan authoring. The `qa:test-planner` agent analyzes the changes and writes the plan; the `qa:test-plan-reviewer` agent checks it against the repository, and the planner resolves what the review finds. You detect tools, dispatch both agents and relay between them. Never write or edit the plan yourself: a finding the planner does not resolve stays open and goes to the user.
 
 ## Arguments
 
 **Input:** `$ARGUMENTS`
 
-Parse the argument to determine the source of changes:
-
-| Argument | Interpretation |
-|----------|---------------|
-| (empty) | Default: check for open PR on current branch, fallback to branch diff |
-| `#123` or `PR #123` | Diff from PR #123 |
-| `feature/xyz` | Diff of branch `feature/xyz` vs resolved base branch |
-| `ten branch` / `this branch` / `current branch` | Diff of current branch vs resolved base branch |
-| `last N commits` / `ostatnie N commitów` | Diff of last N commits |
-| `staged` / `staged changes` | Staged changes only |
+Pass the argument to the planner verbatim. It resolves the source of changes: by default the open PR of the current branch (falling back to the branch diff), otherwise a PR number (`#123`), a branch name, `this branch` / `ten branch`, `last N commits` / `ostatnie N commitów`, or `staged`.
 
 ---
 
@@ -34,126 +25,13 @@ Create the following tasks immediately:
 
 | # | subject | activeForm |
 |---|---------|-----------|
-| 1 | Resolve diff source | Resolving diff source... |
-| 2 | Analyze changes | Analyzing changes... |
-| 3 | Gather context | Gathering context... |
-| 4 | Detect available tools | Detecting available tools... |
-| 5 | Generate test plan | Generating test plan... |
-| 6 | Save test plan | Saving test plan... |
+| 1 | Detect available tools | Detecting available tools... |
+| 2 | Draft test plan | Drafting test plan... |
+| 3 | Review test plan | Reviewing test plan... |
 
-### Step 2: Resolve Diff Source
+### Step 2: Detect Available Tools
 
 **Task Update:** Mark task 1 as `in_progress`.
-
-Resolve the base branch **once** before either diff path (including when an argument is supplied):
-
-```bash
-BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null); BASE=${BASE#origin/}
-[ -z "$BASE" ] && git rev-parse --verify main   >/dev/null 2>&1 && BASE=main
-[ -z "$BASE" ] && git rev-parse --verify master >/dev/null 2>&1 && BASE=master
-[ -z "$BASE" ] && BASE=main
-```
-
-**Default behavior (no argument):**
-
-1. Check if current branch has an open PR:
-```bash
-gh pr view --json number,title,headRefName,baseRefName 2>/dev/null
-```
-
-2. If PR exists, get its diff:
-```bash
-gh pr diff <number>
-```
-
-3. If no PR, get branch diff:
-```bash
-git diff "$BASE"...HEAD
-```
-
-**With argument:**
-
-- PR number: `gh pr diff <number>`
-- Branch name: `git diff "$BASE"...<branch>` (including `this branch` / `current branch` as `HEAD`)
-- Last N commits: `git diff HEAD~N...HEAD`
-- Staged changes: `git diff --staged`
-
-Also get the list of changed files:
-```bash
-# For PR
-gh pr diff <number> --name-only
-
-# For branch
-git diff --name-only "$BASE"...HEAD
-# For a named branch argument
-git diff --name-only "$BASE"...<branch>
-
-# For last N commits
-git diff --name-only HEAD~N...HEAD
-
-# For staged
-git diff --name-only --staged
-```
-
-**Task Update:** Mark task 1 as `completed`, task 2 as `in_progress`.
-
-### Step 2.5: Pin the intended contract
-
-Under progress task 2 (Analyze changes), before observing runtime behavior, list the intended success path and **every declared error path**, including the status each should return. Derive this contract only from specification sources: PR/issue text, docstrings, declared error types and route decorators in the changed code, and linked design docs. Read what the code is trying to express; never turn a live call's observed status into its intended expectation. If the code or runtime later contradicts this contract, record a Blocker in Step 4.5 rather than rewriting the expectation.
-
-### Step 3: Analyze Changes
-
-Classify each changed file as FE or BE:
-
-**Frontend indicators:**
-- File extensions: `.tsx`, `.jsx`, `.vue`, `.svelte`, `.css`, `.scss`, `.html`
-- Paths containing: `components/`, `pages/`, `views/`, `layouts/`, `styles/`, `public/`, `assets/`, `frontend/`, `client/`, `web/`, `app/` (in FE context)
-
-**Backend indicators:**
-- File extensions: `.py`, `.php`, `.go`, `.java`, `.rb`, `.rs`
-- Paths containing: `api/`, `views/`, `controllers/`, `models/`, `migrations/`, `serializers/`, `services/`, `repositories/`, `backend/`, `server/`
-- Configuration: `urls.py`, `routes.py`, `routes.php`, `router.go`
-
-**Ambiguous files** (could be either): `.ts`, `.js` — look at import patterns and path context.
-
-For each changed file, identify:
-- What component/endpoint/model was changed
-- What kind of change (new feature, modification, deletion, refactoring)
-- What behavior should be tested
-
-**Task Update:** Mark task 2 as `completed`, task 3 as `in_progress`.
-
-### Step 4: Gather Context
-
-Read related files to understand the full picture:
-
-1. **For changed endpoints:** read the router/URL config, serializer/schema, model
-2. **For changed components:** read parent components, shared state (stores), API calls
-3. **For changed models/migrations:** read related endpoints that use this model
-4. **Look for documentation:**
-   - `docs/` directory — any relevant docs
-   - OpenAPI/Swagger spec: look for `openapi.json`, `openapi.yaml`, `swagger.json`, `swagger.yaml` in root or `docs/`
-   - README files in affected directories
-5. **Check existing tests** — understand what's already tested and what's missing
-6. **Grounding precondition:** cite `(path:line)` only for a file actually read in this working tree. If the producer is not on disk (foreign PR, pasted diff), tag the assertion `(unverified — confirm at run time)` instead. When the source is on disk, read it; an unverified assertion on readable source is a defect. Verify framework defaults the change touches (auth statuses, rate-limit semantics, error-to-status mapping) against the installed dependency version in the tree, never from memory. Tests corroborate only what they actually assert, not adjacent response details.
-
-### Step 4.5: Scan for blockers
-
-Under progress task 3 (Gather context), compare the intended contract from Step 2.5 with the changed code and its dependencies. Scan for:
-- Debug/test artifacts: unconditional `sleep`, `if True:` short-circuits, hardcoded returns, and `TODO`/`DEBUG`/`HACK`/`FIXME` markers.
-- Disabled or commented-out auth, entitlement or ownership guards, **even without a marker word**.
-- Contract contradictions: a path that cannot return its declared result.
-- Shippability hazards: leaked secrets and disabled authentication.
-
-Emit `## Blockers / Findings` after `## Changes Summary`, with `None found.` if none. A reversible blocker becomes a human prerequisite under `## Setup → **Required services:**` (or the applicable human Setup prerequisite); affected scenarios carry `**Blocked-by:** BLK-NN` directly below their headings and retain their contract-correct `**Expected:**`. Never call a code defect out of harness scope merely because it currently obstructs observation.
-
-### Step 4.6: Ground the test environment
-
-Still under progress task 3, read repository config **at plan-authoring time** to ground the base URL: a dev-server port in `vite.config.*`, `package.json` scripts, `docker-compose*.yml`, `Makefile`, README run instructions or the server entry point's bind address. Write a loopback host (`127.0.0.1` for a `0.0.0.0` bind): `/qa:run` and `/qa:loop` refuse any other host unless the user passes `--allow-host`. Omit `**Base URL:**` if none is grounded; never guess a live endpoint. Read the project's test settings to find which DB connection it uses, then declare **only names** from the supported set: for Postgres, all four `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` (libpq reads these from the harness environment; never put `DATABASE_URL` or a DSN in `psql` argv); for SQLite, `SQLITE_DB` (file path); for MySQL, all four `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE`, `MYSQL_PWD`. When the project reads another variable, state in the description how the exported supported names must point at that same test connection; do not put values in the plan. Never copy values from `.env` or emit an `mcp__` bullet; only a human who knows its target DB can declare an MCP connection. For authenticated scenarios, read the middleware/dependency that checks credentials, declare each required credential under Setup as a `QA_`-prefixed `$NAME` (e.g. `QA_API_TOKEN`, never the project's own `API_KEY`) and use that name in the scenario. An existing test account is a human Setup prerequisite, not a value to put in the plan.
-
-**Task Update:** Mark task 3 as `completed`, task 4 as `in_progress`.
-
-### Step 5: Detect Available Tools
 
 Check which testing tools are available in the environment:
 
@@ -177,66 +55,95 @@ command -v mysql >/dev/null 2>&1 && echo "mysql: available" || echo "mysql: unav
 ```
 
 **Database MCP servers:**
-Check the available tools list for database MCP servers (e.g., `mcp__postgres`, `mcp__supabase`, `mcp__neon`, `mcp__mysql`, `mcp__mongodb`, `mcp__redis`) and record availability under `## Detected Tools`. A tester uses an MCP server **only** if a human declared that exact server under `## Setup → **Required databases:**` as bound to the test DB; otherwise it uses a declared env-var connection and CLI client, or skips only the DB check. Never prefer an undeclared MCP server merely because it is available.
+Check the available tools list for database MCP servers (e.g., `mcp__postgres`, `mcp__supabase`, `mcp__neon`, `mcp__mysql`, `mcp__mongodb`, `mcp__redis`).
 
-### Step 5.5: Conditional skill
+Write the results as a `Detected tools:` block: one `<tool>: available` or `<tool>: unavailable` line per tool above, then one line per available database MCP server. The planner copies it into the plan's `## Detected Tools`.
 
-Under progress task 4 (Detect available tools), when the change's behavior is driven by ≥2 independent boolean inputs (feature flags, permissions, connection/loading states), load `Skill(skill: "state-combination-planning")` and apply it in Step 6. Put its full 2^N table above the affected scenarios with a disposition for every row.
+**Task Update:** Mark task 1 as `completed`, task 2 as `in_progress`.
 
-**Task Update:** Mark task 4 as `completed`, task 5 as `in_progress`.
-
-### Step 6: Generate Test Plan
-
-Load the test-plan-format skill:
+### Step 3: Draft the Plan
 
 ```
-Skill(skill: "test-plan-format")
+Task(
+  subagent_type: "qa:test-planner",
+  run_in_background: false,
+  description: "Draft QA test plan",
+  prompt: "Mode: draft
+Arguments: <$ARGUMENTS verbatim, or (empty)>
+Detected tools:
+<the Step 2 block>"
+)
 ```
 
-Using the skill's format, generate the test plan:
+The planner answers with one JSON object. On `{"error": ...}`, a failed dispatch, an answer that is not the expected JSON, or no file at its `plan` path, stop:
 
-1. Fill `## Setup` with the grounded Base URL, every env var name referenced by a scenario, human-required services and declared DB connections; omit unused labels or the whole section when unneeded. Never write a literal token, DSN or credential value.
-2. Fill in the **Source** section with the resolved diff source.
-3. Write the **Changes Summary** based on the analysis, then `## Blockers / Findings` from Step 4.5 (`None found.` if none).
-4. Fill in **Detected Tools** based on tool detection results, noting any available database MCP server without declaring its connection.
-5. Generate **FE Test Scenarios** (if FE changes detected):
-   - One scenario per changed component/page/feature; include concrete steps using actual UI element names from the code and at least 2 relevant edge cases.
-   - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag from Step 4 item 6. Credentials in form steps are declared `$QA_…` references.
-6. Generate **BE Test Scenarios** (if BE changes detected):
-   - One scenario per changed endpoint; use actual API paths, methods, payloads and (where a connection is declared) DB checks with actual table/column names. Include at least 2 relevant edge cases (error handling, auth, validation).
-   - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag. Credentials in headers and payloads are declared `$QA_…` references; request URLs are paths under the Base URL, never another host.
-7. Keep every step to browser actions / HTTP requests / DB queries against an already-running app. Bring-up belongs under `**Required services:**`; unobservable checks belong under `## Out of harness scope` with a one-clause harness reason and no FE/BE scenario heading. A code defect is a Blocker, not an out-of-scope check.
-8. For ≥2 independent boolean inputs, place the `state-combination-planning` 2^N table above the affected scenarios, with a scenario or a justified disposition for every row.
+> Test plan generation failed: <reason>
 
-### Step 6.5: Refute pass
+Keep `plan`, `source` and `changed_files` for the review.
 
-Under progress task 5 (Generate test plan), re-read every auth/status/rate-limit/error-mapping assertion, every `(unverified — confirm at run time)` tag and each `## Out of harness scope` bullet with intent to disprove it. Is the cited line the actual producer? Does the installed framework version behave as asserted? Can browser/HTTP/DB observe this effect after all? Correct false citations, unjustified guesses and harness-scope mistakes **before** saving the plan.
+**Task Update:** Mark task 2 as `completed`, task 3 as `in_progress`.
 
-**Task Update:** Mark task 5 as `completed`, task 6 as `in_progress`.
+### Step 4: Review the Plan
 
-### Step 7: Save Test Plan
+Run at most 3 review rounds. In round `n`:
 
-```bash
-mkdir -p docs/testing/plans
-```
+1. Dispatch the reviewer:
 
-Generate the topic slug from the changes (e.g., `user-authentication`, `order-management`, `dashboard-redesign`).
+   ```
+   Task(
+     subagent_type: "qa:test-plan-reviewer",
+     run_in_background: false,
+     description: "Review QA test plan (round <n>)",
+     prompt: "Plan: <plan>
+   Diff source: <source>
+   Changed files:
+   <changed_files, one path per line>
+   Round: <n> of 3
+   Previous findings:
+   <none, or every earlier finding with the number it was sent under, followed by the planner's disposition and note>"
+   )
+   ```
 
-Get today's date:
-```bash
-date +%Y-%m-%d
-```
+2. The reviewer's answer must be one JSON object `{"findings": [...]}` whose findings each carry a `severity` of `blocker`, `concern` or `nit`. On a failed dispatch or any other answer, the review could not run: end the review and keep the plan unreviewed, with the reason.
+3. No `blocker` or `concern` → the plan is approved; end the review.
+4. `n` is 3 → end the review; this round's blockers and concerns stay open for the user.
+5. Otherwise number this round's findings, continuing after the last number of earlier rounds, and dispatch the planner:
 
-Save the plan using the Write tool to:
-`docs/testing/plans/YYYY-MM-DD-<topic>-test-plan.md`
+   ```
+   Task(
+     subagent_type: "qa:test-planner",
+     run_in_background: false,
+     description: "Revise QA test plan (round <n>)",
+     prompt: "Mode: revise
+   Plan: <plan>
+   Diff source: <source>
+   Round: <n> of 3
+   Findings:
+   <this round's findings, one per line: number, [severity] location: issue Fix: fix>"
+   )
+   ```
 
-**Task Update:** Mark task 6 as `completed`.
+   The planner answers `{"plan": ..., "dispositions": [...]}`. On `{"error": ...}`, a failed dispatch or any other answer, end the review; this round's blockers and concerns stay open. Otherwise record each disposition with its finding and start round `n + 1`.
 
-### Step 8: Propose Next Step
+**Task Update:** Mark task 3 as `completed`.
 
-After saving the plan, display:
+### Step 5: Propose Next Step
 
-> **Test plan saved to `docs/testing/plans/<filename>`.**
+Display:
+
+> **Test plan saved to `<plan>`.**
+>
+> Plan review: <exactly one of the following>
+> - approved in round <n> of 3.
+> - <k> blocker(s) or concern(s) still open after round <n> — check them before running the plan:
+>   - [<severity>] <location>: <issue> Fix: <fix>
+> - could not run (<reason>); the plan is unreviewed.
+>
+> <only if the approving round reported nits> Optional nits (not applied):
+>   - <location>: <issue>
+>
+> <only if the planner declined findings> Findings the planner declined:
+>   - [<severity>] <location>: <issue> — <planner's note>
 >
 > Review the plan and when ready, run the tests with:
 >
@@ -244,4 +151,4 @@ After saving the plan, display:
 >
 > or specify the plan path:
 >
-> `/qa:run docs/testing/plans/<filename>`
+> `/qa:run <plan>`

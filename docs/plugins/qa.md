@@ -2,13 +2,13 @@
 
 Automated QA testing — analyzes code changes, generates test plans, executes FE and BE tests, and produces reports with unique issue IDs compatible with code-review's `/fix QA-001` and `/fix-report` auto-merge.
 
-**Version:** 2.7.0
+**Version:** 2.8.0
 
 ## Commands
 
 ### `/qa:create-plan`
 
-Analyze code changes and generate a detailed test plan with FE and BE scenarios, edge cases, and tool detection.
+Analyze code changes and generate a detailed test plan with FE and BE scenarios, edge cases, and tool detection. The `qa:test-planner` agent writes the plan and the `qa:test-plan-reviewer` agent reviews it against the repository before the command hands it over.
 
 ```bash
 # Analyze current branch's PR (or branch diff as fallback)
@@ -30,16 +30,19 @@ Analyze code changes and generate a detailed test plan with FE and BE scenarios,
 /qa:create-plan staged
 ```
 
-The command:
+The command detects testing tools (Playwright MCP, curl/httpie, psql/sqlite3/mysql, database MCP servers; an available MCP server is not assumed to point to the test DB) and dispatches `qa:test-planner`, which:
 1. Resolves the diff source (PR, branch, commits, or staged changes) and pins the intended success and error-path contract before observing runtime behavior
 2. Classifies changed files as FE or BE and reads related producers (routers, models, schemas, docs, OpenAPI specs and installed framework behavior) to ground each assertion
 3. Scans for contract blockers and records them in mandatory `## Blockers / Findings` (`None found.` if none); affected scenarios retain their intended expectation and carry `**Blocked-by:** BLK-NN`
 4. Grounds `## Setup` (loopback base URL, required environment-variable names, services and database connections) from the repository at plan-authoring time; credentials are `$QA_…` references, not literal values
-5. Detects testing tools (Playwright MCP, curl/httpie, psql/sqlite3/mysql, database MCP servers); an available MCP server is not assumed to point to the test DB
+5. Copies the command's tool-detection results into `## Detected Tools`
 6. Limits scenario steps to browser actions, HTTP requests and DB queries against an already-running app; human bring-up belongs under Required services and unobservable checks under `## Out of harness scope`
 7. When behavior depends on at least two independent booleans, loads `state-combination-planning` and records every row of the $2^N$ combination table with a scenario or justified disposition
 8. Generates `FE-XX`/`BE-XX` scenarios whose expected results and edge cases carry `(path:line)` or `(unverified — confirm at run time)` tags; refutes unsupported assertions before saving to `docs/testing/plans/YYYY-MM-DD-<topic>-test-plan.md`
-9. Proposes running `/qa:run` to execute the plan
+
+The command then runs up to 3 review rounds, like Plan Review does for plan-mode plans. `qa:test-plan-reviewer` reads the plan and the repository with read-only tools and reports `blocker`, `concern` and `nit` findings on grounding citations, contract fidelity, coverage of the changed files, Setup, harness scope and format. When blockers or concerns remain, the planner checks each finding against the code, fixes the plan in place or declines the finding with evidence, and the next round sees its dispositions. Declined reasons never go into the plan, since testers read it as a specification. The review ends when a round has no blockers or concerns, after round 3, or when a dispatch fails.
+
+The final message gives the plan path and the review outcome: approved, blockers or concerns still open (listed, for you to decide before running the plan), or unreviewed with the reason. It also lists findings the planner declined and optional nits, then proposes running `/qa:run` to execute the plan.
 
 ### `/qa:run`
 
@@ -416,7 +419,7 @@ Testers do not install or configure missing browsers, drivers, tools or packages
 
 ## Skills
 
-The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, `report-format`, and `test-plan-format` load with the plugin; `state-combination-planning` is loaded conditionally in `/qa:create-plan` for two or more independent boolean inputs. `fe-testing` and `be-testing` are scoped to the `qa:fe-tester` and `qa:be-tester` agents and load on demand inside them (declared via `skills:` in each agent's frontmatter), not ambiently across the plugin.
+The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, `report-format`, and `test-plan-format` load with the plugin; `state-combination-planning` is loaded conditionally by the `qa:test-planner` agent (and `/qa:loop`'s inline auto-plan) for two or more independent boolean inputs. `fe-testing` and `be-testing` are scoped to the `qa:fe-tester` and `qa:be-tester` agents and load on demand inside them (declared via `skills:` in each agent's frontmatter), not ambiently across the plugin.
 
 | Skill | Loaded | Purpose |
 |-------|--------|---------|
@@ -424,12 +427,14 @@ The qa plugin ships these skills. `loop-engineering`, `reader-context-hygiene`, 
 | `reader-context-hygiene` | With plugin | Doctrine for authoring fan-out reader/scout agents — bulk evidence to disk, decision-relevant signals inline, fail-closed on access failure, declared truncation. |
 | `report-format` | With plugin | Test report format with `QA-XXX` issue IDs, compatible with the code-review plugin. |
 | `test-plan-format` | With plugin | Test plan structure produced by `/qa:create-plan` and consumed by `/qa:run` and `/qa:loop`. |
-| `state-combination-planning` | `/qa:create-plan` on demand | Enumerates the $2^N$ combinations of independent boolean inputs and records a scenario or disposition for each row. |
+| `state-combination-planning` | `qa:test-planner` agent on demand | Enumerates the $2^N$ combinations of independent boolean inputs and records a scenario or disposition for each row. |
 | `fe-testing` | `qa:fe-tester` agent | Frontend test-execution guidance using Playwright MCP — navigation, interaction, assertions, and screenshots on failure. |
 | `be-testing` | `qa:be-tester` agent | Backend test-execution guidance — API request construction, response verification, database state checks, error-path testing, and adaptive CLI/MCP tool detection. |
 
 <a id="upgrade-notes"></a>
 ## Upgrade Notes
+
+**`qa` 2.8.0:** `/qa:create-plan` no longer writes the plan in your session. It dispatches the new `qa:test-planner` agent to write it and the new `qa:test-plan-reviewer` agent to review it, for up to 3 rounds; expect more time and model cost per plan. In OMP they run on the `plan` and `advisor` model roles, the ones plan mode and Plan Review use; see [Oh My Pi](#oh-my-pi). `/qa:loop`'s inline auto-plan is unchanged: it still writes the plan in the loop's session, without a review.
 
 **`qa` 2.7.0:** Runtime base URLs no longer come from `.env` or project config: declare `**Base URL:**` under `## Setup`, provide a URL in the plan's Source/scenarios, or set `QA_BASE_URL`. `/qa:run` is now loopback-only like `/qa:loop`: pass `--allow-host <host>` to test any other host. Declare credentials under `## Setup` and reference them as `$NAME` in scenarios; credential names must start with `QA_` (rename e.g. `API_TOKEN` to `QA_API_TOKEN`), and database names may also be all four `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` (replace old `DATABASE_URL` declarations), `SQLITE_DB` or the four `MYSQL_*` names — any other name is ignored with a warning and never read. Testers no longer read `.env` or mint tokens outside explicit scenario steps, and refuse requests and pages on any host but the Base URL's. Export declared env vars in the shell that **launches** the harness; missing ones abort before tester dispatch, and changes require a restart. DB checks use only declared connections — an available MCP server is no longer picked up automatically; PostgreSQL requires all four `PG*` env vars (no DSN on argv), and MySQL needs `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_DATABASE` and `MYSQL_PWD`. Bearer headers go to curl via config on stdin, never argv; HTTPie is only for credential-free requests. A missing browser or HTTP client now returns `NEED_INFO kind=tool` rather than SKIP, and reports count Need info separately with a conditional `## Setup gaps` section. Screenshots are `<ID>-fail.png`; backend response dumps are `<ID>-body.json`. BE responses pass through a fail-closed sanitiser that withholds non-JSON and bare-string bodies; `perl` with `JSON::PP` is now required for BE testing. The loop prompts to retry/continue/abort on baseline setup gaps in interactive modes, and does not auto-fix unverified assertions or auth-gated main-flow issues.
 
@@ -450,7 +455,7 @@ Where the state does arise — a `/review` report fed through the decision stage
 
 Install with `omp plugin install qa@av-marketplace`. If you added the marketplace earlier, first run `omp plugin marketplace update av-marketplace`. The commands are `/qa:create-plan`, `/qa:run`, and `/qa:loop`.
 
-Both `qa:fe-tester` and `qa:be-tester` run through the `tester` model role (`modelRoles.tester` in `~/.omp/agent/config.yml`). Without that mapping, OMP falls back to the `opus` selector, then to the session model.
+Both `qa:fe-tester` and `qa:be-tester` run through the `tester` model role (`modelRoles.tester` in `~/.omp/agent/config.yml`). `/qa:create-plan` uses the same roles as OMP planning: `qa:test-planner` runs on the `plan` role, the model plan mode switches to, and `qa:test-plan-reviewer` on the `advisor` role, Plan Review's reviewer model. The command itself runs on the session model, which only detects tools and relays between the two agents. Without a role mapping, OMP falls back to the `opus` selector, then to the session model.
 
 For BE tests in OMP, the tester resolves the shipped sanitiser path with `realpath skill://qa:be-testing/scripts/qa-redact.pl`; it must not guess a path under `~/.omp`. If resolution fails, the tester stops before making a request and reports `NEED_INFO kind=tool`.
 

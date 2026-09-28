@@ -131,7 +131,7 @@ Stop execution.
 
 #### Step 0.2.1: Generate Plan Inline (branch-vs-default)
 
-This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Steps 2–7 but **only the current-branch-vs-default-branch path**. It **skips** create-plan Step 1 (its task scaffold — reuse this loop's tracker) and Step 8 (its "run `/qa:run`" prompt — that contradicts continuing the loop here).
+This generates a plan in place of the dead-stop, mirroring the `qa:test-planner` agent's Draft workflow (Steps 2–7) but **only the current-branch-vs-default-branch path**. It runs in this session: it does not dispatch the planner, does not run `/qa:create-plan`'s plan review, and skips create-plan's progress tasks (reuse this loop's tracker) and its "run `/qa:run`" prompt (that contradicts continuing the loop here).
 
 1. **Resolve the default branch** (the `--short` form returns `origin/master`, so the `origin/` strip is required; do **not** use `sed`):
 
@@ -142,14 +142,14 @@ This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Ste
    [ -z "$BASE" ] && BASE=main
    ```
 
-2. **Get the diff + changed files** (source is fixed to current-branch-vs-default — do **not** inline create-plan's PR / `last-N` / staged dispatch):
+2. **Get the diff + changed files** (source is fixed to current-branch-vs-default — do **not** inline the planner's PR / `last-N` / staged dispatch):
 
    ```bash
    git diff "$BASE"...HEAD
    git diff --name-only "$BASE"...HEAD
    ```
 
-3. **Analyze & detect tools.** Classify each changed file as FE or BE using create-plan's indicators (Step 3), and detect available testing tools (Playwright MCP, HTTP client, DB access) as in create-plan Step 5. Then render the plan body using the format skill:
+3. **Analyze & detect tools.** Classify each changed file as FE or BE using the planner's indicators (its Step 3), and detect available testing tools (Playwright MCP, HTTP client, DB access) as in `/qa:create-plan` Step 2. Then render the plan body using the format skill:
 
    ```
    Skill(skill: "test-plan-format")
@@ -157,7 +157,7 @@ This generates a plan in place of the dead-stop, mirroring `/qa:create-plan` Ste
 
    Fill `## Source` (Type: branch `<current>`, Base: `$BASE`, Date), `## Changes Summary`, `## Detected Tools`, and the FE/BE scenario sections per the skill (including its section-omission rules).
 
-   Apply `/qa:create-plan` Steps 2.5, 4 item 6, 4.5, 4.6 and 6.5 before saving: pin the intended contract, ground every assertion, scan blockers, ground the environment, then refute the plan's apparent passes. Emit `## Setup` when needed, mandatory `## Blockers / Findings`, and assertion-level grounding tags; record bring-up only as a human `Required services` prerequisite.
+   Apply the planner's Steps 2.5, 4 item 6, 4.5, 4.6 and 6.5 before saving: pin the intended contract, ground every assertion, scan blockers, ground the environment, then refute the plan's apparent passes. Emit `## Setup` when needed, mandatory `## Blockers / Findings`, and assertion-level grounding tags; record bring-up only as a human `Required services` prerequisite.
 
 4. **Construct the path before writing** (bind it explicitly — there is nothing to "capture afterward"), then **Write** the plan to that literal path with the Write tool:
 
