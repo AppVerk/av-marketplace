@@ -230,7 +230,7 @@ build() {
       st="$(boundary "$d/$p")"
       if [ "$st" = missing ]; then st=absent
       elif [ "$st" = ok ]; then
-        if [ -d "$d/$p" ]; then st=dir; elif [ -f "$d/$p" ]; then st=file; else st=absent; fi
+        if [ -d "$d/$p" ]; then st="dir"; elif [ -f "$d/$p" ]; then st="file"; else st="absent"; fi
       fi
       printf 'P\t%s\t%s\t%s\n' "$role" "$(rel "$d/$p")" "$st"
     done

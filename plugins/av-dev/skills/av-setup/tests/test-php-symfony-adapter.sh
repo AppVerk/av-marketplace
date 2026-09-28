@@ -8,7 +8,6 @@
 set -u
 SKILL="$(cd "$(dirname "$0")/.." && pwd)"
 ADAPTER="$SKILL/scripts/adapters/php-symfony/adapter.sh"
-FACTS_JQ="$SKILL/scripts/adapters/php-symfony/composer-facts.jq"
 SCAN="$SKILL/scripts/scan.sh"
 fx="$SKILL/tests/fixtures/php-symfony"
 BASH_BIN=/bin/bash

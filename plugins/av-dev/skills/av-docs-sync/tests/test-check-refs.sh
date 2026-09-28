@@ -235,6 +235,13 @@ has "$out4" "RemovedList.ts" && ok || fail "document path relative to --root"
 # --- 3. file from outside the repo with a space in its name
 out="$(bash "$CHECK" "$TMP/with space.md" --root .)"
 has "$out" "src/modules/Orders_/RemovedList.ts" && ok || fail "file with a space not checked"
+# a document outside the repo in a directory named like a .gitignore entry (tmp/): its paths
+# are still checked (on Linux mktemp gives /tmp/tmp.X, which hid them)
+mkdir -p "$TMP/tmp/build"
+printf '# o\nGone: `src/modules/Orders_/RemovedList.ts`. Sibling: `../../ghost-repo/y.md`.\n' >"$TMP/tmp/build/out.md"
+out="$(bash "$CHECK" "$TMP/tmp/build/out.md" --root .)"
+has "$out" "MISSING $TMP/tmp/build/out.md:2 src/modules/Orders_/RemovedList.ts" && ok || fail "document outside the repo under tmp/: path skipped as ignored: $out"
+has "$out" "EXTERNAL $TMP/tmp/build/out.md:2 ../../ghost-repo/y.md" && ok || fail "document outside the repo: ../ path is not EXTERNAL: $out"
 
 # --- 4. clean docs: code 0
 mkdir -p "$TMP/clean"

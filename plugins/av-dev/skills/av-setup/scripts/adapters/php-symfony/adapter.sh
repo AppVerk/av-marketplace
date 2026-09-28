@@ -136,7 +136,7 @@ paths_json() {
     full="$d/$p"
     if [ -L "$full" ]; then type=symlink
     elif [ -d "$full" ]; then type=dir
-    elif [ -f "$full" ]; then type=file
+    elif [ -f "$full" ]; then type="file"
     else rel "$full" >>"$tmp/absent"; continue; fi
     jq -n -c --arg r "$role" --arg p "$(rel "$full")" --arg t "$type" '{path: $p, type: $t, role: $r, evidence: {path: $p}}' >>"$tmp/present"
   done <<<"$CANDIDATES"

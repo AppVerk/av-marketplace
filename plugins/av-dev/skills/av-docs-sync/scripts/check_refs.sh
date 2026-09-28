@@ -194,6 +194,13 @@ fi
       ign = tok; sub(/#.*$/, "", ign); sub(/:[0-9]+(-[0-9]+)?$/, "", ign); while (substr(ign, 1, 2) == "./") ign = substr(ign, 3)
       rel2 = normalize(docdir "/" strip(tok))
       cls = kind
+      # A document outside the repo (absolute docdir): a path relative to it has no place in
+      # the repo. rel2 would be the doc directory without its leading "/" (tmp/x/src/a.ts)
+      # and match .gitignore entries by accident; "../" from there leaves the repo.
+      if (substr(docdir, 1, 1) == "/") {
+        rel2 = ""
+        if (substr(strip(tok), 1, 3) == "../") cls = "external"
+      }
       if (substr(strip(tok), 1, 3) == "../" && escapes(docdir, strip(tok))) cls = "external"
       else if (about_other_repo(line, a, b)) cls = "external"
       printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, cls, strip(tok), ign, rel2
@@ -366,7 +373,7 @@ while IFS=$'\t' read -r where tok kind stripped ign rel2; do
     sib="${stripped#../}"
     while [ "${sib#../}" != "$sib" ]; do sib="${sib#../}"; done
     [ -e "$(dirname "$root")/$sib" ] && continue
-    [ -e "$(dirname "$root")/$rel2" ] && continue
+    [ -n "$rel2" ] && [ -e "$(dirname "$root")/$rel2" ] && continue
     known_hit "$where" "$stripped" "$rel2" && continue
     external=$((external + 1))
     printf 'EXTERNAL %s %s\n' "$where" "$tok"

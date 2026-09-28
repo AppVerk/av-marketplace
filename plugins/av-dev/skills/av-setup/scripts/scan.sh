@@ -78,7 +78,7 @@ git_json() {
   if ! git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
     echo '{"repo":false}'; return
   fi
-  local names long base origin_head remote host subjects merged prefixes conv total_s ai_total ai_hits types
+  local names long base origin_head remote host prefixes conv total_s ai_total ai_hits types
   names="$(git -C "$root" for-each-ref --format='%(refname:short)' refs/heads refs/remotes | sed 's|^origin/||' | grep -v '^HEAD$' | sort -u)"
   long="$(printf '%s\n' "$names" | grep -E '^(develop|main|master|release/.+)$' | lines_to_json)"
   base="null"
@@ -446,7 +446,7 @@ commands_json() {
       '. + {scripts_meta: ($m | map(. + {referenced_by: ($r[.path] // [])}))}' <<<"$out")"
   fi
   local compose
-  compose="$(ls "$root"/docker-compose*.y*ml "$root"/compose*.y*ml 2>/dev/null | xargs -n1 basename 2>/dev/null | lines_to_json)"
+  compose="$(for f in "$root"/docker-compose*.y*ml "$root"/compose*.y*ml; do [ -e "$f" ] && printf '%s\n' "${f##*/}"; done | sort | lines_to_json)"
   [ "$compose" != "[]" ] && out="$(jq -c --argjson d "$compose" '. + {docker_compose: $d}' <<<"$out")"
   if [ -s "$tmp/doccmds" ]; then
     trunc commands.documented_commands 40 "$(wc -l <"$tmp/doccmds" | tr -d ' ')"
@@ -479,9 +479,9 @@ tooling_json() {
     m="$(tr '\n' ' ' <"$root/$name" | grep -oE '(check|coverageThreshold|thresholds)[[:space:]]*[:=][[:space:]]*\{[^}]*\}' | head -1 | tr -s ' ' | cut -c1-200)"
     [ -n "$m" ] && out="$(jq -c --arg n "$name" --arg v "$m" '.coverage_thresholds[$n] = $v' <<<"$out")"
   done
-  text="$(ls -A "$root" | grep -E '^(\.?eslint|stylelint|\.prettierrc|prettier\.config|phpstan|\.php-cs-fixer|rector|\.swiftlint|\.editorconfig)' | lines_to_json)"
+  text="$(find "$root" -mindepth 1 -maxdepth 1 | sed 's|.*/||' | sort | grep -E '^(\.?eslint|stylelint|\.prettierrc|prettier\.config|phpstan|\.php-cs-fixer|rector|\.swiftlint|\.editorconfig)' | lines_to_json)"
   [ "$text" != "[]" ] && out="$(jq -c --argjson l "$text" '. + {lint_configs: $l}' <<<"$out")"
-  text="$(find "$root" -mindepth 1 -maxdepth 1 -type d | xargs -n1 basename | grep -E 'eslint|lint-rules|rector' | lines_to_json)"
+  text="$(find "$root" -mindepth 1 -maxdepth 1 -type d | sed 's|.*/||' | grep -E 'eslint|lint-rules|rector' | lines_to_json)"
   [ "$text" != "[]" ] && out="$(jq -c --argjson l "$text" '. + {custom_lint_dirs: $l}' <<<"$out")"
   printf '%s\n' "$out"
 }

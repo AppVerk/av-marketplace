@@ -392,7 +392,7 @@ grep -qx P1 .ai/workspace/runs/r20/pg.p1.log && grep -qx P2 .ai/workspace/runs/r
 jq -e '.checks | (.p1.status == "PASS" and .p1.duration == 3 and .p1.exit == 0 and .p2.status == "PASS" and .fgc.status == "PASS")' .ai/workspace/runs/r20/evidence.json >/dev/null && ok || fail "parallel: evidence"
 jq -e '[.checks[] | .fingerprint] | unique | length == 1' .ai/workspace/runs/r20/evidence.json >/dev/null && ok || fail "parallel: different fingerprints"
 [ "$(jq -r '.checks | keys_unsorted | join(",")' .ai/workspace/runs/r20/evidence.json)" = "p1,fgc,p2" ] && ok || fail "parallel: evidence not in gate order"
-[ -z "$(ls -A .ai/workspace/runs/r20 | grep -E '^\.(bg|lock|timeout|records)')" ] && ok || fail "parallel: work files left behind: $(ls -A .ai/workspace/runs/r20)"
+[ -z "$(find .ai/workspace/runs/r20 -mindepth 1 -maxdepth 1 \( -name '.bg*' -o -name '.lock*' -o -name '.timeout*' -o -name '.records*' \))" ] && ok || fail "parallel: work files left behind: $(ls -A .ai/workspace/runs/r20)"
 out="$(bash "$GATE" --config "$TMP/par-ok.json" --status --run-id r20)"
 has "$out" "CHECK p1 PASS FRESH" && ok || fail "parallel: status not FRESH"
 out="$(bash "$GATE" --config "$TMP/par-ok.json" --gate pfail --run-id r21)"; rc=$?
@@ -423,7 +423,7 @@ n=0; while pgrep -f "sleep (29|31)" >/dev/null && [ "$n" -lt 30 ]; do sleep 0.1;
 pgrep -f "sleep (29|31)" >/dev/null && { fail "parallel: command alive after the gate was interrupted"; pkill -f "sleep (29|31)"; } || ok
 n=0; while pgrep -f "sleep 917" >/dev/null && [ "$n" -lt 30 ]; do sleep 0.1; n=$((n + 1)); done
 pgrep -f "sleep 917" >/dev/null && { fail "parallel: timeout watcher alive after the gate was interrupted"; pkill -f "sleep 917"; } || ok
-[ ! -d .ai/workspace/runs/r25/.lock ] && [ -z "$(ls -A .ai/workspace/runs/r25 | grep -E '^\.bg')" ] && ok || fail "parallel: lock or .bg left after interruption"
+[ ! -d .ai/workspace/runs/r25/.lock ] && [ -z "$(find .ai/workspace/runs/r25 -mindepth 1 -maxdepth 1 -name '.bg*')" ] && ok || fail "parallel: lock or .bg left after interruption"
 
 # --- 13. workspace outside .gitignore does not change the fingerprint
 git rm -q --cached .gitignore && rm .gitignore && git commit -qm "no ignore"
