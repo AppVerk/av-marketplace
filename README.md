@@ -25,7 +25,7 @@ omp plugin marketplace add AppVerk/av-marketplace
 omp plugin install <plugin>@av-marketplace
 ```
 
-`omp plugin install` accepts several plugin IDs at once. The [Oh My Pi guide](docs/oh-my-pi.md) covers updating, prerequisites and model roles.
+`omp plugin install` accepts several plugin IDs at once. The [Oh My Pi guide](docs/oh-my-pi.md) covers updating, prerequisites and the models we recommend per role.
 
 ## Workflow
 

@@ -39,25 +39,40 @@ Agents pick their model through model roles instead of a fixed model:
 | `plan` | OMP plan mode, QA's test planner |
 | `advisor` | Plan Review's reviewer, QA's test-plan reviewer, the Advisor of QA's test planner |
 
-Map them in `~/.omp/agent/config.yml`, for example:
+### Recommended models
+
+This is the mapping we run the plugins with and test them on. Put it in `~/.omp/agent/config.yml`:
 
 ```yaml
 modelRoles:
-  code_review: anthropic/claude-opus-5-5
-  analyst: anthropic/claude-opus-5-5
-  executor: openai-codex/gpt-5.5
-  tester: openai-codex/gpt-5.5
-  challenger: openai-codex/gpt-5.5
-  advisor: openai-codex/gpt-5.5
+  plan: anthropic/claude-fable-5-1:max
+  advisor: openai-codex/gpt-6-astra
+  executor: openai-codex/gpt-6-sol:xhigh
+  code_review: anthropic/claude-opus-5-5:xhigh
+  challenger: openai-codex/gpt-6-sol:xhigh
+  analyst: anthropic/claude-opus-5-5:xhigh
+  tester: openai-codex/gpt-6-sol:low
 ```
+
+The suffix after a model sets its thinking level. The mapping pairs each check with a different model family than the work it checks:
+
+| Work | Checked by |
+|------|------------|
+| Plans (`plan`, Anthropic) | Plan Review, QA's test-plan reviewer and the test planner's Advisor (`advisor`, OpenAI) |
+| Code (`executor`, OpenAI) | Delivery's task reviewer and Code Review's auditors (`code_review`, Anthropic) |
+| Review findings (`code_review`, Anthropic) | Code Review's challenger and cross-verifier (`challenger`, OpenAI) |
+
+The models need the `anthropic` and `openai-codex` providers logged in (`/login anthropic`, `/login openai-codex`); `omp models anthropic` and `omp models openai-codex` list what your account offers. If you use other providers, keep the pairing: map each checking role to a different model family than the role it checks.
+
+Leave `judge` unmapped: OMP's default list for it starts with `typesafe/jev-latest`, the model Delivery uses to route a task that lists no files (see the [Delivery guide](plugins/delivery.md#plan-format)).
+
+### Fallbacks
 
 An unmapped role falls back:
 
 - Agents generated from the Claude Code plugins use `opus`, the model their Claude Code edition names, then the session model. `code-review:decision-analyst` uses the session model, as in Claude Code.
 - Delivery's implementer and task reviewer use the session model.
 - `advisor` is an OMP role: unmapped, it first resolves through your `slow` role, or OMP's built-in list of slow models.
-
-Delivery routes a task that lists no files through OMP's `judge` role; see the [Delivery guide](plugins/delivery.md#plan-format).
 
 ## Advisor
 

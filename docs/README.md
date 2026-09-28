@@ -3,7 +3,7 @@
 ## Getting Started
 
 - [Installation & Optional Tools](installation.md) — How to install the marketplace and configure optional analysis tools
-- [Oh My Pi (OMP)](oh-my-pi.md) — Installing and updating the OMP edition, and mapping its model roles
+- [Oh My Pi (OMP)](oh-my-pi.md) — Installing and updating the OMP edition, recommended models per role, and the Advisor
 
 ## Plugin Guides
 
