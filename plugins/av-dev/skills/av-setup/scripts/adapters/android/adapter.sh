@@ -70,6 +70,10 @@ for f in gradle-facts.awk toml-facts.awk manifest-facts.awk build-facts.jq; do
   [ -f "$here/$f" ] || usage_error "$f not found next to adapter.sh"
 done
 # ROOT is the physical path: find does not enter a symlinked start dir, and the boundary checks compare physical paths
+secret_names="$(cd "$here/../.." && pwd)/secret_names.sh"
+[ -f "$secret_names" ] || usage_error "secret_names.sh not found in av-setup/scripts"
+# shellcheck source=../../secret_names.sh
+. "$secret_names"
 root="$(cd "$root" 2>/dev/null && pwd -P)" || usage_error "directory not found"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/av-android.XXXXXX")" || usage_error "cannot create a temporary directory"
@@ -87,13 +91,12 @@ trunc() { [ "${3:-0}" -gt "${2:-0}" ] && printf '%s\t%s\t%s\tlimit\n' "$1" "$2" 
 rel() { if [ "$1" = "$root" ]; then echo .; else printf '%s\n' "${1#"$root"/}"; fi; }
 lines_to_json() { jq -R -s -c 'split("\n") | map(select(length > 0))'; }
 
-# secret_path PATH - code 0 for a file that is never opened: env, keys, keystores, credentials,
-# Gradle and local properties (they often hold signing passwords), Firebase config
+# secret_path PATH - code 0 for a file that is never opened: a secret by name (secret_names.sh),
+# plus Gradle and local properties, which often hold signing passwords
 secret_path() {
+  av_secret_name "$1" "$root" && return 0
   case "${1##*/}" in
-    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.crt|*.der|id_rsa*|id_ed25519*) return 0 ;;
-    *credential*|*secret*|gradle.properties|local.properties|*keystore*.properties|*signing*.properties) return 0 ;;
-    google-services.json|GoogleService-Info.plist|*.mobileprovision) return 0 ;;
+    gradle.properties|local.properties) return 0 ;;
   esac
   return 1
 }

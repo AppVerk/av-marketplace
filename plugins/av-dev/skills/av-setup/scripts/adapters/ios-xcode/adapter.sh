@@ -63,6 +63,10 @@ command -v jq >/dev/null 2>&1 || usage_error "jq not found"
 for f in pbxproj.awk xml.awk podfile.awk podlock.awk ios-facts.jq pbxproj-facts.jq; do
   [ -f "$here/$f" ] || usage_error "$f not found next to adapter.sh"
 done
+secret_names="$(cd "$here/../.." && pwd)/secret_names.sh"
+[ -f "$secret_names" ] || usage_error "secret_names.sh not found in av-setup/scripts"
+# shellcheck source=../../secret_names.sh
+. "$secret_names"
 root="$(cd "$root" 2>/dev/null && pwd)" || usage_error "directory not found"
 root_phys="$(cd -P "$root" && pwd -P)"
 
@@ -87,11 +91,12 @@ rel() { if [ "$1" = "$root" ]; then echo .; else printf '%s\n' "${1#"$root"/}"; 
 lines_to_json() { jq -R -s -c 'split("\n") | map(select(length > 0))'; }
 jqm() { jq -L "$here" "$@"; }
 
-# secret_path PATH - code 0 for an env, key or credentials file: such a file is never opened
+# secret_path PATH - code 0 for a file that is never opened: a secret by name (secret_names.sh),
+# plus build settings and entitlements, which may hold keys and team ids
 secret_path() {
+  av_secret_name "$1" "$root" && return 0
   case "${1##*/}" in
-    .env|.env.*|*.env|*.pem|*.key|*.p8|*.p12|*.pfx|*.jks|*.keystore|*.cer|*.crt|*.der|*.mobileprovision|*.provisionprofile) return 0 ;;
-    id_rsa*|id_ed25519*|*credential*|*Credential*|*secret*|*Secret*|*SECRET*|GoogleService-Info*.plist|*.xcconfig|*.entitlements) return 0 ;;
+    *.xcconfig|*.entitlements) return 0 ;;
   esac
   return 1
 }

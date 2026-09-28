@@ -24,9 +24,11 @@
 #                                        "*" and "?" do not cross "/", "**/" matches any number of
 #                                        directories, a trailing "/**" everything inside. A glob
 #                                        without "*" or "?" also matches everything under it.
-#   docs_secret_path <path>              code 0 when the path is an env or key file (.env, .env.*, *.env,
-#                                        *.pem, *.key, *.p12, *.pfx, *.jks, *.keystore, *.mobileprovision,
-#                                        id_rsa*, id_ed25519*): scripts never read such a file
+#   docs_secret_path <path> [<root>]     code 0 when the file name looks like a secret: env, key,
+#                                        certificate, credentials (av_secret_name from
+#                                        av-setup/scripts/secret_names.sh): scripts never read it
+#   docs_secret_excludes <root>          prints ":(exclude,literal)<path>" git pathspecs, one per line,
+#                                        for every tracked or untracked, not ignored secret file
 #   docs_known_paths <root>              prints the entries of the overlay section "Known false paths":
 #                                        "<doc>.md:<line>" (every path on that docs line) or
 #                                        "<path or glob>" (that referenced path everywhere, glob
@@ -189,10 +191,20 @@ docs_known_stale() {
     }' "$4"
 }
 
-docs_secret_path() {
-  local n="${1##*/}"
-  case "$n" in
-    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.mobileprovision|id_rsa*|id_ed25519*) return 0 ;;
-  esac
-  return 1
+docs_secret_names="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../av-setup/scripts" 2>/dev/null && pwd)/secret_names.sh"
+if [ ! -f "$docs_secret_names" ]; then
+  printf 'DOCS_ERROR secret_names.sh not found in av-setup/scripts next to av-docs-sync\n'
+  exit 2
+fi
+# shellcheck source=../../av-setup/scripts/secret_names.sh
+. "$docs_secret_names"
+
+docs_secret_path() { av_secret_name "$1" "${2:-}"; }
+
+docs_secret_excludes() {
+  local f
+  git -C "$1" -c core.quotePath=false ls-files --cached --others --exclude-standard 2>/dev/null |
+    while IFS= read -r f; do
+      av_secret_name "$f" && printf ':(exclude,literal)%s\n' "$f"
+    done
 }

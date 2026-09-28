@@ -425,9 +425,10 @@ evidence_lines review "$fx/review"
 # mutant NAME HELPER SED_EXPR [FIXTURE] - copy of the adapter with one helper changed by sed; JSON in NAME.json;
 # the mutant must still print one JSON object, so an empty or broken output cannot pass as "nothing leaked"
 mutant() {
-  local name="$1" dir="$run/mut-$1"
+  local name="$1" dir="$run/mut-$1/adapters/ios-xcode"
   mkdir -p "$dir"
   cp "$ADAPTER" "$ADIR"/*.awk "$ADIR"/*.jq "$dir/"
+  cp "$ADIR/../../secret_names.sh" "$run/mut-$1/"
   sed "$3" "$ADIR/$2" >"$dir/$2"
   "$BASH_BIN" "$dir/adapter.sh" "$fx/${4:-ios-app}" >"$run/$name.json" 2>/dev/null
   one_object "$name" && ok || fail "detector $name: the mutant printed no JSON object"

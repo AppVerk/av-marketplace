@@ -318,13 +318,22 @@ printf 'EnvOnlyNameXyz=value\n' >"$SEC/.env"
 printf 'KeyOnlyNameXyz\n' >"$SEC/config/app.key"
 printf 'LocalEnvNameXyz=1\n' >"$SEC/config/.env.local"
 printf 'function RealServiceName() {}\n' >"$SEC/src/app.js"
-printf '# Docs\n`EnvOnlyNameXyz` `KeyOnlyNameXyz` `LocalEnvNameXyz` `RealServiceName`\n' >"$SEC/.ai/x.md"
+mkdir -p "$SEC/config/cloud dir" "$SEC/ios"
+printf '{"ClientSecretNameXyz": 1}\n' >"$SEC/config/cloud dir/client_secret [1].json"
+printf 'P8OnlyNameXyz\n' >"$SEC/ios/AuthKey_A1.p8"
+printf '//registry.example.test/:_authToken=NpmrcNameXyz\n' >"$SEC/.npmrc"
+printf 'TemplateNameXyz=\n' >"$SEC/.env.example"
+printf '# Docs\n`EnvOnlyNameXyz` `KeyOnlyNameXyz` `LocalEnvNameXyz` `RealServiceName`\n`ClientSecretNameXyz` `P8OnlyNameXyz` `NpmrcNameXyz` `TemplateNameXyz`\n' >"$SEC/.ai/x.md"
 git -C "$SEC" add -A -f && git -C "$SEC" commit -qm init
 out="$(bash "$CHECK" .ai --root "$SEC" 2>&1)"
 has "$out" "EnvOnlyNameXyz" && ok || fail "secrets: name only in .env must not count as found"
 has "$out" "KeyOnlyNameXyz" && ok || fail "secrets: name only in a key file must not count as found"
 has "$out" "LocalEnvNameXyz" && ok || fail "secrets: name only in a nested .env.* must not count as found"
 has "$out" "NAME_MISSING .ai/x.md:2 RealServiceName" && fail "secrets: a real code name reported" || ok
+for w in ClientSecretNameXyz P8OnlyNameXyz NpmrcNameXyz; do
+  has "$out" "$w" && ok || fail "secrets: name only in a secret file ($w) must not count as found"
+done
+has "$out" "TemplateNameXyz" && fail "secrets: a template (.env.example) is not a secret, its names count" || ok
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

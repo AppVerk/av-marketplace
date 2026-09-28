@@ -258,7 +258,7 @@ while IFS= read -r doc; do
       continue
     fi
     case "$target" in *$'\n'*) continue ;; esac
-    if docs_secret_path "$target"; then
+    if docs_secret_path "$target" "$root"; then
       printf 'LINEREF_SECRET %s:%s %s (env or key file, content not read)\n' "$rel_doc" "$ln" "$ref"
       secret=$((secret + 1))
       continue

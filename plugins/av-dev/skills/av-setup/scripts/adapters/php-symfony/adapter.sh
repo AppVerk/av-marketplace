@@ -50,6 +50,10 @@ while [ $# -gt 0 ]; do
 done
 command -v jq >/dev/null 2>&1 || usage_error "jq not found"
 [ -f "$here/composer-facts.jq" ] || usage_error "composer-facts.jq not found next to adapter.sh"
+secret_names="$(cd "$here/../.." && pwd)/secret_names.sh"
+[ -f "$secret_names" ] || usage_error "secret_names.sh not found in av-setup/scripts"
+# shellcheck source=../../secret_names.sh
+. "$secret_names"
 root="$(cd "$root" 2>/dev/null && pwd)" || usage_error "directory not found"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/av-php-symfony.XXXXXX")" || usage_error "cannot create a temporary directory"
@@ -71,13 +75,8 @@ err() { printf '%s\t%s\n' "$1" "$2" | tr -d '\r' >>"$tmp/errors"; }
 rel() { if [ "$1" = "$root" ]; then echo .; else printf '%s\n' "${1#"$root"/}"; fi; }
 lines_to_json() { jq -R -s -c 'split("\n") | map(select(length > 0))'; }
 
-# secret_path PATH - code 0 for an env, key or credentials file: such a file is never read
-secret_path() {
-  case "${1##*/}" in
-    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.crt|*.der|id_rsa*|id_ed25519*|auth.json|*credential*|*secret*) return 0 ;;
-  esac
-  return 1
-}
+# secret_path PATH - code 0 for a file whose name looks like a secret (secret_names.sh): never read
+secret_path() { av_secret_name "$1" "$root"; }
 
 EXCL=( -name vendor -o -name node_modules -o -name var -o -name cache -o -name worktrees -o -name tmp
   -o -name legacy-vendors -o -name build -o -name dist -o -name Pods -o -name public -o -name '.*' )

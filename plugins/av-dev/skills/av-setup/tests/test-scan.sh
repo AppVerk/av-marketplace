@@ -518,5 +518,22 @@ check "$TMP/flags.out" '.commands.scripts_meta | any(.path == ".ai/scripts/docs.
 check "$TMP/flags.out" '[.commands.flags.items[].source] | index(".env") == null' "flags: env file not scanned"
 grep -q flagsecretvalue42 "$TMP/flags.out" && fail "flags: env value leaked" || ok
 
+# --- secret_like_files: one list (secret_names.sh), any depth, hidden directories, no templates or code
+SR="$TMP/secret-repo"
+mkdir -p "$SR/ios/Signing" "$SR/app/Firebase/prod" "$SR/config/secrets/prod/api" "$SR/.secrets" "$SR/node_modules/pkg" "$SR/src" "$SR/docs"
+( cd "$SR" && git init -q )
+for f in ios/Signing/Distribution.p12 ios/Signing/AppStore_Distribution.mobileprovision ios/AuthKey_ABC123.p8 \
+  credentials.json client_secret_42.json service-account.json .npmrc .netrc id_ed25519 id_ecdsa keystore.properties \
+  app/Firebase/prod/GoogleService-Info.plist config/secrets/prod/api/jwt.pem .secrets/deploy.key .env .env.local; do
+  printf 'x\n' >"$SR/$f"
+done
+for f in .env.dist .env.example config/parameters.yml.dist id_ed25519.pub src/SecretManager.swift docs/secrets.md \
+  src/CredentialsForm.tsx node_modules/pkg/server.key package.json; do
+  printf 'x\n' >"$SR/$f"
+done
+scan "$SR" "$TMP/secrets.out"
+want='[".env",".env.local",".netrc",".npmrc",".secrets/deploy.key","app/Firebase/prod/GoogleService-Info.plist","client_secret_42.json","config/secrets/prod/api/jwt.pem","credentials.json","id_ecdsa","id_ed25519","ios/AuthKey_ABC123.p8","ios/Signing/AppStore_Distribution.mobileprovision","ios/Signing/Distribution.p12","keystore.properties","service-account.json"]'
+check "$TMP/secrets.out" ".secret_like_files == $want" "secrets: list differs: $(jq -c .secret_like_files "$TMP/secrets.out" 2>/dev/null)"
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

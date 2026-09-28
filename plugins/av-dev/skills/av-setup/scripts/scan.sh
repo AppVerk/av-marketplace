@@ -38,6 +38,10 @@ for a in "$@"; do
 done
 command -v jq >/dev/null 2>&1 || { echo '{"error":"jq not found"}'; exit 2; }
 root="$(cd "$root" 2>/dev/null && pwd)" || { echo '{"error":"directory not found"}'; exit 2; }
+secret_names="$(cd "$(dirname "$0")" && pwd)/secret_names.sh"
+[ -f "$secret_names" ] || { echo '{"error":"secret_names.sh not found next to scan.sh"}'; exit 2; }
+# shellcheck source=secret_names.sh
+. "$secret_names"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -50,13 +54,8 @@ MAX_SCRIPT_LINES=400
 # trunc FIELD SHOWN TOTAL - records a list cut to a limit; scan.complete becomes false
 trunc() { [ "${3:-0}" -gt "${2:-0}" ] && printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$tmp/trunc"; return 0; }
 
-# secret_path PATH - code 0 for an env or key file: such a file is never read
-secret_path() {
-  case "${1##*/}" in
-    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.mobileprovision|id_rsa*|id_ed25519*) return 0 ;;
-  esac
-  return 1
-}
+# secret_path PATH - code 0 for a file whose name looks like a secret (secret_names.sh): never read
+secret_path() { av_secret_name "$1" "$root"; }
 CODE_EXT_RE='\.(swift|m|h|c|cc|cpp|hpp|php|ts|tsx|js|jsx|mjs|cjs|py|rb|kt|kts|java|scala|go|rs|cs|fs|dart|ex|exs|vue|svelte|twig|html|scss|css)$'
 SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData -o -name build
   -o -name dist -o -name .angular -o -name .idea -o -name .vscode -o -name var -o -name coverage -o -name .gradle
@@ -807,13 +806,18 @@ ai_json() {
     | . + {mcp_servers: $mcp, gitignore_ai: $gi, gitignore_has_env: $env}' <<<"$out"
 }
 
+# SECRET_SKIP - only generated and dependency trees; hidden directories and any depth are
+# searched, because secrets often live in .secrets/ or config/secrets/prod/.
+SECRET_SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData -o -name Carthage
+  -o -name .gradle -o -name build -o -name .build -o -name dist -o -name coverage -o -name .next -o -name .nuxt
+  -o -name .angular -o -name __pycache__ -o -name .venv -o -name venv -o -name cache -o -name worktrees
+  -o -path "$root/.ai/workspace" )
+
 secrets_json() {
-  walk "$root" 3 f | while IFS= read -r f; do
-    n="$(basename "$f")"
-    printf '%s\n' "$n" | grep -qiE '(^\.env(\..+)?$)|(\.(p12|pem|key|mobileprovision|keystore|jks)$)|secret|credential|^id_rsa' || continue
-    printf '%s\n' "$n" | grep -qiE "$CODE_EXT_RE|\.(md|sh|json)$|sample|example|dist" && continue
-    rel "$f"
-  done | sort >"$tmp/secretsall"
+  find "$root" -mindepth 1 -type d \( "${SECRET_SKIP[@]}" \) -prune -o \( -type f -o -type l \) -print 2>/dev/null |
+    while IFS= read -r f; do
+      av_secret_name "$f" "$root" && rel "$f"
+    done | LC_ALL=C sort >"$tmp/secretsall"
   trunc secret_like_files 40 "$(wc -l <"$tmp/secretsall" | tr -d ' ')"
   head -40 "$tmp/secretsall" | lines_to_json
 }
