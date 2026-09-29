@@ -1,6 +1,6 @@
 ---
 name: av-implement
-description: Implements a task in the repo from start to report - SMALL/STANDARD/LARGE mode selection, baseline, implementation (alone or through roles with disjoint files), av-verify gates, independent av-review, at most 2 fix rounds, docs update, report and learnings. Applies project rules from `.ai/overlays/av-implement.md`. Stops before commit. Use when the user wants to implement a feature, ticket, fix or plan, "implement PROJ-123", "implement the plan", "zaimplementuj PROJ-123", "zaimplementuj plan", or resume an interrupted run (`--continue`).
+description: Implements a task in the repo from start to report - SMALL/STANDARD/LARGE mode selection, baseline, implementation (alone or through roles with disjoint files), av-verify gates, independent av-review, at most 2 fix rounds, docs update, report and learnings. Applies project rules from `.ai/overlays/av-implement.md`. Stops before commit unless `git.commit` in the config allows a commit. Use when the user wants to implement a feature, ticket, fix or plan, "implement PROJ-123", "implement the plan", "zaimplementuj PROJ-123", "zaimplementuj plan", or resume an interrupted run (`--continue`).
 argument-hint: "<task | plan path | TICKET> [--mode small|standard|large] [--continue <RUN_ID>]"
 ---
 

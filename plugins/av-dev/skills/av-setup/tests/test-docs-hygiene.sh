@@ -68,5 +68,14 @@ $hits"
 adoption="$SKILLS/av-setup/references/adoption.md"
 grep -q 'orkiestrator' "$adoption" && grep -q 'repos keep their own language' "$adoption" && ok || fail "adoption.md: Polish grep words or the reason for them missing"
 
+# --- 5. user docs say what the skills do (review of PR #19: --defaults and the commit policy)
+readme="$PLUGIN/README.md"
+grep -q 'no interview and no waiting for approval' "$SKILLS/av-setup/SKILL.md" && ok || fail "av-setup: --defaults no longer skips the approval; update this test and the docs"
+grep -F -- '--defaults' "$readme" | grep -q 'no approval wait' && ok || fail "README: the --defaults row does not say it skips the approval"
+[ -z "$page" ] || { grep -F -- '--defaults' "$page" | grep -q 'approval wait' && ok || fail "docs page: --defaults does not say it skips the approval"; }
+grep -q '`on-request`: stop' "$SKILLS/av-implement/SKILL.md" && grep -q '`after-green-gate`: commit' "$SKILLS/av-implement/SKILL.md" && ok || fail "av-implement: commit policy changed; update this test and the docs"
+grep -q 'stops before the commit' "$readme" && ! grep 'stops before the commit' "$readme" | grep -vq 'on-request' && ok || fail "README: stopping before the commit is not tied to git.commit: on-request"
+grep -q 'Stops before commit unless `git.commit`' "$SKILLS/av-implement/SKILL.md" && ok || fail "av-implement description: stopping before commit is not tied to git.commit"
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -60,7 +60,7 @@ You can also ask in plain words. "Set up this repo for Claude", "implement PROJ-
 |---|---|
 | `/av-dev:av-setup` | full setup with an interview and a plan to approve |
 | `/av-dev:av-setup --dry-run` | scan, interview and plan only; no changes in tracked files |
-| `/av-dev:av-setup --defaults` | no interview; detected values; decisions listed in the report |
+| `/av-dev:av-setup --defaults` | no interview and no approval wait: detected values, files written right away; deletions still need your approval; decisions listed in the report |
 | `/av-dev:av-setup --only config` | only the config; `docs`, `overlays`, `roles` work the same way |
 | `/av-dev:av-setup --eval` | after the setup, measure the review on a clone with 5 injected defects |
 
@@ -115,7 +115,7 @@ Setup ready: 38 files created, 1 updated, 0 to delete.
 
 A task in a high-risk area is always at least STANDARD and always gets an independent review.
 
-The run stops before the commit and proposes a message:
+By default (`git.commit: on-request`) the run stops before the commit and proposes a message. With `after-green-gate` or `free` it commits after a READY_FOR_COMMIT result (`free` only on the task branch); see `git` in `skills/av-setup/references/config-schema.md`:
 
 ```
 READY_FOR_COMMIT: CSV export added to the orders list.

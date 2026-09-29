@@ -23,7 +23,7 @@ The plugin holds general rules only. Knowledge of a stack or a repo is derived f
 |-------|---------|
 | `av-setup` | Scans the repo, interviews the user, writes config, docs, overlays and role skills. Adopts existing pipelines, agents and commands |
 | `av-plan` | Writes an implementation plan: mode, risk, layer contract, files with owners, tests, gates |
-| `av-implement` | Implements a task end to end: baseline, implementation, gates, independent review, up to 2 fix rounds, docs, report. Stops before commit |
+| `av-implement` | Implements a task end to end: baseline, implementation, gates, independent review, up to 2 fix rounds, docs, report. By default stops before commit (`git.commit`) |
 | `av-review` | Reviews changes against the repo rules; findings with severity, NEW/PRE_EXISTING origin and file:line evidence |
 | `av-verify` | Runs the configured gates and records evidence with a code fingerprint: FRESH or STALE |
 | `av-docs-sync` | Keeps AI docs in sync with the code; audit mode reports DOCS_OK or DOCS_DRIFT |
@@ -33,7 +33,7 @@ The plugin is written in English. Files it generates in a repo (docs, overlays, 
 ## How It Works
 
 1. Run `av-setup` in the repo. It detects the mode: NEW, COMPLETION (docs exist), ADOPTION (agents or pipelines exist) or REFRESH (config exists).
-2. It writes a plan and waits for approval (`--defaults` skips the interview, `--dry-run` stops after the plan).
+2. It writes a plan and waits for approval. `--defaults` skips both the interview and the approval wait: it uses the detected values and writes the files, but deleting files still needs explicit approval. `--dry-run` stops after the plan.
 3. After approval it writes the files and validates them: `check_setup.sh`, doc reference checks and the `quick` gate.
 4. From then on, the working skills read the effective config and the overlay for their step.
 
