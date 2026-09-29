@@ -36,7 +36,7 @@ for n in .env.dist .env.example .env.sample .env.template parameters.yml.dist co
   secret-rotation.sh KeychainSecret.m secrets.jq README.md package.json app.json Info.plist \
   environment.ts key.ts keyboard.swift monkey.txt distribution.md envelope.json \
   SecretScreen.storyboard Credentials.xib \
-  N-FamilyTests/Fixtures/api/auth-login-bad-credentials.json tests/fixtures/client_secret.json \
+  AppTests/Fixtures/api/auth-login-bad-credentials.json tests/fixtures/client_secret.json \
   spec/support/secrets.yml src/__mocks__/credentials.json testdata/secret.txt AppUITests/secrets.json; do
   av_secret_name "$n" && fail "false secret: $n" || ok
 done

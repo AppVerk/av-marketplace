@@ -83,11 +83,11 @@ See [OrderRepository](src/Repository/Gone3.php).
 The repository class `src/Repository/Gone4.php` handles orders.
 Repozytorium Doctrine: `src/Repository/Gone5.php`.
 Bare: `src/gone6.ts`. In the backend repository: `api/Y.php`.
-In the nfamily-api repository: `app/Api/X.php`.
-W repozytorium nfamily-api: `app/Api/Y2.php`.
+In the billing-service repository: `app/Api/X.php`.
+W repozytorium billing-service: `app/Api/Y2.php`.
 See the other repo: `lib/z.ts`.
 Plik w innym repozytorium: `lib/w.ts`.
-In the `nfamily-api` repository: `app/Api/Z.php`.
+In the `billing-service` repository: `app/Api/Z.php`.
 Sibling repo: `docs/q.md`.
 Handler `src/Gone7.php`, see `lib/backend-repository/README.md`.
 Set up per repo: `av-setup` writes `.ai/gone-config.json`.

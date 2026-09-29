@@ -59,7 +59,7 @@ secret_path() { av_secret_name "$1" "$root"; }
 CODE_EXT_RE='\.(swift|m|h|c|cc|cpp|hpp|php|ts|tsx|js|jsx|mjs|cjs|py|rb|kt|kts|java|scala|go|rs|cs|fs|dart|ex|exs|vue|svelte|twig|html|scss|css)$'
 SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData -o -name build
   -o -name dist -o -name .angular -o -name .idea -o -name .vscode -o -name var -o -name coverage -o -name .gradle
-  -o -name __pycache__ -o -name .venv -o -name venv -o -name tmp -o -name public -o -name legacy-vendors
+  -o -name __pycache__ -o -name .venv -o -name venv -o -name tmp -o -name public
   -o -name .next -o -name .nuxt -o -name Carthage -o -name test-reports -o -name workspace
   -o \( -name '.*' ! -name .ai ! -name .claude ! -name .github ! -name .agents ! -name .codex ! -name .husky \) )
 
@@ -496,7 +496,7 @@ layout_json() {
   while IFS= read -r d; do
     d="$root/$d"; name="$(basename "$d")"
     [ -d "$d" ] || continue
-    printf '%s\n' "$name" | grep -qE '^(\.|node_modules$|vendor$|Pods$|DerivedData$|build$|dist$|var$|coverage$|tmp$|public$|legacy-vendors$|Carthage$|test-reports$|workspace$)' && continue
+    printf '%s\n' "$name" | grep -qE '^(\.|node_modules$|vendor$|Pods$|DerivedData$|build$|dist$|var$|coverage$|tmp$|public$|Carthage$|test-reports$|workspace$)' && continue
     walk "$d" 8 f >"$tmp/files"
     total="$(wc -l <"$tmp/files" | tr -d ' ')"
     [ "$total" -gt 0 ] || continue

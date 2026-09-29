@@ -2,9 +2,13 @@
 # Docs hygiene for the av-dev skills (review of PR #19, points 13 and 15):
 # - skill descriptions have no generic trigger phrases that would start a whole run on a casual
 #   "do it" in a chat;
-# - references and skills keep no names from the projects the plugin was first built on.
+# - no file of the plugin (skills, scripts, tests, fixtures, agents, README) and not its page in
+#   docs/ keeps a name from the projects the plugin was first built on.
 set -u
 SKILLS="$(cd "$(dirname "$0")/../.." && pwd)"
+PLUGIN="$(cd "$SKILLS/.." && pwd)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
 
 ok()   { PASS=$((PASS+1)); }
@@ -22,11 +26,34 @@ for f in "$SKILLS"/*/SKILL.md; do
   done
 done
 
-# --- 2. no leftovers from specific projects in skills and references
-while IFS= read -r hit; do
-  [ -n "$hit" ] && fail "project leftover: ${hit#"$SKILLS"/}"
-done < <(grep -rnE 'mobile-data-layer|mobile-presentation|SELF_CHECK|BOUNDED' "$SKILLS"/*/SKILL.md "$SKILLS"/*/references 2>/dev/null)
-ok
+# --- 2. no leftovers from specific projects anywhere in the plugin
+# The lists are ROT13, so this file does not carry the names it looks for.
+# Names of projects and repos: any case. Markers of an old pipeline: exact case.
+rot13() { printf '%s' "$1" | tr 'A-Za-z' 'N-ZA-Mn-za-m'; }
+names="$(rot13 'asnzvyl|a-snzvyl|abiby|aonmn|a-pbybe|pnepbybe|tnqmrg|jfcbyabgn|yrkqvtvgny|yrtnpl-iraqbef|v18a-thneqvna|zbovyr-qngn-ynlre|zbovyr-cerfragngvba')"
+markers="$(rot13 'FRYS_PURPX|OBHAQRQ')"
+# leftovers DIR... - prints each line with a project name or an old marker
+leftovers() {
+  grep -rnIiE -- "$names" "$@" 2>/dev/null
+  grep -rnIE -- "$markers" "$@" 2>/dev/null
+}
+page="$PLUGIN/../../docs/plugins/$(basename "$PLUGIN").md"
+[ -f "$page" ] || page=""
+hits="$(leftovers "$PLUGIN" ${page:+"$page"})"
+[ -z "$hits" ] && ok || fail "project leftovers:
+$hits"
+# the check finds what it looks for: every name, in any case, in any file type
+i=0
+for n in $(printf '%s' "$names" | tr '|' ' '); do
+  i=$((i + 1)); mkdir -p "$TMP/p$i/sub"
+  printf 'x %s y\n' "$(printf '%s' "$n" | tr 'a-z' 'A-Z')" >"$TMP/p$i/sub/f$i.json"
+  [ -n "$(leftovers "$TMP/p$i")" ] && ok || fail "leftover check misses name $i"
+done
+[ "$i" -eq 13 ] && ok || fail "name list has $i entries, expected 13"
+printf '%s\n' "$(rot13 'OBHAQRQ')" >"$TMP/marker.sh"
+[ -n "$(leftovers "$TMP/marker.sh")" ] && ok || fail "leftover check misses a marker"
+printf 'bounded queue\n' >"$TMP/prose.md"
+[ -z "$(leftovers "$TMP/prose.md")" ] && ok || fail "marker matched ordinary prose"
 
 # --- 3. the adoption grep keeps its Polish words on purpose, and says why
 adoption="$SKILLS/av-setup/references/adoption.md"

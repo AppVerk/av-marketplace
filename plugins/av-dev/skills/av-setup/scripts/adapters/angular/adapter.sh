@@ -103,7 +103,7 @@ status_error() {
 
 EXCL=( -name node_modules -o -name vendor -o -name Pods -o -name build -o -name dist -o -name out-tsc
   -o -name coverage -o -name var -o -name tmp -o -name cache -o -name worktrees -o -name public
-  -o -name legacy-vendors -o -name workspace -o -name '.*' )
+  -o -name workspace -o -name '.*' )
 
 # MARK: path existence
 

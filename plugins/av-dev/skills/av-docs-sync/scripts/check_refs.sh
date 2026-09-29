@@ -237,7 +237,7 @@ fi
     # read outside paths (backtick spans with "/" or ".", link targets and link texts are
     # blanked), so "src/Repository/X.php" or "[OrderRepository](...)" do not count, and
     # "repository" needs a qualifier: other/backend/sibling repo, "innym repozytorium", or a
-    # repo name with "-" or "_" (nfamily-api repository) other than the name of this repo.
+    # repo name with "-" or "_" (billing-service repository) other than the name of this repo.
     function about_other_repo(l, pa, pb,    m, rest, off, a, b, t, i, left, right) {
       m = l; rest = l; off = 0
       while (match(rest, /`[^`]+`/)) {

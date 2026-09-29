@@ -79,7 +79,7 @@ lines_to_json() { jq -R -s -c 'split("\n") | map(select(length > 0))'; }
 secret_path() { av_secret_name "$1" "$root"; }
 
 EXCL=( -name vendor -o -name node_modules -o -name var -o -name cache -o -name worktrees -o -name tmp
-  -o -name legacy-vendors -o -name build -o -name dist -o -name Pods -o -name public -o -name '.*' )
+  -o -name build -o -name dist -o -name Pods -o -name public -o -name '.*' )
 CFG_EXCL=( -name secrets -o -name jwt -o -name cache -o -name '.*' )
 
 # MARK: autoload
