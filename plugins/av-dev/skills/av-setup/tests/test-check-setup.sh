@@ -266,5 +266,62 @@ bash "$CS" --root "$C" --owner >/dev/null; rc=$?
 bash "$CS" --root "$TMP" >/dev/null; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "root without git: code $rc"
 
+# MARK: config fields (moved from gate.sh; they never stop a gate)
+F="$TMP/fields"
+git init -q "$F" && mkdir -p "$F/.ai"
+jq -n '{version: 1, validation: {commands: {ok: {run: "true"}}, gates: {quick: ["ok"]}},
+        agents: {models: {plan: "inherit", implement: "opus", review: "sonnet", verify: "fable"}},
+        git: {commit: "on-request", push: "never"},
+        roles: [{name: "data", skill: "backend-data", order: 1, globs: ["src/api/**", "src/db/*.py", "!src/api/generated/**"]},
+                {name: "ui", skill: "web-ui", order: 2, globs: ["src/ui/**"]}],
+        generatedPaths: ["vendor/**"], unownedPaths: ["scripts/**"]}' >"$F/.ai/good.json"
+out="$TMP/fields.txt"
+bash "$CS" --root "$F" --config "$F/.ai/good.json" --config-only >"$out"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "fields: valid config code $rc: $(cat "$out")"
+hasnt "$out" "SETUP_CONFIG_FIELD" "fields: valid config reported"
+tail -1 "$out" | grep -qE '^CHECKED [0-9]+ ERRORS 0 WARNINGS [0-9]+$' && ok || fail "fields: --config-only summary: $(tail -1 "$out")"
+hasnt "$out" "SETUP_OVERLAY" "fields: --config-only ran the overlay checks"
+field_case() {
+  local filter="$1" expect="$2" desc="$3" r
+  jq "$filter" "$F/.ai/good.json" >"$F/.ai/bad.json"
+  bash "$CS" --root "$F" --config "$F/.ai/bad.json" --config-only >"$out"; r=$?
+  if grep -qF -- "SETUP_CONFIG_FIELD $expect" "$out" && [ "$r" -eq 1 ]; then ok; else fail "fields $desc: code $r, output: $(cat "$out")"; fi
+}
+field_case '.agents.models.verify = "gpt4"' "agents.models.verify: invalid value \"gpt4\"" "model not on the list"
+field_case '.agents.models.implement = "opusplan"' "agents.models.implement: invalid value \"opusplan\"" "opusplan is not a slot model"
+field_case '.agents.models.review = "haiku"' "agents.models.review: a Haiku model cannot do review" "review haiku"
+field_case '.agents.models.review = "claude-haiku-4-5"' "agents.models.review: a Haiku model cannot do review" "review with a full Haiku id"
+field_case '.agents.models.planReview = "haiku"' "agents.models.planReview: a Haiku model cannot do review" "planReview haiku"
+field_case '.agents.models = "opus"' "agents.models: expected an object" "models not an object"
+field_case '.agents.models.review = {"provider": "claude", "model": "opus"}' "agents.models.review: the object form {provider, model, effort} was removed" "object slot"
+field_case '.agents.models.plan = 5' "agents.models.plan: invalid value 5" "slot as a number"
+field_case '.agents.crossVendor = false' "agents.crossVendor: removed with Codex slots" "crossVendor left in the config"
+field_case '.agents.timeoutSec = 3600' "agents.timeoutSec: removed with Codex slots" "timeoutSec left in the config"
+field_case '.git.commit = "always"' "git.commit: invalid value \"always\"" "git.commit"
+field_case '.git.push = "force"' "git.push: invalid value \"force\"" "git.push"
+field_case '.roles[0].globs = ["src/{a,b}/**"]' "roles[0].globs: glob \"src/{a,b}/**\" has a curly brace" "glob with braces"
+field_case '.roles[1].globs = ["!src/ui/legacy/**"]' "roles[1].globs: only exclusions (!); add at least one glob without !" "role with only exclusions"
+field_case '.roles[1].globs = ["src/ui/**", "!"]' "roles[1].globs: exclusion \"!\" has no pattern" "empty exclusion"
+field_case '.roles[1].order = 1.5' "roles[1].order: expected an integer" "fractional order"
+field_case '.roles[0].globs = []' "roles[0].globs: expected a non-empty array" "empty globs"
+field_case '.roles[0].globs = ["a", 3]' "roles[0].globs: element 3 is not a string" "glob not a string"
+field_case 'del(.roles[1].skill)' "roles[1].skill: expected a non-empty string" "skill missing"
+field_case '.roles[0].name = 7' "roles[0].name: expected a non-empty string" "name not a string"
+field_case '.roles = {"a": 1}' "roles: expected an array of objects" "roles not an array"
+field_case '.generatedPaths = "vendor/**"' "generatedPaths: expected an array of strings" "generatedPaths"
+field_case '.unownedPaths = [1]' "unownedPaths: expected an array of strings" "unownedPaths"
+jq '.agents.models = {"plan": "opus", "planReview": "sonnet", "implement": "claude-opus-5-5", "review": "fable", "verify": "claude-haiku-4-5"}' "$F/.ai/good.json" >"$F/.ai/slots.json"
+bash "$CS" --root "$F" --config "$F/.ai/slots.json" --config-only >"$out"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "fields: valid slot models rejected: $(cat "$out")"
+printf '{"agents": {"models": {"review": "haiku"}}}\n' >"$F/.ai/good.json.local"
+bash "$CS" --root "$F" --config "$F/.ai/good.json" --config-only >"$out"; rc=$?
+has "$out" "SETUP_CONFIG_FIELD agents.models.review" "fields: not checked on the effective config"
+bash "$CS" --root "$F" --config "$F/.ai/good.json" --config-only --no-local >"$out"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "fields: --no-local used the override ($rc)"
+rm -f "$F/.ai/good.json.local"
+jq '.agents.models.review = "haiku"' "$F/.ai/good.json" >"$F/.ai/bad.json"
+bash "$CS" --root "$F" --config "$F/.ai/bad.json" --owner src/api/x.py >"$out"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "OWNER src/api/x.py data" "fields: --owner stopped by a field outside roles" || fail "fields: --owner code $rc"
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

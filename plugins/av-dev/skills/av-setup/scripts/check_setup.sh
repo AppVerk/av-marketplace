@@ -4,6 +4,11 @@
 # Output: lines SETUP_<CODE> <details>, then CHECKED n ERRORS e WARNINGS w at the end.
 #   SETUP_CONFIG_MISSING      no config (ERROR)
 #   SETUP_CONFIG_INVALID      config is not valid JSON (ERROR)
+#   SETUP_CONFIG_FIELD        invalid field outside the gates (ERROR): agents.models (a Claude
+#                             model; no Haiku in review or planReview; no object form), removed
+#                             agents keys (crossVendor, timeoutSec), git.commit, git.push, roles,
+#                             generatedPaths, unownedPaths. gate.sh checks only validation,
+#                             paths and requires, so these fields never stop a gate.
 #   SETUP_OVERLAY_MISSING     no overlay for one of the 5 skills (WARNING)
 #   SETUP_OVERLAY_SECTION     overlay without a required section (WARNING)
 #                             English name or Polish alias (references/localization.md)
@@ -44,7 +49,10 @@
 #
 # Usage:
 #   check_setup.sh [--root DIR] [--config FILE] [--no-local]
+#   check_setup.sh [--root DIR] [--config FILE] [--no-local] --config-only
 #   check_setup.sh [--root DIR] [--config FILE] [--no-local] --owner <file>...
+# --config-only: only the config checks (missing, invalid JSON, local override, fields); fast,
+#   for av-implement and av-plan before a run. --owner does not check the fields.
 # Exit code: 0 no ERROR, 1 ERROR found (in --owner: config error), 2 usage error.
 # Requires: bash 3.2+, git, jq, awk.
 
@@ -53,6 +61,7 @@ set -uo pipefail
 root="."
 config=""
 owner_mode=0
+config_only=0
 no_local=0
 owner_files=()
 while [ $# -gt 0 ]; do
@@ -60,8 +69,9 @@ while [ $# -gt 0 ]; do
     --root) root="${2:-}"; shift ;;
     --config) config="${2:-}"; shift ;;
     --owner) owner_mode=1 ;;
+    --config-only) config_only=1 ;;
     --no-local) no_local=1 ;;
-    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
     -*) echo "USAGE unknown option: $1"; exit 2 ;;
     *) if [ "$owner_mode" -eq 1 ]; then owner_files+=("$1"); else echo "USAGE unknown argument: $1"; exit 2; fi ;;
   esac
@@ -120,6 +130,74 @@ if [ "$no_local" -eq 0 ] && [ -f "$team_config.local" ] && [ -f "$config_sh" ]; 
     [ "$owner_mode" -eq 1 ] && { echo "SETUP_CONFIG_INVALID $local_rel"; exit 1; }
     err "CONFIG_INVALID $local_rel"; finish
   fi
+fi
+
+# MARK: config fields (outside validation; gate.sh checks validation, paths and requires)
+
+field_errors() {
+  jq -r '
+    def isstr: type == "string";
+    def strarr: type == "array" and all(.[]; type == "string");
+    def claudemodel: isstr and (IN("inherit", "opus", "sonnet", "haiku", "fable") or test("^claude-[a-z0-9.-]+$"));
+    def haiku: test("^(claude-)?haiku(-|$)");
+    ["inherit", "opus", "sonnet", "haiku", "fable"] as $models
+    | ["on-request", "after-green-gate", "free"] as $commits
+    | ["never", "on-request"] as $pushes
+    | ( if has("agents") and (.agents | type) != "object" then "agents agents: expected an object"
+        elif (.agents | type) == "object" then
+          ( if (.agents | has("models")) and (.agents.models | type) != "object" then "agents agents.models: expected an object"
+            elif (.agents | has("models")) then
+              ( .agents.models | to_entries[] | .key as $k | .value as $v | "agents.models.\($k)" as $p
+                | if ($v | type) == "object" then "agents \($p): the object form {provider, model, effort} was removed with Codex slots; use a Claude model string, e.g. \"opus\""
+                  elif ($v | claudemodel | not) then "agents \($p): invalid value \($v | tojson); allowed: \($models | join(", ")) or claude-<id>"
+                  elif IN($k; "review", "planReview") and ($v | haiku) then "agents \($p): a Haiku model cannot do review; use opus, sonnet, fable or inherit"
+                  else empty end )
+            else empty end ),
+          ( .agents | keys[] | select(IN("crossVendor", "timeoutSec"))
+            | "agents agents.\(.): removed with Codex slots; delete this key" )
+        else empty end ),
+      ( if has("git") and (.git | type) != "object" then "git git: expected an object"
+        elif (.git | type) == "object" then
+          ( if (.git | has("commit")) and (.git.commit as $v | $commits | index([$v]) == null)
+            then "git git.commit: invalid value \(.git.commit | tojson); allowed: \($commits | join(", "))"
+            else empty end ),
+          ( if (.git | has("push")) and (.git.push as $v | $pushes | index([$v]) == null)
+            then "git git.push: invalid value \(.git.push | tojson); allowed: \($pushes | join(", "))"
+            else empty end )
+        else empty end ),
+      ( if has("roles") | not then empty
+        elif (.roles | type) != "array" then "roles roles: expected an array of objects"
+        else
+          .roles | to_entries[] | .value as $r
+          | "roles[\(.key)]" as $p
+          | if ($r | type) != "object" then "roles \($p): expected an object"
+            else
+              ( if ($r.name | isstr | not) or $r.name == "" then "roles \($p).name: expected a non-empty string" else empty end ),
+              ( if ($r.skill | isstr | not) or $r.skill == "" then "roles \($p).skill: expected a non-empty string" else empty end ),
+              ( if ($r.order | type) != "number" or ($r.order | floor) != $r.order then "roles \($p).order: expected an integer" else empty end ),
+              ( if ($r.globs | type) != "array" or ($r.globs | length) == 0 then "roles \($p).globs: expected a non-empty array of strings"
+                else
+                  ( $r.globs[]
+                  | if isstr | not then "roles \($p).globs: element \(tojson) is not a string"
+                    elif test("[{}]") then "roles \($p).globs: glob \(tojson) has a curly brace; list each variant separately"
+                    elif . == "!" then "roles \($p).globs: exclusion \"!\" has no pattern"
+                    else empty end ),
+                  ( if all($r.globs[]; isstr and startswith("!")) then "roles \($p).globs: only exclusions (!); add at least one glob without !" else empty end )
+                end )
+            end
+        end ),
+      ( ("generatedPaths", "unownedPaths") as $k
+        | select(has($k) and (.[$k] | strarr | not))
+        | "roles \($k): expected an array of strings" )
+  ' "$config"
+}
+
+if [ "$owner_mode" -eq 0 ]; then
+  checked=$((checked + 1))
+  while IFS= read -r line; do
+    [ -n "$line" ] && err "CONFIG_FIELD ${line#* }"
+  done < <(field_errors)
+  [ "$config_only" -eq 1 ] && finish
 fi
 
 # rules: kind TAB name TAB glob; roles sorted by order, then by position in the config

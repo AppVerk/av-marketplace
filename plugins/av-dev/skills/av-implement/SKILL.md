@@ -26,7 +26,7 @@ One source of delegation rules for all av-* skills. Slots: `plan`, `planReview`,
 "models": { "plan": "inherit", "implement": "inherit", "review": "opus", "verify": "haiku" }
 ```
 
-A value is `inherit`, `opus`, `sonnet`, `haiku`, `fable` or a full id `claude-<id>`. A missing slot means `inherit`. `planReview` without an entry inherits `review`.
+A value is `inherit`, `opus`, `sonnet`, `haiku`, `fable` or a full id `claude-<id>`. A missing slot means `inherit`. `planReview` without an entry inherits `review`. Before the first slot, check the config fields: `bash <skill-dir>/../av-setup/scripts/check_setup.sh --root <root> --config-only`. A `SETUP_CONFIG_FIELD` error (e.g. Haiku in `review`, a model outside the list): stop with NEEDS_HUMAN and name the field; gates do not check these fields.
 
 Who runs a slot:
 

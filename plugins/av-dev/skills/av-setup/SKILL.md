@@ -165,7 +165,7 @@ Put the whole config into the plan. In step 6, write exactly the same config, wi
 - Put roles into `roles`, and generated files and tools into `generatedPaths` and `unownedPaths`.
 - In ADOPTION, run `scripts/adoption_diff.sh` according to `references/adoption.md`, step 3. The result goes to "Knowledge that gets lost".
 
-Check the proposed config before you show it: save it to `<tmp>/av.config.json` and run `bash <skill-dir>/../av-verify/scripts/gate.sh --root <repo-root> --config <tmp>/av.config.json --list`. Check the roles with the same file: `bash <skill-dir>/scripts/check_setup.sh --root <repo-root> --config <tmp>/av.config.json`. What counts here is `SETUP_ROLE_*` and `SETUP_UNOWNED_DIR`; missing overlays are expected at this stage. Fix errors in the plan. `SETUP_UNOWNED_DIR` counts any tracked, non-empty text file up to 256 KiB outside `docs.root`, top-level dot directories and markdown, whatever its language; put tracked config or data files (e.g. property lists, IDE project files) in `unownedPaths` or `generatedPaths`.
+Check the proposed config before you show it: save it to `<tmp>/av.config.json` and run `bash <skill-dir>/../av-verify/scripts/gate.sh --root <repo-root> --config <tmp>/av.config.json --list` (gates, commands, `requires`). Check the other fields and the roles with the same file: `bash <skill-dir>/scripts/check_setup.sh --root <repo-root> --config <tmp>/av.config.json`. What counts here is `SETUP_CONFIG_FIELD`, `SETUP_ROLE_*` and `SETUP_UNOWNED_DIR`; missing overlays are expected at this stage. Fix errors in the plan. `SETUP_UNOWNED_DIR` counts any tracked, non-empty text file up to 256 KiB outside `docs.root`, top-level dot directories and markdown, whatever its language; put tracked config or data files (e.g. property lists, IDE project files) in `unownedPaths` or `generatedPaths`.
 
 Show the user: the verdict, the decision table in short (action counts plus items that delete or change existing files), the proposed config and, in ADOPTION, the "Knowledge that gets lost" section. Wait for approval. With `--defaults`, do not wait. With `--dry-run`, end here with a report.
 
@@ -173,7 +173,7 @@ Show the user: the verdict, the decision table in short (action counts plus item
 
 Write `.ai/av.config.json` according to `references/config-schema.md`. In REFRESH, keep manually set values and unknown fields.
 
-Do not create or edit the local override `.ai/av.config.json.local`. It is one person's file. In REFRESH, compare the scan with the team config: `gate.sh --list --no-local` and `check_setup.sh --no-local`. When the file exists, list its keys in the report (`config.sh --sources`). A person's decision that does not fit the team (e.g. no Codex CLI) goes to `.local`, not to the team config (`references/config-schema.md`, section "Local override").
+Do not create or edit the local override `.ai/av.config.json.local`. It is one person's file. In REFRESH, compare the scan with the team config: `gate.sh --list --no-local` and `check_setup.sh --no-local`. When the file exists, list its keys in the report (`config.sh --sources`). A person's decision that does not fit the team (e.g. another slot model) goes to `.local`, not to the team config (`references/config-schema.md`, section "Local override").
 
 `requires`: read `<skill-dir>/VERSION`. When the file exists, write `"requires": {"av-dev": ">=<version>"}`. No file means version `dev`: skip the field and note this in the report.
 

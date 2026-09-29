@@ -35,7 +35,7 @@ Example: a person who wants `opus` for plans and `sonnet` for review.
 ```
 
 Rules:
-- Validation (`gate.sh --list`) checks the effective config. A wrong override gives a config error (code 2), e.g. `haiku` in `review`.
+- Validation checks the effective config: `gate.sh --list` the gates, commands and `requires` (code 2), `check_setup.sh` the other fields (`SETUP_CONFIG_FIELD`). A wrong override gives an error, e.g. `haiku` in `review` from `check_setup.sh`.
 - `gate.sh --list` prints `CONFIG_LOCAL` and the overridden keys (`OVERRIDE`, `REMOVE`). The gate prints `CONFIG_LOCAL` and writes `configLocal` into the evidence of each check; `gate.sh --status` shows it. The `av-verify` and `av-implement` reports list the overridden keys, because the result depends on the machine.
 - `--no-local` in `config.sh`, `gate.sh` and `check_setup.sh` skips the override.
 - `av-setup` never creates or edits the `.local` file. It adds it to `.gitignore`. In REFRESH, it compares the scan with the team config (`--no-local`).
@@ -166,7 +166,7 @@ Rules:
 - `baseBranch`: the branch the diff is computed against. `"auto"` means `origin/HEAD`.
 - `branchPattern`: the branch name pattern. `{type}` is one of `branchTypes`, `{TICKET}` is a ticket with a prefix from `ticketPrefixes`, `{slug}` is a short kebab-case description.
 - `commit`: `"on-request"` (default), `"after-green-gate"` or `"free"` (freely on the task branch, never on protected branches). Skills do not commit beyond what this value allows. When sources in the repo conflict, choose `"on-request"` and report the conflict.
-- `push`: `"never"` (default) or `"on-request"`. `gate.sh --list` rejects other `commit` and `push` values.
+- `push`: `"never"` (default) or `"on-request"`. `check_setup.sh` rejects other `commit` and `push` values (`SETUP_CONFIG_FIELD`).
 - `aiSignature`: `false` means no `Co-Authored-By` and no AI signatures in commits.
 
 **validation**
@@ -219,7 +219,7 @@ Commands from the config are the only commands that `av-verify` runs without ask
 - `models`: slots `plan`, `planReview`, `implement`, `review`, `verify`. The value is a Claude model: `inherit` (the session model), `opus`, `sonnet`, `haiku`, `fable` or a full id `claude-<id>`. A missing slot is `inherit`.
   - `planReview` without an entry inherits `review`.
   - `plan`, `implement` and `verify` on `inherit` run in the session. Other slots run on the Agent tool with the `av-slot` (write) or `av-slot-read` (read) definition and the slot model, with the session's permissions. Rules: skill `av-implement`, section "Slots".
-  - `gate.sh --list` rejects other values (code 2), a Haiku model (`haiku`, `claude-haiku-<id>`) in `review` and `planReview`, the old object form `{provider, model, effort}` and the removed keys `crossVendor` and `timeoutSec`. Do not give Haiku to review. A cheap model can falsely confirm correctness. For running commands with an objective exit code, it is enough. In adoption, choose the stronger of two: the model from the old agent's frontmatter or the default from this schema.
+  - `check_setup.sh` rejects (`SETUP_CONFIG_FIELD`; gates are not stopped) other values, a Haiku model (`haiku`, `claude-haiku-<id>`) in `review` and `planReview`, the old object form `{provider, model, effort}` and the removed keys `crossVendor` and `timeoutSec`. Do not give Haiku to review. A cheap model can falsely confirm correctness. For running commands with an objective exit code, it is enough. In adoption, choose the stronger of two: the model from the old agent's frontmatter or the default from this schema.
 
 **integrations**: information for the skills about which tools they may use. Use these category keys, so every repo reads the same: `tracker`, `repoHost`, `ci`, `design`, `board`, `translations`, `errorTracking`, `docsHost`, `mcp` (list of MCP servers). A tool that fits no category gets its own key. Values: a tool name, or `{access, urls, doc}` (below). Secrets never go here.
 - A tool entry is a string (the tool name) or an object with optional fields: `access` (`mcp`, `browser`, `cli` or `api`), `urls` (addresses the skills may open, without credentials in the address) and `doc` (the topic file in the repo docs). Use the object form when the team needs the access method or the addresses; every run then writes the same keys.

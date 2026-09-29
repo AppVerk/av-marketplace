@@ -71,11 +71,16 @@ bash <skill-dir>/scripts/gate.sh --root <repo-root> --gate <gate> --run-id <RUN_
 
 `gate.sh` works on the effective config: `.ai/av.config.json` with the override `.ai/av.config.json.local` (script `scripts/config.sh`). The line `CONFIG_LOCAL <file>` means the override is in use; `--list` also prints its keys (`OVERRIDE`, `REMOVE`). The report then has a line `Local config: <keys>`, because the result depends on the machine. The evidence records it too: each check run with the override has `configLocal`, and `--status` shows `(local override <file>)`. `--no-local` skips the override.
 
-Every mode except `--fingerprint` checks the config. An error is `CONFIG_ERROR <field>: <description>` and code 2. Checked fields:
-- `agents.models.*`: a Claude model (`inherit`, `opus`, `sonnet`, `haiku`, `fable`, `claude-<id>`). `review` and `planReview` cannot be a Haiku model (`haiku` or `claude-haiku-<id>`).
-- `git.commit`: `on-request`, `after-green-gate` or `free`. `git.push`: `never` or `on-request`.
-- `roles`: an array of objects with `name`, `skill` (strings), `order` (integer), `globs` (non-empty array of strings, without `{` and `}`).
-- `generatedPaths`, `unownedPaths`: arrays of strings.
+Every mode except `--fingerprint` checks the fields a gate uses. An error is `CONFIG_ERROR <field>: <description>` and code 2. Checked fields:
+- `validation.commands`: each has `run`; a name uses only letters, digits, `_`, `.` and `-`; `covers` names known commands; `parallel` is a boolean.
+- `validation.gates`: each gate is a non-empty array of known command names.
+- `requires`: an object; `requires.av-dev` in the format `>=X.Y.Z`.
+
+Other fields (`agents`, `git`, `roles`, `generatedPaths`, `unownedPaths`) never stop a gate. `av-setup/scripts/check_setup.sh` checks them (`SETUP_CONFIG_FIELD`; `--config-only` for a quick check).
+
+Result: a gate is PASS only when every selected command has PASS or SKIPPED and at least one has PASS. Only SKIPPED is INCOMPLETE (code 3). An unreadable evidence file is moved aside with a WARNING, and a new one starts; `--status` reports it and returns code 1.
+
+Fingerprint: needs git that can read the repo and a commit. A git error (not a repo, `safe.directory`, a broken index, no commit) gives `GIT_ERROR` and code 2 in `--fingerprint`, `--status` and a gate, never a fingerprint, so no evidence becomes FRESH without git.
 
 The skill version comes from the `VERSION` file in the skill directory. No file means `dev`. `--list` prints the line `AV_DEV <version>`. The config can require a version: `"requires": {"av-dev": ">=0.1.0"}`. Only the `>=X.Y.Z` format is supported.
 - Version `dev`: a `WARNING` that the av-dev version is unknown; the gate keeps running.

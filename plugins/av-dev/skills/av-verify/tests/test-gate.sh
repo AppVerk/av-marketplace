@@ -243,49 +243,71 @@ out="$(bash "$GATE" --config "$good" --list)"; rc=$?
 has "$out" "CONFIG_ERROR" && fail "validation: valid config rejected: $out" || ok
 has "$out" "AV_DEV " && ok || fail "validation: AV_DEV line missing"
 [ "$rc" -eq 0 ] && ok || fail "validation: valid config code $rc"
+# Fields outside validation, paths and requires never stop a gate (review of PR #19):
+# check_setup.sh checks them (test-check-setup.sh).
+jq '.agents.models = {"implement": "opusplan", "review": "haiku"} | .agents.crossVendor = true
+    | .git.commit = "always" | .roles = {"a": 1}' "$good" >"$TMP/fields.json"
+out="$(bash "$GATE" --config "$TMP/fields.json" --list)"; rc=$?
+has "$out" "CONFIG_ERROR" && fail "fields: --list rejects fields outside the gates: $out" || ok
+[ "$rc" -eq 0 ] && ok || fail "fields: --list code $rc"
+out="$(bash "$GATE" --config "$TMP/fields.json" --gate quick --run-id r12)"; rc=$?
+has "$out" "GATE quick PASS" && [ "$rc" -eq 0 ] && ok || fail "fields: a gate stopped by fields outside the gates ($rc): $out"
 bad_case() {
   local filter="$1" expect="$2" desc="$3" o r
   jq "$filter" "$good" >"$TMP/bad.json"
   o="$(bash "$GATE" --config "$TMP/bad.json" --list)"; r=$?
   if has "$o" "CONFIG_ERROR $expect" && [ "$r" -eq 2 ]; then ok; else fail "validation $desc: code $r, output: $o"; fi
 }
-bad_case '.agents.models.verify = "gpt4"' "agents.models.verify: invalid value \"gpt4\"" "model not on the list"
-bad_case '.agents.models.review = "haiku"' "agents.models.review: a Haiku model cannot do review" "review haiku"
-bad_case '.agents.models = "opus"' "agents.models: expected an object" "models not an object"
-bad_case '.git.commit = "always"' "git.commit: invalid value \"always\"" "git.commit"
-bad_case '.git.push = "force"' "git.push: invalid value \"force\"" "git.push"
-bad_case '.roles[0].globs = ["src/{a,b}/**"]' "roles[0].globs: glob \"src/{a,b}/**\" has a curly brace" "glob with braces"
-bad_case '.roles[0].globs = ["!src/{a,b}/**", "src/**"]' "roles[0].globs: glob \"!src/{a,b}/**\" has a curly brace" "exclusion with braces"
-bad_case '.roles[1].globs = ["!src/ui/legacy/**"]' "roles[1].globs: only exclusions (!); add at least one glob without !" "role with only exclusions"
-bad_case '.roles[1].globs = ["src/ui/**", "!"]' "roles[1].globs: exclusion \"!\" has no pattern" "empty exclusion"
-bad_case '.roles[1].order = 1.5' "roles[1].order: expected an integer" "fractional order"
-bad_case '.roles[0].globs = []' "roles[0].globs: expected a non-empty array" "empty globs"
-bad_case '.roles[0].globs = ["a", 3]' "roles[0].globs: element 3 is not a string" "glob not a string"
-bad_case 'del(.roles[1].skill)' "roles[1].skill: expected a non-empty string" "skill missing"
-bad_case '.roles[0].name = 7' "roles[0].name: expected a non-empty string" "name not a string"
-bad_case '.roles = {"a": 1}' "roles: expected an array of objects" "roles not an array"
-bad_case '.generatedPaths = "vendor/**"' "generatedPaths: expected an array of strings" "generatedPaths"
-bad_case '.unownedPaths = [1]' "unownedPaths: expected an array of strings" "unownedPaths"
-bad_case '.agents.models.review = {"provider": "claude", "model": "opus"}' "agents.models.review: the object form {provider, model, effort} was removed" "object slot"
-bad_case '.agents.models.plan = "gpt-6-astra"' "agents.models.plan: invalid value \"gpt-6-astra\"" "non-Claude model"
-bad_case '.agents.models.plan = 5' "agents.models.plan: invalid value 5" "slot as a number"
-bad_case '.agents.models.review = "claude-haiku-4-5"' "agents.models.review: a Haiku model cannot do review" "review with a full Haiku id"
-bad_case '.agents.models.planReview = "haiku"' "agents.models.planReview: a Haiku model cannot do review" "planReview haiku"
-bad_case '.agents.crossVendor = false' "agents.crossVendor: removed with Codex slots" "crossVendor left in the config"
-bad_case '.agents.timeoutSec = 3600' "agents.timeoutSec: removed with Codex slots" "timeoutSec left in the config"
-jq '.agents.models = {"plan": "opus", "planReview": "sonnet", "implement": "inherit", "review": "fable", "verify": "claude-haiku-4-5"}' "$good" >"$TMP/slots.json"
-out="$(bash "$GATE" --config "$TMP/slots.json" --list)"; rc=$?
-has "$out" "CONFIG_ERROR" && fail "validation: valid slot models rejected: $out" || ok
-[ "$rc" -eq 0 ] && ok || fail "validation: slot models config code $rc"
-jq '.agents.models.implement = "claude-opus-5-5"' "$good" >"$TMP/fullid.json"
-out="$(bash "$GATE" --config "$TMP/fullid.json" --list)"; rc=$?
-[ "$rc" -eq 0 ] && ok || fail "validation: full claude model id rejected: $out"
-jq '.agents.models.verify = "gpt4"' "$good" >"$TMP/bad.json"
+bad_case '.requires = "0.1.0"' "requires: expected an object" "requires not an object"
+bad_case '.validation.gates.quick = "ok"' "gate 'quick': expected a non-empty array of command names" "gate as a string"
+bad_case '.validation.gates.quick = []' "gate 'quick': expected a non-empty array of command names" "empty gate"
+bad_case '.validation.gates.quick = [3]' "gate 'quick': element 3 is not a command name" "gate element not a string"
+bad_case '.validation.commands["unit tests"] = {"run": "exit 1"}' "command 'unit tests': name must use only letters, digits, _ . -" "command name with a space"
+jq '.validation.gates.quick = "ok"' "$good" >"$TMP/bad.json"
 out="$(bash "$GATE" --config "$TMP/bad.json" --gate quick --run-id r12)"; rc=$?
-has "$out" "CONFIG_ERROR agents.models.verify" && [ "$rc" -eq 2 ] && ok || fail "validation: gate started despite a bad config ($rc)"
-has "$out" "RUN ok" && fail "validation: command ran despite a bad config" || ok
-out="$(bash "$GATE" --config "$TMP/bad.json" --status --run-id r12)"; rc=$?
-[ "$rc" -eq 2 ] && ok || fail "validation: --status code $rc instead of 2"
+has "$out" "CONFIG_ERROR gate 'quick' must be a non-empty array of command names" && [ "$rc" -eq 2 ] && ok || fail "gate as a string: not a config error ($rc): $out"
+has "$out" "GATE quick PASS" && fail "gate as a string passed" || ok
+jq '.validation.gates.quick = []' "$good" >"$TMP/bad.json"
+out="$(bash "$GATE" --config "$TMP/bad.json" --gate quick --run-id r12)"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "empty gate: code $rc: $out"
+jq '.validation.commands["unit tests"] = {"run": "echo FAILED; exit 1"} | .validation.commands.unit = {"run": "true"}
+    | .validation.commands.tests = {"run": "true"} | .validation.gates.ws = ["unit tests"]' "$good" >"$TMP/ws.json"
+out="$(bash "$GATE" --config "$TMP/ws.json" --gate ws --run-id r12)"; rc=$?
+has "$out" "CONFIG_ERROR invalid command names: \"unit tests\"" && [ "$rc" -eq 2 ] && ok || fail "name with a space: not rejected ($rc): $out"
+has "$out" "RUN unit" && fail "name with a space: split into words and ran 'unit'" || ok
+out="$(bash "$GATE" --config "$TMP/ws.json" --only "unit tests" --run-id r12)"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "--only with a space in the name: code $rc"
+out="$(bash "$GATE" --only " , " --run-id r12)"; rc=$?
+has "$out" "CONFIG_ERROR --only needs at least one command name" && [ "$rc" -eq 2 ] && ok || fail "--only without names: $rc $out"
+jq '.validation.commands.sk = {"run": "exit 2", "notRunExitCodes": [2], "optional": true} | .validation.gates.skg = ["sk"]' "$good" >"$TMP/sk-only.json"
+out="$(bash "$GATE" --config "$TMP/sk-only.json" --gate skg --run-id r12)"; rc=$?
+has "$out" "GATE skg INCOMPLETE" && [ "$rc" -eq 3 ] && ok || fail "only SKIPPED: must not be PASS ($rc): $out"
+mkdir -p .ai/workspace/runs/r12c && printf '{bad' >.ai/workspace/runs/r12c/evidence.json
+out="$(bash "$GATE" --config "$good" --gate quick --run-id r12c)"; rc=$?
+has "$out" "WARNING .ai/workspace/runs/r12c/evidence.json was unreadable; moved to" && ok || fail "corrupt evidence: no warning: $out"
+has "$out" "GATE quick PASS" && jq -e '.checks.ok.status == "PASS"' .ai/workspace/runs/r12c/evidence.json >/dev/null && ok || fail "corrupt evidence: no fresh evidence written: $out"
+ls .ai/workspace/runs/r12c/evidence.json.corrupt.* >/dev/null 2>&1 && ok || fail "corrupt evidence: the old file was not kept"
+printf '{bad' >.ai/workspace/runs/r12c/evidence.json
+out="$(bash "$GATE" --status --run-id r12c)"; rc=$?
+has "$out" "WARNING .ai/workspace/runs/r12c/evidence.json is unreadable" && [ "$rc" -eq 1 ] && ok || fail "corrupt evidence: --status ($rc): $out"
+rm -f .ai/workspace/runs/r12c/evidence.json
+
+# Fingerprint: a git error is an error, never a constant value (review of PR #19)
+out="$(GIT_DIR=/nonexistent bash "$GATE" --fingerprint)"; rc=$?
+has "$out" "GIT_ERROR" && [ "$rc" -eq 2 ] && ok || fail "fingerprint: git error gave a value ($rc): $out"
+has "$out" "FINGERPRINT" && fail "fingerprint: printed with a git error" || ok
+out="$(GIT_DIR=/nonexistent bash "$GATE" --status --run-id r1)"; rc=$?
+has "$out" "GIT_ERROR" && [ "$rc" -eq 2 ] && ok || fail "status: git error gave FRESH ($rc): $out"
+has "$out" "PASS FRESH" && fail "status: FRESH without git" || ok
+out="$(GIT_DIR=/nonexistent bash "$GATE" --gate quick --reuse-fresh --run-id r1)"; rc=$?
+has "$out" "GIT_ERROR" && [ "$rc" -eq 2 ] && ok || fail "reuse: git error did not stop the gate ($rc): $out"
+has "$out" "reused" && fail "reuse: evidence reused without git" || ok
+NOGIT="$TMP/nogit"; mkdir -p "$NOGIT/.ai" && cp .ai/av.config.json "$NOGIT/.ai/"
+out="$(cd "$NOGIT" && bash "$GATE" --root "$NOGIT" --fingerprint)"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "fingerprint outside git: code $rc: $out"
+EMPTY="$TMP/nocommit"; mkdir -p "$EMPTY/.ai" && git -C "$EMPTY" init -q && cp .ai/av.config.json "$EMPTY/.ai/"
+out="$(bash "$GATE" --root "$EMPTY" --fingerprint)"; rc=$?
+has "$out" "GIT_ERROR" && [ "$rc" -eq 2 ] && ok || fail "fingerprint without a commit: $rc $out"
 
 # --- 12e. tree changed during the gate: evidence STALE, code 3 (R10)
 jq '.validation.commands += {"mut": {"run": "echo m >new.txt; echo done"},

@@ -89,8 +89,9 @@ cp "$TMP/good" .ai/av.config.json.local
 out="$(bash "$GATE" --list)"; rc=$?
 has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "gate list: CONFIG_LOCAL missing"
 has "$out" "OVERRIDE agents.models.review" && ok || fail "gate list: OVERRIDE missing"
-has "$out" "CONFIG_ERROR agents.models.review" && ok || fail "gate list: review model not checked after merge"
-[ "$rc" -eq 2 ] && ok || fail "gate list review haiku: code $rc"
+has "$out" "CONFIG_ERROR gate 'quick' points to unknown command 'fixtures'" && ok || fail "gate list: validation not checked after merge: $out"
+[ "$rc" -eq 2 ] && ok || fail "gate list after merge: code $rc"
+has "$out" "CONFIG_ERROR agents" && fail "gate list: agents fields stop gates again (check_setup.sh checks them)" || ok
 out="$(bash "$GATE" --list --no-local)"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "gate list --no-local: code $rc"
 has "$out" "CONFIG_LOCAL" && fail "gate --no-local showed local" || ok

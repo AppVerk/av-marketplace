@@ -27,8 +27,14 @@
 # parallel: true = the command shares no state with others; it starts in the background
 #   when the gate starts, next to the rest. Results, logs and evidence print in gate order.
 #   A command with covers, or covered by another command of the gate, runs in sequence.
-# Exit codes: 0 PASS, 1 FAIL, 2 config error, 3 incomplete (NOT_RUN or STALE:
-#   the tree changed during the gate), 4 another gate of this run is in progress (BUSY).
+# Command names: [A-Za-z0-9_.-]. A gate is a non-empty array of command names.
+# The config check covers validation, paths and requires; other fields (agents, git, roles)
+#   belong to av-setup/scripts/check_setup.sh, so they never stop a gate.
+# Result: PASS only when every selected command has PASS or SKIPPED and at least one PASS.
+# Fingerprint: needs git that can read the repo and a commit (HEAD). A git error is
+#   GIT_ERROR with code 2, never a fingerprint.
+# Exit codes: 0 PASS, 1 FAIL, 2 config or git error, 3 incomplete (NOT_RUN, only SKIPPED, or
+#   STALE: the tree changed during the gate), 4 another gate of this run is in progress (BUSY).
 # Lock: <runs>/<RUN_ID>/.lock with the owner "<label> pid <pid> started <start time>". A lock
 #   whose process is gone (kill -9, a crash, a reboot) or whose pid now belongs to another
 #   process is stale: the next gate takes it over with a WARNING, --status reports it.
@@ -135,22 +141,37 @@ lock_stale() {
   return 1
 }
 
+# fingerprint - code 1 when git cannot read the repo (not a repo, dubious ownership, a broken
+# index) or HEAD has no commit; a failure must never become a hashed value
 fingerprint() {
   local head
-  head="$(git -C "$root" rev-parse HEAD 2>/dev/null || echo none)"
+  head="$(git -C "$root" rev-parse --verify -q HEAD 2>/dev/null)" || return 1
+  git -C "$root" status --porcelain >/dev/null 2>&1 || return 1
   {
     printf '%s\n' "$head"
-    git -C "$root" diff HEAD --binary -- . ":(exclude)$workspace/" ":(exclude).ai/workspace/" 2>/dev/null
+    git -C "$root" diff HEAD --binary -- . ":(exclude)$workspace/" ":(exclude).ai/workspace/" 2>/dev/null || exit 1
     git -C "$root" ls-files --others --exclude-standard -z -- . ":(exclude)$workspace/" ":(exclude).ai/workspace/" 2>/dev/null |
       while IFS= read -r -d '' f; do
         printf '%s\n' "$f"
         [ -f "$root/$f" ] && hash_cmd < "$root/$f"
-      done
+      done || exit 1
   } | hash_cmd | cut -c1-16
 }
 
+# fingerprint_or_die VAR - sets VAR to the fingerprint, or prints GIT_ERROR and exits with 2
+fingerprint_or_die() {
+  local _av_fp
+  if _av_fp="$(fingerprint)" && [ -n "$_av_fp" ]; then
+    printf -v "$1" '%s' "$_av_fp"
+    return 0
+  fi
+  printf 'GIT_ERROR git cannot read %s or it has no commit (check git status and safe.directory); no fingerprint, so no FRESH evidence\n' "$root"
+  exit 2
+}
+
 if [ "$mode" = "fingerprint" ]; then
-  printf 'HEAD %s\nFINGERPRINT %s\n' "$(git -C "$root" rev-parse HEAD 2>/dev/null || echo none)" "$(fingerprint)"
+  fp=""; fingerprint_or_die fp
+  printf 'HEAD %s\nFINGERPRINT %s\n' "$(git -C "$root" rev-parse HEAD)" "$fp"
   exit 0
 fi
 
@@ -181,7 +202,9 @@ runs_base="$(jq -r --arg ws "$workspace" '.paths.runs // ($ws + "/runs")' "$cfg"
 validation_errors() {
   jq -r --arg q "$Q" '
     (.validation.commands // {}) as $c
-    | ( $c | to_entries[]
+    | ( $c | keys[] | select(test("^[A-Za-z0-9_.-]+$") | not)
+        | "command \($q)\(.)\($q): name must use only letters, digits, _ . -" ),
+      ( $c | to_entries[]
         | select((.value | type) != "object" or ((.value.run // "") == ""))
         | "command \($q)\(.key)\($q) has no run field" ),
       ( $c | to_entries[] | select(.value | type == "object") | .key as $k
@@ -190,73 +213,24 @@ validation_errors() {
       ( $c | to_entries[] | select(.value | type == "object")
         | select(.value | has("parallel") and (.parallel | type) != "boolean")
         | "command \($q)\(.key)\($q): field parallel must be true or false" ),
-      ( (.validation.gates // {}) | to_entries[] | .key as $g | .value[]
-        | select($c[.] == null)
-        | "gate \($q)\($g)\($q) points to unknown command \($q)\(.)\($q)" )
+      ( (.validation.gates // {}) | to_entries[] | .key as $g | .value as $v
+        | if ($v | type) != "array" or ($v | length) == 0
+          then "gate \($q)\($g)\($q): expected a non-empty array of command names"
+          else ( $v[] | if type != "string" then "gate \($q)\($g)\($q): element \(tojson) is not a command name"
+                        elif $c[.] == null then "gate \($q)\($g)\($q) points to unknown command \($q)\(.)\($q)"
+                        else empty end )
+          end )
   ' "$cfg"
 }
 
-# MARK: config field validation
+# MARK: config field validation (requires; other fields: av-setup/scripts/check_setup.sh)
 
 schema_errors() {
   jq -r '
-    def isstr: type == "string";
-    def strarr: type == "array" and all(.[]; type == "string");
-    def claudemodel: isstr and (IN("inherit", "opus", "sonnet", "haiku", "fable") or test("^claude-[a-z0-9.-]+$"));
-    def haiku: test("^(claude-)?haiku(-|$)");
-    ["inherit", "opus", "sonnet", "haiku", "fable"] as $models
-    | ["on-request", "after-green-gate", "free"] as $commits
-    | ["never", "on-request"] as $pushes
-    | ( if has("agents") and (.agents | type) != "object" then "agents: expected an object"
-        elif (.agents | type) == "object" then
-          ( if (.agents | has("models")) and (.agents.models | type) != "object" then "agents.models: expected an object"
-            elif (.agents | has("models")) then
-              ( .agents.models | to_entries[] | .key as $k | .value as $v | "agents.models.\($k)" as $p
-                | if ($v | type) == "object" then "\($p): the object form {provider, model, effort} was removed with Codex slots; use a Claude model string, e.g. \"opus\""
-                  elif ($v | claudemodel | not) then "\($p): invalid value \($v | tojson); allowed: \($models | join(", ")) or claude-<id>"
-                  elif IN($k; "review", "planReview") and ($v | haiku) then "\($p): a Haiku model cannot do review; use opus, sonnet, fable or inherit"
-                  else empty end )
-            else empty end ),
-          ( .agents | keys[] | select(IN("crossVendor", "timeoutSec"))
-            | "agents.\(.): removed with Codex slots; delete this key" )
-        else empty end ),
-      ( if has("git") and (.git | type) != "object" then "git: expected an object"
-        elif (.git | type) == "object" then
-          ( if (.git | has("commit")) and (.git.commit as $v | $commits | index([$v]) == null)
-            then "git.commit: invalid value \(.git.commit | tojson); allowed: \($commits | join(", "))"
-            else empty end ),
-          ( if (.git | has("push")) and (.git.push as $v | $pushes | index([$v]) == null)
-            then "git.push: invalid value \(.git.push | tojson); allowed: \($pushes | join(", "))"
-            else empty end )
-        else empty end ),
-      ( if has("roles") | not then empty
-        elif (.roles | type) != "array" then "roles: expected an array of objects"
-        else
-          .roles | to_entries[] | .value as $r
-          | "roles[\(.key)]" as $p
-          | if ($r | type) != "object" then "\($p): expected an object"
-            else
-              ( if ($r.name | isstr | not) or $r.name == "" then "\($p).name: expected a non-empty string" else empty end ),
-              ( if ($r.skill | isstr | not) or $r.skill == "" then "\($p).skill: expected a non-empty string" else empty end ),
-              ( if ($r.order | type) != "number" or ($r.order | floor) != $r.order then "\($p).order: expected an integer" else empty end ),
-              ( if ($r.globs | type) != "array" or ($r.globs | length) == 0 then "\($p).globs: expected a non-empty array of strings"
-                else
-                  ( $r.globs[]
-                  | if isstr | not then "\($p).globs: element \(tojson) is not a string"
-                    elif test("[{}]") then "\($p).globs: glob \(tojson) has a curly brace; list each variant separately"
-                    elif . == "!" then "\($p).globs: exclusion \"!\" has no pattern"
-                    else empty end ),
-                  ( if all($r.globs[]; isstr and startswith("!")) then "\($p).globs: only exclusions (!); add at least one glob without !" else empty end )
-                end )
-            end
-        end ),
-      ( ("generatedPaths", "unownedPaths") as $k
-        | select(has($k) and (.[$k] | strarr | not))
-        | "\($k): expected an array of strings" ),
-      ( if has("requires") and (.requires | type) != "object" then "requires: expected an object"
-        elif (.requires | type) == "object" and (.requires | has("av-dev")) and (.requires["av-dev"] | isstr | not)
-        then "requires.av-dev: expected a string in the format >=X.Y.Z"
-        else empty end )
+    if has("requires") and (.requires | type) != "object" then "requires: expected an object"
+    elif (.requires | type) == "object" and (.requires | has("av-dev")) and (.requires["av-dev"] | type != "string")
+    then "requires.av-dev: expected a string in the format >=X.Y.Z"
+    else empty end
   ' "$cfg"
 }
 
@@ -390,12 +364,17 @@ mkdir -p "$out_dir"
 # MARK: --status
 
 if [ "$mode" = "status" ]; then
-  fp="$(fingerprint)"
+  fp=""; fingerprint_or_die fp
   code=0
   for fname in baseline.json evidence.json; do
     file="$out_dir/$fname"
     [ -f "$file" ] || continue
     label="CHECK"; [ "$fname" = "baseline.json" ] && label="BASELINE"
+    if ! jq -e '.checks | type == "object"' "$file" >/dev/null 2>&1; then
+      printf 'WARNING %s is unreadable; no evidence from it counts\n' "$runs_base/$run_id/$fname"
+      [ "$label" = "CHECK" ] && code=1
+      continue
+    fi
     while IFS=$'\t' read -r name status recstale recfp log rechead reclocal; do
       if [ "$label" = "BASELINE" ]; then
         printf 'BASELINE %s %s baseline head=%s %s\n' "$name" "$status" "$(printf '%s' "$rechead" | cut -c1-8)" "$log"
@@ -435,13 +414,18 @@ if [ -n "$gate_name" ]; then
     config_error "unknown gate '$gate_name'; available: $(jq -r '(.validation.gates // {}) | keys | join(", ")' "$cfg")"
   names_json="$(jq -c --arg g "$gate_name" '.validation.gates[$g]' "$cfg")"
   label="$gate_name"
+  printf '%s' "$names_json" | jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null ||
+    config_error "gate '$gate_name' must be a non-empty array of command names, got $names_json"
 elif [ -n "$only" ]; then
   names_json="$(printf '%s' "$only" | jq -R -c 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')"
   label="$(printf '%s' "$names_json" | jq -r 'join("+")')"
+  [ "$(printf '%s' "$names_json" | jq 'length')" -gt 0 ] || config_error "--only needs at least one command name"
 else
   config_error "pass --gate, --only, --list, --status or --fingerprint"
 fi
 
+bad_names="$(printf '%s' "$names_json" | jq -r '[.[] | select(test("^[A-Za-z0-9_.-]+$") | not)] | map(tojson) | join(", ")')"
+[ -z "$bad_names" ] || config_error "invalid command names: $bad_names; a name uses only letters, digits, _ . -"
 bad="$(jq -r --argjson n "$names_json" '[ $n[] as $x | select((.validation.commands[$x].run // "") == "") | $x ] | join(", ")' "$cfg")"
 if [ -n "$bad" ]; then
   if [ -n "$gate_name" ]; then config_error "gate '$gate_name' has invalid commands: $bad"; fi
@@ -516,7 +500,7 @@ log_prefix="$(printf '%s' "$log_prefix" | tr -c 'A-Za-z0-9._-' '_')"
 records="$out_dir/.records.$$.jsonl"
 : >"$records"
 passed=""
-fp_before="$(fingerprint)"
+fp_before=""; fingerprint_or_die fp_before
 head_before="$(git -C "$root" rev-parse HEAD 2>/dev/null || echo none)"
 
 # Invocation identity is separate from source freshness. Never persist raw env values.
@@ -691,7 +675,8 @@ flush_ready() {
 }
 for pass in fg bg; do
   idx=0
-  for name in $ordered; do
+  while IFS= read -r name <&3; do
+    [ -n "$name" ] || continue
     idx=$((idx + 1))
     case " $bg_started " in
       *" $name "*) [ "$pass" = "bg" ] || continue ;;
@@ -705,10 +690,10 @@ for pass in fg bg; do
       mv "$bg_dir/$idx.part" "$bg_dir/$idx.out"
     fi
     flush_ready
-  done
+  done 3<<<"$ordered"
 done
 
-fp_after="$(fingerprint)"
+fp_after=""; fingerprint_or_die fp_after
 stale=0
 if [ "$fp_after" != "$fp_before" ]; then
   stale=1
@@ -717,6 +702,11 @@ fi
 
 evidence_name="evidence.json"; [ "$baseline" -eq 1 ] && evidence_name="baseline.json"
 evidence="$out_dir/$evidence_name"
+if [ -f "$evidence" ] && ! jq -e '.checks | type == "object"' "$evidence" >/dev/null 2>&1; then
+  corrupt="$evidence.corrupt.$(date +%Y%m%d-%H%M%S)"
+  mv "$evidence" "$corrupt"
+  echo "WARNING $runs_base/$run_id/$evidence_name was unreadable; moved to ${corrupt#"$root"/}, a new file starts"
+fi
 [ -f "$evidence" ] || echo '{"checks":{}}' >"$evidence"
 jq -s --arg head "$head_before" --arg fp "$fp_before" --arg fpa "$fp_after" --argjson stale "$stale" --arg local "$config_local" --slurpfile old "$evidence" '
   reduce .[] as $r ($old[0]; .checks[$r.name] = ($r + {head: $head, fingerprint: $fp}
@@ -725,12 +715,27 @@ jq -s --arg head "$head_before" --arg fp "$fp_before" --arg fpa "$fp_after" --ar
 ' "$records" >"$evidence.tmp" && mv "$evidence.tmp" "$evidence"
 rm -f "$records"
 
-selected_statuses="$(jq -r --argjson n "$names_json" '.checks as $c | [$n[] | $c[.].status] | join(" ")' "$evidence")"
-case " $selected_statuses " in
-  *" FAIL "*) result="FAIL"; code=1 ;;
-  *" NOT_RUN "*) result="INCOMPLETE"; code=3 ;;
-  *) result="PASS"; code=0 ;;
-esac
+# PASS only when every selected command has PASS or SKIPPED and at least one has PASS. An
+# unreadable evidence file, a missing record or an unknown status is FAIL, never PASS.
+selected_statuses="$(jq -r --argjson n "$names_json" '.checks as $c | [$n[] | ($c[.].status // "MISSING")] | join(" ")' "$evidence" 2>/dev/null)" || selected_statuses=""
+result="PASS"; code=0
+if [ -z "$selected_statuses" ]; then
+  echo "WARNING no readable results in $runs_base/$run_id/$evidence_name"
+  result="FAIL"; code=1
+else
+  for st in $selected_statuses; do
+    case "$st" in
+      PASS|SKIPPED) ;;
+      NOT_RUN) [ "$code" -eq 1 ] || { result="INCOMPLETE"; code=3; } ;;
+      FAIL) result="FAIL"; code=1 ;;
+      *) echo "WARNING no valid result for a command of this gate (status $st)"; result="FAIL"; code=1 ;;
+    esac
+  done
+  case " $selected_statuses " in
+    *" PASS "*) ;;
+    *) [ "$code" -eq 0 ] && { result="INCOMPLETE"; code=3; echo "WARNING no command of this gate ran (all SKIPPED)"; } ;;
+  esac
+fi
 if [ "$stale" -eq 1 ] && [ "$code" -ne 1 ]; then
   result="STALE"; code=3
 fi

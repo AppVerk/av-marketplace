@@ -1,9 +1,10 @@
 #!/bin/bash
-# The config examples of the README section "Slot models" pass gate.sh --list, and the local
-# override example in "Config examples" does too (review of PR #19, point 14).
+# The config examples of the README section "Slot models" pass check_setup.sh --config-only
+# (it checks agents; gate.sh does not), and the local override example in "Config examples"
+# does too (review of PR #19, point 14).
 set -u
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-GATE="$DIR/scripts/gate.sh"
+CS="$(cd "$DIR/../av-setup/scripts" && pwd)/check_setup.sh"
 README="$(cd "$DIR/../.." && pwd)/README.md"
 PASS=0; FAIL=0
 TMP="$(mktemp -d)"
@@ -29,8 +30,8 @@ for ex in "$TMP"/example-*.json; do
   agents="$(printf '{%s}' "$(cat "$ex")" | jq -c '.agents' 2>/dev/null)"
   [ -n "$agents" ] && [ "$agents" != "null" ] && ok || { fail "$name: not a valid \"agents\" fragment"; continue; }
   jq -n --argjson a "$agents" '{version: 1, validation: {commands: {ok: {run: "true"}}, gates: {quick: ["ok"]}}, agents: $a}' >"$REPO/.ai/av.config.json"
-  out="$(bash "$GATE" --root "$REPO" --list 2>&1)"; rc=$?
-  [ "$rc" -eq 0 ] && ok || fail "$name: gate.sh --list rejects the example ($rc): $(printf '%s' "$out" | grep CONFIG_ERROR | head -3)"
+  out="$(bash "$CS" --root "$REPO" --config-only 2>&1)"; rc=$?
+  [ "$rc" -eq 0 ] && ok || fail "$name: check_setup.sh rejects the example ($rc): $(printf '%s' "$out" | grep SETUP_CONFIG_FIELD | head -3)"
 done
 
 # The local override example of "Config examples" (a whole JSON object).
@@ -42,8 +43,8 @@ awk '/^## Config examples/ { s = 1; next } s && /^## / { exit }
 agents="$(jq -c '.agents' "$TMP/local.json" 2>/dev/null)"
 if [ -n "$agents" ] && [ "$agents" != "null" ]; then
   jq -n --argjson a "$agents" '{version: 1, validation: {commands: {ok: {run: "true"}}, gates: {quick: ["ok"]}}, agents: $a}' >"$REPO/.ai/av.config.json"
-  out="$(bash "$GATE" --root "$REPO" --list 2>&1)"; rc=$?
-  [ "$rc" -eq 0 ] && ok || fail "local override example: gate.sh --list rejects it ($rc): $(printf '%s' "$out" | grep CONFIG_ERROR | head -3)"
+  out="$(bash "$CS" --root "$REPO" --config-only 2>&1)"; rc=$?
+  [ "$rc" -eq 0 ] && ok || fail "local override example: check_setup.sh rejects it ($rc): $(printf '%s' "$out" | grep SETUP_CONFIG_FIELD | head -3)"
 else
   fail "local override example: no \"agents\" in the README block"
 fi
