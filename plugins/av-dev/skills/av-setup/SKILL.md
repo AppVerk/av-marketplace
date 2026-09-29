@@ -60,7 +60,7 @@ The mode follows from the `ai_setup` fields in the scan result (step 1):
 bash <skill-dir>/scripts/scan.sh <repo-root> > <tmp>/av-scan.json
 ```
 
-`<skill-dir>` is the directory of this SKILL.md file. `<tmp>` is the session working directory (the scratchpad if the environment provides one, otherwise `$TMPDIR`).
+`<skill-dir>` is the directory of this SKILL.md file. The scan reads content only from regular files inside the repo: a symlink out of the repo, to a device or with a secret name is reported by name only. `<tmp>` is the session working directory (the scratchpad if the environment provides one, otherwise `$TMPDIR`).
 
 The result contains: the number of source files, the ecosystems (`stacks[]`: manifest and build files only, no frameworks), commands (from manifests and build files; `scripts/` and shell scripts called from CI, manifests, build files and commands in docs, with exit codes, statuses and `referenced_by` in `scripts_meta`; risk hints per command, CI step and script in `commands.flags`; every CI step with its commands, including reused steps (`ref`) and `steps_total`; commands described in docs), tools (git hooks, versions, coverage thresholds, linter configs), the directory layout, modules with sizes, test directories, the existing AI setup, secret file names, and git (a proposed base branch, ticket prefixes with counts, branch types, share of commits with an AI signature).
 
@@ -96,7 +96,7 @@ Rules for adapter facts:
 - Angular versions are declared (`package.json`), locked (npm lockfile) and installed (key packages in `node_modules`), kept apart.
 - `unknown` entries mark places the files do not settle. Do not fill them by guessing.
 - No adapter infers architecture, layers or modules, and you do not infer them from its facts either.
-- Adapters have no time limit: a hanging adapter stops the scan.
+- The scan, adapters included, has a time limit: `--timeout SEC` or `AV_SCAN_TIMEOUT`, default 600. Over it the scan prints `{"error": "timeout ..."}` with code 3: report it and rerun with a longer limit only when the repo is large.
 
 ## Step 2: Stack facts
 

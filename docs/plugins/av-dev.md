@@ -48,7 +48,7 @@ Stack adapters add facts read from manifests, each with evidence, never conventi
 | Android | `adapters.android` | Gradle builds, modules, plugins, SDK and JVM values, dependencies, version catalogs, wrapper, manifests; values as `declared`, `expression` or `text_candidate` |
 | Angular | `adapters.angular` | Angular presence, declared, locked and installed versions of key packages, `angular.json` projects and targets, test tools |
 
-Every adapter entry has the same `status` (`ok`, `incomplete`, `not_applicable`, `unavailable`, `error`), `ran`, `exit_code`, `reason` and `trigger`. The scan checks the exit code and the output shape. A failed or missing adapter makes the scan incomplete and names the reason in `scan.incomplete`; its facts are dropped. Adapter cuts join `scan.truncated`. Adapters have no time limit.
+Every adapter entry has the same `status` (`ok`, `incomplete`, `not_applicable`, `unavailable`, `error`), `ran`, `exit_code`, `reason` and `trigger`. The scan checks the exit code and the output shape. A failed or missing adapter makes the scan incomplete and names the reason in `scan.incomplete`; its facts are dropped. Adapter cuts join `scan.truncated`. The scan, adapters included, has a time limit (`--timeout`, default 600 s), and it reads content only from regular files inside the repo, never through a symlink out of it or from a secret name.
 
 ## Config
 

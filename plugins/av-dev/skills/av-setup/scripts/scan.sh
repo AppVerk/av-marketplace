@@ -13,6 +13,11 @@
 # scan.truncated as {field, shown, total} and makes scan.complete false. Samples by design
 # (git subjects, headings, top extensions, first lines of version files) are not listed there.
 # Env and key files (.env*, *.pem, *.key, ...) are listed by name only and never read.
+# Content is read only from regular files inside the repo: a symlink is read only when its target
+# (with every directory on the way resolved) is a regular file in the repo; never from a secret
+# name, a device or a FIFO. Other symlinks are reported by their target text only (readlink).
+# Time limit: --timeout SEC or AV_SCAN_TIMEOUT (default 600); over it the scan stops its
+# processes and prints {"error": "timeout ..."} with code 3.
 # adapters: one entry per stack adapter in adapters/<name>/ - php_symfony (composer.json, valid or not),
 # ios_xcode (.xcodeproj, .xcworkspace, Podfile, Package.swift), android (settings.gradle(.kts),
 # build.gradle(.kts)) and angular (angular.json, a package.json that mentions Angular, an invalid package.json).
@@ -22,20 +27,24 @@
 # to scan.incomplete. scan.complete is true only when scan.truncated and scan.incomplete are both empty.
 #
 # Usage:
-#   scan.sh [ROOT] [--pretty]
+#   scan.sh [ROOT] [--pretty] [--timeout SEC]
 # Requires: bash 3.2+, git, jq, find, awk.
 
 set -uo pipefail
 
 root="."
 pretty=0
-for a in "$@"; do
-  case "$a" in
+limit="${AV_SCAN_TIMEOUT:-600}"
+while [ $# -gt 0 ]; do
+  case "$1" in
     --pretty) pretty=1 ;;
+    --timeout) [ $# -ge 2 ] || { echo '{"error":"--timeout needs seconds"}'; exit 2; }; limit="$2"; shift ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
-    *) root="$a" ;;
+    *) root="$1" ;;
   esac
+  shift
 done
+printf '%s' "$limit" | grep -Eq '^[1-9][0-9]*$' || { echo '{"error":"--timeout needs a positive number of seconds"}'; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo '{"error":"jq not found"}'; exit 2; }
 root="$(cd "$root" 2>/dev/null && pwd)" || { echo '{"error":"directory not found"}'; exit 2; }
 secret_names="$(cd "$(dirname "$0")" && pwd)/secret_names.sh"
@@ -45,6 +54,39 @@ secret_names="$(cd "$(dirname "$0")" && pwd)/secret_names.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+root_real="$(cd "$root" && pwd -P)"
+
+# MARK: time limit
+# The watchdog stops the scan's descendants first (bash runs a trap only after the foreground
+# command ends), then signals the scan, which prints the error and exits with 3.
+kill_tree() {
+  local c
+  for c in $(pgrep -P "$1" 2>/dev/null); do
+    [ "$c" = "$2" ] && continue
+    kill_tree "$c" "$2"
+    kill -KILL "$c" 2>/dev/null
+  done
+}
+scan_pid=$$
+(
+  me="$(sh -c 'echo $PPID')"
+  n=0
+  while [ "$n" -lt "$limit" ]; do sleep 1; n=$((n + 1)); kill -0 "$scan_pid" 2>/dev/null || exit 0; done
+  : >"$tmp/timed_out"
+  kill -TERM "$scan_pid" 2>/dev/null
+  kill_tree "$scan_pid" "$me"
+) >/dev/null 2>&1 &
+watchdog=$!
+# fd 9 is the original stdout: a section may run with its stdout redirected to a file
+exec 9>&1
+on_timeout() {
+  [ -f "$tmp/timed_out" ] || exit 143
+  printf '{"error":"timeout after %ss; the scan stopped (a file that never ends or a very large repo); rerun with --timeout"}\n' "$limit" >&9
+  rm -rf "$tmp"
+  exit 3
+}
+trap on_timeout TERM
+trap 'kill "$watchdog" 2>/dev/null; rm -rf "$tmp"' EXIT
 
 MAX_LIST=60
 MAX_REF_SCRIPTS=40
@@ -56,6 +98,24 @@ trunc() { [ "${3:-0}" -gt "${2:-0}" ] && printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>
 
 # secret_path PATH - code 0 for a file whose name looks like a secret (secret_names.sh): never read
 secret_path() { av_secret_name "$1" "$root"; }
+
+# readable PATH - code 0 when the scan may read PATH: it resolves (symlinks followed, the file
+# and its directories) to a regular file inside the repo, and neither PATH nor the target has a
+# secret name. A symlink out of the repo, to a device or a FIFO is never read.
+readable() {
+  local p="$1" t d n=0
+  while [ -L "$p" ] && [ "$n" -lt 20 ]; do
+    t="$(readlink "$p")"
+    case "$t" in /*) p="$t" ;; *) p="$(dirname "$p")/$t" ;; esac
+    n=$((n + 1))
+  done
+  [ ! -L "$p" ] && [ -f "$p" ] || return 1
+  d="$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)" || return 1
+  case "$d/" in "$root_real"/*) ;; *) return 1 ;; esac
+  secret_path "$1" && return 1
+  secret_path "$d/$(basename "$p")" && return 1
+  return 0
+}
 CODE_EXT_RE='\.(swift|m|h|c|cc|cpp|hpp|php|ts|tsx|js|jsx|mjs|cjs|py|rb|kt|kts|java|scala|go|rs|cs|fs|dart|ex|exs|vue|svelte|twig|html|scss|css)$'
 SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData -o -name build
   -o -name dist -o -name .angular -o -name .idea -o -name .vscode -o -name var -o -name coverage -o -name .gradle
@@ -234,7 +294,7 @@ resolve_refs() {
       p="$b/$word"
       case "$word" in *..*) p="$(cd "$(dirname "$p")" 2>/dev/null && printf '%s/%s' "$(pwd)" "$(basename "$p")")" || continue ;; esac
       case "$p" in "$root"/*) ;; *) continue ;; esac
-      [ -f "$p" ] && { found="$p"; break; }
+      readable "$p" && { found="$p"; break; }
     done
     [ -n "$found" ] || continue
     p="$found"
@@ -362,10 +422,11 @@ parse_ci() {
 
 commands_json() {
   local out="{}" pkg dir runner key f kind
-  if [ -f "$root/composer.json" ] && jq -e '.scripts' "$root/composer.json" >/dev/null 2>&1; then
+  if readable "$root/composer.json" && jq -e '.scripts' "$root/composer.json" >/dev/null 2>&1; then
     out="$(jq -c --slurpfile c "$root/composer.json" '. + {composer: ($c[0].scripts | with_entries(select(.key | test("^(post-|pre-|auto-)") | not)))}' <<<"$out")"
   fi
   while IFS= read -r pkg; do
+    readable "$pkg" || continue
     jq -e '.scripts' "$pkg" >/dev/null 2>&1 || continue
     dir="$(dirname "$pkg")"
     runner="npm run"
@@ -375,7 +436,7 @@ commands_json() {
     key="package.json:$(rel "$dir")"; [ "$dir" = "$root" ] && key="package.json:."
     out="$(jq -c --arg k "$key" --arg r "$runner" --slurpfile p "$pkg" '. + {($k): {runner: $r, scripts: $p[0].scripts}}' <<<"$out")"
   done < <({ [ -f "$root/package.json" ] && echo "$root/package.json"; walk "$root" 3 f | grep '/package\.json$'; } | sort -u | tee "$tmp/pkgs")
-  if [ -f "$root/Makefile" ]; then
+  if readable "$root/Makefile"; then
     grep -oE '^[A-Za-z][A-Za-z0-9_-]*:' "$root/Makefile" | tr -d : | sort -u >"$tmp/make"
     trunc commands.make "$MAX_LIST" "$(wc -l <"$tmp/make" | tr -d ' ')"
     out="$(jq -c --argjson m "$(head -$MAX_LIST "$tmp/make" | lines_to_json)" '. + {make: $m}' <<<"$out")"
@@ -384,6 +445,7 @@ commands_json() {
     : >"$tmp/scripts"
     while IFS= read -r f; do
       case "$f" in *.sh|*.bash|*.py|*.rb|*.mjs|*.cjs|*.js|*.ts|*.php) ;; *) continue ;; esac
+      readable "$f" || continue
       jq -n -c --arg file "$(rel "$f")" --arg doc "$(script_doc "$f")" '{file: $file, doc: $doc}' >>"$tmp/scripts"
     done < <(walk "$root/scripts" 2 f | grep -v '/tests\?/' | LC_ALL=C sort)
     trunc commands.scripts_dir "$MAX_LIST" "$(wc -l <"$tmp/scripts" | tr -d ' ')"
@@ -392,7 +454,7 @@ commands_json() {
   : >"$tmp/ci"
   : >"$tmp/refwords"
   for f in "$root/bitbucket-pipelines.yml" "$root/.gitlab-ci.yml" "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
-    [ -f "$f" ] || continue
+    readable "$f" || continue
     case "$f" in */bitbucket-pipelines.yml) kind=bitbucket ;; */.gitlab-ci.yml) kind=gitlab ;; *) kind=github ;; esac
     jq -n -c --arg f "$(rel "$f")" --argjson s "$(parse_ci "$f" "$kind")" '{file: $f} + $s' >>"$tmp/ci"
     ref_words "$(rel "$f")" "$root" <"$f" >>"$tmp/refwords"
@@ -404,16 +466,17 @@ commands_json() {
     LC_ALL=C sort -u >"$tmp/metaall"
   trunc 'commands.scripts_meta (scripts/)' "$MAX_LIST" "$(wc -l <"$tmp/metaall" | tr -d ' ')"
   head -$MAX_LIST "$tmp/metaall" >"$tmp/metafiles"
-  [ -f "$root/composer.json" ] && jq -r '.scripts // {} | .[] | if type == "array" then .[] else . end | strings' "$root/composer.json" 2>/dev/null |
+  readable "$root/composer.json" && jq -r '.scripts // {} | .[] | if type == "array" then .[] else . end | strings' "$root/composer.json" 2>/dev/null |
     ref_words composer.json "$root" >>"$tmp/refwords"
   while IFS= read -r pkg; do
+    readable "$pkg" || continue
     jq -r '.scripts // {} | .[] | strings' "$pkg" 2>/dev/null | ref_words "$(rel "$pkg")" "$(dirname "$pkg")" >>"$tmp/refwords"
   done <"$tmp/pkgs"
-  [ -f "$root/Makefile" ] && grep "^$(printf '\t')" "$root/Makefile" | ref_words Makefile "$root" >>"$tmp/refwords"
+  readable "$root/Makefile" && grep "^$(printf '\t')" "$root/Makefile" | ref_words Makefile "$root" >>"$tmp/refwords"
   : >"$tmp/doccmds"
   local seen=""
   for f in CLAUDE.md .ai/commands.md docs/commands.md README.md Readme.md readme.md; do
-    [ -f "$root/$f" ] || continue
+    readable "$root/$f" || continue
     local dup=0 s2
     for s2 in $seen; do [ "$root/$f" -ef "$root/$s2" ] && dup=1; done
     [ "$dup" -eq 1 ] && continue
@@ -438,8 +501,8 @@ commands_json() {
   done >"$tmp/refextra"
   trunc 'commands.scripts_meta (referenced scripts)' "$MAX_REF_SCRIPTS" "$(wc -l <"$tmp/refextra" | tr -d ' ')"
   head -$MAX_REF_SCRIPTS "$tmp/refextra" >>"$tmp/metafiles"
-  LC_ALL=C sort -u "$tmp/metafiles" | while IFS= read -r f; do script_meta "$f"; done >"$tmp/meta"
-  LC_ALL=C sort -u "$tmp/metafiles" >"$tmp/flagscripts"
+  LC_ALL=C sort -u "$tmp/metafiles" | while IFS= read -r f; do readable "$f" && printf '%s\n' "$f"; done >"$tmp/flagscripts"
+  while IFS= read -r f; do script_meta "$f"; done <"$tmp/flagscripts" >"$tmp/meta"
   if [ -s "$tmp/meta" ]; then
     out="$(jq -c --argjson m "$(jq -s -c . "$tmp/meta")" --argjson r "$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t"))
       | reduce .[] as $x ({}; .[$x[0]] = ((.[$x[0]] // []) + [$x[1]] | unique))' "$tmp/refs")" \
@@ -460,7 +523,7 @@ tooling_json() {
   if [ -d "$root/.husky" ]; then
     : >"$tmp/husky"
     for f in "$root"/.husky/*; do
-      [ -f "$f" ] || continue
+      readable "$f" || continue
       jq -n -c --arg k "$(basename "$f")" --argjson v "$(grep -v '^#' "$f" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//' | awk 'NR <= 30 { print } NR == 31 { print "[truncated: the hook has more lines]" }' | lines_to_json)" '{($k): $v}' >>"$tmp/husky"
     done
     out="$(jq -c --argjson h "$(jq -s -c 'add // {}' "$tmp/husky")" '. + {husky_hooks: $h}' <<<"$out")"
@@ -469,13 +532,13 @@ tooling_json() {
     [ -f "$root/$name" ] && out="$(jq -c --arg n "$name" '. + {lint_staged: $n}' <<<"$out")"
   done
   for name in .nvmrc .node-version .tool-versions .php-version .python-version .xcode-version; do
-    [ -f "$root/$name" ] && out="$(jq -c --arg n "$name" --argjson v "$(head -5 "$root/$name" | lines_to_json)" '.versions[$n] = $v' <<<"$out")"
+    readable "$root/$name" && out="$(jq -c --arg n "$name" --argjson v "$(head -5 "$root/$name" | lines_to_json)" '.versions[$n] = $v' <<<"$out")"
   done
-  if [ -f "$root/package.json" ] && jq -e '.engines' "$root/package.json" >/dev/null 2>&1; then
+  if readable "$root/package.json" && jq -e '.engines' "$root/package.json" >/dev/null 2>&1; then
     out="$(jq -c --slurpfile p "$root/package.json" '.versions.engines = $p[0].engines' <<<"$out")"
   fi
   for name in karma.conf.js jest.config.js jest.config.ts vitest.config.ts phpunit.xml.dist phpunit.xml; do
-    [ -f "$root/$name" ] || continue
+    readable "$root/$name" || continue
     m="$(tr '\n' ' ' <"$root/$name" | grep -oE '(check|coverageThreshold|thresholds)[[:space:]]*[:=][[:space:]]*\{[^}]*\}' | head -1 | tr -s ' ' | cut -c1-200)"
     [ -n "$m" ] && out="$(jq -c --arg n "$name" --arg v "$m" '.coverage_thresholds[$n] = $v' <<<"$out")"
   done
@@ -704,7 +767,8 @@ pipeline_docs_json() {
   local d
   for d in .ai docs .claude; do
     [ -d "$root/$d" ] || continue
-    find -H "$root/$d" \( -path "$root/.ai/workspace" -o -path "$root/.ai/sessions" -o -name node_modules \) -prune \
+    [ -L "$root/$d" ] && continue
+    find "$root/$d" \( -path "$root/.ai/workspace" -o -path "$root/.ai/sessions" -o -name node_modules \) -prune \
       -o -type f -name '*.md' -size -257k -print 2>/dev/null
   done | LC_ALL=C sort >"$tmp/pipeall"
   trunc 'ai_setup.pipeline_docs (files read)' "$PIPELINE_MAX_FILES" "$(wc -l <"$tmp/pipeall" | tr -d ' ')"
@@ -741,9 +805,13 @@ ai_json() {
   for name in CLAUDE.md AGENTS.md GEMINI.md .cursorrules .github/copilot-instructions.md; do
     p="$root/$name"
     [ -e "$p" ] || [ -L "$p" ] || continue
-    entry="$(jq -n -c --argjson l "$(wc -l <"$p" 2>/dev/null | tr -d ' ' || echo 0)" '{lines: $l}')"
+    if readable "$p"; then
+      entry="$(jq -n -c --argjson l "$(wc -l <"$p" 2>/dev/null | tr -d ' ' || echo 0)" '{lines: $l}')"
+    else
+      entry='{"lines":null}'
+    fi
     [ -L "$p" ] && entry="$(jq -c --arg t "$(readlink "$p")" '. + {symlink_to: $t}' <<<"$entry")"
-    if [ "$name" = "CLAUDE.md" ]; then
+    if [ "$name" = "CLAUDE.md" ] && readable "$p"; then
       entry="$(jq -c \
         --argjson h "$(grep -E '^#{1,3} ' "$p" | sed -E 's/^#{1,3} //' | head -40 | lines_to_json)" \
         --argjson i "$(grep -oE '(^|[^A-Za-z0-9_`])@[A-Za-z0-9_./-]+\.md' "$p" | sed -E 's/^[^@]*@//' | head -30 | lines_to_json)" \
@@ -762,7 +830,7 @@ ai_json() {
   docs_md="$(md_list docs '*.md')"
   settings="{}"
   # Only key names and non-secret fields leave jq; values (e.g. the env section) never reach the shell.
-  [ -f "$root/.claude/settings.json" ] && jq empty "$root/.claude/settings.json" 2>/dev/null && settings="$(jq -c '{
+  readable "$root/.claude/settings.json" && jq empty "$root/.claude/settings.json" 2>/dev/null && settings="$(jq -c '{
       settings_keys: keys, hooks: ((.hooks // {}) | keys), deny_rules: ((.permissions.deny // []) | length),
       enabled_mcp: (.enabledMcpjsonServers // null), enabled_plugins: ((.enabledPlugins // {}) | keys),
       co_authored_setting: (if has("includeCoAuthoredBy") then .includeCoAuthoredBy else null end)}' "$root/.claude/settings.json")"
@@ -786,8 +854,8 @@ ai_json() {
   fi
   local mcp gi
   mcp="null"
-  [ -f "$root/.mcp.json" ] && mcp="$(jq -c '(.mcpServers // {}) | keys' "$root/.mcp.json" 2>/dev/null || echo null)"
-  gi="$( [ -f "$root/.gitignore" ] && grep -vE '^[[:space:]]*(#|$)' "$root/.gitignore" | sed 's/[[:space:]]*$//' )"
+  readable "$root/.mcp.json" && mcp="$(jq -c '(.mcpServers // {}) | keys' "$root/.mcp.json" 2>/dev/null || echo null)"
+  gi="$( readable "$root/.gitignore" && grep -vE '^[[:space:]]*(#|$)' "$root/.gitignore" | sed 's/[[:space:]]*$//' )"
   local githooks cother hooks_path
   hooks_path="$(git -C "$root" config core.hooksPath 2>/dev/null)"
   githooks="$( { [ -n "$hooks_path" ] && echo "core.hooksPath=$hooks_path"; for d in .githooks .husky; do [ -d "$root/$d" ] && find "$root/$d" -maxdepth 1 -type f ! -name '*.sample' 2>/dev/null | while IFS= read -r f; do rel "$f"; done; done; } | lines_to_json)"
@@ -826,8 +894,15 @@ secrets_json() {
 # letters with diacritics), otherwise "en"; null without CLAUDE.md or README.
 doc_language() {
   local n
-  n="$(cat "$root/CLAUDE.md" "$root/README.md" "$root/Readme.md" "$root/docs/project-context.md" "$root/.ai/README.md" 2>/dev/null | head -c 60000 | LC_ALL=C tr -cd '\304\305' | wc -c | tr -d ' ')"
-  if [ -z "$(cat "$root/CLAUDE.md" "$root/README.md" "$root/Readme.md" 2>/dev/null | head -c 1)" ]; then echo null
+  local f docs=() main=()
+  for f in CLAUDE.md README.md Readme.md docs/project-context.md .ai/README.md; do
+    readable "$root/$f" || continue
+    docs+=("$root/$f")
+    case "$f" in CLAUDE.md|README.md|Readme.md) main+=("$root/$f") ;; esac
+  done
+  n=0
+  [ "${#docs[@]}" -gt 0 ] && n="$(cat "${docs[@]}" 2>/dev/null | head -c 60000 | LC_ALL=C tr -cd '\304\305' | wc -c | tr -d ' ')"
+  if [ "${#main[@]}" -eq 0 ] || [ -z "$(cat "${main[@]}" 2>/dev/null | head -c 1)" ]; then echo null
   elif [ "$n" -gt 20 ]; then echo '"pl"'
   else echo '"en"'; fi
 }
@@ -898,8 +973,7 @@ EOF_FLAGS
 flag_scripts() {
   local f n
   { cat "$tmp/flagscripts" 2>/dev/null; } | LC_ALL=C sort -u | while IFS= read -r f; do
-    [ -f "$f" ] || continue
-    secret_path "$f" && continue
+    readable "$f" || continue
     n="$(grep -cv '^[[:space:]]*\(#\|//\|$\)' "$f" 2>/dev/null)"
     trunc "commands.flags script $(rel "$f")" "$MAX_SCRIPT_LINES" "${n:-0}"
     jq -n -c --arg p "$(rel "$f")" --argjson l "$(grep -v '^[[:space:]]*\(#\|//\|$\)' "$f" 2>/dev/null | head -$MAX_SCRIPT_LINES | jq -R -s -c 'split("\n") | map(select(length > 0))')" '{path: $p, lines: $l}'

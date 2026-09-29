@@ -535,5 +535,47 @@ scan "$SR" "$TMP/secrets.out"
 want='[".env",".env.local",".netrc",".npmrc",".secrets/deploy.key","app/Firebase/prod/GoogleService-Info.plist","client_secret_42.json","config/secrets/prod/api/jwt.pem","credentials.json","id_ecdsa","id_ed25519","ios/AuthKey_ABC123.p8","ios/Signing/AppStore_Distribution.mobileprovision","ios/Signing/Distribution.p12","keystore.properties","service-account.json"]'
 check "$TMP/secrets.out" ".secret_like_files == $want" "secrets: list differs: $(jq -c .secret_like_files "$TMP/secrets.out" 2>/dev/null)"
 
+# --- review of PR #19: readers never follow symlinks out of the repo, never read secret names,
+# never hang on a device, and the scan has a time limit. Files outside the repo hold marker words.
+OUT="$TMP/outside"; LR="$TMP/links"
+mkdir -p "$OUT/docsdir" "$LR/.husky" "$LR/scripts" && git -C "$LR" init -q
+printf 'fake key\nMARK_KEY_42\n' >"$OUT/id_ed25519"
+printf 'MARK_CREDS_42\n' >"$OUT/creds"
+printf '#!/bin/sh\necho MARK_SCRIPT_42\n' >"$OUT/leak.sh"
+printf '# Pipeline\n## Phase 1\n## Phase 2\nRUN_ID MARK_DOCS_42\n' >"$OUT/docsdir/implementation-pipeline.md"
+ln -s "$OUT/id_ed25519" "$LR/.husky/pre-commit"
+ln -s "$OUT/creds" "$LR/.nvmrc"
+ln -s "$OUT/leak.sh" "$LR/scripts/leak.sh"
+ln -s "$OUT/docsdir" "$LR/docs"
+ln -s /dev/zero "$LR/AGENTS.md"
+printf 'MARK_ENV_42\n' >"$LR/.husky/local.env"
+printf 'npx lint-staged\n' >"$LR/.husky/pre-push"
+printf '# Repo\n' >"$LR/CLAUDE.md"
+t0="$(date +%s)"
+bash "$SCAN" "$LR" --timeout 60 >"$TMP/links.out" 2>"$TMP/links.err"; rc=$?
+took=$(( $(date +%s) - t0 ))
+[ "$rc" -eq 0 ] && [ "$took" -lt 30 ] && ok || fail "links: scan exit $rc after ${took}s (AGENTS.md -> /dev/zero must not hang)"
+grep -qE 'MARK_(KEY|CREDS|SCRIPT|DOCS|ENV)_42' "$TMP/links.out" && fail "links: content read through a symlink or from a secret name: $(grep -oE 'MARK_[A-Z]+_42' "$TMP/links.out" | sort -u | tr '\n' ' ')" || ok
+check "$TMP/links.out" '.ai_setup["AGENTS.md"] | .symlink_to == "/dev/zero" and .lines == null' "links: AGENTS.md -> /dev/zero not reported by name only"
+check "$TMP/links.out" '.tooling.husky_hooks | has("pre-push") and (has("pre-commit") | not) and (has("local.env") | not)' "links: husky hooks read a symlink or a secret: $(jq -c .tooling.husky_hooks "$TMP/links.out" 2>/dev/null)"
+check "$TMP/links.out" '(.tooling.versions // {}) | has(".nvmrc") | not' "links: .nvmrc read through a symlink"
+check "$TMP/links.out" '.secret_like_files | index(".husky/local.env") != null' "links: .husky/local.env not in secret_like_files"
+check "$TMP/links.out" '[.commands.scripts_meta[]?.path, .commands.scripts_dir[]?.file] | index("scripts/leak.sh") == null' "links: a symlinked script was read"
+check "$TMP/links.out" '(.ai_setup.pipeline_docs // []) | length == 0' "links: pipeline docs read through a symlinked docs directory"
+
+# time limit: a git that never answers stops the scan with code 3 and no process left behind
+SLOW="$TMP/slowbin"; mkdir -p "$SLOW"
+REALGIT="$(command -v git)"
+printf '#!/bin/sh\ncase "$*" in *log*) exec sleep 53 ;; esac\nexec "%s" "$@"\n' "$REALGIT" >"$SLOW/git"; chmod +x "$SLOW/git"
+t0="$(date +%s)"
+PATH="$SLOW:$PATH" bash "$SCAN" "$LR" --timeout 3 >"$TMP/slow.out" 2>/dev/null; rc=$?
+took=$(( $(date +%s) - t0 ))
+[ "$rc" -eq 3 ] && [ "$took" -lt 15 ] && ok || fail "timeout: exit $rc after ${took}s"
+check "$TMP/slow.out" '.error | startswith("timeout after 3s")' "timeout: no error JSON: $(head -c 200 "$TMP/slow.out")"
+sleep 1
+pgrep -f "sleep 53" >/dev/null && fail "timeout: a process of the scan is still running" || ok
+bash "$SCAN" "$LR" --timeout 0 >"$TMP/bad.out"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "timeout: 0 accepted ($rc)"
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
