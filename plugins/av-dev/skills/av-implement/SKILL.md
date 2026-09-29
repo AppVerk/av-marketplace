@@ -64,17 +64,23 @@ Rule: an executor from another provider gets safeguards equal to a Claude subage
 The Codex policy of a slot is passed explicitly and wins over `sandbox_mode` in `~/.codex/config.toml`. A Codex CLI without automatic review (`codex exec --approve-for-me`) gives `AGENT_NOT_RUN`: update the CLI, never fall back to `danger-full-access`.
 
 Missing permission: the executor ends its work with `PERMISSION_REQUEST` lines, and `claude -p` returns denials. `agent.sh` returns `AGENT_NEEDS_PERMISSION` with `PERMISSION` lines. Then:
-1. Ask the user (AskUserQuestion): show each request, its reason and the proposed scope of the approval. Options: approve, deny, stop the run. Never grant an approval yourself.
-2. Approval: `agent.sh --slot <slot> --run-id <RUN_ID> --resume <session> --grant <G> [--grant ...] [--label <label>]`. Use the narrowest scope that is enough:
+1. Show each request in your message: what, why, and the proposed scope of the approval. Never grant an approval yourself.
+2. Resume with a grant only through `agent_grant.sh --slot <slot> --run-id <RUN_ID> --resume <session> --grant <G> [--grant ...] [--label <label>]` (`agent.sh` rejects `--resume` and `--grant`). The Claude Code prompt for that command is the human approval: approve runs it, reject is a denial. Use the narrowest scope that is enough:
    - Codex: `dir:<absolute path>` (write outside the repo), `network` (network), `full` (no sandbox, only when the user chose it explicitly). Automatic review already covers most blocked commands in write slots; a grant is the exception.
    - Claude: `tool:<Tool(specifier)>`, e.g. `tool:Bash(scripts/test.sh:*)`, or an MCP tool name.
-   - `agent.sh` rejects grants broader than they look (code 2): `dir:` of `/`, the home directory or its parents, with `.`, `..`, a quote or a control character; `tool:` without a specifier, a list, or a specifier of only `*` and `:` (e.g. `Bash(*)`). Several `dir:` grants are all kept.
-   - Resume only the session from `AGENT_NEEDS_PERMISSION`, with the same slot and label: `agent.sh` checks that its last record in `agents.jsonl` is `NEEDS_PERMISSION`.
-3. Denial: do not resume the session. Assess the partial result. A missing key action is NEEDS_HUMAN with a reason.
+   - `agent_grant.sh` rejects grants broader than they look (code 2): `dir:` of `/`, the home directory or its parents, with `.`, `..`, a quote or a control character; `tool:` without a specifier, a list, or a specifier of only `*` and `:` (e.g. `Bash(*)`). Several `dir:` grants are all kept.
+   - Resume only the session from `AGENT_NEEDS_PERMISSION`, with the same slot and label: `agent_grant.sh` checks that its last record in `agents.jsonl` is `NEEDS_PERMISSION`.
+3. Denial (the prompt was rejected): do not resume the session. Assess the partial result. A missing key action is NEEDS_HUMAN with a reason.
 4. An approval covers one resume. Record it in the run state and in the report (`agent.sh --summary` shows `grants=`).
-5. The resume call with `--grant` shows a Claude Code prompt (guard below). That prompt is the human approval of the exact command; the question in step 1 gives the context.
+5. In `bypassPermissions` nothing would ask, so the hook denies `agent_grant.sh` and gives the command. Ask the user to run it with `!`, then read its result.
 
-Guard: the plugin hook `scripts/agent_guard.sh` (PreToolUse, Bash) lets a plain call of `agent.sh` run without a prompt, also in auto mode. Any call with `--grant`, a variable prefix, `cd`, `&&`, `;`, a pipe or a substitution goes to a Claude Code prompt, so a human confirms every grant. Do not add an allow rule for `agent.sh`: a rule like `agent.sh:*` also matches `--grant full`. Without the plugin (skills in `~/.claude/skills`), the user registers the same hook in `~/.claude/settings.json`: `"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "bash <absolute path>/av-implement/scripts/agent_guard.sh"}]}]}`. If a call is denied: do not work around it with another command and do not change the settings yourself. Stop with NEEDS_HUMAN and give the hook.
+Guard: the plugin hook `scripts/agent_guard.sh` (PreToolUse, Bash) decides on the command text, and allows only what the shell cannot change:
+- `agent.sh` runs without a prompt, also in auto mode, only as `bash <absolute path>/agent.sh <flags>` with plain characters (`[A-Za-z0-9._:/=@+-]`, spaces) and whitelisted flags: `--root` equal to the repo of the working directory, `--slot`, `--run-id`, `--label`, `--prompt-file` of this run's `agents/`, `--access` equal to the slot's default, `--timeout`, `--resolve`, `--summary`, `--dry-run`, and `--record` with its fields. Pass these flags with plain values and no quotes.
+- Anything else goes to a Claude Code prompt: quotes, braces, globs, `\`, `$`, a variable prefix, `cd`, `&&`, `;`, a pipe, `--config`, `--harness`, an unknown flag.
+- `agent_grant.sh` always goes to a prompt, so a human confirms every grant; in `bypassPermissions` the hook denies it.
+- `agent.sh` checks `--root`, `--prompt-file`, `--access` and `--harness` again (code 2), because a hook can be missing.
+
+Do not add an allow rule for `agent.sh`, `agent_grant.sh` or their directory. Without the plugin (skills in `~/.claude/skills`), the user registers the same hook in `~/.claude/settings.json`: `"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "bash <absolute path>/av-implement/scripts/agent_guard.sh"}]}]}`. If a call is denied: do not work around it with another command and do not change the settings yourself. Stop with NEEDS_HUMAN and give the hook.
 
 ## Run state
 

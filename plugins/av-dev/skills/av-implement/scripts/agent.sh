@@ -5,18 +5,23 @@
 # Usage:
 #   agent.sh --slot S --resolve                              who runs the slot and how (via)
 #   agent.sh --slot S --run-id ID --prompt-file P            run the CLI executor and save the result
-#   agent.sh --slot S --run-id ID --resume SESSION --grant G resume a session with a granted permission
+#   agent_grant.sh --slot S --run-id ID --resume SESSION --grant G
+#                                                            resume a session with a permission a human approved
 #   agent.sh --slot S --run-id ID --record --status OK --seconds N --out FILE [--fp-before FP]
 #                                                            record a slot run by the Agent tool
 #   agent.sh --summary --run-id ID                           who ran which slot (for the report)
 # Options:
-#   --root DIR                repo root (default: the repo of the current directory)
+#   --root DIR                repo root (default: the repo of the current directory); when the
+#                             current directory is in a repo, it must be that repo
 #   --config FILE             another config
-#   --access read|write       default write for plan and implement, read for the rest
+#   --access read|write       default write for plan and implement, read for the rest; a read
+#                             slot cannot be widened to write
 #   --label TEXT              result file suffix, e.g. r1, data
-#   --harness claude|codex    current session; default from env (CODEX_THREAD_ID, CLAUDECODE)
+#   --harness claude|codex    current session; default from env (CODEX_THREAD_ID, CLAUDECODE);
+#                             when the env tells the session, a different value is an error
+#   --prompt-file P           must lie in <runs>/<RUN_ID>/agents/
 #   --timeout SEC             default agents.timeoutSec or 3600
-#   --grant G                 repeatable, only with --resume of a session whose last record
+#   --grant G                 agent_grant.sh only; repeatable, only with --resume of a session whose last record
 #                             for this slot, label and provider is NEEDS_PERMISSION.
 #                             claude: tool:Tool(specifier), e.g. tool:Bash(npm test:*), or an
 #                             MCP tool name; no bare tool, no list, no specifier of only * or :.
@@ -41,9 +46,10 @@
 #   The slot policy is passed explicitly and wins over ~/.codex/config.toml.
 #   claude -p with the user's settings (write slot: acceptEdits).
 #   Missing permission: the executor ends with PERMISSION_REQUEST, the script returns
-#   AGENT_NEEDS_PERMISSION (code 5). The orchestrator asks a human and resumes with --grant.
-#   Guard: agent_guard.sh (PreToolUse hook of the plugin) lets a plain call run and
-#   sends any call with --grant to a human prompt.
+#   AGENT_NEEDS_PERMISSION (code 5). The orchestrator resumes through agent_grant.sh, which
+#   the plugin hook never lets run without a human prompt; agent.sh rejects --resume and --grant.
+#   Guard: agent_guard.sh (PreToolUse hook of the plugin) lets a plain call of agent.sh run
+#   only with known flags and plain characters; anything else goes to a human prompt.
 # Result: <runs>/<RUN_ID>/agents/<slot>[-label].md (the executor's last message),
 #   .log (CLI output), an entry in <runs>/<RUN_ID>/agents.jsonl.
 # Read access is a rule in the prompt plus a check after the fact, not a sandbox: a tree
@@ -135,10 +141,31 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# MARK: entry point
+
+# grant_entry: 1 when agent_grant.sh sourced this script (its physical path). Only that entry
+# point resumes a session with a grant; the plugin hook always asks a human before it runs.
+grant_entry=0
+if [ "${#BASH_SOURCE[@]}" -ge 2 ]; then
+  entry="${BASH_SOURCE[1]}"
+  entry_real="$(cd "$(dirname "$entry")" 2>/dev/null && pwd -P)/$(basename "$entry")"
+  [ "$entry_real" = "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/agent_grant.sh" ] && grant_entry=1
+fi
+if [ "$grant_entry" -eq 1 ]; then
+  [ "$mode" = "run" ] && [ -n "$resume_session" ] && [ "${#grants[@]}" -gt 0 ] ||
+    usage_error "agent_grant.sh only resumes a session: --slot S --run-id ID --resume SESSION --grant G"
+elif [ -n "$resume_session" ] || [ "${#grants[@]}" -gt 0 ]; then
+  usage_error "--resume and --grant go through agent_grant.sh, which always asks a human; agent.sh does not accept them"
+fi
+
 if [ -z "$root" ]; then
   root="$(git rev-parse --show-toplevel 2>/dev/null)" || usage_error "not in a git repo; pass --root"
 fi
 root="$(cd "$root" && pwd)" || usage_error "directory not found: $root"
+cwd_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$cwd_root" ] && [ "$(cd "$cwd_root" && pwd -P)" != "$(cd "$root" && pwd -P)" ]; then
+  usage_error "--root $root is not the repo of the current directory ($cwd_root); run agent.sh from the repo it works on"
+fi
 cfg="${config_arg:-$root/.ai/av.config.json}"
 [ -f "$cfg" ] || usage_error "config not found: $cfg; run the av-setup skill"
 team_cfg="$cfg"
@@ -196,17 +223,23 @@ provider="$(printf '%s' "$slot_json" | jq -r .provider)"
 model="$(printf '%s' "$slot_json" | jq -r .model)"
 effort="$(printf '%s' "$slot_json" | jq -r .effort)"
 
+if [ -n "${CODEX_THREAD_ID:-}${CODEX_SANDBOX:-}" ]; then detected_harness="codex"
+elif [ -n "${CLAUDECODE:-}" ]; then detected_harness="claude"
+else detected_harness="unknown"; fi
 if [ -z "$harness" ]; then
-  if [ -n "${CODEX_THREAD_ID:-}${CODEX_SANDBOX:-}" ]; then harness="codex"
-  elif [ -n "${CLAUDECODE:-}" ]; then harness="claude"
-  else harness="unknown"; fi
+  harness="$detected_harness"
+elif [ "$detected_harness" != "unknown" ] && [ "$harness" != "$detected_harness" ]; then
+  usage_error "--harness $harness does not match this session ($detected_harness)"
 fi
 case "$harness" in claude|codex|unknown) ;; *) usage_error "--harness: claude or codex" ;; esac
 
-if [ -z "$access" ]; then
-  case "$slot" in plan|implement) access="write" ;; *) access="read" ;; esac
-fi
+default_access="read"
+case "$slot" in plan|implement) default_access="write" ;; esac
+[ -n "$access" ] || access="$default_access"
 case "$access" in read|write) ;; *) usage_error "--access: read or write" ;; esac
+if [ "$access" = "write" ] && [ "$default_access" = "read" ]; then
+  usage_error "--access write would widen the read slot $slot; a read slot stays read-only"
+fi
 
 subagent=""
 if [ "${AV_AGENT_SLOT:-}" = "$slot" ]; then
@@ -321,6 +354,24 @@ else
   [ -n "$prompt_file" ] && [ -f "$prompt_file" ] || usage_error "prompt file not found: ${prompt_file:-<empty>}"
 fi
 [ -z "$prompt_file" ] || [ -f "$prompt_file" ] || usage_error "prompt file not found: $prompt_file"
+# real_file PATH - PATH with every symlink resolved, the file itself included (no readlink -f)
+real_file() {
+  local f="$1" t n=0
+  while [ -L "$f" ] && [ "$n" -lt 40 ]; do
+    t="$(readlink "$f")"
+    case "$t" in /*) f="$t" ;; *) f="$(dirname "$f")/$t" ;; esac
+    n=$((n + 1))
+  done
+  printf '%s/%s' "$(cd "$(dirname "$f")" 2>/dev/null && pwd -P)" "$(basename "$f")"
+}
+if [ -n "$prompt_file" ]; then
+  prompt_real="$(real_file "$prompt_file")"
+  mkdir -p "$agents_dir" || usage_error "cannot create $agents_dir"
+  case "$prompt_real" in
+    "$(cd "$agents_dir" && pwd -P)"/*) ;;
+    *) usage_error "--prompt-file must lie in $agents_dir (the tasks of this run), got $prompt_file" ;;
+  esac
+fi
 
 limit="${timeout_arg:-$(jq -r '.agents.timeoutSec // empty' "$cfg")}"
 limit="${limit:-$DEFAULT_TIMEOUT}"

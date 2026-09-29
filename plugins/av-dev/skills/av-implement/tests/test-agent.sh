@@ -3,6 +3,7 @@
 # Replaces the claude and codex CLIs with fakes that record arguments, env and prompt.
 set -u
 AGENT="$(cd "$(dirname "$0")/.." && pwd)/scripts/agent.sh"
+GRANT="$(dirname "$AGENT")/agent_grant.sh"
 GATE="$(cd "$(dirname "$0")/../.." && pwd)/av-verify/scripts/gate.sh"
 AGENT_DEFS="$(cd "$(dirname "$0")/.." && pwd)/agents"
 [ -d "$AGENT_DEFS" ] || AGENT_DEFS="$(cd "$(dirname "$0")/../../.." && pwd)/agents"
@@ -92,6 +93,8 @@ cat >.ai/av.config.json <<'EOF'
 EOF
 git add -A && git commit -qm init
 echo "Review the run." >"$TMP/prompt.md"
+# pf RUN_ID - the task file of a run: agent.sh accepts a --prompt-file only in <runs>/<RUN_ID>/agents/
+pf() { mkdir -p "$REPO/.ai/workspace/runs/$1/agents" && cp "$TMP/prompt.md" "$REPO/.ai/workspace/runs/$1/agents/task.md" && printf '%s' "$REPO/.ai/workspace/runs/$1/agents/task.md"; }
 
 # --- 0. help prints the whole header
 out="$(bash "$AGENT" --help)"
@@ -120,7 +123,7 @@ out="$(AV_AGENTS_DIR="$TMP/none" bash "$LONE/av-implement/scripts/agent.sh" --sl
 has "$out" "copy the av-slot-*.md files from the agents/ directory of the av-dev plugin into $TMP/none/" && ok || fail "resolve: hint without an agents directory: $out"
 out="$(bash "$AGENT" --slot verify --resolve)"
 has "$out" "local=yes via=session" && ok || fail "resolve verify local: $out"
-out="$(bash "$AGENT" --slot implement --resolve --harness codex)"
+out="$(CODEX_THREAD_ID=t bash "$AGENT" --slot implement --resolve)"
 has "$out" "via=agent.sh" && ok || fail "resolve: claude in a codex session should go through agent.sh: $out"
 out="$(bash "$AGENT" --slot missing --resolve)"
 has "$out" "provider=claude model=inherit effort=inherit" && ok || fail "resolve missing slot: $out"
@@ -133,7 +136,7 @@ out="$(bash "$AGENT" --config "$TMP/inh.json" --slot planReview --resolve)"
 has "$out" "provider=codex model=x" && ok || fail "resolve: planReview does not inherit review: $out"
 
 # --- 2. codex: arguments, user sandbox, env, prompt, result
-out="$(bash "$AGENT" --slot review --run-id r1 --prompt-file "$TMP/prompt.md" --label r1)"; rc=$?
+out="$(bash "$AGENT" --slot review --run-id r1 --prompt-file "$(pf r1)" --label r1)"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "codex: code $rc: $out"
 has "$out" "AGENT_OK review-r1" && has "$out" "actual=gpt-6-astra" && ok || fail "codex: AGENT_OK missing: $out"
 args="$(cat "$TMP/codex.args")"
@@ -152,15 +155,15 @@ has "$(cat .ai/workspace/runs/r1/agents/review-r1.md)" "APPROVED: codex result" 
 rec="$(tail -n 1 .ai/workspace/runs/r1/agents.jsonl)"
 [ "$(printf '%s' "$rec" | jq -r '[.slot,.label,.provider,.model,.effort,.status,.actual_effort,.session,.via,.sandbox] | join(" ")')" = "review r1 codex gpt-6-astra xhigh OK xhigh s-123 agent.sh read-only" ] && ok || fail "codex: wrong agents.jsonl entry: $rec"
 printf 'sandbox_mode = "danger-full-access"\n' >"$TMP/codex-home/config.toml"
-bash "$AGENT" --slot review --run-id r1 --prompt-file "$TMP/prompt.md" --label cfg >/dev/null
+bash "$AGENT" --slot review --run-id r1 --prompt-file "$(pf r1)" --label cfg >/dev/null
 has "$(cat "$TMP/codex.args")" 'sandbox_mode="read-only"' && ok || fail "codex: danger-full-access from the user config reaches a read slot"
-bash "$AGENT" --slot plan --run-id r1 --prompt-file "$TMP/prompt.md" --label cfg >/dev/null
+bash "$AGENT" --slot plan --run-id r1 --prompt-file "$(pf r1)" --label cfg >/dev/null
 args="$(cat "$TMP/codex.args")"
 has "$args" 'sandbox_mode="workspace-write"' && has "$args" 'approvals_reviewer="auto_review"' && ok || fail "codex: danger-full-access from the user config reaches a write slot: $args"
 : >"$TMP/codex-home/config.toml"
 
 # --- 2b. codex write slot and verify: workspace-write with automatic review
-out="$(bash "$AGENT" --slot plan --run-id r8 --prompt-file "$TMP/prompt.md")"; rc=$?
+out="$(bash "$AGENT" --slot plan --run-id r8 --prompt-file "$(pf r8)")"; rc=$?
 [ "$rc" -eq 0 ] && has "$out" "access=write harness=claude via=agent.sh sandbox=auto-review" && ok || fail "codex write: $rc $out"
 args="$(cat "$TMP/codex.args")"
 has "$args" 'sandbox_mode="workspace-write"' && has "$args" 'approval_policy="on-request"' && has "$args" 'approvals_reviewer="auto_review"' && ok || fail "codex write: auto review missing: $args"
@@ -171,21 +174,21 @@ has "$p" "require_escalated" && has "$p" "automatic review decides" && ok || fai
 [ "$(tail -n 1 .ai/workspace/runs/r8/agents.jsonl | jq -r .sandbox)" = "auto-review" ] && ok || fail "codex write: sandbox not recorded"
 has "$(bash "$AGENT" --summary --run-id r8)" "sandbox=auto-review" && ok || fail "codex write: summary without sandbox"
 jq '.agents.models.verify = {"provider":"codex","model":"gpt-6-astra"}' .ai/av.config.json >"$TMP/verify.json"
-out="$(bash "$AGENT" --config "$TMP/verify.json" --slot verify --run-id r8 --prompt-file "$TMP/prompt.md")"; rc=$?
+out="$(bash "$AGENT" --config "$TMP/verify.json" --slot verify --run-id r8 --prompt-file "$(pf r8)")"; rc=$?
 [ "$rc" -eq 0 ] && has "$out" "access=read" && has "$out" "sandbox=auto-review" && ok || fail "codex verify: gates need escalation: $rc $out"
 rm -f "$TMP/codex.args"
-out="$(FAKE_NO_AUTO=1 bash "$AGENT" --slot plan --run-id r8 --prompt-file "$TMP/prompt.md" --label old)"; rc=$?
+out="$(FAKE_NO_AUTO=1 bash "$AGENT" --slot plan --run-id r8 --prompt-file "$(pf r8)" --label old)"; rc=$?
 [ "$rc" -eq 3 ] && has "$out" "AGENT_NOT_RUN plan-old codex CLI has no automatic review" && ok || fail "codex without auto review: $rc $out"
 [ -f "$TMP/codex.args" ] && fail "codex without auto review: CLI was run" || ok
 [ "$(tail -n 1 .ai/workspace/runs/r8/agents.jsonl | jq -r '.status + " " + .sandbox')" = "NOT_RUN auto-review" ] && ok || fail "codex without auto review: wrong entry"
 
 # --- 3. codex asks for a permission: NEEDS_PERMISSION, then resume with grant
-out="$(FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r6 --prompt-file "$TMP/prompt.md")"; rc=$?
+out="$(FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r6 --prompt-file "$(pf r6)")"; rc=$?
 [ "$rc" -eq 5 ] && ok || fail "perm codex: code $rc: $out"
 has "$out" "AGENT_NEEDS_PERMISSION plan" && has "$out" "session=s-123" && ok || fail "perm codex: status missing: $out"
 has "$out" "PERMISSION npm run e2e | run the tests | no evidence" && ok || fail "perm codex: request missing: $out"
 [ "$(tail -n 1 .ai/workspace/runs/r6/agents.jsonl | jq -r '.status + " " + (.permission_requests | length | tostring)')" = "NEEDS_PERMISSION 1" ] && ok || fail "perm codex: wrong entry"
-out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant network --grant dir:/opt/cache)"; rc=$?
+out="$(bash "$GRANT" --slot plan --run-id r6 --resume s-123 --grant network --grant dir:/opt/cache)"; rc=$?
 [ "$rc" -eq 0 ] && has "$out" "RESUMING s-123 grants: network dir:/opt/cache" && ok || fail "resume codex: $rc $out"
 args="$(cat "$TMP/codex.args")"
 has "$args" "resume" && has "$args" "s-123" && ok || fail "resume codex: exec resume missing: $args"
@@ -194,34 +197,34 @@ has "$(cat "$TMP/codex.prompt")" "human approval for: network dir:/opt/cache" &&
 rec="$(tail -n 1 .ai/workspace/runs/r6/agents.jsonl)"
 [ "$(printf '%s' "$rec" | jq -r '.status + " " + .resumed_from + " " + (.grants | join(","))')" = "OK s-123 network,dir:/opt/cache" ] && ok || fail "resume codex: wrong entry: $rec"
 has "$(cat .ai/workspace/runs/r6/agents/plan.log)" "==== resume s-123" && ok || fail "resume codex: log overwritten"
-out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant full)"; rc=$?
+out="$(bash "$GRANT" --slot plan --run-id r6 --resume s-123 --grant full)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "no pending permission request of slot plan (codex)" && has "$out" "last status: OK" && ok || fail "resume of a finished session: $rc $out"
-FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r6 --prompt-file "$TMP/prompt.md" >/dev/null
-out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant full)"
+FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r6 --prompt-file "$(pf r6)" >/dev/null
+out="$(bash "$GRANT" --slot plan --run-id r6 --resume s-123 --grant full)"
 args="$(cat "$TMP/codex.args")"
 has "$args" 'sandbox_mode="danger-full-access"' && ok || fail "resume codex full: $out"
 [ "$(printf '%s\n' "$args" | grep -n 'sandbox_mode=' | tail -n 1 | cut -d: -f2-)" = 'sandbox_mode="danger-full-access"' ] && ok || fail "resume codex full: the grant is not the last sandbox_mode: $args"
 
 # --- 4. claude through agent.sh: permission denial, resume with a rule
-out="$(FAKE_DENY=1 bash "$AGENT" --slot implement --run-id r7 --prompt-file "$TMP/prompt.md" --harness codex)"; rc=$?
+out="$(CODEX_THREAD_ID=t FAKE_DENY=1 bash "$AGENT" --slot implement --run-id r7 --prompt-file "$(pf r7)")"; rc=$?
 [ "$rc" -eq 5 ] && has "$out" "PERMISSION claude denial: Bash: npm test -- src/orders/list.test.ts" && ok || fail "perm claude: $rc $out"
 args="$(cat "$TMP/claude.args")"
 has "$args" "acceptEdits" && ok || fail "claude write: acceptEdits missing: $args"
 has "$args" "bypassPermissions" && fail "claude: bypasses permissions" || ok
 has "$args" "--effort" && has "$args" "xhigh" && ok || fail "claude: effort missing"
-out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant 'tool:Bash(npm test:*)' --harness codex)"; rc=$?
+out="$(CODEX_THREAD_ID=t bash "$GRANT" --slot implement --run-id r7 --resume c-1 --grant 'tool:Bash(npm test:*)')"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "resume claude: $rc $out"
 args="$(cat "$TMP/claude.args")"
 has "$args" "--resume" && has "$args" "c-1" && has "$args" "Bash(npm test:*)" && ok || fail "resume claude: $args"
-out="$(bash "$AGENT" --slot planReview --run-id r7 --prompt-file "$TMP/prompt.md" --harness codex)"
+out="$(CODEX_THREAD_ID=t bash "$AGENT" --slot planReview --run-id r7 --prompt-file "$(pf r7)")"
 args="$(cat "$TMP/claude.args")"
 has "$args" "acceptEdits" && fail "claude read: acceptEdits in a read slot" || ok
 bad_tool() {  # bad_tool <expected text> <rule>
   rm -f "$TMP/claude.args"
-  out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant "tool:$2" --harness codex)"; rc=$?
+  out="$(CODEX_THREAD_ID=t bash "$GRANT" --slot implement --run-id r7 --resume c-1 --grant "tool:$2")"; rc=$?
   [ "$rc" -eq 2 ] && has "$out" "$1" && [ ! -f "$TMP/claude.args" ] && ok || fail "grant tool:$2: expected '$1', got $rc: $out"
 }
-FAKE_DENY=1 bash "$AGENT" --slot implement --run-id r7 --prompt-file "$TMP/prompt.md" --harness codex >/dev/null
+CODEX_THREAD_ID=t FAKE_DENY=1 bash "$AGENT" --slot implement --run-id r7 --prompt-file "$(pf r7)" >/dev/null
 bad_tool "needs one rule Tool(specifier)" "Bash"
 bad_tool "needs one rule Tool(specifier)" "Edit"
 bad_tool "needs one rule Tool(specifier)" "Bash,Edit"
@@ -233,11 +236,11 @@ bad_tool "allows everything" "Bash(:*)"
 bad_tool "allows everything" "Edit(**)"
 bad_tool "allows everything" "Bash( * )"
 bad_tool "invalid MCP tool name" "mcp__srv__x;y"
-out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant tool:mcp__github__get_issue --harness codex)"; rc=$?
+out="$(CODEX_THREAD_ID=t bash "$GRANT" --slot implement --run-id r7 --resume c-1 --grant tool:mcp__github__get_issue)"; rc=$?
 [ "$rc" -eq 0 ] && has "$(cat "$TMP/claude.args")" "mcp__github__get_issue" && ok || fail "grant MCP tool: $rc $out"
-out="$(bash "$AGENT" --slot implement --run-id r7 --resume c-1 --grant network --harness codex)"; rc=$?
+out="$(CODEX_THREAD_ID=t bash "$GRANT" --slot implement --run-id r7 --resume c-1 --grant network)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "invalid --grant 'network' for claude" && ok || fail "wrong grant for claude: $rc $out"
-out="$(bash "$AGENT" --slot plan --run-id r7 --resume s-1 --grant dir:rel)"; rc=$?
+out="$(bash "$GRANT" --slot plan --run-id r7 --resume s-1 --grant dir:rel)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "needs an absolute path" && ok || fail "grant relative dir: $rc $out"
 
 # --- 4b. grants are as narrow as they look
@@ -246,7 +249,7 @@ bad_grant() {  # bad_grant <expected text> <grant...>: code 2 with the message, 
   local a=() g
   for g in "$@"; do a+=(--grant "$g"); done
   rm -f "$TMP/codex.args" "$TMP/claude.args"
-  out="$(bash "$AGENT" --slot plan --run-id r9 --resume s-9 "${a[@]}")"; rc=$?
+  out="$(bash "$GRANT" --slot plan --run-id r9 --resume s-9 "${a[@]}")"; rc=$?
   [ "$rc" -eq 2 ] && has "$out" "$want" && [ ! -f "$TMP/codex.args" ] && ok || fail "grant $*: expected '$want', got $rc: $out"
 }
 bad_grant "the whole disk" "dir:/"
@@ -267,53 +270,107 @@ HOME="$HOME_FOR_TEST" bad_grant "contains the home directory" "dir:$home_parent"
 bad_grant "needs an absolute path" "dir:"
 mkdir -p "$TMP/grant-a" "$TMP/grant-b"
 ln -s "$TMP/grant-a" "$TMP/grant-link"
-FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r9 --prompt-file "$TMP/prompt.md" >/dev/null
-out="$(bash "$AGENT" --slot plan --run-id r9 --resume s-123 --grant "dir:$TMP/grant-link/" --grant "dir:$TMP/grant-b" --grant "dir:/opt/cache" --grant network)"; rc=$?
+FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r9 --prompt-file "$(pf r9)" >/dev/null
+out="$(bash "$GRANT" --slot plan --run-id r9 --resume s-123 --grant "dir:$TMP/grant-link/" --grant "dir:$TMP/grant-b" --grant "dir:/opt/cache" --grant network)"; rc=$?
 real_a="$(cd "$TMP/grant-a" && pwd -P)"; real_b="$(cd "$TMP/grant-b" && pwd -P)"
 roots="$(grep 'writable_roots=' "$TMP/codex.args")"
 [ "$rc" -eq 0 ] && [ "$(grep -c 'writable_roots=' "$TMP/codex.args")" -eq 1 ] && ok || fail "several dir: grants: one setting expected: $rc $(cat "$TMP/codex.args")"
 has "$roots" "\"$real_a\"" && has "$roots" "\"$real_b\"" && has "$roots" '"/opt/cache"' && ok || fail "several dir: grants: roots missing (symlink resolved, missing dir kept): $roots"
 printf '%s' "${roots#*=}" | jq -e 'type == "array" and length == 3' >/dev/null && ok || fail "several dir: grants: not a JSON/TOML array: $roots"
-out="$(bash "$AGENT" --slot plan --run-id r7 --resume s-unknown --grant network)"; rc=$?
+out="$(bash "$GRANT" --slot plan --run-id r7 --resume s-unknown --grant network)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "last status: none" && ok || fail "resume of an unknown session: $rc $out"
-out="$(bash "$AGENT" --slot review --run-id r6 --resume s-123 --grant network)"; rc=$?
+out="$(bash "$GRANT" --slot review --run-id r6 --resume s-123 --grant network)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "no pending permission request of slot review" && ok || fail "resume with another slot: $rc $out"
-out="$(bash "$AGENT" --slot plan --run-id r6 --resume s-123 --grant network --label x)"; rc=$?
+out="$(bash "$GRANT" --slot plan --run-id r6 --resume s-123 --grant network --label x)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "slot plan-x" && ok || fail "resume with another label: $rc $out"
-out="$(bash "$AGENT" --slot plan --run-id r7 --resume s-1)"; rc=$?
-[ "$rc" -eq 2 ] && has "$out" "requires at least one --grant" && ok || fail "resume without grant: $rc $out"
-out="$(bash "$AGENT" --slot plan --run-id r7 --prompt-file "$TMP/prompt.md" --grant network)"; rc=$?
-[ "$rc" -eq 2 ] && has "$out" "only with --resume" && ok || fail "grant without resume: $rc $out"
+out="$(bash "$GRANT" --slot plan --run-id r7 --resume s-1)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "agent_grant.sh only resumes a session" && ok || fail "resume without grant: $rc $out"
+out="$(bash "$AGENT" --slot plan --run-id r7 --prompt-file "$(pf r7)" --grant network)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "go through agent_grant.sh" && ok || fail "grant without resume: $rc $out"
+
+# --- 4c. entry points: grants only through agent_grant.sh (PR #19 review, reply to point 1)
+FAKE_PERM=1 bash "$AGENT" --slot plan --run-id r12 --prompt-file "$(pf r12)" >/dev/null
+out="$(bash "$AGENT" --slot plan --run-id r12 --resume s-123 --grant full)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "go through agent_grant.sh" && ok || fail "agent.sh must reject --resume/--grant: $rc $out"
+out="$(bash -c ". \"$AGENT\"" agent_grant.sh --slot plan --run-id r12 --resume s-123 --grant full)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "go through agent_grant.sh" && ok || fail "sourcing agent.sh with \$0=agent_grant.sh must not enter grant mode: $rc $out"
+mkdir -p "$TMP/fake-entry"
+ln -s "$AGENT" "$TMP/fake-entry/agent_grant.sh"
+out="$(bash "$TMP/fake-entry/agent_grant.sh" --slot plan --run-id r12 --resume s-123 --grant full)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "go through agent_grant.sh" && ok || fail "a symlink named agent_grant.sh to agent.sh must not enter grant mode: $rc $out"
+mkdir -p "$TMP/evil"
+printf '#!/bin/bash\n. "%s"\n' "$AGENT" >"$TMP/evil/agent_grant.sh"
+out="$(bash "$TMP/evil/agent_grant.sh" --slot plan --run-id r12 --resume s-123 --grant full)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "go through agent_grant.sh" && ok || fail "another script named agent_grant.sh that sources agent.sh must not enter grant mode: $rc $out"
+printf '#!/bin/bash\n. "%s"\n' "$AGENT" >"$TMP/fake-entry/wrapper.sh"
+out="$(bash "$TMP/fake-entry/wrapper.sh" --slot plan --run-id r12 --resume s-123 --grant full)"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "another script sourcing agent.sh must not enter grant mode: $rc $out"
+out="$(bash "$GRANT" --slot plan --run-id r12 --prompt-file "$(pf r12)")"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "agent_grant.sh only resumes a session" && ok || fail "agent_grant.sh without a grant: $rc $out"
+out="$(bash "$GRANT" --slot plan --resolve)"; rc=$?
+[ "$rc" -eq 2 ] && ok || fail "agent_grant.sh --resolve: $rc $out"
+out="$(bash "$GRANT" --slot plan --run-id r12 --resume s-123 --grant network)"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "RESUMING s-123 grants: network" && ok || fail "agent_grant.sh resume: $rc $out"
+
+# --- 4d. policy flags are checked by agent.sh too (the hook can be missing)
+out="$(bash "$AGENT" --slot review --run-id r13 --prompt-file "$(pf r13)" --access write)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "would widen the read slot review" && ok || fail "--access write on a read slot: $rc $out"
+rm -f "$TMP/codex.args"
+out="$(bash "$AGENT" --slot plan --run-id r13 --prompt-file "$(pf r13)" --access read)"; rc=$?
+[ "$rc" -eq 0 ] && has "$(cat "$TMP/codex.args")" 'sandbox_mode="read-only"' && ok || fail "--access read narrows a write slot: $rc $out"
+OTHER="$TMP/other-repo"
+mkdir -p "$OTHER/.ai" && (cd "$OTHER" && git init -q) && cp .ai/av.config.json "$OTHER/.ai/"
+out="$(bash "$AGENT" --root "$OTHER" --slot plan --resolve)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "is not the repo of the current directory" && ok || fail "--root of another repo: $rc $out"
+out="$(cd "$OTHER" && bash "$AGENT" --root "$OTHER" --slot plan --resolve)"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "--root equal to the repo of the cwd: $rc $out"
+out="$(cd "$TMP" && bash "$AGENT" --root "$REPO" --slot plan --resolve)"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "--root from a directory outside any repo: $rc $out"
+printf 'SECRET=1\n' >"$REPO/.env"
+for bad in "$REPO/.env" "$TMP/prompt.md" "$REPO/.ai/workspace/runs/r12/agents/task.md"; do
+  out="$(bash "$AGENT" --slot plan --run-id r13 --prompt-file "$bad")"; rc=$?
+  [ "$rc" -eq 2 ] && has "$out" "must lie in" && ok || fail "--prompt-file outside this run's agents/ ($bad): $rc $out"
+done
+rm -f "$REPO/.env"
+ln -s "$REPO/a.txt" "$REPO/.ai/workspace/runs/r13/agents/link.md"
+out="$(bash "$AGENT" --slot plan --run-id r13 --prompt-file "$REPO/.ai/workspace/runs/r13/agents/link.md")"; rc=$?
+has "$out" "AGENT " && fail "--prompt-file symlink to a file outside the run: CLI started" || ok
+out="$(bash "$AGENT" --slot plan --run-id r13 --prompt-file "$(pf r13)" --harness codex)"; rc=$?
+[ "$rc" -eq 2 ] && has "$out" "does not match this session (claude)" && ok || fail "--harness codex in a Claude session: $rc $out"
+out="$(bash "$AGENT" --slot plan --resolve --harness claude)"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "--harness equal to the session: $rc $out"
+out="$(env -u CLAUDECODE bash "$AGENT" --slot implement --resolve --harness codex)"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "via=agent.sh" && ok || fail "--harness when the session is unknown: $rc $out"
 
 # --- 5. claude: write slot, result from JSON, list of changes
-FAKE_TOUCH="$REPO/a.txt" bash "$AGENT" --slot implement --run-id r1 --prompt-file "$TMP/prompt.md" --harness codex >"$TMP/o" 2>&1; rc=$?; out="$(cat "$TMP/o")"
+CODEX_THREAD_ID=t FAKE_TOUCH="$REPO/a.txt" bash "$AGENT" --slot implement --run-id r1 --prompt-file "$(pf r1)" >"$TMP/o" 2>&1; rc=$?; out="$(cat "$TMP/o")"
 [ "$rc" -eq 0 ] && has "$out" "actual=claude-opus-5-5" && has "$out" "CHANGED a.txt" && ok || fail "claude write: $rc $out"
 has "$(cat .ai/workspace/runs/r1/agents/implement.md)" "PLAN_READY: claude result" && ok || fail "claude: result from JSON missing"
 git checkout -q a.txt
 
 # --- 6. read slot guard and failures
-FAKE_TOUCH="$REPO/a.txt" bash "$AGENT" --slot review --run-id r2 --prompt-file "$TMP/prompt.md" >"$TMP/o" 2>&1; rc=$?
+FAKE_TOUCH="$REPO/a.txt" bash "$AGENT" --slot review --run-id r2 --prompt-file "$(pf r2)" >"$TMP/o" 2>&1; rc=$?
 [ "$rc" -eq 1 ] && has "$(cat "$TMP/o")" "read slot changed the working tree" && ok || fail "read guard: $rc"
 git checkout -q a.txt
-out="$(FAKE_RC=7 bash "$AGENT" --slot review --run-id r3 --prompt-file "$TMP/prompt.md")"; rc=$?
+out="$(FAKE_RC=7 bash "$AGENT" --slot review --run-id r3 --prompt-file "$(pf r3)")"; rc=$?
 [ "$rc" -eq 1 ] && has "$out" "exit code 7" && ok || fail "exit code: $rc $out"
-out="$(FAKE_EMPTY=1 bash "$AGENT" --slot review --run-id r3 --prompt-file "$TMP/prompt.md")"; rc=$?
+out="$(FAKE_EMPTY=1 bash "$AGENT" --slot review --run-id r3 --prompt-file "$(pf r3)")"; rc=$?
 [ "$rc" -eq 1 ] && has "$out" "empty result" && ok || fail "empty result: $rc $out"
-out="$(FAKE_ERROR=1 bash "$AGENT" --slot implement --run-id r3 --prompt-file "$TMP/prompt.md" --harness codex)"; rc=$?
+out="$(CODEX_THREAD_ID=t FAKE_ERROR=1 bash "$AGENT" --slot implement --run-id r3 --prompt-file "$(pf r3)")"; rc=$?
 [ "$rc" -eq 1 ] && has "$out" "is_error" && ok || fail "is_error: $rc $out"
-out="$(FAKE_SLEEP=10 bash "$AGENT" --slot review --run-id r3 --prompt-file "$TMP/prompt.md" --timeout 1)"; rc=$?
+out="$(FAKE_SLEEP=10 bash "$AGENT" --slot review --run-id r3 --prompt-file "$(pf r3)" --timeout 1)"; rc=$?
 [ "$rc" -eq 1 ] && has "$out" "timeout 1s" && ok || fail "timeout: $rc $out"
-out="$(AV_CODEX_BIN=/does/not/exist/codex bash "$AGENT" --slot review --run-id r4 --prompt-file "$TMP/prompt.md")"; rc=$?
+out="$(AV_CODEX_BIN=/does/not/exist/codex bash "$AGENT" --slot review --run-id r4 --prompt-file "$(pf r4)")"; rc=$?
 [ "$rc" -eq 3 ] && has "$out" "AGENT_NOT_RUN review CLI /does/not/exist/codex not found" && ok || fail "CLI missing: $rc $out"
 
 # --- 7. invocation and config errors
-out="$(AV_AGENT_SLOT=implement bash "$AGENT" --slot review --run-id r5 --prompt-file "$TMP/prompt.md")"; rc=$?
+out="$(AV_AGENT_SLOT=implement bash "$AGENT" --slot review --run-id r5 --prompt-file "$(pf r5)")"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "nested delegation" && ok || fail "nesting: $rc $out"
 out="$(bash "$AGENT" --slot review --run-id r5)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "prompt file not found" && ok || fail "prompt missing: $rc $out"
-out="$(bash "$AGENT" --slot review --run-id '../x' --prompt-file "$TMP/prompt.md")"; rc=$?
+out="$(bash "$AGENT" --slot review --run-id '../x' --prompt-file "$(pf '../x')")"; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "bad RUN_ID: $rc"
-out="$(bash "$AGENT" --slot review --run-id r5 --prompt-file "$TMP/prompt.md" --access admin)"; rc=$?
+out="$(bash "$AGENT" --slot review --run-id r5 --prompt-file "$(pf r5)" --access admin)"; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "bad access: $rc"
 jq '.agents.models.implement = {"provider":"codex","model":"gpt-6-astra"}' .ai/av.config.json >"$TMP/bad.json"
 out="$(bash "$AGENT" --config "$TMP/bad.json" --slot review --resolve)"; rc=$?
@@ -358,7 +415,7 @@ rm -f b-new.txt
 
 # --- 9. dry-run and summary
 before="$(wc -l <.ai/workspace/runs/r1/agents.jsonl)"
-out="$(bash "$AGENT" --slot plan --run-id r1 --prompt-file "$TMP/prompt.md" --dry-run)"; rc=$?
+out="$(bash "$AGENT" --slot plan --run-id r1 --prompt-file "$(pf r1)" --dry-run)"; rc=$?
 [ "$rc" -eq 0 ] && has "$out" "DRY_RUN" && has "$out" "gpt-6-astra" && ok || fail "dry-run: $rc $out"
 [ "$(wc -l <.ai/workspace/runs/r1/agents.jsonl)" -eq "$before" ] && ok || fail "dry-run: added an entry"
 out="$(bash "$AGENT" --summary --run-id r1)"

@@ -276,8 +276,8 @@ Opt-in, when the team has Codex: Claude and Codex in turns, so code and plans ar
   - `plan`, `implement`, `verify`: sandbox `workspace-write` with automatic review. A command the sandbox blocks (a build, a simulator, the network) asks for escalation and a Codex reviewer model decides, like auto mode in Claude Code. No prompts for you.
   - `review`, `planReview`: sandbox `read-only`.
   - These settings win over `sandbox_mode` in `~/.codex/config.toml`.
-- The plugin hook `agent_guard.sh` lets the orchestrator start slots without prompts, also in auto mode. You need no allow rule for `agent.sh`; remove an old `agent.sh:*` rule, because it also allows `--grant full`.
-- When a slot still needs more access (a folder outside the repo, no sandbox), the run asks you, and Claude Code shows a prompt for the exact `--grant` command.
+- The plugin hook `agent_guard.sh` lets the orchestrator start slots without prompts, also in auto mode, when the call has only plain characters and known flags. You need no allow rule for `agent.sh`; remove an old `agent.sh:*` rule, and never allow `agent_grant.sh` or the scripts directory.
+- When a slot still needs more access (a folder outside the repo, no sandbox), the run resumes it through `agent_grant.sh`, and Claude Code always shows you a prompt for that exact command. In `bypassPermissions` the hook blocks it and you run the command yourself with `!`.
 - The team uses the Codex variant and you have no Codex: switch its slots to Claude in `.ai/av.config.json.local` and set `crossVendor: false`.
 
 ## Language
