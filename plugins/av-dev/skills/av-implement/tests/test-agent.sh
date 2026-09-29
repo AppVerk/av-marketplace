@@ -277,9 +277,19 @@ roots="$(grep 'writable_roots=' "$TMP/codex.args")"
 [ "$rc" -eq 0 ] && [ "$(grep -c 'writable_roots=' "$TMP/codex.args")" -eq 1 ] && ok || fail "several dir: grants: one setting expected: $rc $(cat "$TMP/codex.args")"
 has "$roots" "\"$real_a\"" && has "$roots" "\"$real_b\"" && has "$roots" '"/opt/cache"' && ok || fail "several dir: grants: roots missing (symlink resolved, missing dir kept): $roots"
 printf '%s' "${roots#*=}" | jq -e 'type == "array" and length == 3' >/dev/null && ok || fail "several dir: grants: not a JSON/TOML array: $roots"
+jq '.agents.models.review = {"provider":"codex","model":"gpt-6-astra"}' .ai/av.config.json >"$TMP/review-codex.json"
+out="$(FAKE_PERM=1 bash "$AGENT" --config "$TMP/review-codex.json" --slot review --run-id r6r --prompt-file "$(pf r6r)")"; rc=$?
+[ "$rc" -eq 5 ] && ok || fail "perm codex review: code $rc: $out"
+for g in network dir:/opt/cache; do
+  rm -f "$TMP/codex.args"
+  out="$(bash "$GRANT" --config "$TMP/review-codex.json" --slot review --run-id r6r --resume s-123 --grant "$g")"; rc=$?
+  [ "$rc" -eq 2 ] && has "$out" "no effect in the read-only sandbox of slot review" && [ ! -f "$TMP/codex.args" ] && ok || fail "codex read slot: $g must be refused: $rc $out"
+done
+out="$(bash "$GRANT" --config "$TMP/review-codex.json" --slot review --run-id r6r --resume s-123 --grant full)"; rc=$?
+[ "$rc" -eq 0 ] && has "$(cat "$TMP/codex.args")" "danger-full-access" && ok || fail "codex read slot: full grant: $rc $out"
 out="$(bash "$GRANT" --slot plan --run-id r7 --resume s-unknown --grant network)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "last status: none" && ok || fail "resume of an unknown session: $rc $out"
-out="$(bash "$GRANT" --slot review --run-id r6 --resume s-123 --grant network)"; rc=$?
+out="$(bash "$GRANT" --slot review --run-id r6 --resume s-123 --grant full)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "no pending permission request of slot review" && ok || fail "resume with another slot: $rc $out"
 out="$(bash "$GRANT" --slot plan --run-id r6 --resume s-123 --grant network --label x)"; rc=$?
 [ "$rc" -eq 2 ] && has "$out" "slot plan-x" && ok || fail "resume with another label: $rc $out"

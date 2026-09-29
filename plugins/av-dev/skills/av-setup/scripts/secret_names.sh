@@ -10,8 +10,9 @@
 #                           code 0 when the file name looks like a secret; ROOT (the repo root)
 #                           is cut from PATH first, so only directories inside the repo count
 #
-# Secret: env files, private keys, certificates and signing stores, provisioning profiles,
-# SSH keys, token configs (.npmrc, .netrc, auth.json), cloud and Firebase credentials, and any
+# Secret: env files (.env*, .envrc), private keys, certificates and signing stores, provisioning
+# profiles, SSH keys, token and password files (.npmrc, .netrc, auth.json, .htpasswd, .pgpass),
+# Terraform variables (*.tfvars), cloud and Firebase credentials, and any
 # name with "secret" or "credential" that is not source code or a doc. Case does not matter.
 # Not secret: templates (.dist, .example, .sample, .template, .tmpl at the end), public keys
 # (.pub), and code, docs or Xcode UI files such as SecretManager.swift, secrets.md or
@@ -27,11 +28,12 @@ av_secret_name() {
   shopt -q nocasematch || { shopt -s nocasematch; restore=1; }
   case "$n" in
     *.dist|*.example|*.sample|*.template|*.tmpl|*.pub) rc=1 ;;
-    .env|.env.*|*.env) rc=0 ;;
+    .env|.env.*|*.env|.envrc) rc=0 ;;
     *.pem|*.key|*.p8|*.p12|*.pfx|*.jks|*.keystore|*.cer|*.crt|*.der|*.ppk) rc=0 ;;
     *.mobileprovision|*.provisionprofile) rc=0 ;;
     id_rsa|id_rsa[._-]*|id_dsa|id_dsa[._-]*|id_ecdsa|id_ecdsa[._-]*|id_ed25519|id_ed25519[._-]*) rc=0 ;;
-    .npmrc|.netrc|_netrc|.pypirc|.git-credentials|.dockercfg|auth.json) rc=0 ;;
+    .npmrc|.netrc|_netrc|.pypirc|.git-credentials|.dockercfg|auth.json|.htpasswd|.pgpass) rc=0 ;;
+    *.tfvars|*.tfvars.json) rc=0 ;;
     *keystore*.properties|*signing*.properties) rc=0 ;;
     google-services.json|googleservice-info*.plist|*service-account*.json|*service_account*.json) rc=0 ;;
     *secret*|*credential*)

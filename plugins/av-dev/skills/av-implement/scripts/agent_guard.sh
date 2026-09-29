@@ -16,7 +16,8 @@
 # Whitelist for a plain agent.sh call:
 #   --slot NAME, --run-id ID, --label TEXT   plain words
 #   --root DIR          the repo of the hook's working directory (physical path)
-#   --prompt-file P     an existing file under the repo with "/<run-id>/agents/" in its path
+#   --prompt-file P     an existing file under the repo with "/<run-id>/agents/" in its physical
+#                       path (".." and symlinks resolved, as agent.sh checks it)
 #   --access A          the slot's default: write for plan and implement, read for the rest
 #   --timeout N         digits
 #   --resolve, --summary, --dry-run, -h, --help
@@ -53,10 +54,17 @@ decide() {
   exit 0
 }
 
+# physical PATH - the path of an existing file with every symlink resolved, the file itself
+# included, as agent.sh resolves --prompt-file
 physical() {
-  local p="$1"
+  local p="$1" t n=0
   case "$p" in \~/*) p="$HOME/${p#\~/}" ;; esac
   [ -f "$p" ] || return 1
+  while [ -L "$p" ] && [ "$n" -lt 40 ]; do
+    t="$(readlink "$p")"
+    case "$t" in /*) p="$t" ;; *) p="$(dirname "$p")/$t" ;; esac
+    n=$((n + 1))
+  done
   printf '%s/%s' "$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)" "$(basename "$p")"
 }
 
@@ -105,13 +113,14 @@ i=$((i + 1))
 repo=""
 [ -n "$hook_cwd" ] && repo="$(git -C "$hook_cwd" rev-parse --show-toplevel 2>/dev/null)" && repo="$(cd "$repo" && pwd -P)"
 
-# inside_repo PATH - the physical path of an existing PATH (relative to the hook cwd) under repo
+# inside_repo PATH - prints the physical path of an existing PATH (relative to the hook cwd)
+# when it lies under repo
 inside_repo() {
   local p="$1" real
   [ -n "$repo" ] || return 1
   case "$p" in /*) ;; *) p="$hook_cwd/$p" ;; esac
   real="$(physical "$p")" || return 1
-  case "$real" in "$repo"/*) return 0 ;; esac
+  case "$real" in "$repo"/*) printf '%s' "$real"; return 0 ;; esac
   return 1
 }
 
@@ -129,7 +138,7 @@ while [ "$i" -lt "${#words[@]}" ]; do
     --access) access="$value" ;;
     --root) root_arg="$value" ;;
     --prompt-file) prompt="$value" ;;
-    --out) inside_repo "$value" || not_plain "--out outside the repo" ;;
+    --out) inside_repo "$value" >/dev/null || not_plain "--out outside the repo" ;;
     *) not_plain "flag $flag is not on the whitelist" ;;
   esac
   i=$((i + 2))
@@ -144,8 +153,8 @@ if [ -n "$access" ]; then
   [ "$access" = "$default" ] || not_plain "--access $access is not the default of slot ${slot:-?}"
 fi
 if [ -n "$prompt" ]; then
-  inside_repo "$prompt" || not_plain "--prompt-file is not an existing file in the repo"
-  case "$prompt" in
+  prompt_real="$(inside_repo "$prompt")" || not_plain "--prompt-file is not an existing file in the repo"
+  case "$prompt_real" in
     */"$run_id"/agents/*) [ -n "$run_id" ] || not_plain "--prompt-file without --run-id" ;;
     *) not_plain "--prompt-file is not in <runs>/<run-id>/agents/" ;;
   esac

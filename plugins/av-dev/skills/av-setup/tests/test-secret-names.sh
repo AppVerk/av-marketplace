@@ -24,12 +24,14 @@ for n in .env .env.local .env.production app.env config/.env.test \
   credentials.json client_secret_42.json secrets.yml secret.txt app-credentials.xml \
   SECRETS.YAML Credentials.JSON DISTRIBUTION.P12 path/with\ space/.env \
   tests/.env tests/fixtures/server.key AppTests/Distribution.p12 config/secrets/credentials.json \
-  Secrets.xctestplan Credentials.xcscheme; do
+  Secrets.xctestplan Credentials.xcscheme .envrc infra/.envrc .htpasswd .pgpass \
+  terraform.tfvars prod.auto.tfvars infra/secrets.tfvars.json; do
   av_secret_name "$n" && ok || fail "secret not recognised: $n"
 done
 
 # --- 2. names that are not secrets: templates, public keys, code and docs, ordinary files
 for n in .env.dist .env.example .env.sample .env.template parameters.yml.dist config.json.example \
+  terraform.tfvars.example envrc.md main.tf variables.tf \
   id_rsa.pub id_ed25519.pub SecretManager.swift secrets.md CredentialsForm.tsx credential_store.py \
   secret-rotation.sh KeychainSecret.m secrets.jq README.md package.json app.json Info.plist \
   environment.ts key.ts keyboard.swift monkey.txt distribution.md envelope.json \

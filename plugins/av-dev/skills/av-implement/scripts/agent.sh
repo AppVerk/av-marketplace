@@ -27,7 +27,8 @@
 #                             MCP tool name; no bare tool, no list, no specifier of only * or :.
 #                             codex: dir:<absolute path> (not /, not the home directory or its
 #                             parents, no . or .., no quote, backslash or control character;
-#                             symlinks resolved; several dir: grants are all kept), network, full
+#                             symlinks resolved; several dir: grants are all kept), network, full;
+#                             a codex read slot (read-only sandbox) takes only full
 #   --dry-run                 print the command, do not run it
 # Config: the effective config, i.e. the team config with the <config>.local override
 #   (av-verify/scripts/config.sh). Locally you can e.g. change a slot's provider.
@@ -425,7 +426,12 @@ grant_tool() {
 grant_args=()
 grant_text=""
 grant_dirs=()
+codex_read_only=0
+[ "$provider" = "codex" ] && [ "$access" = "read" ] && [ "$slot" != "verify" ] && codex_read_only=1
 for g in ${grants[@]+"${grants[@]}"}; do
+  case "$codex_read_only:$g" in
+    1:dir:*|1:network) usage_error "--grant $g has no effect in the read-only sandbox of slot $slot; grant full or run the step in the session" ;;
+  esac
   case "$provider:$g" in
     claude:tool:*) rule="$(grant_tool "${g#tool:}")" || { printf '%s\n' "$rule"; exit 2; }; grant_args+=(--allowedTools "$rule") ;;
     codex:dir:*) dir="$(grant_dir "${g#dir:}")" || { printf '%s\n' "$dir"; exit 2; }; grant_dirs+=("$dir") ;;
