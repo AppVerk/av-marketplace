@@ -273,7 +273,7 @@ has "$out" "WARNING stale lock of run r31 (quick pid $dead)" && has "$out" "GATE
 mkdir -p "$L" && echo "quick pid $$ started Mon Jan  1 00:00:00 2001" >"$L/owner"
 out="$(bash "$GATE" --gate quick --run-id r31)"; rc=$?
 has "$out" "WARNING stale lock" && [ "$rc" -eq 0 ] && ok || fail "reused pid (other start time): not taken over ($rc): $out"
-mkdir -p "$L" && echo "quick pid $$ started $(ps -o lstart= -p $$ | sed 's/[[:space:]]*$//')" >"$L/owner"
+mkdir -p "$L" && echo "quick pid $$ started $(LC_ALL=C TZ=UTC0 ps -o lstart= -p $$ | sed 's/[[:space:]]*$//')" >"$L/owner"
 out="$(bash "$GATE" --gate quick --run-id r31)"; rc=$?
 has "$out" "BUSY another gate of run r31" && [ "$rc" -eq 4 ] && ok || fail "live lock with the same start time must stay BUSY ($rc): $out"
 echo "quick" >"$L/owner"
@@ -285,6 +285,56 @@ mkdir -p "$L" && echo "quick pid $dead" >"$L/owner"
 out="$(PATH="$fake_ps:$PATH" bash "$GATE" --gate quick --run-id r31)"; rc=$?
 [ "$rc" -eq 4 ] && ok || fail "ps unusable: a lock must never be taken over ($rc): $out"
 rm -rf "$L"
+# --- 12f2. review of PR #19: start times do not depend on LANG or TZ, one gate at a time takes a
+# stale lock over, and the takeover stops what the dead gate left running
+jq '.validation.commands += {"slow": {"run": "sleep 4"}, "slow2": {"run": "sleep 2"},
+      "bgslow": {"run": "sleep 41; echo LATE >>late.txt", "parallel": true}, "fgslow": {"run": "sleep 43"}}
+    | .validation.gates += {"slowg": ["slow"], "slow2g": ["slow2"], "leftg": ["bgslow", "fgslow"]}
+    | del(.validation.gates.broken)' .ai/av.config.json >"$TMP/lock.json"
+wait_for() { local n=0; while ! eval "$1" && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done; eval "$1"; }
+TZ=Asia/Tokyo LC_ALL=pl_PL.UTF-8 LANG=pl_PL.UTF-8 bash "$GATE" --config "$TMP/lock.json" --gate slowg --run-id r32 >/dev/null 2>&1 &
+g1=$!
+wait_for 'grep -q " started " .ai/workspace/runs/r32/.lock/owner 2>/dev/null'
+out="$(TZ=America/New_York LC_ALL=en_US.UTF-8 bash "$GATE" --config "$TMP/lock.json" --gate slowg --run-id r32)"; rc=$?
+has "$out" "BUSY another gate of run r32" && [ "$rc" -eq 4 ] && ok || fail "lock: another TZ or LANG took a live lock over ($rc): $out"
+wait "$g1" 2>/dev/null
+
+L=.ai/workspace/runs/r33/.lock
+sleep 0 & dead=$!; wait "$dead" 2>/dev/null
+sleep 30 & holder=$!
+mkdir -p "$L" "$L.takeover" && echo "quick pid $dead" >"$L/owner"
+printf '%s %s\n' "$holder" "$(LC_ALL=C TZ=UTC0 ps -o lstart= -p "$holder" | sed 's/[[:space:]]*$//')" >"$L.takeover/pid"
+out="$(bash "$GATE" --gate quick --run-id r33)"; rc=$?
+has "$out" "BUSY" && [ "$rc" -eq 4 ] && grep -q "quick pid $dead" "$L/owner" && ok || fail "takeover: a second gate took over during another takeover ($rc): $out"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+out="$(bash "$GATE" --gate quick --run-id r33)"; rc=$?
+has "$out" "WARNING stale lock of run r33" && [ "$rc" -eq 0 ] && [ ! -d "$L.takeover" ] && ok || fail "takeover: a takeover left by a dead gate blocks for ever ($rc): $out"
+
+for i in 1 2 3; do
+  rm -rf .ai/workspace/runs/r34
+  mkdir -p .ai/workspace/runs/r34/.lock && echo "quick pid $dead" >.ai/workspace/runs/r34/.lock/owner
+  for j in 1 2 3 4; do bash "$GATE" --config "$TMP/lock.json" --gate slow2g --run-id r34 >"$TMP/race.$j" 2>&1 & done
+  wait
+  ran="$(grep -l "GATE slow2g PASS" "$TMP"/race.* | wc -l | tr -d ' ')"
+  busy="$(grep -l "^BUSY" "$TMP"/race.* | wc -l | tr -d ' ')"
+  [ "$ran" -eq 1 ] && [ "$busy" -eq 3 ] && ok || fail "takeover race $i: $ran gates ran, $busy were BUSY"
+done
+
+rm -f late.txt
+bash "$GATE" --config "$TMP/lock.json" --gate leftg --run-id r35 >/dev/null 2>&1 &
+g2=$!
+wait_for 'pgrep -f "sleep 41" >/dev/null && pgrep -f "sleep 43" >/dev/null'
+kill -9 "$g2" 2>/dev/null; wait "$g2" 2>/dev/null
+sleep 0.5
+pgrep -f "sleep 41" >/dev/null && ok || fail "left behind: setup: the background command did not outlive kill -9"
+out="$(bash "$GATE" --gate quick --run-id r35)"; rc=$?
+has "$out" "WARNING stale lock of run r35" && [ "$rc" -eq 0 ] && ok || fail "left behind: no takeover ($rc): $out"
+sleep 0.5
+pgrep -f "sleep 41" >/dev/null && fail "left behind: a background command of the dead gate still runs" || ok
+pgrep -f "sleep 43" >/dev/null && fail "left behind: the foreground command of the dead gate still runs" || ok
+[ ! -f late.txt ] && ok || fail "left behind: the dead gate's command wrote after the takeover"
+pkill -f "sleep 4[13]" 2>/dev/null; rm -f late.txt
+
 bash "$GATE" --config "$cfgp" --gate owner --run-id r31 >/dev/null
 grep -Eq '^owner pid [0-9]+ started [A-Z][a-z]{2} ' .ai/workspace/runs/r31/owner.owner.log && ok || fail "owner: pid and start time missing: $(cat .ai/workspace/runs/r31/owner.owner.log)"
 

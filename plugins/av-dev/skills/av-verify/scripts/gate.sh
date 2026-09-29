@@ -45,6 +45,11 @@
 # Lock: <runs>/<RUN_ID>/.lock with the owner "<label> pid <pid> started <start time>". A lock
 #   whose process is gone (kill -9, a crash, a reboot) or whose pid now belongs to another
 #   process is stale: the next gate takes it over with a WARNING, --status reports it.
+#   Start times come from "LC_ALL=C TZ=UTC0 ps", so a gate started with another LANG or TZ
+#   reads the same value. One gate at a time takes over: it holds <lock>.takeover (with its
+#   pid) and checks the lock again inside. The takeover stops the background commands the
+#   dead gate left (process groups recorded with their start time), so they cannot write to
+#   the logs of the new gate.
 # Command environment: AV_SKILLS_DIR = directory with the av-* skills (parent of av-verify).
 # Version: VERSION file in the skill directory (missing = dev); the config may require
 #   "requires": {"av-dev": ">=X.Y.Z"}.
@@ -129,8 +134,34 @@ hash_cmd() {
 
 workspace=".ai/workspace"
 
-# proc_start PID - start time of a running process (ps lstart); empty when it does not run
-proc_start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/[[:space:]]*$//'; }
+# proc_start PID - start time of a running process (ps lstart in the C locale and UTC, so every
+# gate reads the same text whatever its LANG or TZ); empty when it does not run
+proc_start() { LC_ALL=C TZ=UTC0 ps -o lstart= -p "$1" 2>/dev/null | sed 's/[[:space:]]*$//'; }
+
+# same_proc PID START - code 0 when PID runs and started at START (a reused pid does not match)
+same_proc() { [ -n "$1" ] && [ -n "$2" ] && [ "$(proc_start "$1")" = "$2" ]; }
+
+# stop_left_behind DIR - stops what a dead gate left in its .bg directory: process groups of
+# commands and watchers, and background subshells, each only when its start time still matches
+stop_left_behind() {
+  local f pid started pass sent=0
+  [ -d "$1" ] || return 0
+  for pass in TERM KILL; do
+    for f in "$1"/*.cmdpid "$1"/watch.*; do
+      [ -f "$f" ] || continue
+      case "$f" in */watch.*) pid="${f##*/watch.}"; started="$(cat "$f" 2>/dev/null)" ;;
+        *) read -r pid started <"$f" 2>/dev/null ;; esac
+      same_proc "$pid" "$started" && kill "-$pass" -- "-$pid" 2>/dev/null && sent=1
+    done
+    for f in "$1"/*.pid; do
+      [ -f "$f" ] || continue
+      read -r pid started <"$f" 2>/dev/null
+      same_proc "$pid" "$started" && kill "-$pass" "$pid" 2>/dev/null && sent=1
+    done
+    [ "$pass" = TERM ] && [ "$sent" -eq 1 ] && sleep 1
+  done
+  return 0
+}
 
 # lock_stale LOCK - code 0 when the owner of LOCK is gone: its pid does not run, or runs with
 # another start time (the pid was reused). Not stale: an owner without a pid (a gate that has
@@ -456,11 +487,11 @@ run_timed() {
   set -m
   ( cd "$cwd" && exec bash -o pipefail -c "$cmd" ) >"$log" 2>&1 &
   local pid=$!
-  [ -n "$pidfile" ] && printf '%s\n' "$pid" >"$pidfile"
+  [ -n "$pidfile" ] && printf '%s %s\n' "$pid" "$(proc_start "$pid")" >"$pidfile"
   ( sleep "$limit"; : >"$marker"; kill -TERM -- "-$pid" 2>/dev/null; sleep 3; kill -KILL -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
   local watcher=$!
   set +m
-  : >"$bg_dir/watch.$watcher"
+  proc_start "$watcher" >"$bg_dir/watch.$watcher"
   rc=0
   wait "$pid" 2>/dev/null || rc=$?
   kill -TERM -- "-$watcher" 2>/dev/null
@@ -495,14 +526,30 @@ budget_left() {
 }
 
 lock="$out_dir/.lock"
-if ! mkdir "$lock" 2>/dev/null; then
+# take_over - replaces a stale lock; one gate at a time (mkdir of <lock>.takeover is atomic).
+# A takeover directory whose gate is gone is removed first. Code 0 when this gate made the lock.
+take_over() {
+  local t="$lock.takeover" tp tstart stale_owner stale_pid made=1
+  if ! mkdir "$t" 2>/dev/null; then
+    read -r tp tstart <"$t/pid" 2>/dev/null
+    [ -n "${tp:-}" ] && ! same_proc "$tp" "${tstart:-}" || return 1
+    rm -rf "$t"
+    mkdir "$t" 2>/dev/null || return 1
+  fi
+  printf '%s %s\n' "$$" "$(proc_start $$)" >"$t/pid"
   if lock_stale "$lock"; then
     stale_owner="$(cat "$lock/owner" 2>/dev/null)"
     stale_pid="$(printf '%s' "$stale_owner" | sed -n 's/.* pid \([0-9][0-9]*\).*/\1/p')"
     printf 'WARNING stale lock of run %s (%s): the process is not running; taking it over\n' "$run_id" "$stale_owner"
+    [ -n "$stale_pid" ] && stop_left_behind "$out_dir/.bg.$stale_pid"
     rm -rf "$lock" ${stale_pid:+"$out_dir/.bg.$stale_pid"}
   fi
-  if ! mkdir "$lock" 2>/dev/null; then
+  mkdir "$lock" 2>/dev/null && made=0
+  rm -rf "$t"
+  return "$made"
+}
+if ! mkdir "$lock" 2>/dev/null; then
+  if ! { lock_stale "$lock" && take_over; }; then
     printf 'BUSY another gate of run %s is in progress (%s); wait for it to finish\n' "$run_id" "$(cat "$lock/owner" 2>/dev/null)"
     exit 4
   fi
@@ -513,7 +560,7 @@ mkdir -p "$bg_dir"
 cleanup() {
   local f
   for f in "$bg_dir"/*.cmdpid; do
-    [ -f "$f" ] && kill -TERM -- "-$(cat "$f")" 2>/dev/null
+    [ -f "$f" ] && kill -TERM -- "-$(cut -d ' ' -f1 "$f")" 2>/dev/null
   done
   for f in "$bg_dir"/watch.*; do
     [ -f "$f" ] && kill -TERM -- "-${f##*/watch.}" 2>/dev/null
@@ -585,7 +632,7 @@ for name in $bg_names; do
     printf '%s %s %s %s %s\n' "$pre" "$rc" "$timed_out" "$duration" "$started" >"$bg_dir/$name.result.tmp"
     mv "$bg_dir/$name.result.tmp" "$bg_dir/$name.result"
   ) </dev/null &
-  printf '%s\n' "$!" >"$bg_dir/$name.pid"
+  printf '%s %s\n' "$!" "$(proc_start "$!")" >"$bg_dir/$name.pid"
   bg_started="$bg_started $name"
 done
 [ -n "$bg_started" ] && printf 'PARALLEL%s (in the background next to the rest of the gate)\n' "$bg_started"
@@ -626,7 +673,7 @@ check_one() {
     needs="$(cmd_field "$name" needs)"
     pre=1
     if [ "$in_bg" -eq 1 ]; then
-      wait "$(cat "$bg_dir/$name.pid")" 2>/dev/null
+      wait "$(cut -d ' ' -f1 "$bg_dir/$name.pid")" 2>/dev/null
       if [ -f "$bg_dir/$name.result" ]; then
         read -r pre rc timed_out duration started <"$bg_dir/$name.result"
       else
