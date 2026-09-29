@@ -111,6 +111,44 @@ In the other-app repository: `src/x.ts`.
 out7="$(bash "$CHECK" "$SELF/.ai/self.md" --root "$SELF")"
 has "$out7" "MISSING 2 UNRESOLVED 0 EXTERNAL 1" && ok || fail "the name of this repo is not another repo: $out7"
 
+# --- 2d2. review of PR #19 (#3): a component word before "repository" names another repo only
+# after a preposition or as a label; a link text and a table repo column name a repo too
+cat >"$REPO/.ai/repo2.md" <<'EOF'
+# r2
+The admin repository `src/Repository/AdminGone.php` handles admins.
+The API repository `src/Repository/ApiGone.php` is cached.
+Admin repository class: `src/Repository/Gone8.php`.
+Repozytorium admina `src/Repository/AdminGone2.php` jest w kontenerze.
+See [the admin repository](src/Repository/Gone9.php) docs.
+In the [my-backend](https://example.com/my-backend) repository: `src/Remote1.php`.
+Backend repository: `api/Q.php`.
+See the api repo: `api/R.php`.
+W repozytorium admina: `app/S.php`.
+
+| Repo | File |
+|---|---|
+| my-backend | `src/Remote2.php` |
+| [billing-service](https://example.com/billing) | `src/Remote3.php` |
+| this | `src/GoneT.php` |
+| - | `src/GoneU.php` |
+
+| File | Note |
+|---|---|
+| `src/GoneV.php` | my-backend |
+EOF
+out8="$(bash "$CHECK" .ai/repo2.md --root .)"
+for t in src/Repository/AdminGone.php src/Repository/ApiGone.php src/Repository/Gone8.php src/Repository/AdminGone2.php src/Repository/Gone9.php src/GoneT.php src/GoneU.php src/GoneV.php; do
+  printf '%s\n' "$out8" | grep '^MISSING' | grep -qF -- "$t" && ok || fail "#3: this repo, deleted file not MISSING: $t: $out8"
+done
+for t in src/Remote1.php api/Q.php api/R.php app/S.php src/Remote2.php src/Remote3.php; do
+  printf '%s\n' "$out8" | grep '^EXTERNAL' | grep -qF -- "$t" && ok || fail "#3: another repo not EXTERNAL: $t: $out8"
+done
+has "$out8" "MISSING 8 UNRESOLVED 0 EXTERNAL 6" && ok || fail "#3: counters: $(printf '%s' "$out8" | tail -1)"
+printf '# r3\nIn the [my-backend](https://example.com/my-backend) repository: `src/Remote1.php`.\n\n| Repository | Path |\n|---|---|\n| my-backend | `src/Remote2.php` |\n' >"$REPO/.ai/repo3.md"
+bash "$CHECK" .ai/repo3.md --root . --strict >/dev/null; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "#3: references to another repo fail --strict (code $rc)"
+rm "$REPO/.ai/repo2.md" "$REPO/.ai/repo3.md"
+
 # --- 2e. negation "not in" / "nie w", ignoring by bare name
 printf '# z\nEvents live in `src/events/`, not in `src/domain/event/`.\nZdarzenia leza w `src/events/`, nie w `src/domain/event/`.\nLocally: `local.env`.\n' >"$REPO/.ai/neg.md"
 out5="$(bash "$CHECK" .ai/neg.md --root .)"

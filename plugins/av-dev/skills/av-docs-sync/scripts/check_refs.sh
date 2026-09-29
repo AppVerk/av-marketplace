@@ -202,7 +202,7 @@ fi
         if (substr(strip(tok), 1, 3) == "../") cls = "external"
       }
       if (substr(strip(tok), 1, 3) == "../" && escapes(docdir, strip(tok))) cls = "external"
-      else if (about_other_repo(line, a, b)) cls = "external"
+      else if (row_other || about_other_repo(line, a, b)) cls = "external"
       printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, cls, strip(tok), ign, rel2
     }
     function escapes(dir, t,    n, parts, i, depth) {
@@ -233,11 +233,16 @@ fi
     }
     function fill(n,    f) { f = ""; while (n-- > 0) f = f "x"; return f }
     # about_other_repo: the sentence with the path (span pa..pb of the line) says the path
-    # lives in another repository. The words are
-    # read outside paths (backtick spans with "/" or ".", link targets and link texts are
-    # blanked), so "src/Repository/X.php" or "[OrderRepository](...)" do not count, and
-    # "repository" needs a qualifier: other/backend/sibling repo, "innym repozytorium", or a
-    # repo name with "-" or "_" (billing-service repository) other than the name of this repo.
+    # lives in another repository. The words are read outside paths (backtick spans with "/"
+    # or ".", link targets and link texts with "/" or "." are blanked; other link texts stay,
+    # so "[my-backend](url) repository" names a repo), and "repository" needs a qualifier:
+    # - always: other/another/separate/sibling/different repo, "innym repozytorium", or a repo
+    #   name with "-" or "_" (billing-service repository) other than the name of this repo;
+    # - a component word (backend, api, admin, web, ...) only after a preposition ("in the
+    #   backend repository", "w repozytorium backendu") or as a label ("Backend repository:"),
+    #   because "The admin repository `src/Repository/AdminRepository.php`" names a class.
+    # A table with a repo column (Repo, Repository, Repozytorium) also names the repo of each
+    # row: a value other than this repo (or empty, -, this, ten) makes the row external.
     function about_other_repo(l, pa, pb,    m, rest, off, a, b, t, i, left, right) {
       m = l; rest = l; off = 0
       while (match(rest, /`[^`]+`/)) {
@@ -249,7 +254,9 @@ fi
       rest = m; off = 0
       while (match(rest, /\[[^]]*\]\([^)]*\)/)) {
         a = off + RSTART; b = off + RSTART + RLENGTH - 1
-        m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        t = substr(rest, RSTART + 1, RLENGTH - 1); sub(/\].*$/, "", t)
+        if (t ~ /[\/.]/ || t == "") m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        else m = substr(m, 1, a - 1) fill(b - a - length(t)) " " t substr(m, b + 1)
         off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
       }
       m = tolower(m)
@@ -285,20 +292,45 @@ fi
       neg = "(^|[^A-Za-z])(brak|nie istnieje|nie ma|nigdy|never|usuni(e|ę)t[a-z]*|usun(a|ą)(c|ć)|relokow[a-z]*|przeniesion[a-z]*|dawn(y|a|e|iej)|nie w|not in|removed|deleted|moved|formerly|previously|no longer|does not exist|missing)([^A-Za-z]|$)"
       repo_word = "(repo|repos|repository|repositories|repozytori[a-z]*)"
       repo_name = "[a-z0-9]+[-_][a-z0-9_-]*[a-z0-9]"
-      other_repo = "(^|[^a-z])((other|another|separate|sibling|different|backend|frontend|mobile|api|admin|web|server|client|shared)[ -]+" repo_word \
+      component = "(backend|frontend|mobile|api|admin|web|server|client|shared)"
+      component_pl = "(backendu?|frontendu?|mobile|api|admina?|web|serwer[a-z]*|klient[a-z]*)"
+      prep = "(in|into|from|to|of|see|w|we|z|ze|do)[ \t]+(the[ \t]+|our[ \t]+|a[ \t]+)?"
+      other_repo = "(^|[^a-z])((other|another|separate|sibling|different)[ -]+" repo_word \
+        "|" prep component "[ -]+" repo_word \
+        "|" component "[ -]+" repo_word "[ \t]*:" \
         "|(inn(e|y|ym|ego|ych|ymi)|osobn[a-z]*|s(ą|a)siedni[a-z]*|drugi[a-z]*) +" repo_word \
-        "|" repo_word " +(backendu?|frontendu?|mobile|api|admina?|web|serwer[a-z]*|klient[a-z]*)" \
+        "|" prep repo_word " +" component_pl \
+        "|" repo_word " +" component_pl "[ \t]*:" \
         "|" repo_name "`?[ -]+" repo_word \
         "|" repo_word " +`?" repo_name ")([^a-z0-9_-]|$)"
     }
-    FNR == 1 { in_code = 0; docdir = FILENAME; sub(/\/?[^\/]*$/, "", docdir) }
+    FNR == 1 { in_code = 0; in_table = 0; header_pending = 0; repo_col = 0; row_other = 0; docdir = FILENAME; sub(/\/?[^\/]*$/, "", docdir) }
     /^[ \t]*```/ { in_code = !in_code; next }
     in_code { next }
     function negated_ws(tok) {
       if (index(tok, ws "/") == 1) { checked++; printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, "tick", tok, tok, tok }
     }
+    # repo_column HEADER - index of the cell named Repo/Repository/Repozytorium, 0 when none
+    function repo_column(h,    n, c, i, x) {
+      n = split(h, c, "|")
+      for (i = 1; i <= n; i++) { x = tolower(c[i]); gsub(/^[ \t`*]+|[ \t`*:]+$/, "", x); if (x ~ /^(repo|repos|repository|repositories|repozytori[a-z]*)$/) return i }
+      return 0
+    }
+    # other_repo_cell LINE COL - the table cell names a repo other than this one
+    function other_repo_cell(l, k,    n, c, x) {
+      n = split(l, c, "|"); if (k > n) return 0
+      x = tolower(c[k]); sub(/^[ \t]*\[/, "", x); sub(/\]\([^)]*\)/, "", x); gsub(/^[ \t`*]+|[ \t`*]+$/, "", x)
+      if (x == "" || x ~ /^(-|this|this repo|ten|to|n\/a|\.)$/) return 0
+      if (self != "" && x == self) return 0
+      return 1
+    }
     {
       line = $0
+      if (line ~ /^[ \t]*\|/) {
+        if (!in_table) { in_table = 1; table_header = line; header_pending = 1; repo_col = 0; row_other = 0 }
+        else if (header_pending) { header_pending = 0; if (line ~ /^[ \t|:-]+$/) repo_col = repo_column(table_header) }
+        else row_other = (repo_col > 0 && other_repo_cell(line, repo_col))
+      } else { in_table = 0; header_pending = 0; repo_col = 0; row_other = 0 }
       has_neg = (tolower(line) ~ neg)
       if (has_neg) masked = mask_spans(line)
       rest = line; off = 0
