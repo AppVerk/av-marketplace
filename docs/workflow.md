@@ -171,7 +171,7 @@ The cycle above and the `av-dev` plugin are two ways to run the same work. Pick 
 | The cycle above: superpowers, the developer plugins, qa, code-review, commit | Ad-hoc work in any repo. Nothing to set up first: each plugin works on its own, and you decide on the next stage. |
 | `av-dev`: `av-setup` once, then `av-plan`, `av-implement`, `av-review`, `av-verify`, `av-docs-sync` | A repo the team sets up for agents once. The repo keeps its rules in `.ai/av.config.json`, overlays and role skills. Every task runs the same way, gates leave evidence (FRESH or STALE), and each pipeline slot can use its own Claude model. |
 
-- `av-review` reports `APPROVED` or `NEEDS_FIXES` with BLOCKER, HIGH and lower findings. `/fix`, `/fix-report` and `/fix-all` from code-review do not read that format. In an av-dev run this is not needed: `av-implement` fixes review findings itself, in at most 2 rounds.
+- `av-review` reports `APPROVED`, `NEEDS_FIXES` or `NEEDS_HUMAN` with BLOCKER, HIGH and lower findings. `/fix`, `/fix-report` and `/fix-all` from code-review do not read that format. In an av-dev run this is not needed: `av-implement` fixes review findings itself, in at most 2 rounds.
 - A repo set up with av-dev can still use the other plugins outside a run, e.g. `/qa:loop` or `/audit`.
 - More: [AV Dev](plugins/av-dev.md).
 

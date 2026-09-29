@@ -140,7 +140,7 @@ Commit: `PROJ-123 add CSV export to the orders list`
 
 - Uses the axes from the repo's `code-review.md` and the tools from its overlay.
 - Findings have a severity, an origin (NEW or PRE_EXISTING) and `file:line` evidence.
-- Verdict: `APPROVED` or `NEEDS_FIXES`. It never edits files.
+- Verdict: `NEEDS_FIXES` for a confirmed BLOCKER or HIGH with origin NEW or UNKNOWN, `NEEDS_HUMAN` for one whose premise must be checked outside the repo, otherwise `APPROVED`. It never edits files.
 
 ### av-verify: run the gates
 

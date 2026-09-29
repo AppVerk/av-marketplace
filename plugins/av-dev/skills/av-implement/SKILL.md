@@ -155,11 +155,12 @@ Run the `full` gate (`--reuse-fresh`) in parallel with the review. The reviewer 
 When `agents.independentReview` is `false` and the task is not high risk, do the review yourself with the `av-review` skill and mark this in the report.
 
 Fixes:
-- Fix BLOCKER and HIGH with origin NEW. Fix MEDIUM when it is cheap and in scope. Record the rest as debt.
+- Fix BLOCKER and HIGH with origin NEW or UNKNOWN. Fix MEDIUM when it is cheap and in scope. Record the rest as debt.
 - After fixes, repeat the `quick` gate. Then another review round (`--round 2`) with the `full` gate in parallel.
 - At most 2 full review rounds. When BLOCKER or HIGH stay open after the second round:
   - fix is cheap and in scope: fix it with a red test, repeat the gates, then start a fresh `review` slot executor only to **verify these fixes** (diff since round 2, list of findings). Confirmed: continue. Not confirmed or no verification: result NEEDS_HUMAN with the list of unreviewed fixes.
   - fix is expensive or disputed: stop. Show the user the list and your proposals.
+- A "to be confirmed" BLOCKER or HIGH (review verdict NEEDS_HUMAN): check the premise when the repo or the session can (e.g. read the CI config the finding names). Confirmed: fix it like any BLOCKER or HIGH. Refuted: record the evidence. Not checkable: the result is at most NEEDS_HUMAN, with the premise in the report.
 - You disagree with a finding: do not ignore it silently. Write the counterargument with evidence in the report.
 
 ## Step 8: Final gates
@@ -193,8 +194,8 @@ Commit: `<message according to git.commitPattern>`
 
 Take the ticket for the message from the task or the branch name (prefix from `git.ticketPrefixes`). Without a ticket, leave `<TICKET>` to be filled in and say so in the report.
 
-- READY_FOR_COMMIT: required gates PASS FRESH, all required checks PASS with current evidence, review without open BLOCKER/HIGH NEW, no unresolved FLAKY (also a known one). Optional commands may have SKIPPED according to the config; a required check may not be replaced this way.
-- NEEDS_HUMAN: a decision for a human (disputed finding, NOT_RUN that needs an environment, FLAKY, fixes without review, a scope question).
+- READY_FOR_COMMIT: required gates PASS FRESH, all required checks PASS with current evidence, review without open BLOCKER or HIGH with origin NEW or UNKNOWN and without an open "to be confirmed" BLOCKER or HIGH, no unresolved FLAKY (also a known one). Optional commands may have SKIPPED according to the config; a required check may not be replaced this way.
+- NEEDS_HUMAN: a decision for a human (disputed finding, a "to be confirmed" BLOCKER or HIGH whose premise cannot be checked, NOT_RUN that needs an environment, FLAKY, fixes without review, a scope question).
 - BLOCKED: cannot be finished without a change of conditions.
 
 Commit according to `git.commit`:

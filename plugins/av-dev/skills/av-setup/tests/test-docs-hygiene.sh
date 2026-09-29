@@ -77,5 +77,20 @@ grep -q '`on-request`: stop' "$SKILLS/av-implement/SKILL.md" && grep -q '`after-
 grep -q 'stops before the commit' "$readme" && ! grep 'stops before the commit' "$readme" | grep -vq 'on-request' && ok || fail "README: stopping before the commit is not tied to git.commit: on-request"
 grep -q 'Stops before commit unless `git.commit`' "$SKILLS/av-implement/SKILL.md" && ok || fail "av-implement description: stopping before commit is not tied to git.commit"
 
+# --- 6. review verdict (review of PR #19): UNKNOWN origin blocks like NEW, a "to be confirmed"
+# BLOCKER or HIGH needs a human, and av-implement, the README and the workflow page agree
+review="$SKILLS/av-review/SKILL.md"; impl="$SKILLS/av-implement/SKILL.md"
+grep -q '^1\. NEEDS_FIXES: a confirmed BLOCKER or HIGH with origin NEW or UNKNOWN\.' "$review" && ok || fail "av-review: NEEDS_FIXES rule without UNKNOWN"
+grep -q '^2\. NEEDS_HUMAN: a "to be confirmed" BLOCKER or HIGH' "$review" && ok || fail "av-review: no NEEDS_HUMAN rule for to-be-confirmed findings"
+grep -q 'UNKNOWN counts as NEW' "$review" && ok || fail "av-review: UNKNOWN origin not treated as NEW"
+grep -q '<APPROVED | NEEDS_FIXES | NEEDS_HUMAN>' "$review" && ok || fail "av-review: report template misses NEEDS_HUMAN"
+grep -q 'does not decide the verdict by itself' "$review" && fail "av-review: to-be-confirmed findings still do not decide the verdict" || ok
+grep -q 'Fix BLOCKER and HIGH with origin NEW or UNKNOWN' "$impl" && ok || fail "av-implement: fixes skip UNKNOWN origin"
+grep 'READY_FOR_COMMIT:' "$impl" | grep -q 'NEW or UNKNOWN and without an open "to be confirmed" BLOCKER or HIGH' && ok || fail "av-implement: READY_FOR_COMMIT ignores UNKNOWN or to-be-confirmed findings"
+grep '^- NEEDS_HUMAN:' "$impl" | grep -q '"to be confirmed" BLOCKER or HIGH' && ok || fail "av-implement: NEEDS_HUMAN misses to-be-confirmed findings"
+grep -q '`NEEDS_HUMAN` for one whose premise' "$readme" && ok || fail "README: review verdict misses NEEDS_HUMAN"
+workflow="$PLUGIN/../../docs/workflow.md"
+[ ! -f "$workflow" ] || { grep -q '`APPROVED`, `NEEDS_FIXES` or `NEEDS_HUMAN`' "$workflow" && ok || fail "docs/workflow.md: review verdict misses NEEDS_HUMAN"; }
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

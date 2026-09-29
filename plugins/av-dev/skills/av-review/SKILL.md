@@ -1,6 +1,6 @@
 ---
 name: av-review
-description: Code review of changes in the repo according to project rules - axes from `code-review.md`, tools from `.ai/overlays/av-review.md`, contracts from `contracts.md`, gate evidence, findings with severity, NEW/PRE_EXISTING origin and file:line evidence, verdict APPROVED or NEEDS_FIXES. Use when the user asks for a review, "check my changes", "review the diff", "do a code review of the branch", "sprawdź moje zmiany", "przejrzyj diff", "zrób code review brancha", before a PR, after implementation, or when av-implement needs an independent review. Does not edit files.
+description: Code review of changes in the repo according to project rules - axes from `code-review.md`, tools from `.ai/overlays/av-review.md`, contracts from `contracts.md`, gate evidence, findings with severity, NEW/PRE_EXISTING origin and file:line evidence, verdict APPROVED, NEEDS_FIXES or NEEDS_HUMAN. Use when the user asks for a review, "check my changes", "review the diff", "do a code review of the branch", "sprawdź moje zmiany", "przejrzyj diff", "zrób code review brancha", before a PR, after implementation, or when av-implement needs an independent review. Does not edit files.
 argument-hint: "[--base <ref>] [--committed-only] [--run <RUN_ID>] [--round N] [--files a,b] [--security] [--no-gate]"
 ---
 
@@ -77,17 +77,17 @@ Check the code in the diff, but follow the effects outside it: calls of changed 
 
 Each finding needs evidence: file:line and a quote, or a grep or command result. For a pure function, the strongest evidence is a probe: a small program in `<tmp>/` (outside the repo) that compares the behavior of the old and new version on a concrete input. Remove a finding without evidence or lower it to INFO with the note "to be confirmed".
 
-A defect that is certain in the code, where only its frequency in the data is unknown (e.g. a rare input format), keeps its severity without a note. A finding with evidence in the code but with a premise that cannot be checked from the repo (e.g. CI variables, production configuration) keeps its severity with the note "to be confirmed: <premise>". Such a BLOCKER or HIGH does not decide the verdict by itself. It goes to the "Questions" section of the report. Check that the problem is not handled elsewhere. Skip known false alarms from `docs.reviewRules`.
+A defect that is certain in the code, where only its frequency in the data is unknown (e.g. a rare input format), keeps its severity without a note. A finding with evidence in the code but with a premise that cannot be checked from the repo (e.g. CI variables, production configuration) keeps its severity with the note "to be confirmed: <premise>". Such a BLOCKER or HIGH (origin NEW or UNKNOWN) gives at least NEEDS_HUMAN: a human checks the premise. It goes to the "Questions" section of the report. Check that the problem is not handled elsewhere. Skip known false alarms from `docs.reviewRules`.
 
 Origin:
 - NEW: a problem in lines added or changed in the diff, or caused by the diff.
 - PRE_EXISTING: the problem existed before the change (check `git blame` or the baseline).
-- UNKNOWN: cannot be determined.
+- UNKNOWN: cannot be determined. For the verdict, UNKNOWN counts as NEW: a finding blocks unless it is shown to be PRE_EXISTING.
 
 ## Step 7: Report
 
 ```markdown
-<APPROVED | NEEDS_FIXES>: <1 sentence, e.g. "2 blockers in the network layer, the rest minor">
+<APPROVED | NEEDS_FIXES | NEEDS_HUMAN>: <1 sentence, e.g. "2 blockers in the network layer, the rest minor">
 
 Scope: <N files, diff base>
 Gates: <quick PASS FRESH | NOT_RUN: reason>
@@ -107,7 +107,12 @@ Severity:
 - LOW: style, minor readability.
 - INFO: a note without action.
 
-Verdict: NEEDS_FIXES when a confirmed BLOCKER or HIGH with origin NEW exists. Otherwise APPROVED. The verdict concerns the code. When all gates are NOT_RUN, write "APPROVED (gates NOT_RUN)"; `av-implement` decides the run result anyway (then NEEDS_HUMAN). `--status` with code 1 means some command does not have PASS FRESH, e.g. it is NOT_RUN. PRE_EXISTING findings never block. They go to the "Debt" section.
+Verdict, first match wins:
+1. NEEDS_FIXES: a confirmed BLOCKER or HIGH with origin NEW or UNKNOWN.
+2. NEEDS_HUMAN: a "to be confirmed" BLOCKER or HIGH with origin NEW or UNKNOWN (list it under "Questions").
+3. APPROVED: otherwise.
+
+The verdict concerns the code. When all gates are NOT_RUN, write "APPROVED (gates NOT_RUN)"; `av-implement` decides the run result anyway (then NEEDS_HUMAN). `--status` with code 1 means some command does not have PASS FRESH, e.g. it is NOT_RUN. PRE_EXISTING findings never block. They go to the "Debt" section.
 
 `owner` is the role from the `check_setup.sh --owner` result, when the config has `roles`.
 
