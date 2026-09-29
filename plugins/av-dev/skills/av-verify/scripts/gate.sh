@@ -24,6 +24,13 @@
 #   notRunExitCodes, optional, covers, parallel.
 # run and precheck go to bash with pipefail: in "npm test | tail -50" a failing test fails
 #   the command, not only the last program. Do not cut output with head in a command.
+# precheck runs without xtrace, so values of variables never reach the log; the NOT_RUN reason
+#   quotes the precheck as written in the config.
+# timeoutSec is one budget for precheck and run: the clock starts before the precheck, run
+#   gets the rest, and the reported duration includes the precheck. A precheck over the
+#   budget is NOT_RUN (precheck timeout) and run does not start.
+# --reuse-fresh reuses only a direct PASS with an existing log. A result covered by another
+#   command is never reused on its own: without its covering command the command runs.
 # parallel: true = the command shares no state with others; it starts in the background
 #   when the gate starts, next to the rest. Results, logs and evidence print in gate order.
 #   A command with covers, or covered by another command of the gate, runs in sequence.
@@ -465,6 +472,28 @@ run_timed() {
   return 0
 }
 
+# timed_precheck PRECHECK CWD LIMIT LOG PIDFILE NAME - runs the precheck within LIMIT, without
+# xtrace; sets pre (1 passed or none, 0 failed, 2 timed out) and pre_s (its seconds)
+timed_precheck() {
+  local s0
+  pre=1; pre_s=0
+  [ -n "$1" ] || return 0
+  s0="$(date +%s)"
+  run_timed "$1" "$2" "$3" "$4" "$out_dir/.timeout.pre.$6" "$5"
+  pre_s=$(( $(date +%s) - s0 ))
+  rm -f "$5"
+  if [ "$timed_out" -eq 1 ]; then pre=2; elif [ "$rc" -ne 0 ]; then pre=0; fi
+  rc=0; timed_out=0
+  return 0
+}
+
+# budget_left LIMIT USED - seconds left for run after the precheck, at least 1
+budget_left() {
+  local left=$(( $1 - $2 ))
+  [ "$left" -ge 1 ] || left=1
+  printf '%s' "$left"
+}
+
 lock="$out_dir/.lock"
 if ! mkdir "$lock" 2>/dev/null; then
   if lock_stale "$lock"; then
@@ -519,7 +548,10 @@ invocation_fingerprint() {
 
 reused_log() {
   [ "$reuse" -eq 1 ] && [ "$baseline" -eq 0 ] && [ -f "$out_dir/evidence.json" ] || return 0
-  jq -r --arg n "$1" --arg fp "$fp_before" --arg invocation "$(invocation_fingerprint "$1")" '.checks[$n] | select(.status == "PASS" and .fingerprint == $fp and .invocationFingerprint == $invocation and (.stale != true)) | .log // "x"' "$out_dir/evidence.json" 2>/dev/null
+  local log
+  log="$(jq -r --arg n "$1" --arg fp "$fp_before" --arg invocation "$(invocation_fingerprint "$1")" '.checks[$n] | select(.status == "PASS" and .fingerprint == $fp and .invocationFingerprint == $invocation and (.stale != true) and (.covered_by == null) and ((.log // "") | type == "string" and . != "")) | .log' "$out_dir/evidence.json" 2>/dev/null)"
+  [ -n "$log" ] && [ -f "$root/$log" ] && printf '%s' "$log"
+  return 0
 }
 
 # MARK: background commands
@@ -541,13 +573,13 @@ for name in $bg_names; do
   log="$root/$runs_base/$run_id/$log_prefix.$name.log"
   (
     started="$(date +%Y-%m-%dT%H:%M:%S)"
-    pre=1; rc=0; timed_out=0; duration=0
-    if [ -n "$precheck" ] && ! ( cd "$cwd" && bash -o pipefail -x -c "$precheck" ) >"$log" 2>&1; then
-      pre=0
-    else
+    rc=0; timed_out=0; duration=0
+    timed_precheck "$precheck" "$cwd" "$limit" "$log" "$bg_dir/$name.cmdpid" "$name"
+    duration="$pre_s"
+    if [ "$pre" -eq 1 ]; then
       start_s="$(date +%s)"
-      run_timed "$run" "$cwd" "$limit" "$log" "$out_dir/.timeout.$name" "$bg_dir/$name.cmdpid"
-      duration=$(( $(date +%s) - start_s ))
+      run_timed "$run" "$cwd" "$(budget_left "$limit" "$pre_s")" "$log" "$out_dir/.timeout.$name" "$bg_dir/$name.cmdpid"
+      duration=$(( $(date +%s) - start_s + pre_s ))
       rm -f "$bg_dir/$name.cmdpid"
     fi
     printf '%s %s %s %s %s\n' "$pre" "$rc" "$timed_out" "$duration" "$started" >"$bg_dir/$name.result.tmp"
@@ -601,19 +633,25 @@ check_one() {
         pre=1; rc=1; timed_out=0; duration=0
         printf '\n[background command ended without a result]\n' >>"$log"
       fi
-    elif [ -n "$precheck" ] && ! ( cd "$cwd" && bash -o pipefail -x -c "$precheck" ) >"$log" 2>&1; then
-      pre=0
+    else
+      timed_precheck "$precheck" "$cwd" "$limit" "$log" "$bg_dir/fg@.cmdpid" "$name"
+      duration="$pre_s"
     fi
-    if [ "$pre" -eq 0 ]; then
+    if [ "$pre" -ne 1 ]; then
       status="NOT_RUN"
-      failed_step="$(grep '^+' "$log" | tail -1 | sed 's/^+* *//' | cut -c1-120)"
-      reason="precheck failed at: ${failed_step:-$precheck}; requires: ${needs:-$precheck}"
+      if [ "$pre" -eq 2 ]; then
+        reason="precheck timeout after ${limit}s (timeoutSec covers precheck and run)"
+        printf '\n[precheck timeout after %ss]\n' "$limit" >>"$log"
+      else
+        reason="precheck failed: $precheck"
+      fi
+      [ -n "$needs" ] && reason="$reason; requires: $needs"
     else
       printf 'RUN %s: %s\n' "$name" "$run"
       if [ "$in_bg" -eq 0 ]; then
         start_s="$(date +%s)"
-        run_timed "$run" "$cwd" "$limit" "$log" "$out_dir/.timeout.$name" "$bg_dir/fg@.cmdpid"
-        duration=$(( $(date +%s) - start_s ))
+        run_timed "$run" "$cwd" "$(budget_left "$limit" "$pre_s")" "$log" "$out_dir/.timeout.$name" "$bg_dir/fg@.cmdpid"
+        duration=$(( $(date +%s) - start_s + pre_s ))
         rm -f "$bg_dir/fg@.cmdpid"
       fi
       expect="$(cmd_field "$name" expect)"

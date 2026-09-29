@@ -123,13 +123,70 @@ has "$out" "CONFIG_ERROR --env requires KEY=VALUE" && [ "$rc" -eq 2 ] && ok || f
 out="$(cd "$TMP" && bash "$GATE" --gate quick)"; rc=$?
 has "$out" "CONFIG_ERROR config not found" && [ "$rc" -eq 2 ] && ok || fail "config missing"
 
-# --- 12b. precheck logs the failed step; --list catches syntax errors and a missing script
+# --- 12b. precheck quotes itself in the reason; --list catches syntax errors and a missing script
 cfg2="$TMP/cfg2.json"
 jq '.validation.commands += {"pc": {"run": "echo x", "precheck": "true && test -d /does/not/exist && true"},
                                "syn": {"run": "echo (("}, "miss": {"run": "scripts/missing.sh"}}
     | .validation.gates += {"pcg": ["pc"]} | del(.validation.gates.broken)' .ai/av.config.json >"$cfg2"
 out="$(bash "$GATE" --config "$cfg2" --gate pcg --run-id r10)"
-has "$out" "precheck failed at: test -d /does/not/exist" && ok || fail "precheck: step missing in reason"
+has "$out" "precheck failed: true && test -d /does/not/exist && true" && ok || fail "precheck: text missing in reason: $out"
+# --- 12b2. review of PR #19: no xtrace in prechecks, one time budget, reuse of direct PASS only
+jq '.validation.commands += {
+      "canary":  {"run": "echo OK", "precheck": "test -n \"$REVIEW_FAKE_SECRET\" && test -d missing-runtime"},
+      "canaryp": {"run": "echo OK", "precheck": "test -n \"$REVIEW_FAKE_SECRET\" && test -d missing-runtime", "parallel": true},
+      "pfp":     {"run": "echo RAN", "precheck": "false | true"},
+      "cui":     {"run": "echo UI", "covers": ["cbuild"]},
+      "cbuild":  {"run": "echo DIRECT_BUILD; exit 7"},
+      "direct":  {"run": "echo D"},
+      "slowpre": {"run": "echo RAN", "precheck": "sleep 7", "timeoutSec": 1},
+      "slowprep": {"run": "echo RAN", "precheck": "sleep 7", "timeoutSec": 1, "parallel": true},
+      "budget":  {"run": "sleep 3; echo DONE", "precheck": "sleep 2", "timeoutSec": 3},
+      "budok":   {"run": "echo DONE", "precheck": "sleep 1", "timeoutSec": 5}}
+    | .validation.gates += {"cang": ["canary", "canaryp"], "pfpg": ["pfp"], "cov": ["cui", "cbuild"], "dirg": ["direct"],
+                            "spg": ["slowpre", "slowprep"], "budg": ["budget"], "budokg": ["budok"]}
+    | del(.validation.gates.broken)' .ai/av.config.json >"$TMP/c12.json"
+CANARY=NOT_A_REAL_SECRET_CANARY
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate cang --run-id r40 --env REVIEW_FAKE_SECRET=$CANARY 2>&1)"; rc=$?
+has "$out" "CHECK canary NOT_RUN" && has "$out" "CHECK canaryp NOT_RUN" && [ "$rc" -eq 3 ] && ok || fail "canary --env: prechecks did not fail ($rc): $out"
+has "$out" "precheck failed: test -n \"\$REVIEW_FAKE_SECRET\" && test -d missing-runtime" && ok || fail "canary: the reason does not quote the precheck: $out"
+has "$out" "$CANARY" && fail "canary --env: value in the gate output" || ok
+grep -rq "$CANARY" .ai/workspace/runs/r40 && fail "canary --env: value in a log or evidence: $(grep -rl "$CANARY" .ai/workspace/runs/r40)" || ok
+out="$(REVIEW_FAKE_SECRET=$CANARY bash "$GATE" --config "$TMP/c12.json" --gate cang --run-id r41 2>&1)"; rc=$?
+has "$out" "CHECK canary NOT_RUN" && has "$out" "CHECK canaryp NOT_RUN" && ok || fail "canary inherited: prechecks did not fail: $out"
+{ has "$out" "$CANARY" || grep -rq "$CANARY" .ai/workspace/runs/r41; } && fail "canary inherited: value in output, a log or evidence" || ok
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate pfpg --run-id r41)"
+has "$out" "CHECK pfp NOT_RUN" && ! has "$out" "RUN pfp" && ok || fail "precheck: pipefail lost: $out"
+
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate cov --run-id r42)"
+has "$out" "CHECK cbuild PASS 0s (covered by cui)" && ok || fail "covered: setup: $out"
+out="$(bash "$GATE" --config "$TMP/c12.json" --only cbuild --reuse-fresh --run-id r42)"; rc=$?
+has "$out" "reused" && fail "covered: a covered result was reused on its own: $out" || ok
+has "$out" "RUN cbuild" && has "$out" "CHECK cbuild FAIL" && [ "$rc" -eq 1 ] && ok || fail "covered: the command did not run without its covering command ($rc): $out"
+jq -e '.checks.cbuild | .reused != true and .log != "x" and .status == "FAIL"' .ai/workspace/runs/r42/evidence.json >/dev/null && ok || fail "covered: evidence claims reuse or a fake log"
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate cov --reuse-fresh --run-id r42b)"
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate cov --reuse-fresh --run-id r42b)"
+has "$out" "CHECK cui PASS 0s (FRESH evidence reused" && has "$out" "CHECK cbuild PASS 0s (covered by cui)" && ok || fail "covered: the whole gate no longer reuses and covers: $out"
+bash "$GATE" --config "$TMP/c12.json" --gate dirg --run-id r43 >/dev/null
+rm -f .ai/workspace/runs/r43/dirg.direct.log
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate dirg --reuse-fresh --run-id r43)"
+has "$out" "RUN direct" && ! has "$out" "reused" && ok || fail "deleted log: evidence still reused: $out"
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate dirg --reuse-fresh --run-id r43)"
+has "$out" "CHECK direct PASS 0s (FRESH evidence reused: .ai/workspace/runs/r43/dirg.direct.log)" && ok || fail "direct: valid evidence not reused: $out"
+
+t0="$(date +%s)"
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate spg --run-id r44)"; rc=$?
+took=$(( $(date +%s) - t0 ))
+has "$out" "CHECK slowpre NOT_RUN" && has "$out" "precheck timeout after 1s" && ok || fail "precheck timeout: $out"
+has "$out" "CHECK slowprep NOT_RUN" && ok || fail "precheck timeout in the background: $out"
+has "$out" "RUN slowpre" && fail "precheck timeout: run started" || ok
+has "$out" "RUN slowprep" && fail "precheck timeout in the background: run started" || ok
+[ "$rc" -eq 3 ] && [ "$took" -lt 7 ] && ok || fail "precheck timeout: code $rc, took ${took}s"
+pgrep -f "sleep 7" >/dev/null && fail "precheck timeout: precheck process alive" || ok
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate budg --run-id r45)"; rc=$?
+has "$out" "CHECK budget FAIL" && has "$out" "(timeout 3s)" && [ "$rc" -eq 1 ] && ok || fail "budget: precheck time not counted ($rc): $out"
+out="$(bash "$GATE" --config "$TMP/c12.json" --gate budokg --run-id r46)"; rc=$?
+has "$out" "CHECK budok PASS" && [ "$rc" -eq 0 ] && jq -e '.checks.budok.duration >= 1' .ai/workspace/runs/r46/evidence.json >/dev/null && ok || fail "budget: duration without the precheck ($rc): $out"
+
 out="$(bash "$GATE" --config "$cfg2" --list)"; rc=$?
 has "$out" "command 'syn': syntax error in field run" && [ "$rc" -eq 2 ] && ok || fail "list: syntax error missing"
 has "$out" "WARNING command miss: file scripts/missing.sh not found" && ok || fail "list: script warning missing"
@@ -410,7 +467,7 @@ has "$out" "CHECK pslow FAIL 1s .ai/workspace/runs/r21/pfail.pslow.log (timeout 
 pgrep -f "sleep 27" >/dev/null && fail "parallel: process alive after timeout" || ok
 has "$out" "CHECK pbad FAIL" && has "$out" "(exit code 5)" && has "$out" "  oops" && ok || fail "parallel: exit code and log tail: $out"
 has "$out" "CHECK pdown NOT_RUN" && has "$out" "exit code 2 means the environment is missing" && ok || fail "parallel: notRunExitCodes"
-has "$out" "CHECK ppre NOT_RUN" && has "$out" "precheck failed at: test -d /does/not/exist/bg" && ok || fail "parallel: precheck: $out"
+has "$out" "CHECK ppre NOT_RUN" && has "$out" "precheck failed: true && test -d /does/not/exist/bg" && ok || fail "parallel: precheck: $out"
 has "$out" "RUN ppre" && fail "parallel: RUN despite a failed precheck" || ok
 has "$out" "CHECK popt SKIPPED" && ok || fail "parallel: optional"
 has "$out" "GATE pfail FAIL" && [ "$rc" -eq 1 ] && ok || fail "parallel: gate with failures ($rc)"

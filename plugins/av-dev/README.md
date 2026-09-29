@@ -203,7 +203,8 @@ Gates:
 ```
 
 - `expect`: text that must appear in the output. It protects against a green result that did nothing.
-- `precheck`: fails means `NOT_RUN`, not `FAIL`.
+- `precheck`: fails means `NOT_RUN`, not `FAIL`. It runs without xtrace, so values of variables stay out of the logs.
+- `timeoutSec`: one budget for `precheck` and `run`.
 - `parallel`: runs in the background next to the other commands of the gate.
 - `compose_container.sh <service>`: the container of this checkout only, never one started from another copy of the repo.
 

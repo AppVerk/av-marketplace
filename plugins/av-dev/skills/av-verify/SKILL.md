@@ -28,7 +28,7 @@ A `PASS` status comes only from `gate.sh` output. Never from your own reading of
 Script statuses:
 - `PASS`: exit code 0 and the expected text. `PASS (covered by X)` means command X in the same gate did the same work, e.g. the UI tests built the app.
 - `FAIL`: another exit code, missing text or timeout.
-- `NOT_RUN`: the precheck failed or the exit code is in `notRunExitCodes`. The gate is then `INCOMPLETE`.
+- `NOT_RUN`: the precheck failed or ran over the time budget, or the exit code is in `notRunExitCodes`. The gate is then `INCOMPLETE`. `timeoutSec` covers precheck and run together.
 - `SKIPPED`: `NOT_RUN` of an optional command. It does not break the gate.
 
 ## Step 1: Gate selection
@@ -58,7 +58,7 @@ bash <skill-dir>/scripts/gate.sh --root <repo-root> --gate <gate> --run-id <RUN_
 - Pass command parameters (e.g. the UI test suite name) with `--env KEY=VALUE`. Variable names are in the command's `run` in the config. A missing parameter gives `NOT_RUN` from the precheck.
 - Run commands longer than the Bash tool limit (10 minutes) in the background and wait for the notification. Do not stop them early.
 - `--status --run-id <RUN_ID>` shows the saved evidence and whether it is current (`FRESH`) or outdated (`STALE`). When a gate of this run is in progress, it also prints `BUSY` and exits with code 4. The baseline shows on `BASELINE` lines, without FRESH/STALE.
-- `--reuse-fresh` skips commands only when the code fingerprint and the `invocationFingerprint` match. The latter covers: the command definition (also precheck, cwd and expect), the checkout, the gate.sh script and the final values of all explicit `--env`. Parameter order does not matter; the last value of a repeated key wins. Older evidence without this identity must be run again. Parameter values are not saved in the evidence. Use it for final gates.
+- `--reuse-fresh` skips commands only when the code fingerprint and the `invocationFingerprint` match, for a direct PASS whose log still exists. A result covered by another command (`covered by`) is never reused on its own. The latter covers: the command definition (also precheck, cwd and expect), the checkout, the gate.sh script and the final values of all explicit `--env`. Parameter order does not matter; the last value of a repeated key wins. Older evidence without this identity must be run again. Parameter values are not saved in the evidence. Use it for final gates.
 - Pass parameters that affect test scope or environment explicitly with `--env`. Inherited environment and changes to tools and services are not detected automatically. After such changes, do not use reuse. `--status` FRESH means the code matches; it does not verify an arbitrary new suite.
 - Logs have a gate prefix (`quick.unit.log`, `baseline.quick.unit.log`), so later gates do not overwrite each other's evidence.
 - Commands with `"parallel": true` start in the background at the beginning of the gate (`PARALLEL` line). `RUN` and `CHECK` lines and the evidence always follow the gate order. Status, timeout, log and fingerprint work as for a sequential command.
