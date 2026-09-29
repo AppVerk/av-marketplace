@@ -54,7 +54,7 @@ Run the steps in order. Every `stop` prints its message and ends the run.
 11. If `git status --porcelain` prints anything → stop with `Commit or stash your other changes, then run /delivery:execute <PLAN_PATH>.`
 12. `TASKS` = JSON output of `python3 "$ROUTER" plan "$REPO" "$PLAN_PATH"`; a non-zero exit → stop with the router's error.
 13. **Done tasks and base.** `DONE=$(python3 "$ROUTER" done "$REPO" "$PLAN_PATH")`; a non-zero exit → stop with the router's error. When its `conflicts` list is not empty → stop, printing one line per entry: `Task <task> is committed as "<committed_title, or missing>" in <commit>, but <PLAN_PATH> titles it "<plan_title>". Restore the title or drop the commit, then run /delivery:execute <PLAN_PATH>.` Mark no task done on this path. Otherwise the tasks listed in `done` are done and `BASE` is its `base`.
-14. Route every not-done task with **Routing**. For an `unknown` task, `TASK_TEXT` is its `block`. Print the `Routing: task <N> → <agent> (source: <source>)` line for every task in your reply before starting step 2; it is the audit trail of each routing decision.
+14. Route every not-done task with **Routing**. For a task whose `source` is not `files`, `TASK_TEXT` is its `block`. Print the `Routing: task <N> → <agent> (source: <source>)` line for every task in your reply before starting step 2; it is the audit trail of each routing decision.
 15. Every routed agent must be listed among the `task` tool's available agents. A missing one → stop with `Install <plugin>: omp plugin install <plugin>@av-marketplace, then start a new session.` (`<plugin>` is the part before `:`).
 16. `todo init` with one item per not-done task, `Task <N>: <title>`, then `Plan verification` and `Final code review`.
 
@@ -118,18 +118,18 @@ omp plugin list --json | python3 -c 'import json,sys; want=sys.argv[1:]; d=json.
 The router prints JSON:
 
 - `check "$REPO" <plan>` → `{"tasks": N, "problems": [...], "no_files": [...]}`. `problems` are plan errors that stop a run; `no_files` names tasks without a **Files:** block, which **Routing** handles.
-- `plan "$REPO" <plan>` → one entry per task with `task`, `title`, `commit`, `block`, `files`, `stack`, `agent`, `groups`.
+- `plan "$REPO" <plan>` → one entry per task with `task`, `title`, `commit`, `block`, `files`, `groups`, `stack`, `agent`, `source`, `evidence`. `source` is `files` when the task's file list decided `agent`; for a task without files the router decides from the task text: `text` when its code paths and fenced code languages favor one stack (`evidence` lists the votes), `default` when they favor none and `agent` is `delivery:implementer`.
 - `message "$REPO" <plan> <N> [--open-findings]` → the commit message of task N with its `Delivery-*` trailers.
 - `done "$REPO" <plan>` → `{"done": [...], "conflicts": [...], "base": "<sha>"}` from the branch's delivery commits.
 
 ## Routing
 
-Decide the implementer for each task:
+Decide the implementer for each task. Never ask the user which agent to use: every task ends with an agent from the steps below.
 
-- `stack` is `python`, `frontend`, `php` or `generic` → use the entry's `agent`. Source: `files`.
-- `stack` is `unknown` (the task lists no files):
-  1. Run `python3 "$ROUTER" layout "$REPO"` and keep its JSON as `LAYOUT`. If `LAYOUT["stacks"]` is empty → `delivery:implementer`, source `files`.
-  2. Otherwise run this in the `eval` tool (python). Set `LAYOUT` to that JSON and `TASK_TEXT` to the task text:
+- `source` is `files` → use the entry's `agent`. Source: `files`.
+- Otherwise (the task lists no files):
+  1. Run `python3 "$ROUTER" layout "$REPO"` and keep its JSON as `LAYOUT`. If `LAYOUT["stacks"]` is empty → go to step 4.
+  2. Run this in the `eval` tool (python). Set `LAYOUT` to that JSON and `TASK_TEXT` to the task text:
      ```python
      CRIT = {"python": "Python code or its tests.", "frontend": "React/TypeScript web app code or its tests.", "php": "PHP code or its tests."}
      crit = {s: CRIT[s] for s in LAYOUT["stacks"]}
@@ -155,10 +155,7 @@ Decide the implementer for each task:
      - `answer["confidence"] >= 0.8`.
 
      The agent is `python` → `python-developer:developer`, `frontend` → `frontend-developer:developer`, `php` → `php-developer:developer`, `generic` → `delivery:implementer`. Source: `jev p=<confidence, 2 decimals> via <model>`.
-  4. Otherwise use the `ask` tool:
-     - question: `Which implementer should take Task <N>: <title>? (no file list; Jev: <choice, or the error> p=<confidence> via <model>)`;
-     - options: one per stack in `LAYOUT["stacks"]`, then `generic`, then `Stop`;
-     - `Stop` ends the delivery run. Any other answer maps as in step 3. Source: `user`.
+  4. Otherwise use the entry's `agent`, decided by the router from the task text. Source: `text (<evidence joined with "; ">)` when the entry's `source` is `text`, otherwise `default`.
 
 For every routed task, print exactly one line:
 

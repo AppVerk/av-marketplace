@@ -16,7 +16,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from route_task import check, layout, parse_plan, route, scan_delivery_log  # noqa: E402
+from route_task import check, layout, parse_plan, route, route_text, scan_delivery_log  # noqa: E402
 
 ROUTER = SCRIPTS / "route_task.py"
 
@@ -104,6 +104,90 @@ class RouteTest(RoutingFixture):
         r = self.routed()
         self.assertEqual(r["stack"], "unknown")
         self.assertIsNone(r["agent"])
+
+
+class RouteTextTest(RoutingFixture):
+    """A task without a file list is routed from its text; the user is never asked."""
+
+    def text(self, block: str, react: bool = True) -> dict:
+        return route_text(self.root, block, react)
+
+    def test_mentioned_code_path_routes_like_a_listed_file(self) -> None:
+        r = self.text("### Task 1: Orders\nAdd pagination to `backend/app/orders.py`.")
+        self.assertEqual((r["agent"], r["source"]), ("python-developer:developer", "text"))
+        self.assertEqual(r["evidence"], ["python 1: `backend/app/orders.py`"])
+
+    def test_uppercase_code_extensions_vote_like_listed_files(self) -> None:
+        for path in ("SETUP.PY", "web/src/List.TSX"):
+            with self.subTest(path=path):
+                result = self.text(f"Rename `{path}`.")
+                self.assertEqual((result["stack"], result["source"]), (self.routed(path)["stack"], "text"))
+
+    def test_fenced_language_votes_for_its_stack(self) -> None:
+        block = "### Task 1: Orders\n```php\n<?php\nfinal class Order {}\n```\n"
+        self.assertEqual(self.text(block)["agent"], "php-developer:developer")
+
+    def test_web_fence_is_frontend_only_in_a_react_repository(self) -> None:
+        block = "### Task 1: List\n```tsx\nexport function List() {}\n```\n"
+        self.assertEqual(self.text(block, react=True)["stack"], "frontend")
+        self.assertEqual(self.text(block, react=False)["stack"], "generic")
+
+    def test_web_path_follows_its_nearest_manifest(self) -> None:
+        self.assertEqual(self.text("Update `tools/cli.ts`.")["stack"], "generic")
+        self.assertEqual(self.text("Update `web/src/List.tsx`.")["stack"], "frontend")
+
+    def test_bare_web_file_name_follows_the_repository(self) -> None:
+        self.assertEqual(self.text("Update `List.tsx` and `useList.ts`.", react=True)["stack"], "frontend")
+        self.assertEqual(self.text("Update `List.tsx` and `useList.ts`.", react=False)["stack"], "generic")
+
+    def test_product_names_in_prose_are_not_code_paths(self) -> None:
+        for name in ("Node.js", "Next.js", "Vue.js", "orders.py", "Order.php"):
+            with self.subTest(name=name):
+                r = self.text(f"### Task 1: CI\nUpgrade the CI runner to {name} 20.", react=True)
+                self.assertEqual((r["stack"], r["source"]), ("generic", "default"))
+
+    def test_schemeless_url_does_not_vote_as_code_path(self) -> None:
+        r = self.text("See github.com/acme/api/blob/main/app/orders.py; write release notes.")
+        self.assertEqual((r["stack"], r["source"]), ("generic", "default"))
+
+    def test_dot_prefixed_paths_vote_like_listed_files(self) -> None:
+        for path in ("./manage.py", ".github/scripts/check.py"):
+            with self.subTest(path=path):
+                r = self.text(f"Edit `{path}`.")
+                self.assertEqual((r["stack"], r["source"]), ("python", "text"))
+
+    def test_unquoted_directory_path_and_code_quoted_bare_name_still_vote(self) -> None:
+        self.assertEqual(self.text("Update backend/app/orders.py.")["stack"], "python")
+        self.assertEqual(self.text("Update `orders.py`.")["stack"], "python")
+        self.assertEqual(self.text("```text\norders.py\n```")["stack"], "python")
+
+    def test_bare_name_in_prose_does_not_hide_later_inline_code(self) -> None:
+        r = self.text("The log says orders.py; update ``orders.py``.")
+        self.assertEqual((r["stack"], r["source"]), ("python", "text"))
+        self.assertEqual(r["evidence"], ["python 1: `orders.py`"])
+
+    def test_majority_wins(self) -> None:
+        block = "Touch `backend/app/orders.py`.\n```python\nx = 1\n```\n```tsx\n<List />\n```\n"
+        r = self.text(block)
+        self.assertEqual((r["stack"], r["source"]), ("python", "text"))
+        self.assertEqual(r["evidence"], ["python 2: `backend/app/orders.py`, ```python", "frontend 1: ```tsx"])
+
+    def test_tie_goes_to_the_generic_implementer(self) -> None:
+        r = self.text("Wire `backend/app/orders.py` to `shop/src/Order.php`.")
+        self.assertEqual((r["agent"], r["source"]), ("delivery:implementer", "default"))
+        self.assertEqual(r["evidence"], ["php 1: `shop/src/Order.php`", "python 1: `backend/app/orders.py`"])
+
+    def test_no_code_evidence_goes_to_the_generic_implementer(self) -> None:
+        block = (
+            "### Task 7: Deploy\n**Files:** none (journal).\n"
+            "Open https://example.com/app.js and /srv/app/main.py, then update `README.md`.\n"
+            "```bash\nssh root@host 'systemctl restart app'\n```\n```swift\nimport SwiftUI\n```\n"
+        )
+        self.assertEqual(self.text(block), {"stack": "generic", "agent": "delivery:implementer", "source": "default", "evidence": []})
+
+    def test_code_in_the_task_does_not_split_it(self) -> None:
+        block = "```python\nimport json\n```\n```python\nprint(json.dumps({}))\n```\n```css\n.list {}\n```\n"
+        self.assertEqual(self.text(block, react=False)["stack"], "python")
 
 
 PLAN = """# Plan
@@ -260,18 +344,23 @@ class CheckTest(RoutingFixture):
 """
         self.assertEqual(check(self.root, plan), {"tasks": 1, "problems": [], "no_files": []})
 
-    def test_malformed_heading_is_reported_beside_valid_task(self) -> None:
+    def test_malformed_numbered_heading_is_reported_beside_valid_task(self) -> None:
         plan = """### Task 1: Orders
 **Files:**
 - Modify: `backend/app/orders.py`
-### Task two: Docs
+### Task 2 Docs
 **Files:**
 - Modify: `docs/orders.md`
 """
         result = check(self.root, plan)
         self.assertEqual(result["tasks"], 1)
-        self.assertTrue(any("### Task two: Docs" in problem for problem in result["problems"]), result)
+        self.assertTrue(any("### Task 2 Docs" in problem for problem in result["problems"]), result)
 
+    def test_non_task_headings_do_not_invalidate_research_plan(self) -> None:
+        self.assertEqual(
+            check(self.root, "# Research\n\n### Task queue\n\n### Task runner\n"),
+            {"tasks": 0, "problems": [], "no_files": []},
+        )
 
 class LayoutTest(RoutingFixture):
     def test_stacks_and_framework_evidence(self) -> None:
@@ -346,6 +435,66 @@ Write release notes.
         self.assertEqual(result.returncode, 0, result.stderr)
         routed = json.loads(result.stdout)
         self.assertEqual([(t["task"], t["agent"]) for t in routed], [(1, "python-developer:developer"), (2, "delivery:implementer")])
+
+    def test_plan_routes_a_task_without_files_by_its_text(self) -> None:
+        write(self.root, "text-plan.md", """### Task 1: Orders
+Add pagination to `backend/app/orders.py`.
+
+### Task 2: Deploy
+Upgrade the CI runner to Node.js 20.
+```bash
+ssh root@host 'systemctl restart api'
+```
+
+### Task 3: Docs
+**Files:**
+- Modify: `docs/orders.md`
+""")
+        result = self.run_router("plan", str(self.root), "text-plan.md")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        routed = [(t["task"], t["agent"], t["source"]) for t in json.loads(result.stdout)]
+        self.assertEqual(routed, [
+            (1, "python-developer:developer", "text"),
+            (2, "delivery:implementer", "default"),
+            (3, "delivery:implementer", "files"),
+        ])
+
+    def test_plan_finds_react_package_below_three_levels(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(root, "apps/shop/client/web/package.json", json.dumps({"dependencies": {"react": "^19"}}))
+            write(root, "plan.md", "### Task 1: List\nUpdate `List.tsx`.\n")
+
+            result = self.run_router("plan", str(root), "plan.md")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)[0]["agent"], "frontend-developer:developer")
+
+
+class SlugTest(RoutingFixture):
+    def test_external_heading_slug_drops_code_spans(self) -> None:
+        with tempfile.TemporaryDirectory() as elsewhere:
+            external = Path(elsewhere) / "random-name.md"
+            external.write_text("# Fix `make clean` deleting `dist/`\n")
+            result = self.run_router("slug", str(external))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "fix-make-clean-deleting-dist\n")
+
+    def test_in_repo_plan_uses_filename_not_heading(self) -> None:
+        plan = "docs/plans/2026-09-28-fix-orders-plan.md"
+        write(self.root, plan, "# Different heading\n")
+        result = self.run_router("slug", str(self.root / plan), "--in-repo")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "fix-orders\n")
+
+    def test_external_heading_strips_date_prefix_and_plan_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as elsewhere:
+            external = Path(elsewhere) / "unhelpful.md"
+            external.write_text("# 2026-09-28-Fix `make clean` Plan\n")
+            result = self.run_router("slug", str(external))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "fix-make-clean\n")
 
 
 class MessageTest(RoutingFixture):

@@ -695,6 +695,41 @@ class TestNative(unittest.TestCase):
             with self.assertRaisesRegex(BuildError, "collides with a generated plugin"):
                 build_native(native_fixture(root), root / "out", {"native"})
 
+    def test_scripts_both_editions_ship_must_be_identical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = native_fixture(root)
+            twin = root / "plugins/native"
+            put(native / "scripts/router.py", "print('route')\n")
+            put(twin / "scripts/router.py", "print('route')\n")
+            put(twin / "scripts/hook.py", "print('claude only')\n")
+            build_native(native, root / "out", set(), twin)
+            self.assertEqual((root / "out/native/scripts/router.py").read_text(), "print('route')\n")
+            self.assertFalse((root / "out/native/scripts/hook.py").exists())
+
+            put(twin / "scripts/router.py", "print('drifted')\n")
+            with self.assertRaisesRegex(BuildError, "must be identical"):
+                build_native(native, root / "out", set(), twin)
+
+    def test_native_edition_of_a_claude_plugin_without_overlay_builds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            native = native_fixture(source / "omp/native")
+            catalog = json.loads((source / ".claude-plugin/marketplace.json").read_text())
+            catalog["plugins"].append({"name": "native", "source": "./plugins/native", "version": "0.1.0", "description": "Claude edition", "category": "development"})
+            put_json(source / ".claude-plugin/marketplace.json", catalog)
+            put(native / "scripts/router.py", "print('route')\n")
+            put(source / "plugins/native/scripts/router.py", "print('drifted')\n")
+            with self.assertRaisesRegex(BuildError, "must be identical"):
+                build(root / "output", source)
+
+            put(source / "plugins/native/scripts/router.py", "print('route')\n")
+            build(root / "output", source)
+            omp_catalog = json.loads((root / "output/.omp-plugin/marketplace.json").read_text())
+            self.assertEqual({entry["name"] for entry in omp_catalog["plugins"]}, {"sample", "native"})
+
     def test_native_extension_guards(self):
         cases = {
             "package mismatch": ({"name": "different", "version": "0.1.0", "omp": {"extensions": ["index.ts"]}}, "name and version must equal"),

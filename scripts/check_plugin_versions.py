@@ -487,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"[{slug}] version mismatch: omp/native plugin.json={native_version}, README.md={readme_version}"
             )
         else:
-            print(f"[{slug}] {native_version} (OK, OMP-only)")
+            print(f"[{slug}] {native_version} (OK, {'native OMP edition' if slug in slugs else 'OMP-only'})")
 
     # Orphan detection: entries that exist in marketplace.json or README.md
     # but have no plugin directory backing them. The loops above only iterate
@@ -516,7 +516,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print(f"\nVersion parity OK for {len(slugs) + len(native_slugs)} plugin(s).")
+    print(f"\nVersion parity OK for {len(set(slugs) | set(native_slugs))} plugin(s).")
     return 0
 
 
