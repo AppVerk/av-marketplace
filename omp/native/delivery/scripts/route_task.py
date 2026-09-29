@@ -4,7 +4,10 @@
 A task's stack comes from the files it touches: `.py` is Python, `.php` is
 PHP, and TypeScript/JavaScript/CSS is React frontend only when the nearest
 manifest above the file is a `package.json` that depends on React. Docs and
-config files do not vote. Nothing here calls a model.
+config files do not vote. A task without a file list is routed by its text:
+code paths it mentions and the languages of its fenced code blocks vote, the
+stack with the most votes wins, and no votes or a tie go to the generic
+implementer. Nothing here calls a model or asks anyone.
 
 Usage:
     route_task.py plan <root> <plan.md>   # JSON list, one entry per task
@@ -13,6 +16,7 @@ Usage:
     route_task.py done <root> <plan.md>  # JSON delivered tasks, conflicts, base
     route_task.py files <root> <path>...  # JSON routing for these paths
     route_task.py layout <root>           # JSON repo layout for a judge
+    route_task.py slug <plan.md> [--in-repo]  # print heading or filename slug
 """
 
 from __future__ import annotations
@@ -51,10 +55,17 @@ TASK_HEADING = re.compile(r"^### Task (\d+):[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
 SECTION_END = re.compile(r"^#{2,3} ", re.MULTILINE)
 FILE_LINE = re.compile(r"^[ \t]*[-*][ \t]*(?:Create|Modify|Test|Delete):[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
 COMMIT_LINE = re.compile(r"^\*\*Commit:\*\*[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
-TASK_CANDIDATE = re.compile(r"^### Task(?=[ \t:]|$)[^\n]*", re.MULTILINE)
+TASK_CANDIDATE = re.compile(r"^### Task(?=[:]|[ \t]+\d)[^\n]*", re.MULTILINE)
 EMPTY_COMMIT = re.compile(r"^\*\*Commit:\*\*[ \t]*$", re.MULTILINE)
 BACKTICKED = re.compile(r"`([^`]+)`")
+INLINE_CODE = re.compile(r"(?<!`)(`+)(?!`)([^\n]*?)\1(?!`)")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$", re.MULTILINE)
+CODE_PATH = re.compile(r"(?<![\w./:~-])((?:[\w.-]+/)*[\w-][\w.-]*\.(?:py|php|tsx|ts|jsx|js|mjs|cjs|scss|css))\b", re.IGNORECASE)
+FENCE_STACKS = {
+    "python": "python", "py": "python", "python3": "python", "php": "php",
+    "tsx": "web", "jsx": "web", "ts": "web", "typescript": "web",
+    "js": "web", "javascript": "web", "css": "web", "scss": "web",
+}
 
 
 def clean_path(raw: str) -> str:
@@ -131,6 +142,65 @@ def route(root: Path, paths: list[str]) -> dict:
     else:
         stack = "split"
     return {"files": files, "stack": stack, "agent": AGENTS.get(stack), "groups": groups}
+
+
+def fence_languages(text: str, spans: list[tuple[int, int]]) -> list[str]:
+    """Info-string languages of the fenced code blocks, lowercased, in order."""
+    languages = []
+    for start, _ in spans:
+        opening = FENCE.match(text, start)
+        info = opening.group(2).split() if opening else []
+        if info:
+            languages.append(info[0].lower())
+    return languages
+
+
+def route_text(root: Path, block: str, react: bool) -> dict:
+    """Stack of a task without a file list, from the code paths and fenced languages in its text.
+
+    Every mentioned directory path votes for its stack as a listed file would, except
+    URL-shaped paths. Bare code file names vote only in inline or fenced code. Without
+    a directory, a TypeScript, JavaScript or CSS file name votes like a fenced block
+    in those languages — frontend when the repository has a React package (`react`),
+    generic otherwise. A fenced Python or PHP block votes for that stack. The stack
+    with the most votes wins; no votes or a tie route to the generic implementer.
+    """
+    votes: dict[str, list[str]] = {}
+    fences = fenced_spans(block)
+    code_spans = fences + [
+        (match.start(), match.end()) for match in INLINE_CODE.finditer(block)
+        if not any(start <= match.start() < end for start, end in fences)
+    ]
+    seen: set[str] = set()
+    for match in CODE_PATH.finditer(block):
+        path = match.group(1)
+        if path in seen or ("/" in path and "." in path.split("/", 1)[0].lstrip(".")):
+            continue
+        if "/" not in path and not any(
+            start <= match.start() and match.end() <= end for start, end in code_spans
+        ):
+            continue
+        seen.add(path)
+        if "/" not in path and Path(path).suffix.lower() in FRONTEND_EXT:
+            stack = "frontend" if react else "generic"
+        else:
+            stack = classify(root, path)
+        if stack is not None:
+            votes.setdefault(stack, []).append(f"`{path}`")
+    for language, count in Counter(fence_languages(block, fences)).items():
+        stack = FENCE_STACKS.get(language)
+        if stack == "web":
+            stack = "frontend" if react else "generic"
+        if stack is not None:
+            votes.setdefault(stack, []).extend([f"```{language}"] * count)
+    evidence = [
+        f"{stack} {len(items)}: {', '.join(dict.fromkeys(items))}"
+        for stack, items in sorted(votes.items(), key=lambda item: (-len(item[1]), item[0]))
+    ]
+    top = max((len(items) for items in votes.values()), default=0)
+    leaders = [stack for stack, items in votes.items() if len(items) == top]
+    stack, source = (leaders[0], "text") if top and len(leaders) == 1 else ("generic", "default")
+    return {"stack": stack, "agent": AGENTS[stack], "source": source, "evidence": evidence}
 
 
 def fenced_spans(text: str) -> list[tuple[int, int]]:
@@ -250,6 +320,15 @@ def layout(root: Path) -> dict:
     return {"stacks": stacks, "lines": lines}
 
 
+def has_react_package(root: Path) -> bool:
+    for current, dirs, _ in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS]
+        package_json = Path(current) / "package.json"
+        if package_json.is_file() and "react" in js_dependencies(package_json):
+            return True
+    return False
+
+
 def plan_rel(root: Path, plan_path: Path) -> str:
     """Return the plan's POSIX path relative to the repository root."""
     return plan_path.resolve().relative_to(root).as_posix()
@@ -333,11 +412,37 @@ def delivered(root: Path, rel: str, tasks: list[dict]) -> dict:
     return {"done": sorted(done), "conflicts": conflicts, "base": base.stdout.strip()}
 
 
+def slug(plan_file: Path, in_repo: bool) -> str:
+    """Build a branch-safe slug from an external title or an in-repo filename."""
+    name = plan_file.name
+    if not in_repo:
+        text = plan_file.read_text(errors="replace")
+        name = next(
+            (line[2:].strip() for line in text.splitlines() if line.startswith("# ")), "",
+        ) or name
+    value = re.sub(r"[^a-z0-9]+", "-", name.lower().removesuffix(".md")).strip("-")
+    value = re.sub(r"^\d{4}-\d{2}-\d{2}-", "", value)
+    return re.sub(r"-plan$", "", value) or "plan"
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) < 2 or argv[0] not in {"plan", "check", "files", "layout", "message", "done"}:
+    if len(argv) < 2 or argv[0] not in {
+        "plan", "check", "files", "layout", "message", "done", "slug",
+    }:
         print(__doc__, file=sys.stderr)
         return 2
-    command, root = argv[0], Path(argv[1]).resolve()
+    command = argv[0]
+    if command == "slug":
+        if len(argv) not in {2, 3} or (len(argv) == 3 and argv[2] != "--in-repo"):
+            print("usage: route_task.py slug <plan.md> [--in-repo]", file=sys.stderr)
+            return 2
+        plan_file = Path(argv[1])
+        if not plan_file.is_file():
+            print(f"plan not found: {plan_file}", file=sys.stderr)
+            return 2
+        print(slug(plan_file, len(argv) == 3))
+        return 0
+    root = Path(argv[1]).resolve()
     if command == "layout":
         print(json.dumps(layout(root)))
         return 0
@@ -397,17 +502,22 @@ def main(argv: list[str]) -> int:
             print(json.dumps(result))
         return 0
     out = []
+    react = None
     for task in tasks:
         routed = route(root, task["paths"])
+        decision = {"stack": routed["stack"], "agent": routed["agent"], "source": "files", "evidence": []}
+        if routed["stack"] == "unknown":
+            if react is None:
+                react = has_react_package(root)
+            decision = route_text(root, task["block"], react)
         out.append({
             "task": task["task"],
             "title": task["title"],
             "commit": task["commit"],
             "block": task["block"],
             "files": routed["files"],
-            "stack": routed["stack"],
-            "agent": routed["agent"],
             "groups": routed["groups"],
+            **decision,
         })
     print(json.dumps(out))
     return 0

@@ -104,3 +104,11 @@ they are not in the Claude catalog. Agent and skill names must carry the
 OMP extension declares it in its own `package.json` (`omp.extensions`); its
 name and version must equal `.omp-plugin/plugin.json`, and the build fails
 otherwise.
+
+A native plugin may also have a Claude Code edition: a plugin in
+`plugins/<name>/` and the Claude catalog, with no overlay (Delivery). The
+two editions share one README row, so their versions move together in all
+six places: the four above plus the native `.omp-plugin/plugin.json` and
+`package.json`. A file under `scripts/` that both editions ship must be
+byte-identical; the build fails otherwise. Their agents, skills, commands and
+hooks are written for each harness separately.

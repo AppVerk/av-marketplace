@@ -17,9 +17,11 @@ overlay at `omp/overlay/<name>.json`, this script writes `plugins-omp/<name>/`:
   and its `package.json`; unsupported hooks fail the build;
 - `.omp-plugin/plugin.json` mirrors the Claude manifest.
 
-`omp/native/<name>/` holds OMP-only plugins. They are copied as-is (minus
-`tests/` and caches) and listed with the version from their own
-`.omp-plugin/plugin.json`.
+`omp/native/<name>/` holds plugins written for OMP. They are copied as-is
+(minus `tests/` and caches) and listed with the version from their own
+`.omp-plugin/plugin.json`. A native plugin whose name is in the Claude catalog
+is the OMP edition of that Claude Code plugin (Delivery); a file under
+`scripts/` that both editions ship must be byte-identical, or the build fails.
 
 It also writes `.omp-plugin/marketplace.json`, listing only plugins that have
 an OMP edition, with versions of generated plugins taken from the Claude
@@ -367,8 +369,11 @@ def native_skipped(rel: Path) -> bool:
     )
 
 
-def build_native(src_root: Path, out_root: Path, taken: set[str]) -> dict:
-    """Copy an OMP-only plugin and return its catalog entry."""
+def build_native(src_root: Path, out_root: Path, taken: set[str], twin_root: Path | None = None) -> dict:
+    """Copy a native OMP plugin and return its catalog entry.
+
+    `twin_root` is the plugin's Claude Code edition, when it has one.
+    """
     reject_source_symlinks(src_root, NATIVE_SKIPPED_DIRS)
     manifest_path = src_root / ".omp-plugin" / "plugin.json"
     if not manifest_path.is_file():
@@ -414,6 +419,12 @@ def build_native(src_root: Path, out_root: Path, taken: set[str]) -> dict:
         expected = f"{name}:{src.parent.name}"
         if unquote(dict(split_frontmatter(src.read_text(), src)[0]).get("name", "")) != expected:
             raise BuildError(f"{src}: skill name must be {expected!r}")
+    if twin_root is not None:
+        for src in sorted((src_root / "scripts").rglob("*")):
+            rel = src.relative_to(src_root)
+            twin = twin_root / rel
+            if src.is_file() and not native_skipped(rel) and twin.is_file() and twin.read_bytes() != src.read_bytes():
+                raise BuildError(f"{src} differs from {twin}: a script both editions of {name!r} ship must be identical")
 
     for src in sorted(src_root.rglob("*")):
         rel = src.relative_to(src_root)
@@ -636,9 +647,10 @@ def build(dest_repo: Path, source_repo: Path = REPO) -> None:
 
     native_dir = source_repo / "omp" / "native"
     if native_dir.is_dir():
-        taken = set(entries) | {entry["name"] for entry in omp_plugins}
+        generated = {entry["name"] for entry in omp_plugins}
         for native in sorted(p for p in native_dir.iterdir() if p.is_dir()):
-            omp_plugins.append(build_native(native, out_root, taken))
+            twin = entries.get(native.name)
+            omp_plugins.append(build_native(native, out_root, generated, source_repo / twin["source"] if twin else None))
     omp_plugins.sort(key=lambda entry: entry["name"])
 
     omp_catalog = {
