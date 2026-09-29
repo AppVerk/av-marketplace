@@ -203,11 +203,8 @@ schema_errors() {
     def isstr: type == "string";
     def strarr: type == "array" and all(.[]; type == "string");
     def claudemodel: isstr and (IN("inherit", "opus", "sonnet", "haiku", "fable") or test("^claude-[a-z0-9.-]+$"));
-    def slot: if isstr then {provider: "claude", model: .}
-              else {provider: (.provider // "claude"), model: (.model // "inherit"), effort: (.effort // "inherit")} end;
+    def haiku: test("^(claude-)?haiku(-|$)");
     ["inherit", "opus", "sonnet", "haiku", "fable"] as $models
-    | {claude: ["inherit", "low", "medium", "high", "xhigh", "max"],
-       codex: ["inherit", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]} as $efforts
     | ["on-request", "after-green-gate", "free"] as $commits
     | ["never", "on-request"] as $pushes
     | ( if has("agents") and (.agents | type) != "object" then "agents: expected an object"
@@ -215,47 +212,13 @@ schema_errors() {
           ( if (.agents | has("models")) and (.agents.models | type) != "object" then "agents.models: expected an object"
             elif (.agents | has("models")) then
               ( .agents.models | to_entries[] | .key as $k | .value as $v | "agents.models.\($k)" as $p
-                | if ($v | isstr) then
-                    ( if ($v | claudemodel) then empty
-                      else "\($p): invalid value \($v | tojson); allowed: \($models | join(", ")), claude-<id> or an object {provider, model, effort}" end )
-                  elif ($v | type) != "object" then "\($p): expected a string or an object {provider, model, effort}"
-                  else
-                    ( $v | keys[] | select(IN("provider", "model", "effort") | not)
-                      | "\($p): unknown field \(tojson); allowed: provider, model, effort" ),
-                    ( ($v.provider // "claude") as $pr
-                      | if ($pr | isstr | not) or ($efforts[$pr] == null) then "\($p).provider: invalid value \($pr | tojson); allowed: claude, codex"
-                        else
-                          ( if $pr == "claude" and (($v.model // "inherit") | claudemodel | not)
-                            then "\($p).model: invalid claude model \($v.model | tojson); allowed: \($models | join(", ")) or claude-<id>"
-                            elif $pr == "codex" and ((($v.model // "inherit") | isstr | not) or (($v.model // "inherit") | test("^[A-Za-z0-9][A-Za-z0-9._:-]*$") | not))
-                            then "\($p).model: invalid codex model name \($v.model | tojson)"
-                            else empty end ),
-                          ( ($v.effort // "inherit") as $e
-                            | if ($e | isstr | not) or ($efforts[$pr] | index([$e]) == null)
-                              then "\($p).effort: invalid value \($e | tojson) for \($pr); allowed: \($efforts[$pr] | join(", "))"
-                              else empty end )
-                        end )
-                  end ),
-              ( if (.agents.models.review // null) != null and (.agents.models.review | slot | .provider == "claude" and .model == "haiku")
-                then "agents.models.review: haiku cannot do review; use opus, sonnet, fable, inherit or a codex model"
-                else empty end )
+                | if ($v | type) == "object" then "\($p): the object form {provider, model, effort} was removed with Codex slots; use a Claude model string, e.g. \"opus\""
+                  elif ($v | claudemodel | not) then "\($p): invalid value \($v | tojson); allowed: \($models | join(", ")) or claude-<id>"
+                  elif IN($k; "review", "planReview") and ($v | haiku) then "\($p): a Haiku model cannot do review; use opus, sonnet, fable or inherit"
+                  else empty end )
             else empty end ),
-          ( if (.agents | has("crossVendor")) and (.agents.crossVendor | type) != "boolean"
-            then "agents.crossVendor: expected true or false"
-            elif .agents.crossVendor == true then
-              ((.agents.models // {}) as $m
-               | def prov($s): ($m[$s] // "inherit") | slot | .provider;
-                 ( if prov("review") == prov("implement")
-                   then "agents.crossVendor: review and implement have the same provider \(prov("review") | tojson); code must be checked by a different provider than the one that wrote it"
-                   else empty end ),
-                 ( (if $m.planReview != null then "planReview" else "review" end) as $pr
-                   | if prov($pr) == prov("plan")
-                     then "agents.crossVendor: \($pr) and plan have the same provider \(prov("plan") | tojson); set agents.models.planReview to a different provider"
-                     else empty end ))
-            else empty end ),
-          ( if (.agents | has("timeoutSec")) and ((.agents.timeoutSec | type) != "number" or .agents.timeoutSec < 1 or (.agents.timeoutSec | floor) != .agents.timeoutSec)
-            then "agents.timeoutSec: expected a positive integer"
-            else empty end )
+          ( .agents | keys[] | select(IN("crossVendor", "timeoutSec"))
+            | "agents.\(.): removed with Codex slots; delete this key" )
         else empty end ),
       ( if has("git") and (.git | type) != "object" then "git: expected an object"
         elif (.git | type) == "object" then

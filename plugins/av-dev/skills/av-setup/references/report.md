@@ -11,7 +11,6 @@ Up to 20 lines in the reply. The full list of changes goes to `<paths.reports>/Y
 | Docs | N created, M updated, K TODO markers |
 | Overlays | list of 5 files |
 | Role skills | e.g. shop-backend, shop-web, shop-tests or "1 role, rules in the overlay" |
-| Codex | AGENTS.md -> CLAUDE.md; .agents/skills -> .claude/skills, "no project skills", or "`.agents/` ignored by the team: Codex does not see the role skills" |
 | Setup validation | `check_setup.sh`: ERRORS e WARNINGS w, e.g. "0 / 2 (missing section X)" |
 | Docs drift | count from the step 3 audit and how many were fixed (`audit --fix`) or "kept in the report" |
 | Knowledge loss (ADOPTION) | `adoption_diff.sh`: LOST m, of which k in "Knowledge that gets lost" |

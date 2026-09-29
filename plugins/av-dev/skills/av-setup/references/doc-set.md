@@ -14,7 +14,7 @@ This file describes which documents `av-setup` creates and where it takes the fa
 
 ## Entry file `CLAUDE.md`
 
-`AGENTS.md` is a symlink to `CLAUDE.md` when `codex.enabled`. The template below is in English. Write the file in `project.language`; section names listed in `references/localization.md` use its table. Section order:
+The template below is in English. Write the file in `project.language`; section names listed in `references/localization.md` use its table. Section order:
 
 ```markdown
 # CLAUDE.md
@@ -65,7 +65,7 @@ At the start of a session, read `<paths.learnings>` if it exists.
 | `configuration.md` | config files and what may be changed in them | config files, env without values |
 | `tech-stack.md` | dependencies with versions | lockfile |
 | `testing.md` | how to write and run tests, mocks, fixtures | test directories, sample tests |
-| `agents.md` | work with the agent: av-* skills, overlays, role skills, slots and models (no copy of config values), machine requirements (Codex CLI, slot agent definitions, allow rule for `agent.sh`, tools the integrations need), local override `.ai/av.config.json.local` | config, av-implement `SKILL.md` "Slots and providers" |
+| `agents.md` | work with the agent: av-* skills, overlays, role skills, slots and models (no copy of config values), machine requirements (slot agent definitions without the plugin, tools the integrations need), local override `.ai/av.config.json.local` | config, av-implement `SKILL.md` "Slots" |
 | `code-review.md` | repo review rules (read by `av-review`) | conventions from the code, linters, CI and team docs |
 | `contracts.md` | protected surfaces and what is a breaking change | public API, routes, DB schema, deep links, events |
 | `modules/README.md` | module index | candidates from the scan |

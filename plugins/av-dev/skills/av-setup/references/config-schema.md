@@ -6,7 +6,7 @@ The file always sits in `.ai/av.config.json`, even when the human docs live in `
 
 ## Local override `.ai/av.config.json.local`
 
-Settings of one person or one machine go to `.ai/av.config.json.local`. The file is in `.gitignore`. Typical reasons: no Codex CLI (a Codex slot switched to Claude), a different device in `needs` and `precheck`, a longer `timeoutSec` on a slow machine, a personal integration.
+Settings of one person or one machine go to `.ai/av.config.json.local`. The file is in `.gitignore`. Typical reasons: another model for a slot, a different device in `needs` and `precheck`, a longer `timeoutSec` on a slow machine, a personal integration.
 
 Skills and scripts read the effective config from the `av-verify/scripts/config.sh` script:
 
@@ -24,23 +24,19 @@ Merging:
 | string, number, bool | replaces the value |
 | `null` | removes the key from the effective config |
 
-Example: a person without Codex CLI.
+Example: a person who wants `opus` for plans and `sonnet` for review.
 
 ```json
 {
   "agents": {
-    "crossVendor": false,
-    "models": {
-      "plan":   {"provider": "claude", "model": "opus", "effort": "high"},
-      "review": {"provider": "claude", "model": "opus", "effort": "xhigh"}
-    }
+    "models": { "plan": "opus", "review": "sonnet" }
   }
 }
 ```
 
 Rules:
-- Validation (`gate.sh --list`) checks the effective config. A wrong override gives a config error (code 2), e.g. `haiku` in `review` or `crossVendor` without two providers.
-- `gate.sh --list` prints `CONFIG_LOCAL` and the overridden keys (`OVERRIDE`, `REMOVE`). The gate prints `CONFIG_LOCAL` and writes `configLocal` into the evidence of each check; `gate.sh --status` shows it. `agent.sh --resolve` and `--summary` add `config=local`, and slot records have `config_local`. The `av-verify` and `av-implement` reports list the overridden keys, because the result depends on the machine.
+- Validation (`gate.sh --list`) checks the effective config. A wrong override gives a config error (code 2), e.g. `haiku` in `review`.
+- `gate.sh --list` prints `CONFIG_LOCAL` and the overridden keys (`OVERRIDE`, `REMOVE`). The gate prints `CONFIG_LOCAL` and writes `configLocal` into the evidence of each check; `gate.sh --status` shows it. The `av-verify` and `av-implement` reports list the overridden keys, because the result depends on the machine.
 - `--no-local` in `config.sh`, `gate.sh` and `check_setup.sh` skips the override.
 - `av-setup` never creates or edits the `.local` file. It adds it to `.gitignore`. In REFRESH, it compares the scan with the team config (`--no-local`).
 - Commands from `.local` run without asking, like team commands. The machine owner writes the file, not the repo.
@@ -138,8 +134,7 @@ Rules:
     "tracker": { "access": "mcp", "urls": ["https://tracker.example.com/browse/PROJ"], "doc": ".ai/tracker.md" },
     "board": { "access": "browser", "urls": ["https://board.example.com/b/123"], "doc": ".ai/board.md" },
     "mcp": ["example-tracker"]
-  },
-  "codex": { "enabled": true }
+  }
 }
 ```
 
@@ -221,38 +216,15 @@ Commands from the config are the only commands that `av-verify` runs without ask
 
 **agents**
 - `independentReview`: `true` means that a fresh subagent without the implementation context does the review.
-- `models`: slots `plan`, `planReview`, `implement`, `review`, `verify`. The value is a string or an object.
-  - String: a Claude model, `inherit`, `opus`, `sonnet`, `haiku`, `fable` or a full id `claude-<id>`. Short for `{"provider": "claude", "model": "<string>"}`.
-  - Object: `{"provider": "claude"|"codex", "model": "...", "effort": "..."}`. All fields optional: `provider` defaults to `claude`, `model` and `effort` default to `inherit`. A `codex` model is a name from Codex CLI, e.g. `<codex-model>`; `inherit` takes the model from `~/.codex/config.toml`.
-  - Effort: `claude` accepts `low`, `medium`, `high`, `xhigh`, `max`; `codex` also `minimal` and `ultra`. `agent.sh` checks in `~/.codex/models_cache.json` whether a given Codex model supports the effort (a warning).
+- `models`: slots `plan`, `planReview`, `implement`, `review`, `verify`. The value is a Claude model: `inherit` (the session model), `opus`, `sonnet`, `haiku`, `fable` or a full id `claude-<id>`. A missing slot is `inherit`.
   - `planReview` without an entry inherits `review`.
-  - A `claude` slot with effort `inherit` runs as a `general-purpose` subagent with the session effort. Set `effort` to run it on a slot definition (`av-slot-<effort>`). A missing slot is `inherit`.
-  - `gate.sh --list` rejects other values, and `haiku` in `review` (code 2). Do not give `haiku` to review. A cheap model can falsely confirm correctness. For running commands with an objective exit code, it is enough. In adoption, choose the stronger of two: the model from the old agent's frontmatter or the default from this schema.
-  - A Claude slot runs the Agent tool with the `av-slot-<effort>` definition (session permissions). A Codex slot runs `av-implement/scripts/agent.sh` through `codex exec`: write slots and `verify` in the `workspace-write` sandbox with automatic review, read slots `read-only`; a grant beyond that needs a human prompt. Rules: skill `av-implement`, sections "Slots and providers" and "Permissions".
-- `crossVendor` (optional, bool): `true` requires `review` to have a different provider than `implement`, and `planReview` (or `review`) a different one than `plan`. Models from different companies make mistakes in different places, so mutual checking catches more. Alternating example:
-
-  ```json
-  "agents": {
-    "independentReview": true,
-    "crossVendor": true,
-    "timeoutSec": 3600,
-    "models": {
-      "plan":       {"provider": "codex",  "model": "<codex-model>", "effort": "high"},
-      "planReview": {"provider": "claude", "model": "opus",        "effort": "high"},
-      "implement":  {"provider": "claude", "model": "opus",        "effort": "xhigh"},
-      "review":     {"provider": "codex",  "model": "<codex-model>", "effort": "xhigh"},
-      "verify":     "inherit"
-    }
-  }
-  ```
-- `timeoutSec` (optional): the limit of one slot in `agent.sh`, default 3600.
+  - `plan`, `implement` and `verify` on `inherit` run in the session. Other slots run on the Agent tool with the `av-slot` (write) or `av-slot-read` (read) definition and the slot model, with the session's permissions. Rules: skill `av-implement`, section "Slots".
+  - `gate.sh --list` rejects other values (code 2), a Haiku model (`haiku`, `claude-haiku-<id>`) in `review` and `planReview`, the old object form `{provider, model, effort}` and the removed keys `crossVendor` and `timeoutSec`. Do not give Haiku to review. A cheap model can falsely confirm correctness. For running commands with an objective exit code, it is enough. In adoption, choose the stronger of two: the model from the old agent's frontmatter or the default from this schema.
 
 **integrations**: information for the skills about which tools they may use. Use these category keys, so every repo reads the same: `tracker`, `repoHost`, `ci`, `design`, `board`, `translations`, `errorTracking`, `docsHost`, `mcp` (list of MCP servers). A tool that fits no category gets its own key. Values: a tool name, or `{access, urls, doc}` (below). Secrets never go here.
 - A tool entry is a string (the tool name) or an object with optional fields: `access` (`mcp`, `browser`, `cli` or `api`), `urls` (addresses the skills may open, without credentials in the address) and `doc` (the topic file in the repo docs). Use the object form when the team needs the access method or the addresses; every run then writes the same keys.
 - How the repo uses a tool is described in the repo docs (`references/doc-set.md`, section "Integrations"), not in the config.
 - `mcp` lists the MCP servers that the skills use. A server that the team keeps in `.mcp.json` but no longer uses is left out of this list.
-
-**codex.enabled**: `true` means that setup maintains `AGENTS.md` and `.agents/skills` as symlinks.
 
 ## Rules
 

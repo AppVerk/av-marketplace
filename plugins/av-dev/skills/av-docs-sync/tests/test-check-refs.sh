@@ -154,7 +154,7 @@ has "$out10" "CHECKED 3 MISSING 2 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0" && [ "$rc
 rm "$REPO/.ai/dot.md"
 
 # --- 2i. every script shipped with the av-* skills is known, by bare name or by its path in the skills directory
-printf '# s\nSlots: `agent.sh`, `config.sh`, `compose_container.sh`, `av-verify/scripts/gate.sh`, `scripts/adoption_diff.sh`. Unknown: `ghost_tool.sh`.\n' >"$REPO/.ai/avs.md"
+printf '# s\nSlots: `scan.sh`, `config.sh`, `compose_container.sh`, `av-verify/scripts/gate.sh`, `scripts/adoption_diff.sh`. Unknown: `ghost_tool.sh`.\n' >"$REPO/.ai/avs.md"
 out11="$(bash "$CHECK" .ai/avs.md --root .)"
 has "$out11" "UNRESOLVED .ai/avs.md:2 ghost_tool.sh" && ok || fail "unknown bare script not reported: $out11"
 has "$out11" "CHECKED 6 MISSING 0 UNRESOLVED 1 EXTERNAL 0 WORKSPACE 0" && ok || fail "counters with av scripts: $(printf '%s' "$out11" | tail -1)"

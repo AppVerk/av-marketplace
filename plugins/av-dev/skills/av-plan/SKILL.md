@@ -16,7 +16,7 @@ The plan is the contract for implementation. It must be concrete enough that `av
 4. Working files only in `paths.workspace`. The plan in `paths.plans`.
 5. No commit, no push, no AI signature.
 6. Plan language from `project.language`. Verdict in the first line of the reply. No em dashes "—" or en dashes "–".
-7. The `plan` and `planReview` slots follow the "Slots and providers" section of the `av-implement` skill (script `<skill-dir>/../av-implement/scripts/agent.sh`). First run `agent.sh --slot plan --resolve`. With `via` other than `session`, do not plan yourself: assign steps 1-4 to the slot executor (Agent tool or `agent.sh`, according to `via`; `RUN_ID` = `YYYYMMDD-HHMM-plan-<topic>`). Give it the task, the answers to questions and the target plan path. Ask the user your questions before delegating, because the executor works without a human. You do steps 5 and 6 after it returns.
+7. The `plan` and `planReview` slots follow the "Slots" section of the `av-implement` skill. When `plan` has a model other than `inherit`, do not plan yourself: assign steps 1-4 to an `av-slot` subagent with that model (`RUN_ID` = `YYYYMMDD-HHMM-plan-<topic>`). Give it the task, the answers to questions and the target plan path. Ask the user your questions before delegating, because the executor works without a human. You do steps 5 and 6 after it returns.
 
 ## Step 1: Input
 
@@ -102,7 +102,7 @@ Write the plan in `project.language`. Take the section headers in that language 
 
 ## Step 5: Plan verification
 
-Required in LARGE mode, for high risk or with `--verify-plan`. Start a fresh `planReview` slot executor (`read` access, according to `via`; with `via=session`, a general-purpose subagent). Do not pass it your reasoning, only the plan path. When the executor wrote the plan, you also do not fix the plan before verification. It checks 3 axes:
+Required in LARGE mode, for high risk or with `--verify-plan`. Start a fresh `planReview` slot executor (an `av-slot-read` subagent, section "Slots" of `av-implement`). Do not pass it your reasoning, only the plan path. When the executor wrote the plan, you also do not fix the plan before verification. It checks 3 axes:
 1. Feasibility: each file, type and method in the plan exists or is marked as new.
 2. Completeness: missing files, e.g. DI registrations, translations in all languages, tests, docs, project files.
 3. Contract consistency: roles see the same contract, types match.

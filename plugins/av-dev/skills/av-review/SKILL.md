@@ -111,6 +111,6 @@ Verdict: NEEDS_FIXES when a confirmed BLOCKER or HIGH with origin NEW exists. Ot
 
 `owner` is the role from the `check_setup.sh --owner` result, when the config has `roles`.
 
-A slot executor with `read` access (prompt header from `agent.sh` or an `av-slot-read-*` subagent) does not write files. The full report is then its last message, and the orchestrator moves it to a file.
+A slot executor with `read` access (an `av-slot-read` subagent) does not write files. The full report is then its last message, and the orchestrator moves it to a file.
 
 Always save the full report (with the axes, also those without notes, and the findings table) to a file: `<paths.reports>/<RUN_ID>-review-r<N>.md` for a run, otherwise `<paths.reports>/YYYY-MM-DD-review-<topic>.md`. In the reply, up to 20 lines: verdict, numbers and the most important findings.

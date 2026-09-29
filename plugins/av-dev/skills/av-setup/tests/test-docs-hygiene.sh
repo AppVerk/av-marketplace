@@ -55,7 +55,16 @@ printf '%s\n' "$(rot13 'OBHAQRQ')" >"$TMP/marker.sh"
 printf 'bounded queue\n' >"$TMP/prose.md"
 [ -z "$(leftovers "$TMP/prose.md")" ] && ok || fail "marker matched ordinary prose"
 
-# --- 3. the adoption grep keeps its Polish words on purpose, and says why
+# --- 3. no trace of the removed Codex slot runner (this file names the patterns, so it is skipped)
+self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+runner='agent\.sh|agent_grant|agent_guard|codex exec|av-slot-(read-)?(low|medium|high|xhigh|max)([^a-z]|$)'
+hits="$(grep -rnIE -- "$runner" "$PLUGIN" ${page:+"$page"} 2>/dev/null | grep -vF "$self:")"
+[ -z "$hits" ] && ok || fail "runner leftovers:
+$hits"
+[ ! -e "$PLUGIN/hooks" ] && ok || fail "hooks/ is back; the plugin ships no hooks"
+[ "$(find "$PLUGIN/agents" -name '*.md' | wc -l | tr -d ' ')" -eq 2 ] && ok || fail "expected 2 slot agents: av-slot and av-slot-read"
+
+# --- 4. the adoption grep keeps its Polish words on purpose, and says why
 adoption="$SKILLS/av-setup/references/adoption.md"
 grep -q 'orkiestrator' "$adoption" && grep -q 'repos keep their own language' "$adoption" && ok || fail "adoption.md: Polish grep words or the reason for them missing"
 

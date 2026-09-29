@@ -63,12 +63,11 @@ Typical mapping:
 | docs that refer to agents and commands (`README.md`, `feature-checklist.md`, `code-templates.md`, `commands.md`) | UPDATE | replace the names with av-* skills; list of files from the grep in step 1 |
 | pipeline section in `CLAUDE.md` | UPDATE | -> "Working with the agent" section |
 | critical rules and response style in `CLAUDE.md` | KEEP | these are team decisions |
-| `.codex/agents/*.toml` | DROP | Codex gets skills through `.agents/skills` |
-| `.codex/config.toml`, `.mcp.json`, `settings.json` | KEEP | environment and MCP; an entry for a server the team no longer uses stays, and the tool's topic file says so |
-| `.agents/skills/*` | MERGE | unique skills -> `.claude/skills/`, then a symlink |
+| `.mcp.json`, `settings.json` | KEEP | environment and MCP; an entry for a server the team no longer uses stays, and the tool's topic file says so |
+| files of other agent tools (`AGENTS.md`, `.codex/`, `.agents/`) | KEEP | setup does not maintain them; list them in the report |
 | `sessions/learnings.md`, files in `workspace/` | KEEP | team history |
 | `workspace/README.md` | UPDATE | description of the `runs/`, `plans/`, `reports/` directories instead of the old pipeline phases |
-| empty `.claude/skills/` directory after conversion | DROP | without project skills there is no `.agents/skills` symlink |
+| empty `.claude/skills/` directory after conversion | DROP | no project skills left |
 | docs sections with incoming links (e.g. `agents.md#section`) | move, do not delete | move the section to the topic owner file and fix the links |
 | `docs/onboarding.html` and other HTML materials | UPDATE or TODO | references to the old process; leave large generated files as TODO with the regeneration command |
 
@@ -124,8 +123,7 @@ New files are created before old ones are deleted. At every moment, the repo has
 2. Overlays and `code-review.md`.
 3. Other docs: `contracts.md` and other missing topics.
 4. `CLAUDE.md` and the files from the UPDATE list.
-5. Codex according to `references/codex.md`.
-6. Deletions: `git rm` only for files whose deletion the user explicitly approved. `--defaults` is not such an approval: without it, leave the CONVERT and DROP files in place, and give a ready `git rm` command with the list in the report. The history stays in git, so going back is possible.
+5. Deletions: `git rm` only for files whose deletion the user explicitly approved. `--defaults` is not such an approval: without it, leave the CONVERT and DROP files in place, and give a ready `git rm` command with the list in the report. The history stays in git, so going back is possible.
 
 ## Step 5: Post-migration check
 

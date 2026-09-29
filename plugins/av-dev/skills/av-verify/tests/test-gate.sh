@@ -250,7 +250,7 @@ bad_case() {
   if has "$o" "CONFIG_ERROR $expect" && [ "$r" -eq 2 ]; then ok; else fail "validation $desc: code $r, output: $o"; fi
 }
 bad_case '.agents.models.verify = "gpt4"' "agents.models.verify: invalid value \"gpt4\"" "model not on the list"
-bad_case '.agents.models.review = "haiku"' "agents.models.review: haiku cannot do review" "review haiku"
+bad_case '.agents.models.review = "haiku"' "agents.models.review: a Haiku model cannot do review" "review haiku"
 bad_case '.agents.models = "opus"' "agents.models: expected an object" "models not an object"
 bad_case '.git.commit = "always"' "git.commit: invalid value \"always\"" "git.commit"
 bad_case '.git.push = "force"' "git.push: invalid value \"force\"" "git.push"
@@ -266,29 +266,17 @@ bad_case '.roles[0].name = 7' "roles[0].name: expected a non-empty string" "name
 bad_case '.roles = {"a": 1}' "roles: expected an array of objects" "roles not an array"
 bad_case '.generatedPaths = "vendor/**"' "generatedPaths: expected an array of strings" "generatedPaths"
 bad_case '.unownedPaths = [1]' "unownedPaths: expected an array of strings" "unownedPaths"
-bad_case '.agents.models.review = {"provider": "claude", "model": "haiku"}' "agents.models.review: haiku cannot do review" "review haiku in an object"
-bad_case '.agents.models.plan = {"provider": "gemini", "model": "x"}' "agents.models.plan.provider: invalid value \"gemini\"" "unknown provider"
-bad_case '.agents.models.plan = {"provider": "claude", "model": "gpt-6-astra"}' "agents.models.plan.model: invalid claude model" "codex model for claude"
-bad_case '.agents.models.plan = {"provider": "codex", "model": "gpt 6"}' "agents.models.plan.model: invalid codex model name" "bad codex model name"
-bad_case '.agents.models.plan = {"provider": "claude", "model": "opus", "effort": "ultra"}' "agents.models.plan.effort: invalid value \"ultra\" for claude" "effort ultra for claude"
-bad_case '.agents.models.plan = {"provider": "codex", "model": "gpt-6-astra", "effort": "turbo"}' "agents.models.plan.effort: invalid value \"turbo\" for codex" "unknown codex effort"
-bad_case '.agents.models.plan = {"provider": "codex", "modle": "x"}' "agents.models.plan: unknown field \"modle\"" "typo in a slot field"
-bad_case '.agents.models.plan = 5' "agents.models.plan: expected a string or an object" "slot as a number"
-bad_case '.agents.crossVendor = "yes"' "agents.crossVendor: expected true or false" "crossVendor not a bool"
-bad_case '.agents.timeoutSec = 0' "agents.timeoutSec: expected a positive integer" "timeoutSec zero"
-bad_case '.agents.crossVendor = true' "agents.crossVendor: review and implement have the same provider \"claude\"" "crossVendor same provider"
-bad_case '.agents.crossVendor = true | .agents.models = {"plan": {"provider": "codex", "model": "gpt-6-astra"}, "implement": "opus", "review": {"provider": "codex", "model": "gpt-6-astra"}}' \
-  "agents.crossVendor: review and plan have the same provider \"codex\"; set agents.models.planReview" "crossVendor plan without planReview"
-cross='.agents.crossVendor = true | .agents.timeoutSec = 3600 | .agents.models = {
-  "plan": {"provider": "codex", "model": "gpt-6-astra", "effort": "high"},
-  "planReview": {"provider": "claude", "model": "opus", "effort": "high"},
-  "implement": {"provider": "claude", "model": "opus", "effort": "xhigh"},
-  "review": {"provider": "codex", "model": "gpt-6-astra", "effort": "ultra"},
-  "verify": "haiku"}'
-jq "$cross" "$good" >"$TMP/cross.json"
-out="$(bash "$GATE" --config "$TMP/cross.json" --list)"; rc=$?
-has "$out" "CONFIG_ERROR" && fail "validation: valid cross-vendor config rejected: $out" || ok
-[ "$rc" -eq 0 ] && ok || fail "validation: cross-vendor config code $rc"
+bad_case '.agents.models.review = {"provider": "claude", "model": "opus"}' "agents.models.review: the object form {provider, model, effort} was removed" "object slot"
+bad_case '.agents.models.plan = "gpt-6-astra"' "agents.models.plan: invalid value \"gpt-6-astra\"" "non-Claude model"
+bad_case '.agents.models.plan = 5' "agents.models.plan: invalid value 5" "slot as a number"
+bad_case '.agents.models.review = "claude-haiku-4-5"' "agents.models.review: a Haiku model cannot do review" "review with a full Haiku id"
+bad_case '.agents.models.planReview = "haiku"' "agents.models.planReview: a Haiku model cannot do review" "planReview haiku"
+bad_case '.agents.crossVendor = false' "agents.crossVendor: removed with Codex slots" "crossVendor left in the config"
+bad_case '.agents.timeoutSec = 3600' "agents.timeoutSec: removed with Codex slots" "timeoutSec left in the config"
+jq '.agents.models = {"plan": "opus", "planReview": "sonnet", "implement": "inherit", "review": "fable", "verify": "claude-haiku-4-5"}' "$good" >"$TMP/slots.json"
+out="$(bash "$GATE" --config "$TMP/slots.json" --list)"; rc=$?
+has "$out" "CONFIG_ERROR" && fail "validation: valid slot models rejected: $out" || ok
+[ "$rc" -eq 0 ] && ok || fail "validation: slot models config code $rc"
 jq '.agents.models.implement = "claude-opus-5-5"' "$good" >"$TMP/fullid.json"
 out="$(bash "$GATE" --config "$TMP/fullid.json" --list)"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "validation: full claude model id rejected: $out"

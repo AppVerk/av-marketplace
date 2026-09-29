@@ -72,9 +72,7 @@ bash <skill-dir>/scripts/gate.sh --root <repo-root> --gate <gate> --run-id <RUN_
 `gate.sh` works on the effective config: `.ai/av.config.json` with the override `.ai/av.config.json.local` (script `scripts/config.sh`). The line `CONFIG_LOCAL <file>` means the override is in use; `--list` also prints its keys (`OVERRIDE`, `REMOVE`). The report then has a line `Local config: <keys>`, because the result depends on the machine. The evidence records it too: each check run with the override has `configLocal`, and `--status` shows `(local override <file>)`. `--no-local` skips the override.
 
 Every mode except `--fingerprint` checks the config. An error is `CONFIG_ERROR <field>: <description>` and code 2. Checked fields:
-- `agents.models.*`: a string with a Claude model (`inherit`, `opus`, `sonnet`, `haiku`, `fable`, `claude-<id>`) or an object `{provider, model, effort}`. `provider`: `claude` or `codex`. Effort for `claude`: `low`, `medium`, `high`, `xhigh`, `max`; for `codex` also `minimal` and `ultra`; `inherit` is always allowed. `review` cannot be `haiku`.
-- `agents.crossVendor` (bool): when `true`, `review` has a different provider than `implement`, and `planReview` (or `review`) a different one than `plan`.
-- `agents.timeoutSec`: a positive integer, the limit for one slot in `agent.sh`.
+- `agents.models.*`: a Claude model (`inherit`, `opus`, `sonnet`, `haiku`, `fable`, `claude-<id>`). `review` and `planReview` cannot be a Haiku model (`haiku` or `claude-haiku-<id>`).
 - `git.commit`: `on-request`, `after-green-gate` or `free`. `git.push`: `never` or `on-request`.
 - `roles`: an array of objects with `name`, `skill` (strings), `order` (integer), `globs` (non-empty array of strings, without `{` and `}`).
 - `generatedPaths`, `unownedPaths`: arrays of strings.
@@ -120,4 +118,4 @@ Some checks are not a command: visual verification through a browser automation 
 
 ## Use by other skills
 
-`av-implement` calls this skill after changes and before the report. It can also hand it to the `verify` slot (`agent.sh --slot verify`), because the result depends on the exit code, not on judgment. The `codex` executor runs in the user's sandbox. A device emulator, a container runtime or network may need approval (`AGENT_NEEDS_PERMISSION`, skill `av-implement`, section "Permissions"). For such gates it is easier to leave `verify` on `inherit`.
+`av-implement` calls this skill after changes and before the report. It can also hand it to the `verify` slot (an `av-slot-read` subagent with the `verify` model, skill `av-implement`, section "Slots"), because the result depends on the exit code, not on judgment.

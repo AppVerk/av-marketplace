@@ -15,7 +15,7 @@ Reference page: [docs/plugins/av-dev.md](../../docs/plugins/av-dev.md).
 - [Skills and examples](#skills-and-examples)
 - [What av-setup creates](#what-av-setup-creates)
 - [Config examples](#config-examples)
-- [Claude and Codex slots](#claude-and-codex-slots)
+- [Slot models](#slot-models)
 - [Language](#language)
 - [Troubleshooting](#troubleshooting)
 
@@ -27,17 +27,6 @@ Reference page: [docs/plugins/av-dev.md](../../docs/plugins/av-dev.md).
 ```
 
 Requirements: `bash` 3.2+, `git`, `jq` (`brew install jq`).
-
-Codex models: only if any slot in your config has `"provider": "codex"`. You must be logged in to Codex, otherwise these slots fail.
-
-```bash
-npm install -g @openai/codex                  # Codex CLI with automatic review
-codex login                                   # log in with your Codex account, once per machine
-codex login status                            # check: logged in
-codex exec --help | grep -- --approve-for-me  # check: the CLI is new enough
-```
-
-No Codex account: switch the Codex slots to Claude in `.ai/av.config.json.local` (see [Claude and Codex slots](#claude-and-codex-slots)).
 
 ## Quick start
 
@@ -72,7 +61,7 @@ You can also ask in plain words. "Set up this repo for Claude", "implement PROJ-
 | `/av-dev:av-setup` | full setup with an interview and a plan to approve |
 | `/av-dev:av-setup --dry-run` | scan, interview and plan only; no changes in tracked files |
 | `/av-dev:av-setup --defaults` | no interview; detected values; decisions listed in the report |
-| `/av-dev:av-setup --only config` | only the config; `docs`, `overlays`, `roles`, `codex` work the same way |
+| `/av-dev:av-setup --only config` | only the config; `docs`, `overlays`, `roles` work the same way |
 | `/av-dev:av-setup --eval` | after the setup, measure the review on a clone with 5 injected defects |
 
 Modes are picked from what the repo already has:
@@ -136,7 +125,7 @@ READY_FOR_COMMIT: CSV export added to the orders list.
 | Mode | STANDARD, normal risk |
 | Gates | quick PASS FRESH, full PASS FRESH |
 | Review | APPROVED after 1 round; 0 open BLOCKER/HIGH |
-| Models | plan codex/high, implement claude opus/high, review codex/xhigh |
+| Models | plan session, implement session, review opus |
 
 Commit: `PROJ-123 add CSV export to the orders list`
 ```
@@ -180,8 +169,6 @@ Commit: `PROJ-123 add CSV export to the orders list`
 
 ```
 CLAUDE.md                     instructions for the agent, with a task routing table
-AGENTS.md -> CLAUDE.md        the same instructions for Codex
-.agents/skills -> .claude/skills
 .ai/
   av.config.json              team config (committed)
   av.config.json.local        your own overrides (gitignored, you create it)
@@ -225,7 +212,7 @@ Local override: `.ai/av.config.json.local` changes settings only on your machine
 ```json
 {
   "validation": { "commands": { "unit": { "timeoutSec": 1800 } } },
-  "agents": { "crossVendor": false, "models": { "review": { "provider": "claude", "model": "opus", "effort": "xhigh" } } }
+  "agents": { "models": { "review": "sonnet" } }
 }
 ```
 
@@ -235,14 +222,13 @@ Check what is in effect:
 bash <plugin>/skills/av-verify/scripts/config.sh --root . --sources
 ```
 
-## Claude and Codex slots
+## Slot models
 
-Each step of a run is a slot with its own provider, model and effort. The default from `av-setup` needs only Claude Code:
+Each step of a run is a slot: `plan`, `planReview`, `implement`, `review`, `verify`. The config gives each slot a Claude model. The default from `av-setup`:
 
 ```json
 "agents": {
   "independentReview": true,
-  "crossVendor": false,
   "models": {
     "plan":      "inherit",
     "implement": "inherit",
@@ -252,33 +238,11 @@ Each step of a run is a slot with its own provider, model and effort. The defaul
 }
 ```
 
-Opt-in, when the team has Codex: Claude and Codex in turns, so code and plans are checked by a different provider than the one that wrote them (`crossVendor: true`):
-
-```json
-"agents": {
-  "independentReview": true,
-  "crossVendor": true,
-  "timeoutSec": 3600,
-  "models": {
-    "plan":       { "provider": "codex",  "model": "<codex-model>", "effort": "high" },
-    "planReview": { "provider": "claude", "model": "opus", "effort": "high" },
-    "implement":  { "provider": "claude", "model": "opus", "effort": "high" },
-    "review":     { "provider": "codex",  "model": "<codex-model>", "effort": "xhigh" },
-    "verify":     "sonnet"
-  }
-}
-```
-
-- Keep `verify` on the session or a cheap Claude model: it runs gates. On Codex it works, but it reads the skills and logs first and is 2-3 times slower.
-- Claude slots run as plugin agents `av-dev:av-slot-<effort>`.
-- Read slots (`review`, `planReview`) must not change code. The run takes a code fingerprint before and after each read slot, Claude or Codex; a change gives FAIL and the result does not count. This detects a change after the fact; it is not a sandbox.
-- Codex slots run through `codex exec`. You must be logged in to Codex (`codex login`, see [Install](#install)). Needs a Codex CLI with automatic review (`codex exec --approve-for-me`).
-  - `plan`, `implement`, `verify`: sandbox `workspace-write` with automatic review. A command the sandbox blocks (a build, a simulator, the network) asks for escalation and a Codex reviewer model decides, like auto mode in Claude Code. No prompts for you.
-  - `review`, `planReview`: sandbox `read-only`.
-  - These settings win over `sandbox_mode` in `~/.codex/config.toml`.
-- The plugin hook `agent_guard.sh` lets the orchestrator start slots without prompts, also in auto mode, when the call has only plain characters and known flags. You need no allow rule for `agent.sh`; remove an old `agent.sh:*` rule, and never allow `agent_grant.sh` or the scripts directory.
-- When a slot still needs more access (a folder outside the repo, no sandbox), the run resumes it through `agent_grant.sh`, and Claude Code always shows you a prompt for that exact command. In `bypassPermissions` the hook blocks it and you run the command yourself with `!`.
-- The team uses the Codex variant and you have no Codex: switch its slots to Claude in `.ai/av.config.json.local` and set `crossVendor: false`.
+- A value is `inherit` (the session model), `opus`, `sonnet`, `haiku`, `fable` or a full id `claude-<id>`. `planReview` without an entry uses `review`.
+- `plan`, `implement` and `verify` on `inherit` run in the session. Other slots run as plugin agents: `av-dev:av-slot` (write) or `av-dev:av-slot-read` (review, planReview, verify), with the model from the config.
+- Slot agents have the session's permissions, like any Claude Code subagent. The plugin adds no hooks and needs no allow rules.
+- Review slots must not change code. The run takes a code fingerprint before and after each read slot; a change makes the result invalid. This detects a change after the fact; it is not a sandbox.
+- `review` and `planReview` cannot use a Haiku model: a cheap model can falsely confirm correctness.
 
 ## Language
 
@@ -291,9 +255,7 @@ The plugin is written in English. Files it generates in your repo use `project.l
 | `CONFIG_ERROR ...` | the config or the local override is invalid | fix the field named in the message; `gate.sh --list` shows all errors |
 | `CHECK <cmd> NOT_RUN` | the environment is missing (precheck failed or a not-run exit code) | start the service or device from `needs`, run the gate again |
 | `STALE` | the code changed after the check | run the gate again; do not edit files while a gate runs |
-| `AGENT_NEEDS_PERMISSION` | a Codex slot needs more access | approve or refuse when asked; the run resumes |
-| `AGENT_NOT_RUN` | the CLI of the slot provider is missing, or the Codex CLI has no automatic review | install or update it (`npm install -g @openai/codex`), or switch the slot in `.ai/av.config.json.local` |
-| `AGENT_FAIL` on a Codex slot, the log says you are not logged in | Codex CLI without a login | `codex login`, then run the task again |
+| `CONFIG_ERROR agents...: removed with Codex slots` | a config from before Codex slots were removed | use Claude model strings in `agents.models`; delete `crossVendor` and `timeoutSec` |
 | `SETUP_LOCAL_TRACKED` | `.ai/av.config.json.local` is in git | `git rm --cached .ai/av.config.json.local` |
 
 Run the plugin tests:

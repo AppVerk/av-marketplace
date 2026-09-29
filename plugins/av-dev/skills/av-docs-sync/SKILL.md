@@ -100,7 +100,7 @@ bash <skill-dir>/scripts/check_refs.sh <files or directories> --root <repo-root>
 The script checks links and paths in backticks, also paths relative to the source directory (suffix match). It skips placeholders (`<x>`, `$VAR`, `${VAR}`), package names, files ignored by git and lines that themselves say the file is missing.
 
 - `MISSING`: a path with a directory, or a link, that does not exist. Almost always real drift.
-- `UNRESOLVED`: a bare file name that was not found. Judge by hand: often it is an example or a file name from another repo. The script itself skips the scripts shipped with the av-* skills: a bare name (`gate.sh`, `agent.sh`) or a path under the skills directory (`av-verify/scripts/gate.sh`).
+- `UNRESOLVED`: a bare file name that was not found. Judge by hand: often it is an example or a file name from another repo. The script itself skips the scripts shipped with the av-* skills: a bare name (`gate.sh`, `scan.sh`) or a path under the skills directory (`av-verify/scripts/gate.sh`).
 - `EXTERNAL`: a path to another repo that is not next to this one: `../` out of the repo, or a sentence that names another repo ("backend repository", "other repo", "innym repozytorium", or a repo name with `-` or `_` such as `billing-service`). A plain "repository" or "repozytorium" means this repo, so a deleted file there stays MISSING. Report EXTERNAL only when the text suggests it should exist.
 - `WORKSPACE`: a reference to a specific working file (plan, report). A mention of the workspace directory itself is not reported. This is DRIFT: docs do not link history. Replace it with a description of the state or a link to the owner docs.
 

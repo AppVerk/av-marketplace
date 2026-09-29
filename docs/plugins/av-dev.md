@@ -8,7 +8,7 @@ Usage guide with examples: [plugins/av-dev/README.md](../../plugins/av-dev/READM
 
 ## Why
 
-Hand-written agent pipelines drift apart between repos, and ports for other tools (for example `.codex/agents`) go stale within weeks. AV Dev keeps the workflow in one plugin and moves everything repo-specific into files inside the repo:
+Hand-written agent pipelines drift apart between repos and go stale within weeks. AV Dev keeps the workflow in one plugin and moves everything repo-specific into files inside the repo:
 
 - a team config: `.ai/av.config.json`,
 - overlays: `.ai/overlays/<skill>.md`,
@@ -21,7 +21,7 @@ The plugin holds general rules only. Knowledge of a stack or a repo is derived f
 
 | Skill | Purpose |
 |-------|---------|
-| `av-setup` | Scans the repo, interviews the user, writes config, docs, overlays, role skills and Codex symlinks. Adopts existing pipelines, agents and commands |
+| `av-setup` | Scans the repo, interviews the user, writes config, docs, overlays and role skills. Adopts existing pipelines, agents and commands |
 | `av-plan` | Writes an implementation plan: mode, risk, layer contract, files with owners, tests, gates |
 | `av-implement` | Implements a task end to end: baseline, implementation, gates, independent review, up to 2 fix rounds, docs, report. Stops before commit |
 | `av-review` | Reviews changes against the repo rules; findings with severity, NEW/PRE_EXISTING origin and file:line evidence |
@@ -59,7 +59,7 @@ Every adapter entry has the same `status` (`ok`, `incomplete`, `not_applicable`,
 | `validation` | named commands (`run`, `expect`, `precheck`, `notRunExitCodes`, `optional`, `covers`, `parallel`) and gates (`quick`, `full`, custom) |
 | `roles` | role skills with non-overlapping file globs |
 | `risk` | high-risk areas and paths that force an independent review |
-| `agents` | model, provider and effort per pipeline slot |
+| `agents` | Claude model per pipeline slot |
 | `git` | base branch, branch and commit patterns, commit and push policy |
 | `integrations` | tracker, boards, design tools |
 
@@ -74,30 +74,23 @@ Every adapter entry has the same `status` (`ok`, `incomplete`, `not_applicable`,
 - `gate.sh --list` prints `CONFIG_LOCAL` and each overridden key.
 - `check_setup.sh` fails when the file is tracked by git.
 
-Example: a developer without Codex CLI switches Codex slots to Claude.
+Example: a developer who wants `opus` for plans and `sonnet` for review.
 
 ```json
 {
   "agents": {
-    "crossVendor": false,
-    "models": {
-      "plan":   {"provider": "claude", "model": "opus", "effort": "high"},
-      "review": {"provider": "claude", "model": "opus", "effort": "xhigh"}
-    }
+    "models": { "plan": "opus", "review": "sonnet" }
   }
 }
 ```
 
 ## Pipeline Slots
 
-Slots: `plan`, `planReview`, `implement`, `review`, `verify`. Each slot sets a provider (`claude` or `codex`), a model and an effort.
+Slots: `plan`, `planReview`, `implement`, `review`, `verify`. Each slot sets a Claude model: `inherit`, `opus`, `sonnet`, `haiku`, `fable` or `claude-<id>`.
 
-- Claude slots run through the Agent tool with the plugin agents `av-dev:av-slot-<effort>` (write) and `av-dev:av-slot-read-<effort>` (read only).
-- A read slot that changes the working tree fails: the code fingerprint is compared before and after the slot, for Claude and Codex executors. This is detection after the fact, not a sandbox.
-- Codex slots run through `av-implement/scripts/agent.sh` and `codex exec`; the user must be logged in (`codex login`). Write slots and `verify` use the `workspace-write` sandbox with automatic review: a blocked command asks for escalation and a Codex reviewer model decides, like auto mode. Read slots are `read-only`. The slot policy wins over `~/.codex/config.toml`.
-- The plugin hook `agent_guard.sh` lets a plain `agent.sh` call (plain characters, known flags) run without a prompt. A grant goes through `agent_grant.sh`, which always needs a human prompt. No allow rule for `agent.sh` is needed.
-- `crossVendor: true` requires code and plans to be checked by a different provider than the one that wrote them.
-- `haiku` is rejected for `review`: a cheap model can falsely confirm correctness.
+- `plan`, `implement` and `verify` on `inherit` run in the session. Other slots run through the Agent tool with the plugin agents `av-dev:av-slot` (write) and `av-dev:av-slot-read` (read only), with the slot model and the session's permissions.
+- A read slot that changes the working tree fails: the code fingerprint is compared before and after the slot. This is detection after the fact, not a sandbox.
+- A Haiku model is rejected for `review` and `planReview`: a cheap model can falsely confirm correctness.
 
 ## Integrations
 
@@ -106,7 +99,6 @@ The plugin ships no instructions for external tools. How a repo uses a board, a 
 ## Prerequisites
 
 - `bash` 3.2+, `git`, `jq`.
-- Codex slots: Codex CLI, logged in.
 
 ## Installation
 
@@ -123,4 +115,4 @@ Then run `av-setup` in the repo.
 bash plugins/av-dev/tests/run.sh
 ```
 
-1965 script tests: gates, config merge, slot executor, setup validator, repo scan, stack adapters (PHP/Symfony, iOS/Xcode, Android, Angular) with their scan integration, adoption diff, doc reference checks. A test passes only with exit code 0 and a last line `PASS n FAIL 0`. The runner also checks that each skill's `VERSION` matches `plugin.json`.
+2122 script tests: gates, config merge, setup validator, repo scan, stack adapters (PHP/Symfony, iOS/Xcode, Android, Angular) with their scan integration, adoption diff, doc reference checks. A test passes only with exit code 0 and a last line `PASS n FAIL 0`. The runner also checks that each skill's `VERSION` matches `plugin.json`.

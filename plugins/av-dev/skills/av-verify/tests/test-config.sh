@@ -25,9 +25,7 @@ cat >.ai/av.config.json <<'EOF'
    "unit":{"run":"echo UNIT_OK","expect":"UNIT_OK","timeoutSec":60},
    "fixtures":{"run":"echo F","optional":true}
  },"gates":{"quick":["unit","fixtures"]}},
- "agents":{"crossVendor":true,"models":{
-   "implement":{"provider":"claude","model":"opus","effort":"high"},
-   "review":{"provider":"codex","model":"gpt-x","effort":"xhigh"}}},
+ "agents":{"independentReview":true,"models":{"implement":"opus","review":"sonnet"}},
  "git":{"ticketPrefixes":["A","B"]}}
 EOF
 git add -A && git commit -qm init
@@ -35,33 +33,33 @@ git add -A && git commit -qm init
 # --- 1. no local file: team config unchanged
 out="$(bash "$CONFIG")"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "no local: code $rc"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "codex" ] && ok || fail "no local: wrong review"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.review')" = "sonnet" ] && ok || fail "no local: wrong review"
 out="$(bash "$CONFIG" --sources)"
 has "$out" "CONFIG .ai/av.config.json" && ok || fail "sources: CONFIG missing"
 has "$out" "CONFIG_LOCAL none" && ok || fail "sources: CONFIG_LOCAL none missing"
 
 # --- 2. override: objects merge recursively, arrays replace, null removes
 cat >.ai/av.config.json.local <<'EOF'
-{"agents":{"models":{"review":{"provider":"claude","model":"opus"}}},
+{"agents":{"models":{"review":"haiku"}},
  "validation":{"commands":{"unit":{"timeoutSec":999},"fixtures":null}},
  "git":{"ticketPrefixes":["C"]}}
 EOF
 out="$(bash "$CONFIG")"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "claude" ] && ok || fail "merge: provider not overridden"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.review.effort')" = "xhigh" ] && ok || fail "merge: effort lost"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.implement.model')" = "opus" ] && ok || fail "merge: implement lost"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.review')" = "haiku" ] && ok || fail "merge: review not overridden"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.implement')" = "opus" ] && ok || fail "merge: implement lost"
+[ "$(printf '%s' "$out" | jq -r '.agents.independentReview')" = "true" ] && ok || fail "merge: agents key lost"
 [ "$(printf '%s' "$out" | jq -r '.validation.commands.unit.timeoutSec')" = "999" ] && ok || fail "merge: timeout not overridden"
 [ "$(printf '%s' "$out" | jq -r '.validation.commands.unit.expect')" = "UNIT_OK" ] && ok || fail "merge: expect lost"
 [ "$(printf '%s' "$out" | jq -r '.validation.commands | has("fixtures")')" = "false" ] && ok || fail "merge: null did not remove the key"
 [ "$(printf '%s' "$out" | jq -c '.git.ticketPrefixes')" = '["C"]' ] && ok || fail "merge: array not replaced"
 
 out="$(bash "$CONFIG" --no-local)"
-[ "$(printf '%s' "$out" | jq -r '.agents.models.review.provider')" = "codex" ] && ok || fail "--no-local: used local"
+[ "$(printf '%s' "$out" | jq -r '.agents.models.review')" = "sonnet" ] && ok || fail "--no-local: used local"
 
 # --- 3. --sources: keys and the warning about a missing .gitignore entry
 out="$(bash "$CONFIG" --sources)"
 has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "sources: local path missing"
-has "$out" "OVERRIDE agents.models.review.provider" && ok || fail "sources: OVERRIDE provider missing"
+has "$out" "OVERRIDE agents.models.review" && ok || fail "sources: OVERRIDE review missing"
 has "$out" "REMOVE validation.commands.fixtures" && ok || fail "sources: REMOVE missing"
 has "$out" "OVERRIDE git.ticketPrefixes" && ok || fail "sources: array as one key"
 has "$out" "WARNING .ai/av.config.json.local is not in .gitignore" && ok || fail "sources: gitignore warning missing"
@@ -90,9 +88,9 @@ cp "$TMP/good" .ai/av.config.json.local
 # --- 6. gate.sh: --list shows the override, validation runs on the effective config
 out="$(bash "$GATE" --list)"; rc=$?
 has "$out" "CONFIG_LOCAL .ai/av.config.json.local" && ok || fail "gate list: CONFIG_LOCAL missing"
-has "$out" "OVERRIDE agents.models.review.provider" && ok || fail "gate list: OVERRIDE missing"
-has "$out" "CONFIG_ERROR agents.crossVendor" && ok || fail "gate list: crossVendor not checked after merge"
-[ "$rc" -eq 2 ] && ok || fail "gate list crossVendor: code $rc"
+has "$out" "OVERRIDE agents.models.review" && ok || fail "gate list: OVERRIDE missing"
+has "$out" "CONFIG_ERROR agents.models.review" && ok || fail "gate list: review model not checked after merge"
+[ "$rc" -eq 2 ] && ok || fail "gate list review haiku: code $rc"
 out="$(bash "$GATE" --list --no-local)"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "gate list --no-local: code $rc"
 has "$out" "CONFIG_LOCAL" && fail "gate --no-local showed local" || ok

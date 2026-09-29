@@ -6,7 +6,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 status=0
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
-for s in av-setup av-verify av-docs-sync av-implement; do
+for s in av-setup av-verify av-docs-sync; do
   [ -d "$root/skills/$s/scripts" ] || { printf 'missing skill: skills/%s\n' "$s"; status=1; }
 done
 for t in "$root"/skills/*/tests/test-*.sh; do

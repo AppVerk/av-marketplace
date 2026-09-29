@@ -1,7 +1,7 @@
 ---
 name: av-setup
 description: Scans a repository and sets up work with an AI agent - config `.ai/av.config.json`, docs in `.ai/` or `docs/`, CLAUDE.md with a routing table, overlays for the av-plan, av-implement, av-review, av-verify and av-docs-sync skills, role skills with the knowledge of each layer (backend, views, TS, E2E) and symlinks for Codex. Works with any stack: it derives commands and conventions from the repo itself, without stack templates. Moves existing pipelines, agents and commands to skills (adoption mode). Use when the user wants to prepare a repo for AI agents, generate or refresh AI docs, "set up the project for Claude", "skonfigurować projekt dla Claude", "bootstrap AI docs", move from a pipeline to skills, or when another av-* skill reports a missing config.
-argument-hint: "[--defaults] [--dry-run] [--all-modules] [--eval] [--only config|docs|overlays|roles|codex]"
+argument-hint: "[--defaults] [--dry-run] [--all-modules] [--eval] [--only config|docs|overlays|roles]"
 ---
 
 # av-setup
@@ -13,8 +13,7 @@ Output:
 - docs derived from the code, only missing topics,
 - overlays `.ai/overlays/<skill>.md` with the rules of this repo,
 - role skills `.claude/skills/<prefix>-<role>/`: the knowledge of one layer (backend, views, TS, E2E),
-- `CLAUDE.md` with a routing table,
-- for Codex: `AGENTS.md` as a symlink, and `.agents/skills` as a symlink when the repo has project skills.
+- `CLAUDE.md` with a routing table.
 
 ## Arguments
 
@@ -30,7 +29,6 @@ Output:
 | `docs` | 3, 5, 7 (with `CLAUDE.md`), `.gitignore` and learnings from step 9 |
 | `overlays` | 3, 5, 8 |
 | `roles` | 3, 5, 8, 8b |
-| `codex` | 9 (Codex only) |
 
 ## Safety rules
 
@@ -228,13 +226,12 @@ Follow `references/role-skills.md` and, for section headers, `references/localiz
 - The "File scope" section is one sentence with a link to the role in the config. Do not copy globs.
 - `check_setup.sh` checks role globs in step 10: overlap (`SETUP_ROLE_OVERLAP`), empty globs (`SETUP_ROLE_EMPTY`), source directories without an owner (`SETUP_UNOWNED_DIR`). Add a directory without an owner to a role, `generatedPaths` or `unownedPaths`, or report it as a gap.
 
-## Step 9: Codex, gitignore, settings
+## Step 9: gitignore, settings
 
-- Codex according to `references/codex.md`, when `codex.enabled`.
 - `.gitignore` according to `references/doc-set.md`, section `.gitignore`. Replace a pattern that ignores the whole workspace directory with a pattern that has an exception for README. Add `.ai/av.config.json.local`.
 - `.ai/sessions/learnings.md` with a header, when missing.
 - If step 5 saved the plan to `<tmp>` (the workspace was not ignored yet), move it to `<paths.plans>/` once `.gitignore` ignores it.
-- Slot agent definitions: when `agent.sh --slot <slot> --resolve` gives a `WARNING` about a missing agent definition for any slot, propose the command from the warning. This is the only change outside the repo: run it only with the user's approval; with `--defaults`, only an entry in the report. In the av-dev plugin, the definitions come with the plugin and there is no warning.
+- Slot agent definitions: in the av-dev plugin they come with the plugin. With the skills in `~/.claude/skills` and a slot model other than `inherit`, check `~/.claude/agents/av-slot.md` and `av-slot-read.md`; when missing, propose `ln -s <av-dev>/agents/*.md ~/.claude/agents/`. This is the only change outside the repo: run it only with the user's approval; with `--defaults`, only an entry in the report.
 - `permissions.deny` in `.claude/settings.json` for secret files from the scan (`secret_like_files`, from the one list in `scripts/secret_names.sh`: env files, keys, certificates, provisioning profiles, token configs and cloud credentials, at any depth): only with approval from the interview. With `--defaults`, only propose it in the report. Syntax: `Read(./<path or glob>)` and `Edit(./<path or glob>)`, e.g. `Read(./**/<key-file>)`. Always add `Read(./**/.env)` and `Read(./**/.env.*)`, also for nested env files. Edit only the `permissions.deny` key of `.claude/settings.json` (e.g. with `jq`); do not print or change other keys, which may hold values. Append only the missing rules (`.permissions.deny += ($new - .permissions.deny)`), keep the order of the existing ones, and keep the file's indentation (`jq --indent <n>`), so the diff shows only the added lines. Add key files that the scan does not know, but that step 3 or the interview pointed out, with the same syntax.
 
 ## Step 10: Check

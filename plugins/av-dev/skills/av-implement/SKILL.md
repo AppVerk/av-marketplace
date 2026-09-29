@@ -18,69 +18,33 @@ Implementation orchestration in one skill. Repo rules come from the config and t
 6. Report language from `project.language`. Verdict in the first line. No em dashes "—" or en dashes "–".
 7. Gate script: `<skill-dir>/../av-verify/scripts/gate.sh`. The av-* skills sit next to each other, both in `~/.claude/skills/` and in the plugin.
 
-## Slots and providers
+## Slots
 
-One source of delegation rules for all av-* skills. Slots: `plan`, `planReview`, `implement`, `review`, `verify`. Each slot has a provider, model and effort in `agents.models`:
+One source of delegation rules for all av-* skills. Slots: `plan`, `planReview`, `implement`, `review`, `verify`. `agents.models` in the effective config gives each slot a Claude model:
 
 ```json
-"plan":      {"provider": "codex",  "model": "<codex-model>", "effort": "high"},
-"implement": {"provider": "claude", "model": "opus",        "effort": "xhigh"},
-"review":    {"provider": "codex",  "model": "<codex-model>", "effort": "xhigh"}
+"models": { "plan": "inherit", "implement": "inherit", "review": "opus", "verify": "haiku" }
 ```
 
-A string (e.g. `"opus"`) is shorthand for `{"provider": "claude", "model": "opus"}`. A missing slot means `inherit`. `planReview` without an entry inherits `review`.
+A value is `inherit`, `opus`, `sonnet`, `haiku`, `fable` or a full id `claude-<id>`. A missing slot means `inherit`. `planReview` without an entry inherits `review`.
 
-Script: `<skill-dir>/scripts/agent.sh`. Always call it as a single command: `bash <absolute path to agent.sh> ...`, without `cd`, `&&`, `;` and `&`. For parallel work, run it in the background with the Bash tool.
+Who runs a slot:
 
-1. Before a slot: `agent.sh --root <root> --slot <slot> --resolve`. The `via` field says who runs the slot:
-   - `session`: this session, by itself.
-   - `agent`: the Agent tool with `subagent_type` from the `subagent` field (e.g. `av-slot-xhigh`, effort set in the definition) and `model` from the `model` field (no parameter for `inherit`). The subagent has this session's permissions, like a normal Claude Code subagent. Before a `read` slot, take the fingerprint: `bash <skill-dir>/../av-verify/scripts/gate.sh --root <root> --fingerprint` (the value after `FINGERPRINT`). When it returns, save the result to `<paths.runs>/<RUN_ID>/agents/<slot>[-label].md` and record the slot: `agent.sh --slot <slot> --run-id <RUN_ID> --record --status OK|FAIL --seconds <N> --out <file> [--label <label>] [--fp-before <fingerprint>]`. `--fp-before` is required for a `read` slot. `AGENT_FAIL ... read slot changed the working tree` (code 1): the slot result is not valid; check `git status`, do not keep changes made by a read slot, and run the slot again.
-   - `agent.sh`: a separate CLI of another provider. Save the task to `<paths.runs>/<RUN_ID>/agents/<slot>[-label].task.md` and run `agent.sh --root <root> --slot <slot> --run-id <RUN_ID> --prompt-file <file> [--label <label>]`. Run long slots in the background. Do not stop them early.
-   - A `WARNING` about a missing agent definition: give the user the install step from the warning (with the plugin: update or reinstall it; without it: `ln -s <av-dev>/agents/*.md ~/.claude/agents/`) and tell them that a new session will see the definitions. Until then, use `general-purpose` with the `model` parameter and note in the report that effort was not set.
-2. The `agent.sh` result is the file from the line `AGENT_OK ... out=<file>`. Read it like a subagent report. `CHANGED` lines are files changed by the executor. Check them like a role's file list.
-3. `AGENT_NEEDS_PERMISSION` (code 5): follow "Permissions" below.
-4. `AGENT_FAIL`: read the log tail. One retry on an environment error (network, rate limit). A second failure or a content error: stop with NEEDS_HUMAN. Never silently replace a slot with another model. `AGENT_NOT_RUN` (CLI missing) is NEEDS_HUMAN with a reason.
-5. `read` access is a rule in the prompt plus a tree fingerprint check after the slot, for every executor: `agent.sh` takes the fingerprints itself; for `via=agent` you take the first one and `--record --fp-before` compares. It detects a change after the fact; it is not a sandbox, and it does not see ignored files or writes outside the repo. Do not change tracked files while a `read` slot runs, and do not run a write slot in parallel with it, because a tree change during the slot gives FAIL. Gates may run in parallel: they write only to the workspace and ignored build output. The `RESUME` line gives the command to enter the executor's session.
-6. A slot executor does not delegate further. `agent.sh` rejects nesting with code 2. The executor leaves a step that needs another slot to the orchestrator.
-7. The prompt for the executor follows the same rules as a subagent prompt in this skill: goal, scope, paths, none of your reasoning. `agent.sh` adds a header with the repo root, skills, access and permissions. For `via=agent`, pass the repo root and skill paths in the prompt yourself.
+| Slot | Model `inherit` | Other model |
+|---|---|---|
+| `plan`, `implement` | this session | Agent tool, `subagent_type` `av-slot`, parameter `model` |
+| `review`, `planReview` | Agent tool, `av-slot-read`, no `model` parameter | Agent tool, `av-slot-read`, parameter `model` |
+| `verify` | this session | Agent tool, `av-slot-read`, parameter `model` |
 
-`agents.crossVendor: true` requires that code and plan are checked by a different provider than the one that wrote them. `gate.sh --list` enforces this in the config. Swapping a model by hand breaks this rule.
-
-One person's slots are changed in `.ai/av.config.json.local` (gitignored), not in the team config. Example: a person without Codex CLI switches `plan` and `review` to Claude and sets `crossVendor: false`. `agent.sh` reads the effective config; with an override, `--resolve` and `--summary` lines end with `config=local`. `AGENT_NOT_RUN` because the CLI is missing: give this option in the report as the way out, but do not write the `.local` file yourself.
+- With the plugin the agent names may carry its prefix (`av-dev:av-slot`). Without the plugin, the definitions are in `<av-dev>/agents/`: `ln -s <av-dev>/agents/*.md ~/.claude/agents/`, then a new session. A missing definition: use `general-purpose` with the `model` parameter and note it in the report.
+- A subagent has this session's permissions, like any Claude Code subagent. Nothing widens them.
+- `av-slot-read` has no edit tools, but Bash can still write. Before an `av-slot-read` slot, take the fingerprint: `bash <skill-dir>/../av-verify/scripts/gate.sh --root <root> --fingerprint` (the value after `FINGERPRINT`). Take it again after the slot. A different value: the slot result is not valid; check `git status`, do not keep changes made by the slot, and run the slot again. The check sees tracked and untracked files, not ignored files or writes outside the repo. Do not change files while such a slot runs, and do not run a write slot in parallel with it. Gates may run in parallel: they write only to the workspace and ignored build output.
+- Save the result of a subagent slot to `<paths.runs>/<RUN_ID>/agents/<slot>[-label].md` and record the slot in the state (model, time, status).
+- A slot executor does not delegate further. It leaves a step that needs another slot to the orchestrator.
+- The prompt: goal, scope, paths, the repo root and the skill paths, none of your reasoning.
+- One person's models are changed in `.ai/av.config.json.local` (gitignored), not in the team config.
 
 Helper subagents (e.g. Explore for searching) are not slots. They stay with the Agent tool.
-
-### Permissions
-
-Rule: an executor from another provider gets safeguards equal to a Claude subagent in this session. Nothing bypasses them, and the executor never widens its own permissions.
-
-| Executor | Permissions |
-|---|---|
-| `via=agent` (Claude) | same as the session; auto mode and user rules check every action |
-| `codex exec`, slots `plan`, `implement`, `verify` (and any `--access write`) | sandbox `workspace-write` with automatic review: a command blocked by the sandbox (a build, a simulator, the network) asks for escalation, a reviewer model decides, no human in the loop. The Codex counterpart of auto mode. `agent.sh` records `sandbox=auto-review` |
-| `codex exec`, other `read` slots (`review`, `planReview`) | sandbox `read-only`, no escalation; `sandbox=read-only` |
-| `claude -p` (only when Codex is the orchestrator) | user settings; write slot with `acceptEdits`; the rest according to allow rules |
-
-The Codex policy of a slot is passed explicitly and wins over `sandbox_mode` in `~/.codex/config.toml`. A Codex CLI without automatic review (`codex exec --approve-for-me`) gives `AGENT_NOT_RUN`: update the CLI, never fall back to `danger-full-access`.
-
-Missing permission: the executor ends its work with `PERMISSION_REQUEST` lines, and `claude -p` returns denials. `agent.sh` returns `AGENT_NEEDS_PERMISSION` with `PERMISSION` lines. Then:
-1. Show each request in your message: what, why, and the proposed scope of the approval. Never grant an approval yourself.
-2. Resume with a grant only through `agent_grant.sh --slot <slot> --run-id <RUN_ID> --resume <session> --grant <G> [--grant ...] [--label <label>]` (`agent.sh` rejects `--resume` and `--grant`). The Claude Code prompt for that command is the human approval: approve runs it, reject is a denial. Use the narrowest scope that is enough:
-   - Codex: `dir:<absolute path>` (write outside the repo), `network` (network), `full` (no sandbox, only when the user chose it explicitly). Automatic review already covers most blocked commands in write slots; a grant is the exception.
-   - Claude: `tool:<Tool(specifier)>`, e.g. `tool:Bash(scripts/test.sh:*)`, or an MCP tool name.
-   - `agent_grant.sh` rejects grants broader than they look (code 2): `dir:` of `/`, the home directory or its parents, with `.`, `..`, a quote or a control character; `tool:` without a specifier, a list, or a specifier of only `*` and `:` (e.g. `Bash(*)`). Several `dir:` grants are all kept. A Codex read slot (`review`, `planReview`) runs read-only, where `dir:` and `network` change nothing, so it takes only `full`.
-   - Resume only the session from `AGENT_NEEDS_PERMISSION`, with the same slot and label: `agent_grant.sh` checks that its last record in `agents.jsonl` is `NEEDS_PERMISSION`.
-3. Denial (the prompt was rejected): do not resume the session. Assess the partial result. A missing key action is NEEDS_HUMAN with a reason.
-4. An approval covers one resume. Record it in the run state and in the report (`agent.sh --summary` shows `grants=`).
-5. In `bypassPermissions` nothing would ask, so the hook denies `agent_grant.sh` and gives the command. Ask the user to run it with `!`, then read its result.
-
-Guard: the plugin hook `scripts/agent_guard.sh` (PreToolUse, Bash) decides on the command text, and allows only what the shell cannot change:
-- `agent.sh` runs without a prompt, also in auto mode, only as `bash <absolute path>/agent.sh <flags>` with plain characters (`[A-Za-z0-9._:/=@+-]`, spaces) and whitelisted flags: `--root` equal to the repo of the working directory, `--slot`, `--run-id`, `--label`, `--prompt-file` of this run's `agents/`, `--access` equal to the slot's default, `--timeout`, `--resolve`, `--summary`, `--dry-run`, and `--record` with its fields. Pass these flags with plain values and no quotes.
-- Anything else goes to a Claude Code prompt: quotes, braces, globs, `\`, `$`, a variable prefix, `cd`, `&&`, `;`, a pipe, `--config`, `--harness`, an unknown flag.
-- `agent_grant.sh` always goes to a prompt, so a human confirms every grant; in `bypassPermissions` the hook denies it.
-- `agent.sh` checks `--root`, `--prompt-file`, `--access` and `--harness` again (code 2), because a hook can be missing.
-
-Do not add an allow rule for `agent.sh`, `agent_grant.sh` or their directory. Without the plugin (skills in `~/.claude/skills`), the user registers the same hook in `~/.claude/settings.json`: `"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "bash <absolute path>/av-implement/scripts/agent_guard.sh"}]}]}`. If a call is denied: do not work around it with another command and do not change the settings yourself. Stop with NEEDS_HUMAN and give the hook.
 
 ## Run state
 
@@ -97,7 +61,7 @@ Steps: [x] baseline [x] implementation [ ] quick [ ] docs [ ] review r1 + full [
 Gates: <name: status, fingerprint> (current state from `gate.sh --status`, not from memory)
 Red test before fix: <test name and log or "not applicable">
 Roles: <role: files, status>
-Slots: <slot: provider model/effort, local or agent.sh, status> (from `agent.sh --summary`)
+Slots: <slot: model, session or subagent, time, status>
 Findings: <id, severity, OPEN/CLOSED, round>
 ```
 
@@ -129,7 +93,7 @@ High risk is a task that matches `risk.highRiskAreas` or touches `risk.highRiskP
 
 The overlay may tighten mode selection (sections "Mode selection" and "SMALL mode conditions"). It may not loosen the high-risk rules. Otherwise the user's `--mode` wins.
 
-LARGE mode without a plan: run the `av-plan` skill. Show the plan verdict and wait for acceptance, unless the user said "no questions" up front. `plan` slot with `via` other than `session`: delegate the plan (section "Slots and providers"), and assign plan verification (the `planReview` slot) separately after it returns.
+LARGE mode without a plan: run the `av-plan` skill. Show the plan verdict and wait for acceptance, unless the user said "no questions" up front. `plan` slot on a subagent (section "Slots"): delegate the plan, and assign plan verification (the `planReview` slot) separately after it returns.
 
 The mode may grow during the work (e.g. it turns out the contract must change). Record this in the state and adjust the steps. The mode never shrinks.
 
@@ -144,7 +108,7 @@ Layer knowledge does not live in this skill. The role skill provides it: `.claud
 
 Loading a role skill: first with the Skill tool. When the tool does not know it (the session started in another directory, a clone, a worktree), read `<repo-root>/.claude/skills/<skill>/SKILL.md` directly from the path.
 
-`implement` slot: check `--resolve`. With `via` other than `session`, the slot executor does all implementation work (also fixes after review). In SMALL and STANDARD this is one call with the whole task, in LARGE one per role (label `<role>`). The rules below then go into the executor's prompt.
+`implement` slot on a subagent (section "Slots"): the slot executor does all implementation work (also fixes after review). In SMALL and STANDARD this is one call with the whole task, in LARGE one per role (label `<role>`). The rules below then go into the executor's prompt.
 
 **SMALL and STANDARD:** implement it yourself.
 - Before the first edit of a file, use the role skill of the role that owns the file. A change in 2 layers loads 2 skills; the rest stay unread. Without a role skill (repo with 1 role), the rules are in the overlay.
@@ -154,7 +118,7 @@ Loading a role skill: first with the Skill tool. When the tool does not know it 
 - Stay in scope. Debt and side issues go to the report, not to the diff.
 
 **LARGE:** roles from the config, field `roles`; shared rules from the overlay.
-- One role = one `implement` slot executor according to `via` (`agent` or `agent.sh`, label `<role>`); with `via=session`, a general-purpose subagent. Disjoint file scopes.
+- One role = one subagent: `av-slot` with the `implement` model, or `general-purpose` when the model is `inherit` (label `<role>`). Disjoint file scopes.
 - The role prompt contains: the goal, "First load the skill `<role skill>`: with the Skill tool, and when it does not know it, from the file `<repo-root>/.claude/skills/<role skill>/SKILL.md`", the file scope (globs), the contract from the plan, only this role's plan rows, what the role received from earlier roles, shared required steps from the overlay, a ban on leaving the scope, the result format (list of changed files, decisions, what it hands off, open issues).
 - Do not pass the subagent the whole overlay, other roles' plan rows or other roles' skills. Each agent has only its own layer in context.
 - After a role, check its list of changed files with `check_setup.sh --owner`: each file must have its name or be `generated` and changed by a tool. With parallel roles, `git diff --name-only` shows the sum, so compare the lists from the role reports, and at the end the sum against the globs of all roles.
@@ -180,7 +144,7 @@ Update docs before the review and the `full` gate, so the review sees everything
 
 STANDARD and LARGE. SMALL only when the overlay or high risk requires it.
 
-Start a fresh `review` slot executor with the label `r<N>` according to the `via` field (section "Slots and providers"). With `via=session`, use a general-purpose subagent. Do not pass it your reasoning. Copy the result to `<paths.reports>/<RUN_ID>-review-r<N>.md`, because an executor with `read` access does not write files. The prompt contains:
+Start a fresh `review` slot executor with the label `r<N>` (section "Slots"). Do not pass it your reasoning. Copy the result to `<paths.reports>/<RUN_ID>-review-r<N>.md`, because an executor with `read` access does not write files. The prompt contains:
 - "Use the av-review skill with `--run <RUN_ID>`", plus `--security` for high risk, plus `--round <N>` from the second round on,
 - the absolute path of the repo root and the path of `state.md`,
 - the evidence the overlay requires (e.g. the `lint_delta` log),
@@ -208,7 +172,7 @@ Which gates: one source, the overlay `av-verify.md`, section "Gate selection". D
 
 ## Step 9: Report
 
-Save `<paths.reports>/<RUN_ID>.md` (RUN_ID already has the date). The "Models" row comes from `agent.sh --summary --run-id <RUN_ID>` (`agent.sh` slots and those saved with `--record`) and from `session` slots; not from memory. List granted approvals in the report. In the reply, up to 20 lines:
+Save `<paths.reports>/<RUN_ID>.md` (RUN_ID already has the date). The "Models" row comes from the "Slots" line of the state, not from memory. In the reply, up to 20 lines:
 
 ```markdown
 <READY_FOR_COMMIT | NEEDS_HUMAN | BLOCKED>: <1 sentence>
@@ -220,7 +184,7 @@ Save `<paths.reports>/<RUN_ID>.md` (RUN_ID already has the date). The "Models" r
 | Gates | quick PASS FRESH, full PASS FRESH, e2e NOT_RUN: services of this checkout not running |
 | Checks | TOOL_CHECK visual PASS (screenshots in workspace) or "none required" |
 | Review | APPROVED after 1 round; 0 open BLOCKER/HIGH |
-| Models | plan codex <codex-model>/high, implement claude opus/xhigh, review codex <codex-model>/xhigh |
+| Models | plan session, implement session, review opus |
 | Docs | updated: ... |
 
 Debt: <PRE_EXISTING and deferred MEDIUM/LOW, max 3 points>

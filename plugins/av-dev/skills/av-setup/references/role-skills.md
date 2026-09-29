@@ -7,7 +7,7 @@ A role skill is a project skill with the knowledge of one repo layer: backend, v
 `av-implement` does not know the layers. If the rules of all layers sat in one overlay, every agent would read all of it, though it needs one part. A role skill solves this in 3 ways:
 - in LARGE mode, a role subagent loads only its own skill,
 - in SMALL and STANDARD modes, the session loads only the skills of the layers the change touches,
-- the skill also works outside `av-implement`: Claude uses it by itself during normal work on the layer's files, and Codex sees it through `.agents/skills`.
+- the skill also works outside `av-implement`: Claude uses it by itself during normal work on the layer's files.
 
 ## When to create
 
