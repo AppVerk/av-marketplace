@@ -1,6 +1,6 @@
 # Oh My Pi (OMP)
 
-The OMP edition is generated from the same sources as the Claude Code plugins. The OMP column of [Available Plugins](../README.md#available-plugins) shows which plugins it contains. Two of them exist only in OMP:
+Most OMP plugins are generated from the same sources as their Claude Code editions. The OMP column of [Available Plugins](../README.md#available-plugins) shows which plugins it contains. Plan Review exists only in OMP; Delivery's OMP edition is written for OMP instead of generated from its Claude Code edition:
 
 - [Delivery](plugins/delivery.md) delivers an approved plan-mode plan task by task: each task goes to the developer agent that owns its files, is reviewed, and gets its own commit.
 - [Plan Review](plugins/plan-review.md) has a second model review every plan-mode plan before it reaches the approval dialog.
@@ -64,7 +64,7 @@ The suffix after a model sets its thinking level. The mapping pairs each check w
 
 The models need the `anthropic` and `openai-codex` providers logged in (`/login anthropic`, `/login openai-codex`); `omp models anthropic` and `omp models openai-codex` list what your account offers. If you use other providers, keep the pairing: map each checking role to a different model family than the role it checks.
 
-Leave `judge` unmapped: OMP's default list for it starts with `typesafe/jev-latest`, the model Delivery uses to route a task that lists no files (see the [Delivery guide](plugins/delivery.md#plan-format)).
+Leave `judge` unmapped: OMP's default list for it starts with `typesafe/jev-latest`, the model Delivery asks first to route a task that lists no files (see the [Delivery guide](plugins/delivery.md#routing)). Delivery asks the judge only in a repository with a Python, PHP or React project and uses its answer only from a model whose name contains `jev`, so with `judge` mapped to another model, tasks without a file list are routed by their text.
 
 ### Fallbacks
 

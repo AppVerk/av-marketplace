@@ -81,6 +81,14 @@ implementation — the superpowers plan flow or a direct request — pick the
 matching developer agent (frontend-developer, php-developer,
 python-developer) instead of a general-purpose one.
 
+With the delivery plugin installed, picking subagent-driven execution for
+a superpowers plan hands the plan to Delivery instead: each task goes to
+the developer agent that owns its files, with no `CLAUDE.md` note needed,
+and is reviewed and committed on a new `delivery/<slug>` branch when you
+start on `main` or `master`, or on the current branch otherwise; then the
+plan's Verification and a full code review run. See the
+[Delivery guide](plugins/delivery.md).
+
 ```
 /develop <task>
 ```
@@ -157,7 +165,7 @@ with pushes guarded by the plugin; feedback analysis persisted by
 |---|---|---|---|
 | 1. Idea → Spec | superpowers *(external)* | brainstorm with Claude | `docs/superpowers/specs/*.md` |
 | 2. Spec review | superutils | `/superutils:spec-review` | `docs/superpowers/specs/reviews/*` |
-| 3. Plan & implement | frontend/php/python-developer (or superpowers) | `CLAUDE.md` note → `developer` agent (or `/develop <task>`) | code on the branch |
+| 3. Plan & implement | delivery or frontend/php/python-developer (or superpowers) | superpowers plan → subagent-driven execution (Delivery), or `CLAUDE.md` note → `developer` agent (or `/develop <task>`) | code on the branch |
 | 4. QA | qa | `/qa:loop` | `docs/testing/plans/*`, `docs/testing/reports/*` |
 | 5. Code review | code-review | `/review`, then `/fix` · `/fix-report` · `/fix-all` | `docs/reviews/*` |
 | 6. Commit & PR | commit | `/commit` | commits (PR opened manually) |

@@ -25,8 +25,8 @@
     {
       "name": "delivery",
       "source": "./delivery",
-      "description": "Delivers approved plan-mode plans: each task goes to the developer agent that owns its files, is reviewed and committed, then the plan's verification and the full code review run. Oh My Pi only.",
-      "version": "0.4.2",
+      "description": "Delivers approved plan-mode plans: each task goes to the developer agent that owns its files, is reviewed and committed, then the plan's verification and the full code review run.",
+      "version": "0.5.0",
       "category": "development"
     },
     {
