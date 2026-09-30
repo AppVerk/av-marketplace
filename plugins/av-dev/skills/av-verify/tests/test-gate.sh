@@ -416,6 +416,50 @@ EMPTY="$TMP/nocommit"; mkdir -p "$EMPTY/.ai" && git -C "$EMPTY" init -q && cp .a
 out="$(bash "$GATE" --root "$EMPTY" --fingerprint)"; rc=$?
 has "$out" "GIT_ERROR" && [ "$rc" -eq 2 ] && ok || fail "fingerprint without a commit: $rc $out"
 
+# Fingerprint: an untracked entry that is not a regular file (a dangling symlink, a nested
+# repository such as a Claude Code worktree) is not a git error (review of PR #19, round 4)
+LINKS="$TMP/links"; mkdir -p "$LINKS/.ai" && cp .ai/av.config.json .gitignore "$LINKS/" && mv "$LINKS/av.config.json" "$LINKS/.ai/"
+git -C "$LINKS" init -q && git -C "$LINKS" add -A && git -C "$LINKS" -c user.email=t@t -c user.name=t commit -qm init
+ln -s missing-target "$LINKS/zz_dangling"
+out="$(bash "$GATE" --root "$LINKS" --fingerprint)"; rc=$?
+has "$out" "FINGERPRINT" && [ "$rc" -eq 0 ] && ok || fail "fingerprint: a dangling untracked symlink is a git error ($rc): $out"
+fp_link="$(printf '%s' "$out" | sed -n 's/^FINGERPRINT //p')"
+rm "$LINKS/zz_dangling" && ln -s other-target "$LINKS/zz_dangling"
+out="$(bash "$GATE" --root "$LINKS" --fingerprint)"
+[ -n "$fp_link" ] && [ "$(printf '%s' "$out" | sed -n 's/^FINGERPRINT //p')" != "$fp_link" ] && ok || fail "fingerprint: a changed symlink target gives the same value: $out"
+rm "$LINKS/zz_dangling"
+mkdir -p "$LINKS/.claude/worktrees/wt" && git -C "$LINKS/.claude/worktrees/wt" init -q && echo w >"$LINKS/.claude/worktrees/wt/w.txt"
+git -C "$LINKS/.claude/worktrees/wt" add -A && git -C "$LINKS/.claude/worktrees/wt" -c user.email=t@t -c user.name=t commit -qm w
+out="$(cd "$LINKS" && bash "$GATE" --gate quick --run-id wt)"; rc=$?
+has "$out" "GATE quick PASS" && [ "$rc" -eq 0 ] && ok || fail "gate: a nested repository under .claude/worktrees stops the gate ($rc): $out"
+out="$(GIT_DIR=/nonexistent bash "$GATE" --root "$LINKS" --fingerprint)"; rc=$?
+has "$out" "GIT_ERROR" && [ "$rc" -eq 2 ] && ok || fail "fingerprint: a real git error is no longer an error ($rc): $out"
+
+# Evidence write: the verdict comes from this run, and a failed write is never a PASS
+# (review of PR #19, round 4). The .tmp directory is the easiest way to make the write fail.
+jq '.validation.commands += {"flip": {"run": "exit $(cat flip.code)"}} | .validation.gates += {"flipg": ["flip"]}' "$good" >"$TMP/flip.json"
+echo 0 >flip.code
+out="$(bash "$GATE" --config "$TMP/flip.json" --gate flipg --run-id M)"; rc=$?
+has "$out" "GATE flipg PASS" && [ "$rc" -eq 0 ] && ok || fail "flip: first run not PASS ($rc): $out"
+echo 1 >flip.code
+mkdir .ai/workspace/runs/M/evidence.json.tmp
+out="$(bash "$GATE" --config "$TMP/flip.json" --gate flipg --run-id M 2>/dev/null)"; rc=$?
+has "$out" "CHECK flip FAIL" && ok || fail "flip: command failure not reported: $out"
+has "$out" "GATE flipg PASS" && fail "flip: a failed evidence write gave PASS: $out" || ok
+has "$out" "WRITE_ERROR could not write .ai/workspace/runs/M/evidence.json" && [ "$rc" -eq 2 ] && ok || fail "flip: no WRITE_ERROR with code 2 ($rc): $out"
+jq -e '.checks.flip.status == "PASS"' .ai/workspace/runs/M/evidence.json >/dev/null && ok || fail "flip: the previous evidence was not left untouched"
+ls .ai/workspace/runs/M/evidence.json.unsaved.*.jsonl >/dev/null 2>&1 && ok || fail "flip: the records of the failed run were not kept"
+echo 0 >flip.code
+out="$(bash "$GATE" --config "$TMP/flip.json" --gate flipg --run-id M 2>/dev/null)"; rc=$?
+has "$out" "GATE flipg FAIL" && [ "$rc" -eq 2 ] && ok || fail "flip: passing commands with a failed write gave a PASS ($rc): $out"
+rmdir .ai/workspace/runs/M/evidence.json.tmp
+out="$(bash "$GATE" --config "$TMP/flip.json" --gate flipg --run-id M)"; rc=$?
+has "$out" "GATE flipg PASS" && [ "$rc" -eq 0 ] && jq -e '.checks.flip.status == "PASS"' .ai/workspace/runs/M/evidence.json >/dev/null && ok || fail "flip: no PASS after the directory is gone ($rc): $out"
+echo 1 >flip.code
+out="$(bash "$GATE" --config "$TMP/flip.json" --gate flipg --run-id M)"; rc=$?
+has "$out" "GATE flipg FAIL" && [ "$rc" -eq 1 ] && jq -e '.checks.flip.status == "FAIL"' .ai/workspace/runs/M/evidence.json >/dev/null && ok || fail "flip: FAIL not written ($rc): $out"
+rm -f flip.code
+
 # --- 12e. tree changed during the gate: evidence STALE, code 3 (R10)
 jq '.validation.commands += {"mut": {"run": "echo m >new.txt; echo done"},
                              "mutfail": {"run": "echo m >new.txt; exit 1"}}

@@ -180,9 +180,11 @@ lock_stale() {
 }
 
 # fingerprint - code 1 when git cannot read the repo (not a repo, dubious ownership, a broken
-# index) or HEAD has no commit; a failure must never become a hashed value
+# index) or HEAD has no commit; a failure must never become a hashed value. An untracked entry
+# that is not a regular file (a symlink, a nested repository such as a worktree under
+# .claude/worktrees/) goes in by name, and a symlink by its target, never as a git error.
 fingerprint() {
-  local head
+  local head ps
   head="$(git -C "$root" rev-parse --verify -q HEAD 2>/dev/null)" || return 1
   git -C "$root" status --porcelain >/dev/null 2>&1 || return 1
   {
@@ -191,8 +193,12 @@ fingerprint() {
     git -C "$root" ls-files --others --exclude-standard -z -- . ":(exclude)$workspace/" ":(exclude).ai/workspace/" 2>/dev/null |
       while IFS= read -r -d '' f; do
         printf '%s\n' "$f"
-        [ -f "$root/$f" ] && hash_cmd < "$root/$f"
-      done || exit 1
+        if [ -L "$root/$f" ]; then readlink "$root/$f" || exit 1
+        elif [ -f "$root/$f" ]; then hash_cmd <"$root/$f" || exit 1
+        fi
+      done
+    ps=("${PIPESTATUS[@]}")
+    [ "${ps[0]}" -eq 0 ] && [ "${ps[1]}" -eq 0 ] || exit 1
   } | hash_cmd | cut -c1-16
 }
 
@@ -785,27 +791,14 @@ if [ "$fp_after" != "$fp_before" ]; then
   echo "WARNING tree changed during the gate; evidence marked STALE, rerun the gate after editing is done"
 fi
 
-evidence_name="evidence.json"; [ "$baseline" -eq 1 ] && evidence_name="baseline.json"
-evidence="$out_dir/$evidence_name"
-if [ -f "$evidence" ] && ! jq -e '.checks | type == "object"' "$evidence" >/dev/null 2>&1; then
-  corrupt="$evidence.corrupt.$(date +%Y%m%d-%H%M%S)"
-  mv "$evidence" "$corrupt"
-  echo "WARNING $runs_base/$run_id/$evidence_name was unreadable; moved to ${corrupt#"$root"/}, a new file starts"
-fi
-[ -f "$evidence" ] || echo '{"checks":{}}' >"$evidence"
-jq -s --arg head "$head_before" --arg fp "$fp_before" --arg fpa "$fp_after" --argjson stale "$stale" --arg local "$config_local" --slurpfile old "$evidence" '
-  reduce .[] as $r ($old[0]; .checks[$r.name] = ($r + {head: $head, fingerprint: $fp}
-    + (if $stale == 1 then {stale: true, fingerprintAfter: $fpa} else {} end)
-    + (if $local != "" then {configLocal: $local} else {} end)))
-' "$records" >"$evidence.tmp" && mv "$evidence.tmp" "$evidence"
-rm -f "$records"
-
+# The verdict comes from the records this run wrote, never from the evidence file: a merge
+# that fails leaves the previous run's records there, and they must not turn into a PASS.
 # PASS only when every selected command has PASS or SKIPPED and at least one has PASS. An
-# unreadable evidence file, a missing record or an unknown status is FAIL, never PASS.
-selected_statuses="$(jq -r --argjson n "$names_json" '.checks as $c | [$n[] | ($c[.].status // "MISSING")] | join(" ")' "$evidence" 2>/dev/null)" || selected_statuses=""
+# unreadable records file, a missing record or an unknown status is FAIL, never PASS.
+selected_statuses="$(jq -s -r --argjson n "$names_json" '(map({(.name): .}) | add // {}) as $c | [$n[] | ($c[.].status // "MISSING")] | join(" ")' "$records" 2>/dev/null)" || selected_statuses=""
 result="PASS"; code=0
 if [ -z "$selected_statuses" ]; then
-  echo "WARNING no readable results in $runs_base/$run_id/$evidence_name"
+  echo "WARNING no readable results of this run in $runs_base/$run_id"
   result="FAIL"; code=1
 else
   for st in $selected_statuses; do
@@ -823,6 +816,37 @@ else
 fi
 if [ "$stale" -eq 1 ] && [ "$code" -ne 1 ]; then
   result="STALE"; code=3
+fi
+
+# write_evidence - merges this run's records into the evidence file through a temporary file;
+# code 1 when any step fails, and the file then keeps the previous run untouched
+write_evidence() {
+  local corrupt
+  if [ -f "$evidence" ] && ! jq -e '.checks | type == "object"' "$evidence" >/dev/null 2>&1; then
+    corrupt="$evidence.corrupt.$(date +%Y%m%d-%H%M%S)"
+    mv "$evidence" "$corrupt" || return 1
+    echo "WARNING $runs_base/$run_id/$evidence_name was unreadable; moved to ${corrupt#"$root"/}, a new file starts"
+  fi
+  [ -f "$evidence" ] || echo '{"checks":{}}' >"$evidence" || return 1
+  rm -f "$evidence.tmp" 2>/dev/null
+  jq -s --arg head "$head_before" --arg fp "$fp_before" --arg fpa "$fp_after" --argjson stale "$stale" --arg local "$config_local" --slurpfile old "$evidence" '
+    reduce .[] as $r ($old[0]; .checks[$r.name] = ($r + {head: $head, fingerprint: $fp}
+      + (if $stale == 1 then {stale: true, fingerprintAfter: $fpa} else {} end)
+      + (if $local != "" then {configLocal: $local} else {} end)))
+  ' "$records" >"$evidence.tmp" 2>/dev/null || return 1
+  jq -e '.checks | type == "object"' "$evidence.tmp" >/dev/null 2>&1 || return 1
+  mv "$evidence.tmp" "$evidence" || return 1
+}
+evidence_name="evidence.json"; [ "$baseline" -eq 1 ] && evidence_name="baseline.json"
+evidence="$out_dir/$evidence_name"
+if write_evidence; then
+  rm -f "$records"
+else
+  rm -f "$evidence.tmp" 2>/dev/null
+  unsaved="$out_dir/$evidence_name.unsaved.$(date +%Y%m%d-%H%M%S).jsonl"
+  mv "$records" "$unsaved" 2>/dev/null || unsaved="$records"
+  echo "WRITE_ERROR could not write $runs_base/$run_id/$evidence_name; the results of this run are in ${unsaved#"$root"/} and do not count as evidence"
+  result="FAIL"; code=2
 fi
 
 kind="GATE"; [ "$baseline" -eq 1 ] && kind="BASELINE"

@@ -256,6 +256,7 @@ The plugin is written in English. Files it generates in your repo use `project.l
 | `CONFIG_ERROR ...` | the gates, commands or `requires` in the config or the local override are invalid | fix the field named in the message; `gate.sh --list` shows all errors |
 | `SETUP_CONFIG_FIELD ...` | another field is invalid (`agents`, `git`, `roles`, paths); gates still run | fix the field; `check_setup.sh --config-only` shows all errors |
 | `GIT_ERROR ...` | git cannot read the repo or it has no commit, so there is no fingerprint | fix git (`git status`, `safe.directory`), then run the gate again |
+| `WRITE_ERROR could not write ...` | the evidence file could not be written (a full disk, a read-only runs directory, a stray `evidence.json.tmp`); the run's results are kept in a `.unsaved` file and do not count | free the path, then run the gate again |
 | `CHECK <cmd> NOT_RUN` | the environment is missing (precheck failed or a not-run exit code) | start the service or device from `needs`, run the gate again |
 | `STALE` | the code changed after the check | run the gate again; do not edit files while a gate runs |
 | `SETUP_CONFIG_FIELD agents...: removed with Codex slots` | a config from before Codex slots were removed | use Claude model strings in `agents.models`; delete `crossVendor` and `timeoutSec` |
