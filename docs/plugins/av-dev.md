@@ -33,7 +33,7 @@ The plugin is written in English. Files it generates in a repo (docs, overlays, 
 ## How It Works
 
 1. Run `av-setup` in the repo. It detects the mode: NEW, COMPLETION (docs exist), ADOPTION (agents or pipelines exist) or REFRESH (config exists).
-2. It writes a plan and waits for approval. `--defaults` skips both the interview and the approval wait: it uses the detected values and writes the files, but deleting files still needs explicit approval. `--dry-run` stops after the plan.
+2. It writes a plan and waits for approval. `--defaults` skips the interview and uses the detected values, but still stops once for approval of the listed files and commands before writing; deleting files needs its own approval. Commands found in the repo are only candidates: nothing runs before the config is approved. `--dry-run` stops after the plan.
 3. After approval it writes the files and validates them: `check_setup.sh`, doc reference checks and the `quick` gate.
 4. From then on, the working skills read the effective config and the overlay for their step.
 
@@ -48,7 +48,7 @@ Stack adapters add facts read from manifests, each with evidence, never conventi
 | Android | `adapters.android` | Gradle builds, modules, plugins, SDK and JVM values, dependencies, version catalogs, wrapper, manifests; values as `declared`, `expression` or `text_candidate` |
 | Angular | `adapters.angular` | Angular presence, declared, locked and installed versions of key packages, `angular.json` projects and targets, test tools |
 
-Every adapter entry has the same `status` (`ok`, `incomplete`, `not_applicable`, `unavailable`, `error`), `ran`, `exit_code`, `reason` and `trigger`. The scan checks the exit code and the output shape. A failed or missing adapter makes the scan incomplete and names the reason in `scan.incomplete`; its facts are dropped. Adapter cuts join `scan.truncated`. The scan, adapters included, has a time limit (`--timeout`, default 600 s), and it reads content only from regular files inside the repo, never through a symlink out of it or from a secret name.
+Every adapter entry has the same `status` (`ok`, `incomplete`, `not_applicable`, `unavailable`, `error`), `ran`, `exit_code`, `reason` and `trigger`. The scan checks the exit code and the output shape. A failed or missing adapter makes the scan incomplete and names the reason in `scan.incomplete`; its facts are dropped. Adapter cuts join `scan.truncated`. The scan, adapters included, has a time limit (`--timeout`, default 600 s), and it reads content only from regular files inside the repo, never through a symlink out of it or from a secret name. Command text copied from CI steps, hooks and package scripts is redacted (tokens, credentials in URLs, `key=value` secrets), and `.claude/worktrees/` is never a source of stacks or commands.
 
 ## Config
 

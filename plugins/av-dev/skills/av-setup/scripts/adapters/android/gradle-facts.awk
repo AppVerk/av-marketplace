@@ -6,7 +6,9 @@
 # statement inside signingConfigs or credentials blocks, are counted as redacted and never printed.
 # Env: AV_MOD (Gradle project path, empty for settings), AV_PATH (file path relative to ROOT). Var: maxmarkers.
 # Output: TSV records "G<TAB>mod<TAB>path<TAB>kind<TAB>fields...". An android VALUE that starts
-# with "=" is an expression, not a literal; an empty VALUE or NOTATION did not pass the checks. Kinds:
+# with "=" is an expression, not a literal; an empty VALUE or NOTATION did not pass the checks.
+# "a" + "b" is joined into one literal; "a" + expr is an expression (a dep NOTATION or plugin
+# VERSION starting with "=" too), so a concatenated version never prints as a wrong literal. Kinds:
 #   plugin ID VERSION VIA APPLIED LINE   dep CONF KIND NOTATION LINE   android KEY VALUE LINE
 #   feature KEY VALUE LINE       include PROJECT LINE          include_build PATH LINE
 #   root_name VALUE LINE         catalog NAME FROM LINE        ext NAME VALUE LINE
@@ -43,6 +45,23 @@ function allq(s,   r, v) {
   }
   return r
 }
+# lit_chain S - S starts with a literal: the text of "a" + "b" + ... joined; chain_rest is what
+# follows the chain, chain_expr is 1 when an operand is not a literal (the result then keeps
+# that operand as text, e.g. 1.0+suffix, and is an expression, never a declared value)
+function lit_chain(s,   r, l, t) {
+  chain_expr = 0; chain_rest = s
+  l = firstq(s); if (!qfound) return ""
+  r = l; t = qrest
+  while (t ~ /^[ \t]*\+[ \t]*/) {
+    sub(/^[ \t]*\+[ \t]*/, "", t)
+    if (t ~ /^["']/) { l = firstq(t); if (!qfound) { chain_expr = 1; break } r = r l; t = qrest; continue }
+    if (!match(t, /^[A-Za-z0-9_.${}]+/)) { chain_expr = 1; break }
+    chain_expr = 1; r = r "+" substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
+    if (match(t, /^\([^()]*\)/)) { r = r substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH) }
+  }
+  chain_rest = t
+  return r
+}
 # blank S - S with the contents of string literals removed, for keyword checks outside strings
 function blank(s,   i, c, q, r) {
   r = ""; q = ""
@@ -54,6 +73,13 @@ function blank(s,   i, c, q, r) {
   }
   return r
 }
+# plugin_version T - the version text after "version": a literal, a joined chain, or "=" + expression
+function plugin_version(t,   v) {
+  if (!match(t, /["']/)) return ""
+  v = lit_chain(substr(t, RSTART))
+  if (!qfound) return ""
+  return (chain_expr ? "=" v : v)
+}
 function in_block(name,   i) { for (i = 1; i <= sp; i++) if (stack[i] == name) return 1; return 0 }
 function marker(name, ln) {
   if (seenm[name]) return
@@ -64,8 +90,11 @@ function marker(name, ln) {
 function value(v,   l) {
   v = trim(v); sub(/^=[ \t]*/, "", v); v = trim(v)
   if (v ~ /^\(.*\)$/) { v = substr(v, 2, length(v) - 2); v = trim(v) }
-  l = firstq(v)
-  if (qfound && qrest ~ /^[ \t]*$/ && v ~ /^["']/) return (safe(l, "^[A-Za-z0-9._${}:+-]+$") ? l : "")
+  if (v ~ /^["']/) {
+    l = lit_chain(v)
+    if (!qfound || chain_rest !~ /^[ \t]*$/ || !safe(l, "^[A-Za-z0-9._${}():+-]+$")) return ""
+    return (chain_expr ? "=" l : l)
+  }
   if (v ~ /^[0-9]+$/) return v
   if (safe(v,"^[A-Za-z0-9._$(){}]+$")) return "=" v
   return ""
@@ -94,14 +123,14 @@ function stmt(s, ln,   b, low, top, parent, id, ver, via, conf, rest, rb, kind, 
   # plugins
   if (top == "plugins") {
     id = ""; ver = ""; via = ""
-    if (b ~ /^id[ (]/) { id = firstq(s); via = "id"; if (qrest ~ /version/) { v = qrest; sub(/^.*version[ (]*/, "", v); ver = firstq(v); if (!qfound) ver = "" } }
+    if (b ~ /^id[ (]/) { id = firstq(s); via = "id"; if (qrest ~ /version/) { v = qrest; sub(/^.*version[ (]*/, "", v); ver = plugin_version(v) } }
     else if (b ~ /^alias[ (]/) { id = s; sub(/^alias[ (]*/, "", id); sub(/\).*$/, "", id); id = trim(id); via = "alias"
       if (s ~ /version/) marker("alias_version_override", ln) }
-    else if (b ~ /^kotlin[ (]/) { id = firstq(s); if (id != "") id = "org.jetbrains.kotlin." id; via = "kotlin"; if (qrest ~ /version/) { v = qrest; sub(/^.*version[ (]*/, "", v); ver = firstq(v); if (!qfound) ver = "" } }
+    else if (b ~ /^kotlin[ (]/) { id = firstq(s); if (id != "") id = "org.jetbrains.kotlin." id; via = "kotlin"; if (qrest ~ /version/) { v = qrest; sub(/^.*version[ (]*/, "", v); ver = plugin_version(v) } }
     else if (b ~ /^`[A-Za-z0-9._-]+`$/) { id = s; gsub(/`/, "", id); via = "id" }
     k = (b ~ /apply[ \t(]*false/) ? "false" : "true"
     if (id != "" && safe(id, "^[A-Za-z0-9._-]+$")) {
-      if (!safe(ver, "^[A-Za-z0-9._${}+-]+$")) ver = ""
+      if (!safe(ver, "^=?[A-Za-z0-9._${}()+-]+$")) ver = ""
       out("plugin\t" id "\t" ver "\t" via "\t" k "\t" ln)
     } else if (id != "") out("plugin\t\t\tunparsed\t" k "\t" ln)
     return
@@ -141,15 +170,16 @@ function stmt(s, ln,   b, low, top, parent, id, ver, via, conf, rest, rb, kind, 
   else if (b ~ /^(val[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]+by[ \t]+extra\(/) { n = b; sub(/^val[ \t]+/, "", n); sub(/[ \t].*$/, "", n); v = s; sub(/^[^(]*\(/, "", v); sub(/\)[ \t]*$/, "", v) }
   else if (b ~ /^extra\[/) { n = firstq(s); v = s; sub(/^[^=]*=/, "", v) }
   if (n != "") {
-    v = trim(v); k = firstq(v)
-    if (qfound && v ~ /^["']/) v = k; else if (v !~ /^[0-9]+$/) v = ""
+    v = trim(v)
+    if (v ~ /^["']/) { k = lit_chain(v); v = (qfound && !chain_expr && chain_rest ~ /^[ \t]*$/) ? k : "" }
+    else if (v !~ /^[0-9]+$/) v = ""
     if (safe(n, "^[A-Za-z_][A-Za-z0-9_]*$") && safe(v, "^[A-Za-z0-9._+-]+$")) out("ext\t" n "\t" v "\t" ln)
     return
   }
 
   # android block
   if (in_block("android") && (top == "android" || top == "defaultConfig" || top == "compileOptions" || top == "kotlinOptions" || top == "compilerOptions")) {
-    if (match(b, /^(namespace|applicationId|compileSdk|compileSdkVersion|minSdk|minSdkVersion|targetSdk|targetSdkVersion|testInstrumentationRunner|sourceCompatibility|targetCompatibility|jvmTarget)([ \t=(]|$)/)) {
+    if (match(b, /^(namespace|applicationId|versionName|versionCode|compileSdk|compileSdkVersion|minSdk|minSdkVersion|targetSdk|targetSdkVersion|testInstrumentationRunner|sourceCompatibility|targetCompatibility|jvmTarget)([ \t=(]|$)/)) {
       k = b; sub(/[ \t=(].*$/, "", k)
       v = substr(s, length(k) + 1)
       if (k == "jvmTarget" && v ~ /set\(/) { sub(/^[^(]*\(/, "", v); sub(/\)[ \t]*$/, "", v) }
@@ -193,9 +223,13 @@ function stmt(s, ln,   b, low, top, parent, id, ver, via, conf, rest, rb, kind, 
       v = k ":" n (v != "" ? ":" v : "")
       out("dep\t" conf "\t" (kind == "platform" ? "platform" : "coordinate") "\t" (safe(v, COORD) ? v : "") "\t" ln); return
     }
-    v = firstq(rest)
-    if (qfound) {
-      out("dep\t" conf "\t" (kind == "platform" ? "platform" : "coordinate") "\t" (safe(v, COORD) && v ~ /:/ ? v : "") "\t" ln); return
+    if (match(rest, /["']/)) {
+      v = lit_chain(substr(rest, RSTART))
+      if (qfound) {
+        if (chain_expr) v = (safe(v, COORD) && v ~ /:/ ? "=" v : "")
+        else if (!(safe(v, COORD) && v ~ /:/)) v = ""
+        out("dep\t" conf "\t" (kind == "platform" ? "platform" : "coordinate") "\t" v "\t" ln); return
+      }
     }
     if (rb ~ /(^|[^A-Za-z0-9_])libs\.[A-Za-z0-9_.]+/) {
       v = rb; sub(/^.*libs\./, "libs.", v); sub(/[^A-Za-z0-9_.].*$/, "", v)

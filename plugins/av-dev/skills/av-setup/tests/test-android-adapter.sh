@@ -513,5 +513,27 @@ scan_not_ok scan_silent incomplete "complete=false, 0 errors, 0 truncated"
 scan_case scan_inconsistent "$k" inconsistent
 scan_not_ok scan_inconsistent incomplete "complete=true, 1 errors"
 
+# --- review of PR #19 (mszenfeld, Medium/Low): "a:b:1.0" + "-SNAPSHOT" was reported as the
+# declared version 1.0. Literal chains are joined; a chain with an expression is an expression.
+adapter concat "$fx/concat"
+code_is concat 0
+one_object concat
+no_stderr concat
+check concat "groovy: joined literal dependency" '.builds[0].modules[] | select(.project == ":app") | .dependencies[0] | .notation == "a:b:1.0-SNAPSHOT" and .version.declared == "1.0-SNAPSHOT"'
+check concat "groovy: string plus expression is not a literal" '.builds[0].modules[] | select(.project == ":app") | .dependencies[1] | .notation == null and .expression == "c:d:2.0+suffix" and (has("version") | not)'
+check concat "groovy: plain literal unchanged" '.builds[0].modules[] | select(.project == ":app") | .dependencies[2] | .notation == "e:f:3.0" and .version.declared == "3.0"'
+check concat "groovy: four-part chain" '.builds[0].modules[] | select(.project == ":app") | .dependencies[3] | .notation == "g:h:4.0-beta1" and .version.declared == "4.0-beta1"'
+check concat "groovy: plugin version chain" '[.builds[0].modules[] | select(.project == ":app") | .plugins[] | select(.id == "com.example.plug")][0].version.declared == "1.0-SNAPSHOT"'
+check concat "groovy: plugin version with an expression" '[.builds[0].modules[] | select(.project == ":app") | .plugins[] | select(.id == "com.example.other")][0].version | .declared == null and .expression == "2.0+suffix"'
+check concat "groovy: ext chain as a text candidate" '[.builds[0].modules[] | select(.project == ":app") | .plugins[] | select(.id == "com.example.ext")][0].version | .declared == null and .text_candidate.value == "3.0-SNAPSHOT"'
+check concat "groovy: ext with an expression gives no candidate" '[.builds[0].modules[] | select(.project == ":app") | .plugins[] | select(.id == "com.example.extmixed")][0].version | .declared == null and .text_candidate == null'
+check concat "groovy: versionName with an expression" '.builds[0].modules[] | select(.project == ":app") | .android.version_name | .declared == null and .expression == "1.0+suffix"'
+check concat "groovy: versionCode literal" '.builds[0].modules[] | select(.project == ":app") | .android.version_code.declared == "7"'
+check concat "kts: joined dependency" '.builds[0].modules[] | select(.project == ":lib") | .dependencies[0] | .notation == "a:b:1.0-SNAPSHOT" and .version.declared == "1.0-SNAPSHOT"'
+check concat "kts: expression inside parentheses" '.builds[0].modules[] | select(.project == ":lib") | .dependencies[1] | .notation == null and .expression == "c:d:2.0+suffix"'
+check concat "kts: plugin version chain" '[.builds[0].modules[] | select(.project == ":lib") | .plugins[] | select(.id == "com.example.plug")][0].version.declared == "1.0-SNAPSHOT"'
+check concat "kts: versionName joined" '.builds[0].modules[] | select(.project == ":lib") | .android.version_name.declared == "1.0-SNAPSHOT"'
+no_word concat '"declared":"1\.0"' "a partial literal 1.0 reported as declared"
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

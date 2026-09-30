@@ -68,11 +68,12 @@ $hits"
 adoption="$SKILLS/av-setup/references/adoption.md"
 grep -q 'orkiestrator' "$adoption" && grep -q 'repos keep their own language' "$adoption" && ok || fail "adoption.md: Polish grep words or the reason for them missing"
 
-# --- 5. user docs say what the skills do (review of PR #19: --defaults and the commit policy)
+# --- 5. user docs say what the skills do (review of PR #19: --defaults skips the interview but
+# still stops once for the approval of the team files; the commit policy)
 readme="$PLUGIN/README.md"
-grep -q 'no interview and no waiting for approval' "$SKILLS/av-setup/SKILL.md" && ok || fail "av-setup: --defaults no longer skips the approval; update this test and the docs"
-grep -F -- '--defaults' "$readme" | grep -q 'no approval wait' && ok || fail "README: the --defaults row does not say it skips the approval"
-[ -z "$page" ] || { grep -F -- '--defaults' "$page" | grep -q 'approval wait' && ok || fail "docs page: --defaults does not say it skips the approval"; }
+grep -q -- '`--defaults`: no interview' "$SKILLS/av-setup/SKILL.md" && grep -q 'waits for that one approval' "$SKILLS/av-setup/SKILL.md" && ok || fail "av-setup: --defaults wording changed; update this test and the docs"
+grep -F -- '--defaults' "$readme" | grep -q 'no interview' && grep -F -- '--defaults' "$readme" | grep -q 'stops once for your approval' && ok || fail "README: the --defaults row does not say it skips the interview but stops once for approval"
+[ -z "$page" ] || { grep -F -- '--defaults' "$page" | grep -q 'stops once for approval' && ok || fail "docs page: --defaults does not say it stops once for approval"; }
 grep -q '`on-request`: stop' "$SKILLS/av-implement/SKILL.md" && grep -q '`after-green-gate`: commit' "$SKILLS/av-implement/SKILL.md" && ok || fail "av-implement: commit policy changed; update this test and the docs"
 grep -q 'stops before the commit' "$readme" && ! grep 'stops before the commit' "$readme" | grep -vq 'on-request' && ok || fail "README: stopping before the commit is not tied to git.commit: on-request"
 grep -q 'Stops before commit unless `git.commit`' "$SKILLS/av-implement/SKILL.md" && ok || fail "av-implement description: stopping before commit is not tied to git.commit"

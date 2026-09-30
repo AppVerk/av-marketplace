@@ -4,6 +4,8 @@
 # Output: lines SETUP_<CODE> <details>, then CHECKED n ERRORS e WARNINGS w at the end.
 #   SETUP_CONFIG_MISSING      no config (ERROR)
 #   SETUP_CONFIG_INVALID      config is not valid JSON (ERROR)
+#   SETUP_CONFIG_IGNORED      team config is untracked and ignored by git (ERROR): a team
+#                             config must be committed; only <config>.local may be ignored
 #   SETUP_CONFIG_FIELD        invalid field outside the gates (ERROR): agents.models (a Claude
 #                             model; no Haiku in review or planReview; no object form), removed
 #                             agents keys (crossVendor, timeoutSec), git.commit, git.push, roles,
@@ -37,7 +39,8 @@
 # av-verify/scripts/config.sh). --no-local checks the team config only.
 #
 # Owner mode: for each file a line OWNER <file> <owner>, where
-# owner (last field) is a role name, generated, unowned or implementer.
+# owner (last field) is a role name, generated, unowned or implementer; a config
+# without rules prints implementer for every file (never an empty output).
 # Order: generatedPaths, then roles (first by order and by position
 # in the config), then unownedPaths, otherwise implementer.
 # Globs as in git pathspec :(glob): *, ?, **; a path without a star also matches
@@ -114,6 +117,10 @@ team_config="$config"
 local_rel="${team_config#$root/}.local"
 case "$team_config" in
   "$root"/*)
+    if [ "$owner_mode" -eq 0 ] && ! git -C "$root" ls-files --error-unmatch -- "${team_config#$root/}" >/dev/null 2>&1 \
+       && git -C "$root" check-ignore -q -- "${team_config#$root/}" 2>/dev/null; then
+      err "CONFIG_IGNORED ${team_config#$root/} is ignored by git; a team config must be committed (git add -f, then fix .gitignore)"
+    fi
     if git -C "$root" ls-files --error-unmatch -- "$local_rel" >/dev/null 2>&1; then
       [ "$owner_mode" -eq 1 ] || err "LOCAL_TRACKED $local_rel is tracked by git; git rm --cached $local_rel"
     elif ! git -C "$root" check-ignore -q --no-index -- "$local_rel" 2>/dev/null; then
@@ -210,8 +217,10 @@ jq -r '
 
 # matcher: rules + list of paths -> F path roles gen unowned; at the end G role glob hits
 # (include globs only). A glob with ! excludes the path from its own list (kind + name).
+# The rules are read in BEGIN, not as a first input file: with an empty rules file awk's
+# "FNR == NR" holds for every path, so a config without rules printed nothing.
 match_paths() {
-  awk -F'\t' '
+  awk -F'\t' -v rules="$tmp/rules" '
     function g2re(g,   r, i, n, c) {
       if (g ~ /\/$/) g = g "**"
       r = "^"; n = length(g); i = 1
@@ -232,9 +241,13 @@ match_paths() {
       if (g !~ /[*?]/) r = r "(/.*)?"
       return r "$"
     }
-    FNR == NR {
-      n++; kind[n] = $1; name[n] = $2; glob[n] = $3; key[n] = $1 SUBSEP $2; hits[n] = 0
-      neg[n] = (substr($3, 1, 1) == "!"); re[n] = g2re(neg[n] ? substr($3, 2) : $3); next
+    BEGIN {
+      while ((getline l < rules) > 0) {
+        split(l, a, "\t")
+        n++; kind[n] = a[1]; name[n] = a[2]; glob[n] = a[3]; key[n] = a[1] SUBSEP a[2]; hits[n] = 0
+        neg[n] = (substr(a[3], 1, 1) == "!"); re[n] = g2re(neg[n] ? substr(a[3], 2) : a[3])
+      }
+      close(rules)
     }
     {
       p = $0; sub(/^\.\//, "", p); roles = ""; gen = 0; un = 0; split("", excl)
@@ -249,7 +262,7 @@ match_paths() {
       printf "F\t%s\t%s\t%d\t%d\n", p, roles, gen, un
     }
     END { for (i = 1; i <= n; i++) if (kind[i] == "role" && !neg[i]) printf "G\t%s\t%s\t%d\n", name[i], glob[i], hits[i] }
-  ' "$tmp/rules" -
+  ' -
 }
 
 # MARK: owner mode

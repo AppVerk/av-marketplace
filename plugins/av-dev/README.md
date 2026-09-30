@@ -60,7 +60,7 @@ You can also ask in plain words. "Set up this repo for Claude", "implement PROJ-
 |---|---|
 | `/av-dev:av-setup` | full setup with an interview and a plan to approve |
 | `/av-dev:av-setup --dry-run` | scan, interview and plan only; no changes in tracked files |
-| `/av-dev:av-setup --defaults` | no interview and no approval wait: detected values, files written right away; deletions still need your approval; decisions listed in the report |
+| `/av-dev:av-setup --defaults` | no interview: detected values; still stops once for your approval of the listed files and commands before writing; deletions need their own approval; decisions listed in the report |
 | `/av-dev:av-setup --only config` | only the config; `docs`, `overlays`, `roles` work the same way |
 | `/av-dev:av-setup --eval` | after the setup, measure the review on a clone with 5 injected defects |
 

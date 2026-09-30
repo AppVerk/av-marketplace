@@ -113,7 +113,7 @@ bash <skill-dir>/scripts/adoption_diff.sh --root <repo-root> --old-rev <rev> \
 - Every `LOST` gets a place in the plan. A substantive rule (findings category, threshold, script, pitfall) goes to "Knowledge moved to overlays" with a target. Orchestration goes to "Knowledge that gets lost" with what replaces it.
 - Group them: one row per group of tokens, not per token. Write the `TOKENS`, `LOST` and `FILTERED` counts into the plan.
 
-Without approval (except `--defaults`), delete or edit nothing. You may only write the plan.
+Without approval, delete or edit nothing. You may only write the plan. `--defaults` skips the interview, not the approval of the file list (`SKILL.md`, step 5).
 
 ## Step 4: Execution
 

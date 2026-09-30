@@ -113,8 +113,9 @@ def dsl: if endswith(".kts") then "kotlin" elif endswith(".gradle") then "groovy
       + (if $alias then {alias: $alias, catalog: (if $c then {id: $c.id, version: catver($c), evidence: $c.evidence} else null end)} else {} end)];
   def dep_rows($p): [$G[] | select(.[2] == $p and .[3] == "dep")
     | . as $x | ev($x[2]; $x[7]) as $e
-    | {configuration: $x[4], kind: $x[5], notation: (if $x[6] == "" then null else $x[6] end), evidence: $e}
-    + (if ($x[5] == "coordinate" or $x[5] == "platform") and $x[6] != "" then ($x[6] | split(":")) as $c
+    | {configuration: $x[4], kind: $x[5], notation: (if $x[6] == "" or ($x[6] | startswith("=")) then null else $x[6] end), evidence: $e}
+    + (if ($x[6] | startswith("=")) then {expression: ($x[6][1:]), note: "notation built from a string and an expression; not resolved"}
+       elif ($x[5] == "coordinate" or $x[5] == "platform") and $x[6] != "" then ($x[6] | split(":")) as $c
          | {group: $c[0], name: ($c[1] // null), version: vobj($c[2] // ""; $e)}
        elif ($x[5] == "catalog" or $x[5] == "platform_catalog") then $ll[$x[6] | ltrimstr("libs.") | acc] as $c
          | if $c then ($c.module | split(":")) as $m | {group: $m[0], name: $m[1], version: catver($c), catalog_entry: $c.evidence}
@@ -122,7 +123,8 @@ def dsl: if endswith(".kts") then "kotlin" elif endswith(".gradle") then "groovy
        elif $x[5] == "bundle" then {bundle_members: ($lb[$x[6] | ltrimstr("libs.bundles.") | acc].members // null)}
        else {} end)];
   def android_rows($p): [$G[] | select(.[2] == $p and .[3] == "android")
-    | {key: (.[4] | {namespace: "namespace", applicationId: "application_id", compileSdk: "compile_sdk", compileSdkVersion: "compile_sdk",
+    | {key: (.[4] | {namespace: "namespace", applicationId: "application_id", versionName: "version_name", versionCode: "version_code",
+                     compileSdk: "compile_sdk", compileSdkVersion: "compile_sdk",
                      minSdk: "min_sdk", minSdkVersion: "min_sdk", targetSdk: "target_sdk", targetSdkVersion: "target_sdk",
                      testInstrumentationRunner: "test_instrumentation_runner", sourceCompatibility: "source_compatibility",
                      targetCompatibility: "target_compatibility", jvmTarget: "jvm_target", jvmToolchain: "jvm_toolchain"}[.]),

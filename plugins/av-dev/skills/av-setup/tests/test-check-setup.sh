@@ -253,6 +253,30 @@ has "$out" "SETUP_ROLES_NONE" "no roles: warning"
 bash "$CS" --root "$C" --config "$TMP/noroles.json" --owner src/UI/V.ts generated/P.php >"$own"
 has "$own" "OWNER src/UI/V.ts implementer" "no roles: implementer"
 has "$own" "OWNER generated/P.php generated" "no roles: generated still works"
+# review of PR #19 (mszenfeld, Medium/Low): a config without any rule printed nothing in --owner
+printf '{"version": 1}\n' >"$TMP/norules.json"
+bash "$CS" --root "$C" --config "$TMP/norules.json" --owner src/UI/V.ts >"$own"; rc=$?
+[ "$rc" -eq 0 ] && has "$own" "OWNER src/UI/V.ts implementer" "no rules: one file gets no OWNER line" || fail "no rules: code $rc"
+bash "$CS" --root "$C" --config "$TMP/norules.json" --owner src/UI/V.ts generated/P.php >"$own"
+[ "$(grep -c '^OWNER ' "$own")" -eq 2 ] && ok || fail "no rules: $(grep -c '^OWNER ' "$own") OWNER lines for 2 files"
+jq 'del(.roles, .generatedPaths, .unownedPaths)' "$R/.ai/av.config.json" >"$TMP/norules-gates.json"
+bash "$CS" --root "$C" --config "$TMP/norules-gates.json" >"$out"; rc=$?
+[ "$rc" -eq 0 ] && has "$out" "SETUP_ROLES_NONE" "no rules: full check without the warning" || fail "no rules: code $rc: $(grep -E '^SETUP_' "$out" | tr '\n' ' ')"
+# a team config that git ignores is an error; the .local override may be ignored; --owner still answers
+I="$TMP/ignored"
+git init -q "$I" && git -C "$I" config user.email t@t && git -C "$I" config user.name t
+mkdir -p "$I/.ai" && printf '.ai/av.config.json\n.ai/av.config.json.local\n' >"$I/.gitignore"
+printf '{"version": 1}\n' >"$I/.ai/av.config.json"
+git -C "$I" add .gitignore && git -C "$I" commit -qm init
+bash "$CS" --root "$I" --config-only >"$out"; rc=$?
+[ "$rc" -eq 1 ] && has "$out" "SETUP_CONFIG_IGNORED .ai/av.config.json" "ignored config: no error" || fail "ignored config: code $rc: $(cat "$out")"
+hasnt "$out" "SETUP_LOCAL" "ignored config: the ignored .local override reported"
+bash "$CS" --root "$I" --owner src/a.py >"$own"; rc=$?
+[ "$rc" -eq 0 ] && has "$own" "OWNER src/a.py implementer" "ignored config: --owner" || fail "ignored config: --owner code $rc"
+git -C "$I" add -f .ai/av.config.json
+bash "$CS" --root "$I" --config-only >"$out"; rc=$?
+[ "$rc" -eq 0 ] && ok || fail "tracked config with an ignore pattern: code $rc: $(cat "$out")"
+hasnt "$out" "SETUP_CONFIG_IGNORED" "tracked config with an ignore pattern reported"
 
 printf '{bad json' >"$TMP/bad.json"
 bash "$CS" --root "$C" --config "$TMP/bad.json" >"$out"; rc=$?

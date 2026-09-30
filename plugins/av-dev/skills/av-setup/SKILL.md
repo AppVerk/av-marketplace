@@ -17,8 +17,8 @@ Output:
 
 ## Arguments
 
-- `--defaults`: no interview and no waiting for approval. Use the detected values. Still write the plan, and list the decisions taken by default in the report. `--defaults` never deletes files: deletions need explicit approval (details in `references/adoption.md`, step 4).
-- `--dry-run`: scan, interview and plan. No changes to tracked repo files (details in step 5).
+- `--defaults`: no interview. Use the detected values and the defaults from `references/interview.md`. Still write the plan, and list the decisions taken by default in the report. Setup still stops once, in step 5, with the list of team files it is about to write or change, and waits for that one approval (details in step 5). `--defaults` never deletes files: deletions need explicit approval (details in `references/adoption.md`, step 4).
+- `--dry-run`: scan, interview and plan. No changes to tracked repo files, and no command from the repo runs: no gate, no probe run of a script (details in step 5).
 - `--all-modules`: full descriptions of all modules. Without this flag, the limit from step 7 applies.
 - `--eval`: after the check, run the review eval on a clone (step 10b).
 - `--only <part>`: limit the scope to one part. The scan (step 1) and the check (step 10) always run.
@@ -60,7 +60,7 @@ The mode follows from the `ai_setup` fields in the scan result (step 1):
 bash <skill-dir>/scripts/scan.sh <repo-root> > <tmp>/av-scan.json
 ```
 
-`<skill-dir>` is the directory of this SKILL.md file. The scan reads content only from regular files inside the repo: a symlink out of the repo, to a device or with a secret name is reported by name only. `<tmp>` is the session working directory (the scratchpad if the environment provides one, otherwise `$TMPDIR`).
+`<skill-dir>` is the directory of this SKILL.md file. The scan reads content only from regular files inside the repo: a symlink out of the repo, to a device or with a secret name is reported by name only. Command text it copies (CI steps, hooks, package scripts, documented commands, script lines) has token-like values replaced by `<redacted>`, and nothing under `.claude/worktrees/` counts as a stack, command or test source. `<tmp>` is the session working directory (the scratchpad if the environment provides one, otherwise `$TMPDIR`).
 
 The result contains: the number of source files, the ecosystems (`stacks[]`: manifest and build files only, no frameworks), commands (from manifests and build files; `scripts/` and shell scripts called from CI, manifests, build files and commands in docs, with exit codes, statuses and `referenced_by` in `scripts_meta`; risk hints per command, CI step and script in `commands.flags`; every CI step with its commands, including reused steps (`ref`) and `steps_total`; commands described in docs), tools (git hooks, versions, coverage thresholds, linter configs), the directory layout, modules with sizes, test directories, the existing AI setup, secret file names, and git (a proposed base branch, ticket prefixes with counts, branch types, share of commits with an AI signature).
 
@@ -167,7 +167,9 @@ Put the whole config into the plan. In step 6, write exactly the same config, wi
 
 Check the proposed config before you show it: save it to `<tmp>/av.config.json` and run `bash <skill-dir>/../av-verify/scripts/gate.sh --root <repo-root> --config <tmp>/av.config.json --list` (gates, commands, `requires`). Check the other fields and the roles with the same file: `bash <skill-dir>/scripts/check_setup.sh --root <repo-root> --config <tmp>/av.config.json`. What counts here is `SETUP_CONFIG_FIELD`, `SETUP_ROLE_*` and `SETUP_UNOWNED_DIR`; missing overlays are expected at this stage. Fix errors in the plan. `SETUP_UNOWNED_DIR` counts any tracked, non-empty text file up to 256 KiB outside `docs.root`, top-level dot directories and markdown, whatever its language; put tracked config or data files (e.g. property lists, IDE project files) in `unownedPaths` or `generatedPaths`.
 
-Show the user: the verdict, the decision table in short (action counts plus items that delete or change existing files), the proposed config and, in ADOPTION, the "Knowledge that gets lost" section. Wait for approval. With `--defaults`, do not wait. With `--dry-run`, end here with a report.
+Show the user: the verdict, the decision table in short (action counts plus items that delete or change existing files), the proposed config and, in ADOPTION, the "Knowledge that gets lost" section. Wait for approval. With `--defaults`, show only the list of team files to write or change (config, `CLAUDE.md`, docs, overlays, role skills, `.gitignore`, `.claude/settings.json`) and the commands in `validation.commands`, and wait for that one approval; nothing is written before it. With `--dry-run`, end here with a report.
+
+Commands in the config are candidates harvested from the repo (CI steps, git hooks, package scripts, scripts in docs; `references/interview.md`, round 1). None of them runs before the user approves the config here, and never with `--dry-run`. A candidate that deploys, publishes, releases, pushes, deletes data or pipes a download into a shell is never proposed as a gate: list it under "not a gate" in the plan.
 
 ## Step 6: Config
 
@@ -240,7 +242,7 @@ Follow `references/role-skills.md` and, for section headers, `references/localiz
 2. `check_names.sh` from the `av-docs-sync` skill for new docs and overlays. Check and fix every `NAME_MISSING` in content added by setup. Then sample: in all new docs (including the core written from Explore reports), module descriptions and overlays, grep-check at least 10 numbers and commands. Fix every error and check similar claims in the same file. Leave the full audit (`av-docs-sync audit`) as the next step in the report.
 3. Setup validator: `bash <skill-dir>/scripts/check_setup.sh --root <repo-root>`. Fix every `ERROR` before the report. Fix a `WARNING` or put it into the report as a gap. The result `CHECKED n ERRORS e WARNINGS w` goes to the report.
 4. In ADOPTION, the check from `references/adoption.md`, step 5.
-5. The `quick` gate, at the end, when all writes are done: `bash <skill-dir>/../av-verify/scripts/gate.sh --root <repo-root> --gate quick --run-id <date>-av-setup`. Run it in the foreground, not in the background. Do not edit files while the gate runs: a tree change gives `STALE`, and the evidence does not belong to the checked state. A fix after the gate needs a new run. A FAIL or NOT_RUN result does not block setup. It goes to the report as a gap.
+5. The `quick` gate, at the end, when all writes are done: `bash <skill-dir>/../av-verify/scripts/gate.sh --root <repo-root> --gate quick --run-id <date>-av-setup`. It runs only the commands the user approved with the config in step 5; a command found in the repo but left out of the config never runs. Run it in the foreground, not in the background. Do not edit files while the gate runs: a tree change gives `STALE`, and the evidence does not belong to the checked state. A fix after the gate needs a new run. A FAIL or NOT_RUN result does not block setup. It goes to the report as a gap.
 
 ## Step 10b: Review eval (`--eval` only)
 

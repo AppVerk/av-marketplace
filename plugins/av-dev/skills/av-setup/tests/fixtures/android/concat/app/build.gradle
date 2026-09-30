@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.application'
+    id 'com.example.plug' version "1.0" + "-SNAPSHOT"
+    id 'com.example.other' version "2.0" + suffix
+    id 'com.example.ext' version "$joined"
+    id 'com.example.extmixed' version "$mixed"
+}
+def suffix = "-rc1"
+ext {
+    joined = "3.0" + "-SNAPSHOT"
+    mixed = "3.0" + suffix
+}
+android {
+    namespace "com.example.concat"
+    compileSdk 34
+    defaultConfig {
+        versionName "1.0" + suffix
+        versionCode 7
+    }
+}
+dependencies {
+    implementation("a:b:1.0" + "-SNAPSHOT")
+    implementation "c:d:2.0" + suffix
+    implementation "e:f:3.0"
+    api "g:h:" + "4.0" + "-beta" + "1"
+}
