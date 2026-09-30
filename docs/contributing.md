@@ -118,6 +118,25 @@ Example: the `simple-language` plugin uses a SessionStart hook to inject its wri
 
 Shell scripts in `scripts/` are invoked by hooks. They receive the tool input as JSON on stdin and can output a JSON response to allow or deny the action. `SessionStart` scripts receive session info instead (`source`, `session_id`) and may output `additionalContext`.
 
+## Fitting into the Workflow
+
+The marketplace plugins compose into one development harness: each stage of [the cycle](workflow.md#the-cycle) produces an artifact that the next stage consumes. A contribution builds on that chain instead of starting a second one.
+
+- **Extend the plugin that owns the stage.** A new capability for a stage that a plugin already covers goes into that plugin, or into a shared plugin that every path through the stage can use. New review rules go into Code Review; a new way to run and record checks goes where Delivery, `/develop` and `/qa:loop` can all use it.
+- **Ship reusable parts on their own.** A checker, scanner or gate runner that other plugins could use is its own plugin, or part of the plugin that owns its stage. It is not buried in a workflow that only one path runs.
+- **Hand over in the shared formats.** A plugin may keep its own formats inside a run. What it passes to the next stage, or reports to the user as the result of a stage, uses the format the next stage reads:
+  - plans delivered task by task: `### Task N: <title>` blocks with a `**Files:**` list, as Delivery reads them ([plan format](plugins/delivery.md#plan-format)), or a documented conversion to them;
+  - code review findings: `### [SEVERITY] ID: Title` blocks in a report under `docs/reviews/`, which `/fix`, `/fix-report` and `/fix-all` read;
+  - QA findings: the QA report format under `docs/testing/reports/`;
+  - commits: through the Commit plugin's guard (`AV_COMMIT_SKILL=1`), with a Conventional Commits message.
+- **Route to the installed plugins.** Implementation goes to the developer agent that owns the files when one is installed. Files a plugin writes into a user's repository, such as a section of `CLAUDE.md`, point to the marketplace plugins installed there, not only to the writing plugin's own commands.
+
+Delivery is the worked example. It adds its own orchestration and keeps a task reviewer with its own verdict inside a run. It reads plans in the shared format, sends each task to the developer agent that owns its files, commits through the Commit guard, and ends with `code-review:review`, whose report the fix commands read.
+
+A plugin that runs a stage in its own formats, next to the path the marketplace already has, is better kept in its own marketplace. Its reusable parts can still come in here as shared plugins.
+
+These rules cover plugins that run a stage of the cycle. Plugins that do not, such as Web Auditor, Security Pipeline or Simple Language, are not affected.
+
 ## Creating a New Plugin
 
 1. **Create the directory** under `plugins/`:
@@ -167,6 +186,7 @@ Every pull request should include:
 - Clear description of what changed and why
 - Evidence of testing with Claude Code on at least one real project
 - Adherence to existing plugin patterns and naming conventions
+- For a plugin that runs a stage of the workflow: the hand-offs from [Fitting into the Workflow](#fitting-into-the-workflow)
 - Updated version in `plugin.json` (if modifying an existing plugin) — must match `.claude-plugin/marketplace.json`, the row in `README.md`, and the `**Version:**` header in `docs/plugins/<name>.md`. The `Plugin Version Parity` GitHub Actions workflow enforces this; run `python3 scripts/check_plugin_versions.py` locally before pushing. The same script checks the README row's `ID`, `Claude Code` and `OMP` columns against `.claude-plugin/marketplace.json` and `.omp-plugin/marketplace.json`.
 - Regenerated OMP edition (if you changed `plugins/<name>/` of a plugin that has an `omp/overlay/<name>.json` — a version bump included — or anything under `omp/` or `scripts/build_omp_edition.py`): `plugins-omp/` and `.omp-plugin/marketplace.json` are generated, so never edit them by hand — run `python3 scripts/build_omp_edition.py` and commit both. OMP-only plugins in `omp/native/<name>/` are versioned in their own `.omp-plugin/plugin.json` and `package.json` and in their row of the README "Available Plugins" table, not in `.claude-plugin/marketplace.json` or a `**Version:**` doc header; `python3 scripts/check_plugin_versions.py` checks the README row. Delivery has both a Claude Code edition in `plugins/delivery/` and a native OMP edition in `omp/native/delivery/`: they share one README row, so bump all six version sources together. The `Plugin Version Parity` workflow (`python3 scripts/check_plugin_versions.py`) checks that `plugins/delivery/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, the README row and the `**Version:**` header in `docs/plugins/delivery.md` agree, and that `omp/native/delivery/.omp-plugin/plugin.json` matches that README row. The `OMP Edition` GitHub Actions workflow (`.github/workflows/omp-edition.yml`) runs `python3 scripts/build_omp_edition.py --check`, which fails when `plugins-omp/` or `.omp-plugin/marketplace.json` is stale, when `omp/native/delivery/package.json` differs in name or version from `omp/native/delivery/.omp-plugin/plugin.json`, or when `scripts/route_task.py` differs between `plugins/delivery/` and `omp/native/delivery/`; the workflow also runs the tests listed there. The full rules are in [CLAUDE.md](../CLAUDE.md#omp-edition).
 - Passing delivery tests (if you changed `omp/native/delivery/` or `plugins/delivery/`): run `python3 omp/native/delivery/tests/test_route_task.py` and `python3 plugins/delivery/tests/test_delivery_hook.py`; then install OMP next to the extension with `bun install --no-save --cwd omp/native/delivery @oh-my-pi/pi-coding-agent@latest` (it lands in the gitignored `omp/native/delivery/node_modules/`; linking an existing global install works too: `ln -s ~/.bun/install/global/node_modules omp/native/delivery/node_modules`) and run `bun test tests/delivery.test.ts` from `omp/native/delivery/`. The `OMP Edition` workflow runs all three. Test trailer-parsing rules with synthetic NUL-delimited logs through `scan_delivery_log()`; keep CLI tests for Git integration.
