@@ -310,6 +310,15 @@ has "$out" "supersecretvalue" && fail "secret value in the output: $out" || ok
 has "$out" " SECRET 2" && ok || fail "secret counter: $(printf '%s' "$out" | tail -1)"
 git rm -q -r docker keys .ai/secrets.md && git commit -qm secrets-clean
 
+# --- review of PR #19 (Medium/Low): a file without a final newline has as many lines as it shows
+printf 'a\nb\nc' >src/core/nonl.ts
+printf '# nl\n- E: `src/core/nonl.ts:3`\n- F: `src/core/nonl.ts:4`\n' >.ai/nonl.md
+git add -A && git commit -qm nonl
+out="$(bash "$CHECK" .ai/nonl.md --root .)"
+printf '%s\n' "$out" | grep -q 'LINEREF_RANGE .ai/nonl.md:2 ' && fail "no final newline: the last line counts as outside the file: $out" || ok
+has "$out" "LINEREF_RANGE .ai/nonl.md:3 src/core/nonl.ts:4 (file has 3 lines)" && ok || fail "no final newline: line 4 not RANGE with 3 lines: $out"
+git rm -q src/core/nonl.ts .ai/nonl.md && git commit -qm nonl-clean
+
 bash "$CHECK" >/dev/null; [ $? -eq 2 ] && ok || fail "no arguments"
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

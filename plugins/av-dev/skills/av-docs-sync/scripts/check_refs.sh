@@ -77,9 +77,17 @@ docs_known_paths "$root" >"$tmp/known"
 : >"$tmp/known_used"
 
 # MARK: repo path index
+# A nested repository (a directory with its own .git, e.g. a worktree under .claude/worktrees/)
+# is not part of this repo: its files must not resolve a path that this repo has lost.
 
-find "$root" \( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData \
-  -o -name build -o -name dist -o -name .angular -o -name coverage -o -name __pycache__ -o -name .venv \) -prune \
+PRUNE=( -name node_modules -o -name vendor -o -name Pods -o -name DerivedData
+  -o -name build -o -name dist -o -name .angular -o -name coverage -o -name __pycache__ -o -name .venv )
+root_glob="$(printf '%s' "$root" | sed 's/[][*?\\]/\\&/g')"
+NESTED=( -path "$root_glob/.claude/worktrees" )
+while IFS= read -r g; do
+  NESTED+=( -o -path "$(printf '%s' "${g%/.git}" | sed 's/[][*?\\]/\\&/g')" )
+done < <(find "$root" \( "${PRUNE[@]}" \) -prune -o -mindepth 2 -name .git -print 2>/dev/null)
+find "$root" \( -name .git -o "${PRUNE[@]}" -o "${NESTED[@]}" \) -prune \
   -o -name '*.xcresult' -prune -print -o -print 2>/dev/null | sed "s|^$root/||" | grep -v "^$root\$" >"$tmp/index"
 
 # MARK: scripts of the av-* skills (sibling skill directories), with every path suffix
@@ -166,7 +174,7 @@ fi
       if (t ~ /^(feature|bugfix|hotfix|release|task|origin|refs)\//) return 0
       if (placeholder(t)) return 0
       s = t; sub(/:[0-9]+(-[0-9]+)?$/, "", s)
-      if (s !~ /\.(swift|php|ts|js|mjs|json|md|yml|yaml|xml|twig|html|scss|css|py|rb|sh|plist|strings|xib|storyboard|xcconfig|toml|lock|kt|java|go)$/ && s !~ /\/$/ &&
+      if (s !~ /\.(swift|php|ts|tsx|js|jsx|mjs|cjs|vue|svelte|json|md|yml|yaml|xml|twig|html|scss|css|py|rb|sh|plist|strings|xib|storyboard|xcconfig|toml|lock|kt|kts|gradle|properties|java|go|sql)$/ && s !~ /\/$/ &&
           s !~ /\/\.[A-Za-z0-9][A-Za-z0-9_.-]*$/) return 0
       if (s ~ /^[A-Z0-9_]+\/[A-Z0-9_]+$/) return 0
       return 1

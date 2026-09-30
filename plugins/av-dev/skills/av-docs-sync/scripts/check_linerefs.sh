@@ -263,7 +263,7 @@ while IFS= read -r doc; do
       secret=$((secret + 1))
       continue
     fi
-    len="$(wc -l <"$root/$target" 2>/dev/null | tr -d ' ')"
+    len="$(awk 'END { print NR }' "$root/$target" 2>/dev/null)"
     if [ -n "$len" ] && [ "$last" -gt "$len" ]; then
       printf 'LINEREF_RANGE %s:%s %s (file has %s lines)\n' "$rel_doc" "$ln" "$ref" "$len"
       range=$((range + 1))

@@ -386,6 +386,30 @@ has "$out" "CHECKED 2 MISSING 2 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED 4" 
 bash "$CHECK" docs3 --root . --exclude >/dev/null; [ $? -eq 2 ] && ok || fail "--exclude without a glob: code 2"
 rm -rf docs3 .ai/ov .ai/av.config.json
 
+# --- 5b. review of PR #19 (Medium/Low): a nested repository (a worktree under .claude/worktrees/
+# or any directory with its own .git) must not resolve a path this repo has lost
+mkdir -p .claude/worktrees/wt/src other/nested/src
+(cd .claude/worktrees/wt && git init -q && echo y >src/Gone.php && git add -A && git -c user.email=t@t -c user.name=t commit -qm w)
+(cd other/nested && git init -q && echo y >src/Gone2.php)
+printf '# n\nFull: `src/Gone.php`.\nSuffix: `wt/src/Gone.php`.\nNested: `src/Gone2.php`.\nOk: `scripts/run.sh`.\n' >.ai/nested.md
+out="$(bash "$CHECK" .ai/nested.md --root .)"
+has "$out" "MISSING .ai/nested.md:2 src/Gone.php" && ok || fail "nested: a worktree file hides MISSING: $out"
+has "$out" "MISSING .ai/nested.md:3 wt/src/Gone.php" && ok || fail "nested: a suffix inside a worktree resolves: $out"
+has "$out" "MISSING .ai/nested.md:4 src/Gone2.php" && ok || fail "nested: a nested repository outside .claude resolves: $out"
+has "$out" "CHECKED 4 MISSING 3 UNRESOLVED 0" && ok || fail "nested: counters: $(printf '%s' "$out" | tail -1)"
+rm -rf .claude/worktrees other .ai/nested.md
+
+# --- 5c. review of PR #19 (Medium/Low): .tsx, .kts and .gradle are paths too
+mkdir -p src/ui && touch src/ui/App.tsx build.gradle
+printf '# e\nHere: `src/ui/App.tsx`, `build.gradle`.\nGone: `src/ui/Gone.tsx`, `app/build.gradle`, `settings.gradle.kts`, `src/x.jsx`, `src/y.vue`.\n' >.ai/ext.md
+out="$(bash "$CHECK" .ai/ext.md --root .)"
+for t in src/ui/Gone.tsx app/build.gradle src/x.jsx src/y.vue; do
+  has "$out" "MISSING .ai/ext.md:3 $t" && ok || fail "ext: $t not MISSING: $out"
+done
+has "$out" "UNRESOLVED .ai/ext.md:3 settings.gradle.kts" && ok || fail "ext: bare settings.gradle.kts not UNRESOLVED: $out"
+has "$out" "CHECKED 7 MISSING 4 UNRESOLVED 1" && ok || fail "ext: counters: $(printf '%s' "$out" | tail -1)"
+rm -rf src/ui build.gradle .ai/ext.md
+
 # --- 6. no arguments: code 2
 bash "$CHECK" >/dev/null; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "no arguments code $rc"
