@@ -242,7 +242,9 @@ fi
     #   backend repository", "w repozytorium backendu") or as a label ("Backend repository:"),
     #   because "The admin repository `src/Repository/AdminRepository.php`" names a class.
     # A table with a repo column (Repo, Repository, Repozytorium) also names the repo of each
-    # row: a value other than this repo (or empty, -, this, ten) makes the row external.
+    # row, when its value looks like a repo: a slug with "-", "_" or "/", a URL, or a component
+    # word (backend, api, ...). A class name in a Doctrine "Repository" column (OrderRepository),
+    # an empty cell, -, this, ten or the name of this repo keeps the row in this repo.
     function about_other_repo(l, pa, pb,    m, rest, off, a, b, t, i, left, right) {
       m = l; rest = l; off = 0
       while (match(rest, /`[^`]+`/)) {
@@ -316,13 +318,16 @@ fi
       for (i = 1; i <= n; i++) { x = tolower(c[i]); gsub(/^[ \t`*]+|[ \t`*:]+$/, "", x); if (x ~ /^(repo|repos|repository|repositories|repozytori[a-z]*)$/) return i }
       return 0
     }
-    # other_repo_cell LINE COL - the table cell names a repo other than this one
+    # other_repo_cell LINE COL - the table cell names a repo other than this one: a slug with
+    # "-", "_" or "/", a URL or a component word; a class name (OrderRepository) is not a repo
     function other_repo_cell(l, k,    n, c, x) {
       n = split(l, c, "|"); if (k > n) return 0
       x = tolower(c[k]); sub(/^[ \t]*\[/, "", x); sub(/\]\([^)]*\)/, "", x); gsub(/^[ \t`*]+|[ \t`*]+$/, "", x)
       if (x == "" || x ~ /^(-|this|this repo|ten|to|n\/a|\.)$/) return 0
       if (self != "" && x == self) return 0
-      return 1
+      if (x ~ /^https?:\/\// || x ~ /^[a-z0-9._\/-]*[-_\/][a-z0-9._\/-]*$/) return 1
+      if (x ~ ("^" component "$") || x ~ ("^" component_pl "$")) return 1
+      return 0
     }
     {
       line = $0

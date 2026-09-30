@@ -149,6 +149,32 @@ bash "$CHECK" .ai/repo3.md --root . --strict >/dev/null; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "#3: references to another repo fail --strict (code $rc)"
 rm "$REPO/.ai/repo2.md" "$REPO/.ai/repo3.md"
 
+# --- 2d3. review of PR #19, round 4: a Doctrine "Repository" column holds class names, so a
+# repo column counts only when its value looks like a repo (slug, URL, component word)
+cat >"$REPO/.ai/repo4.md" <<'EOF'
+# r4
+| Entity | Repository | File |
+|---|---|---|
+| Order | OrderRepository | `src/Repository/OrderRepository.php` |
+| Order | `OrderRepository` | `src/Entity/Gone.php` |
+| Order | App\Repository\OrderRepository | `src/Entity/GoneA.php` |
+| Order | backend | `src/Entity/RemoteB.php` |
+| Order | orders_service | `src/Entity/RemoteC.php` |
+| Order | https://example.com/orders | `src/Entity/RemoteD.php` |
+| Order | org/orders | `src/Entity/RemoteE.php` |
+EOF
+out9="$(bash "$CHECK" .ai/repo4.md --root .)"
+for t in src/Repository/OrderRepository.php src/Entity/Gone.php src/Entity/GoneA.php; do
+  printf '%s\n' "$out9" | grep '^MISSING' | grep -qF -- "$t" && ok || fail "#3 round 4: a class name in a Repository column hides a deleted file: $t: $out9"
+done
+for t in src/Entity/RemoteB.php src/Entity/RemoteC.php src/Entity/RemoteD.php src/Entity/RemoteE.php; do
+  printf '%s\n' "$out9" | grep '^EXTERNAL' | grep -qF -- "$t" && ok || fail "#3 round 4: a repo in a Repository column not EXTERNAL: $t: $out9"
+done
+has "$out9" "MISSING 3 UNRESOLVED 0 EXTERNAL 4" && ok || fail "#3 round 4: counters: $(printf '%s' "$out9" | tail -1)"
+bash "$CHECK" .ai/repo4.md --root . --strict >/dev/null; rc=$?
+[ "$rc" -ne 0 ] && ok || fail "#3 round 4: --strict passes with deleted files in a Doctrine table"
+rm "$REPO/.ai/repo4.md"
+
 # --- 2e. negation "not in" / "nie w", ignoring by bare name
 printf '# z\nEvents live in `src/events/`, not in `src/domain/event/`.\nZdarzenia leza w `src/events/`, nie w `src/domain/event/`.\nLocally: `local.env`.\n' >"$REPO/.ai/neg.md"
 out5="$(bash "$CHECK" .ai/neg.md --root .)"
