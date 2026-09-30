@@ -39,7 +39,13 @@
 #   belong to av-setup/scripts/check_setup.sh, so they never stop a gate.
 # Result: PASS only when every selected command has PASS or SKIPPED and at least one PASS.
 # Fingerprint: needs git that can read the repo and a commit (HEAD). A git error is
-#   GIT_ERROR with code 2, never a fingerprint.
+#   GIT_ERROR with code 2, never a fingerprint. Inputs: HEAD, tracked edits (no external diff
+#   driver), skip-worktree and assume-unchanged files, submodules, untracked files and the
+#   local override .ai/av.config.json.local. Other ignored files are not inputs.
+# FLAKY: a PASS after a FAIL of the same command in this run with the same fingerprint. The
+#   record keeps the red attempt ("previous", its log renamed to <log>.<n>) and flaky: true;
+#   the CHECK, GATE and --status lines say FLAKY. Such a PASS is not READY_FOR_COMMIT.
+# --run-id: letters, digits, _ . - only, so the run directory stays inside the workspace.
 # Exit codes: 0 PASS, 1 FAIL, 2 config or git error, 3 incomplete (NOT_RUN, only SKIPPED, or
 #   STALE: the tree changed during the gate), 4 another gate of this run is in progress (BUSY).
 # Lock: <runs>/<RUN_ID>/.lock with the owner "<label> pid <pid> started <start time>". A lock
@@ -120,6 +126,10 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+if [ -n "$run_id" ]; then
+  printf '%s' "$run_id" | grep -Eq '^[A-Za-z0-9._-]+$' && [ "$run_id" != "." ] && [ "$run_id" != ".." ] ||
+    config_error "--run-id '$run_id': use only letters, digits, _ . - (not . or ..); the run directory stays inside the workspace"
+fi
 
 # MARK: repo and config
 
@@ -184,13 +194,37 @@ lock_stale() {
 # index) or HEAD has no commit; a failure must never become a hashed value. An untracked entry
 # that is not a regular file (a symlink, a nested repository such as a worktree under
 # .claude/worktrees/) goes in by name, and a symlink by its target, never as a git error.
+# Inputs git would not compare go in too: --no-ext-diff keeps an external diff driver from
+# hiding an edit, skip-worktree and assume-unchanged files go in by content, submodules by
+# commit, tracked edits and untracked names, and the local override of the team config
+# (.ai/av.config.json.local, ignored by git) by content, whichever config the gate uses.
+# Other ignored files (.env.local) are not inputs; put them in a command's precheck.
 fingerprint() {
-  local head ps
+  local head ps e f
   head="$(git -C "$root" rev-parse --verify -q HEAD 2>/dev/null)" || return 1
   git -C "$root" status --porcelain >/dev/null 2>&1 || return 1
   {
     printf '%s\n' "$head"
-    git -C "$root" diff HEAD --binary -- . ":(exclude)$workspace/" ":(exclude).ai/workspace/" 2>/dev/null || exit 1
+    git -C "$root" diff HEAD --no-ext-diff --binary -- . ":(exclude)$workspace/" ":(exclude).ai/workspace/" 2>/dev/null || exit 1
+    git -C "$root" ls-files -v -z 2>/dev/null |
+      while IFS= read -r -d '' e; do
+        case "${e%% *}" in
+          S|[a-z])
+            f="${e#* }"
+            printf 'hidden %s\n' "$f"
+            if [ -f "$root/$f" ]; then hash_cmd <"$root/$f" || exit 1; fi ;;
+        esac
+      done
+    ps=("${PIPESTATUS[@]}")
+    [ "${ps[0]}" -eq 0 ] && [ "${ps[1]}" -eq 0 ] || exit 1
+    if [ -f "$root/.gitmodules" ]; then
+      git -C "$root" submodule foreach --quiet --recursive \
+        'printf "submodule %s\n" "$sm_path"; git rev-parse HEAD; git diff HEAD --no-ext-diff --binary; git ls-files --others --exclude-standard' 2>/dev/null || exit 1
+    fi
+    if [ -f "$root/.ai/av.config.json.local" ]; then
+      printf 'local override\n'
+      hash_cmd <"$root/.ai/av.config.json.local" || exit 1
+    fi
     git -C "$root" ls-files --others --exclude-standard -z -- . ":(exclude)$workspace/" ":(exclude).ai/workspace/" 2>/dev/null |
       while IFS= read -r -d '' f; do
         printf '%s\n' "$f"
@@ -420,7 +454,7 @@ if [ "$mode" = "status" ]; then
       [ "$label" = "CHECK" ] && code=1
       continue
     fi
-    while IFS=$'\t' read -r name status recstale recfp log rechead reclocal; do
+    while IFS=$'\t' read -r name status recstale recfp log rechead reclocal recflaky prevlog; do
       if [ "$label" = "BASELINE" ]; then
         printf 'BASELINE %s %s baseline head=%s %s\n' "$name" "$status" "$(printf '%s' "$rechead" | cut -c1-8)" "$log"
         continue
@@ -428,6 +462,7 @@ if [ "$mode" = "status" ]; then
       fresh="STALE"; [ "$recfp" = "$fp" ] && [ "$recstale" = "0" ] && fresh="FRESH"
       note=""; [ "$recstale" = "1" ] && note=" (tree changed during the gate)"
       [ "$reclocal" != "-" ] && note="$note (local override $reclocal)"
+      [ "$recflaky" = "1" ] && note="$note (FLAKY: failed earlier in this run, first attempt: $prevlog)"
       printf '%s %s %s %s %s%s\n' "$label" "$name" "$status" "$fresh" "$log" "$note"
       if [ "$label" = "CHECK" ] && { [ "$fresh" = "STALE" ] || { [ "$status" != "PASS" ] && [ "$status" != "SKIPPED" ]; }; }; then
         code=1
@@ -435,7 +470,8 @@ if [ "$mode" = "status" ]; then
     done < <(jq -r '.checks | to_entries[]
                    | [.key, .value.status, (if .value.stale == true then "1" else "0" end),
                       (.value.fingerprint // "-"), (.value.log // "-"), (.value.head // "-"),
-                      (.value.configLocal // "-")] | @tsv' "$file")
+                      (.value.configLocal // "-"), (if .value.flaky == true then "1" else "0" end),
+                      (.value.previous.log // "-")] | @tsv' "$file")
   done
   printf 'FINGERPRINT %s\n' "$fp"
   if [ -d "$out_dir/.lock" ]; then
@@ -583,6 +619,27 @@ log_prefix="$(printf '%s' "$log_prefix" | tr -c 'A-Za-z0-9._-' '_')"
 records="$out_dir/.records.$$.jsonl"
 : >"$records"
 passed=""
+evidence_name="evidence.json"; [ "$baseline" -eq 1 ] && evidence_name="baseline.json"
+evidence="$out_dir/$evidence_name"
+
+# previous_record NAME - the record of NAME saved earlier in this run, or nothing
+previous_record() {
+  [ -f "$evidence" ] && jq -c --arg n "$1" '.checks[$n] // empty' "$evidence" 2>/dev/null
+  return 0
+}
+
+# keep_failed_log NAME - when the earlier record of NAME in this run is FAIL, its log moves to
+# <log>.<n> so the retry does not overwrite the red attempt; prints the kept path
+keep_failed_log() {
+  local prev log n=1
+  prev="$(previous_record "$1")"
+  [ -n "$prev" ] && [ "$(printf '%s' "$prev" | jq -r '.status // ""')" = "FAIL" ] || return 0
+  log="$(printf '%s' "$prev" | jq -r '.log // empty')"
+  [ -n "$log" ] && [ -f "$root/$log" ] || return 0
+  while [ -e "$root/$log.$n" ]; do n=$((n + 1)); done
+  mv "$root/$log" "$root/$log.$n" 2>/dev/null && printf '%s' "$log.$n"
+  return 0
+}
 fp_before=""; fingerprint_or_die fp_before
 head_before="$(git -C "$root" rev-parse HEAD 2>/dev/null || echo none)"
 
@@ -625,6 +682,7 @@ for name in $bg_names; do
   precheck="$(cmd_field "$name" precheck)"
   run="$(cmd_field "$name" run)"
   log="$root/$runs_base/$run_id/$log_prefix.$name.log"
+  keep_failed_log "$name" >"$bg_dir/$name.kept"
   (
     started="$(date +%Y-%m-%dT%H:%M:%S)"
     rc=0; timed_out=0; duration=0
@@ -644,6 +702,31 @@ for name in $bg_names; do
 done
 [ -n "$bg_started" ] && printf 'PARALLEL%s (in the background next to the rest of the gate)\n' "$bg_started"
 
+# flaky_check NAME - a PASS after a FAIL of the same command in this run, with the same
+# fingerprint, is FLAKY: the record keeps the red attempt in "previous" (its log renamed by
+# keep_failed_log) and flaky: true; a later PASS with the same fingerprint carries both on.
+# A PASS after a FAIL with another fingerprint is a fix: the red attempt stays in "previous"
+# without the FLAKY mark. Sets flaky, previous_json and, when FLAKY, reason.
+flaky_check() {
+  local prev prev_status prev_fp
+  prev="$(previous_record "$1")"
+  [ -n "$prev" ] || return 0
+  prev_status="$(printf '%s' "$prev" | jq -r '.status // ""')"
+  prev_fp="$(printf '%s' "$prev" | jq -r '.fingerprint // ""')"
+  if [ "$prev_status" = "FAIL" ]; then
+    previous_json="$(printf '%s' "$prev" | jq -c --arg k "$kept" '{status, started, fingerprint, reason, log: (if $k != "" then $k else .log end)}')"
+    if [ "$status" = "PASS" ] && [ "$prev_fp" = "$fp_before" ]; then
+      flaky=1
+      reason="FLAKY: failed earlier in this run without a code change; first attempt: ${kept:-log overwritten}"
+    fi
+  elif [ "$(printf '%s' "$prev" | jq -r '.flaky // false')" = "true" ] && [ "$status" = "PASS" ] && [ "$prev_fp" = "$fp_before" ]; then
+    previous_json="$(printf '%s' "$prev" | jq -c '.previous // null')"
+    flaky=1
+    reason="FLAKY: failed earlier in this run without a code change; first attempt: $(printf '%s' "$prev" | jq -r '.previous.log // "log overwritten"')"
+  fi
+  return 0
+}
+
 # MARK: single command
 # check_one NAME RECORD prints the RUN and CHECK lines of the command, writes a
 # record to file RECORD and adds the name to $passed on PASS. It only collects a
@@ -654,7 +737,7 @@ check_one() {
   run="$(cmd_field "$name" run)"
   log_rel="$runs_base/$run_id/$log_prefix.$name.log"
   log="$root/$log_rel"
-  status=""; reason=""; rc=0; duration=0; covered_by=""
+  status=""; reason=""; rc=0; duration=0; covered_by=""; kept=""; flaky=0; previous_json="null"
 
   for p in $passed; do
     if jq -e --arg p "$p" --arg n "$name" '(.validation.commands[$p].covers // []) | index($n) != null' "$cfg" >/dev/null; then
@@ -672,7 +755,8 @@ check_one() {
   elif [ -n "$reused" ]; then
     status="PASS"
     log_rel="$reused"
-    printf 'CHECK %s PASS 0s (FRESH evidence reused: %s)\n' "$name" "$reused"
+    flaky_check "$name"
+    printf 'CHECK %s PASS 0s (FRESH evidence reused: %s)%s\n' "$name" "$reused" "${reason:+ ($reason)}"
   else
     cwd="$root/$(cmd_field "$name" cwd)"
     limit="$(cmd_field "$name" timeoutSec)"; limit="${limit:-$DEFAULT_TIMEOUT}"
@@ -680,6 +764,7 @@ check_one() {
     needs="$(cmd_field "$name" needs)"
     pre=1
     if [ "$in_bg" -eq 1 ]; then
+      kept="$(cat "$bg_dir/$name.kept" 2>/dev/null)"
       wait "$(cut -d ' ' -f1 "$bg_dir/$name.pid")" 2>/dev/null
       if [ -f "$bg_dir/$name.result" ]; then
         read -r pre rc timed_out duration started <"$bg_dir/$name.result"
@@ -688,6 +773,7 @@ check_one() {
         printf '\n[background command ended without a result]\n' >>"$log"
       fi
     else
+      kept="$(keep_failed_log "$name")"
       timed_precheck "$precheck" "$cwd" "$limit" "$log" "$bg_dir/fg@.cmdpid" "$name"
       duration="$pre_s"
     fi
@@ -727,6 +813,7 @@ check_one() {
     if [ "$status" = "NOT_RUN" ] && [ "$(cmd_field "$name" optional)" = "true" ]; then
       status="SKIPPED"
     fi
+    flaky_check "$name"
     line="CHECK $name $status ${duration}s $log_rel"
     [ -n "$reason" ] && line="$line ($reason)"
     printf '%s\n' "$line"
@@ -745,10 +832,13 @@ check_one() {
     --arg name "$name" --arg run "$run" --arg started "$started" --arg status "$status" \
     --argjson exit "$rc" --argjson duration "$duration" --arg log "$log_rel" \
     --arg reason "$reason" --arg covered "$covered_by" --arg reused "$reused" --argjson tail "$tail_json" \
+    --argjson flaky "$flaky" --argjson previous "$previous_json" \
     '{invocationFingerprint: $invocation, name: $name, run: $run, started: $started, status: $status, exit: $exit, duration: $duration, log: $log}
      + (if $reason != "" then {reason: $reason} else {} end)
      + (if $covered != "" then {covered_by: $covered, log: null} else {} end)
      + (if $reused != "" then {reused: true} else {} end)
+     + (if $flaky == 1 then {flaky: true} else {} end)
+     + (if $previous != null then {previous: $previous} else {} end)
      + (if ($tail | length) > 0 then {tail: $tail} else {} end)' >"$rec"
 }
 
@@ -818,6 +908,7 @@ fi
 if [ "$stale" -eq 1 ] && [ "$code" -ne 1 ]; then
   result="STALE"; code=3
 fi
+flaky_names="$(jq -s -r '[.[] | select(.flaky == true) | .name] | join(", ")' "$records" 2>/dev/null)"
 
 # write_evidence - merges this run's records into the evidence file through a temporary file;
 # code 1 when any step fails, and the file then keeps the previous run untouched
@@ -838,8 +929,6 @@ write_evidence() {
   jq -e '.checks | type == "object"' "$evidence.tmp" >/dev/null 2>&1 || return 1
   mv "$evidence.tmp" "$evidence" || return 1
 }
-evidence_name="evidence.json"; [ "$baseline" -eq 1 ] && evidence_name="baseline.json"
-evidence="$out_dir/$evidence_name"
 if write_evidence; then
   rm -f "$records"
 else
@@ -851,5 +940,5 @@ else
 fi
 
 kind="GATE"; [ "$baseline" -eq 1 ] && kind="BASELINE"
-printf '%s %s %s run=%s evidence=%s fingerprint=%s\n' "$kind" "$label" "$result" "$run_id" "$runs_base/$run_id/$evidence_name" "$fp_before"
+printf '%s %s %s run=%s evidence=%s fingerprint=%s%s\n' "$kind" "$label" "$result" "$run_id" "$runs_base/$run_id/$evidence_name" "$fp_before" "${flaky_names:+ (FLAKY: $flaky_names; PASS only on a retry, see previous in the evidence)}"
 exit "$code"

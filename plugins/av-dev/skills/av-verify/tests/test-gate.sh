@@ -460,6 +460,75 @@ out="$(bash "$GATE" --config "$TMP/flip.json" --gate flipg --run-id M)"; rc=$?
 has "$out" "GATE flipg FAIL" && [ "$rc" -eq 1 ] && jq -e '.checks.flip.status == "FAIL"' .ai/workspace/runs/M/evidence.json >/dev/null && ok || fail "flip: FAIL not written ($rc): $out"
 rm -f flip.code
 
+# --- 12d2. review of PR #19 (Medium/Low): --run-id stays inside the workspace
+for bad in '../../escape' '.' '..' 'a/b'; do
+  out="$(bash "$GATE" --gate quick --run-id "$bad")"; rc=$?
+  has "$out" "CONFIG_ERROR --run-id" && [ "$rc" -eq 2 ] && ok || fail "run-id '$bad' accepted ($rc): $out"
+done
+[ -e .ai/escape ] && fail "run-id ..: evidence written outside the runs directory" || ok
+out="$(bash "$GATE" --status --run-id '../x')"; rc=$?
+has "$out" "CONFIG_ERROR --run-id" && [ "$rc" -eq 2 ] && ok || fail "status: run-id ../x accepted ($rc): $out"
+out="$(bash "$GATE" --gate quick --run-id 'ok-1.x_y')"; rc=$?
+has "$out" "GATE quick PASS run=ok-1.x_y" && [ "$rc" -eq 0 ] && ok || fail "run-id with . _ - rejected ($rc): $out"
+
+# --- 12d3. review of PR #19 (Medium/Low): a PASS after a FAIL of the same command in this run
+# is FLAKY; the red attempt keeps its log as <log>.1 and lives on in the evidence
+jq '.validation.commands += {"flk": {"run": "echo attempt; exit $(cat .ai/workspace/flk.code)"},
+                             "bgflk": {"run": "echo attempt; exit $(cat .ai/workspace/flk.code)", "parallel": true}}
+    | .validation.gates += {"flkg": ["flk"], "bflkg": ["bgflk", "ok"]}' "$good" >"$TMP/flaky.json"
+echo 1 >.ai/workspace/flk.code
+out="$(bash "$GATE" --config "$TMP/flaky.json" --gate flkg --run-id FL)"; rc=$?
+has "$out" "CHECK flk FAIL" && [ "$rc" -eq 1 ] && ok || fail "flaky: first run not FAIL ($rc): $out"
+echo 0 >.ai/workspace/flk.code
+out="$(bash "$GATE" --config "$TMP/flaky.json" --gate flkg --run-id FL)"; rc=$?
+has "$out" "CHECK flk PASS" && has "$out" "(FLAKY: failed earlier in this run without a code change; first attempt: .ai/workspace/runs/FL/flkg.flk.log.1)" && ok || fail "flaky: CHECK line without FLAKY: $out"
+has "$out" "GATE flkg PASS run=FL" && has "$out" "(FLAKY: flk;" && [ "$rc" -eq 0 ] && ok || fail "flaky: GATE line without FLAKY ($rc): $out"
+[ -f .ai/workspace/runs/FL/flkg.flk.log.1 ] && [ -f .ai/workspace/runs/FL/flkg.flk.log ] && ok || fail "flaky: the red log was overwritten"
+jq -e '.checks.flk | .status == "PASS" and .flaky == true and .previous.status == "FAIL" and .previous.reason == "exit code 1" and .previous.log == ".ai/workspace/runs/FL/flkg.flk.log.1"' .ai/workspace/runs/FL/evidence.json >/dev/null && ok || fail "flaky: evidence without flaky and previous: $(jq -c .checks.flk .ai/workspace/runs/FL/evidence.json)"
+out="$(bash "$GATE" --status --run-id FL)"; rc=$?
+has "$out" "CHECK flk PASS FRESH" && has "$out" "(FLAKY: failed earlier in this run, first attempt: .ai/workspace/runs/FL/flkg.flk.log.1)" && [ "$rc" -eq 0 ] && ok || fail "flaky: --status without FLAKY ($rc): $out"
+out="$(bash "$GATE" --config "$TMP/flaky.json" --gate flkg --run-id FL --reuse-fresh)"; rc=$?
+has "$out" "FRESH evidence reused" && has "$out" "FLAKY" && jq -e '.checks.flk | .flaky == true and .reused == true and .previous.status == "FAIL"' .ai/workspace/runs/FL/evidence.json >/dev/null && ok || fail "flaky: a reuse dropped the mark ($rc): $out"
+echo 1 >.ai/workspace/flk.code
+bash "$GATE" --config "$TMP/flaky.json" --gate flkg --run-id FX >/dev/null
+echo 0 >.ai/workspace/flk.code; echo fix >>a.txt
+out="$(bash "$GATE" --config "$TMP/flaky.json" --gate flkg --run-id FX)"; rc=$?
+git checkout -q a.txt
+has "$out" "CHECK flk PASS" && ! has "$out" "FLAKY" && jq -e '.checks.flk | .flaky == null and .previous.status == "FAIL"' .ai/workspace/runs/FX/evidence.json >/dev/null && ok || fail "flaky: a PASS after a code change marked FLAKY or lost the red attempt ($rc): $out"
+echo 1 >.ai/workspace/flk.code
+bash "$GATE" --config "$TMP/flaky.json" --gate bflkg --run-id BF >/dev/null
+echo 0 >.ai/workspace/flk.code
+out="$(bash "$GATE" --config "$TMP/flaky.json" --gate bflkg --run-id BF)"; rc=$?
+has "$out" "CHECK bgflk PASS" && has "$out" "FLAKY: failed earlier in this run" && [ -f .ai/workspace/runs/BF/bflkg.bgflk.log.1 ] && ok || fail "flaky: a background command lost the red attempt ($rc): $out"
+rm -f .ai/workspace/flk.code
+
+# --- 12d4. review of PR #19 (Medium/Low): fingerprint inputs git would not compare
+fp() { bash "$GATE" --fingerprint | sed -n 's/^FINGERPRINT //p'; }
+printf '*.local\n' >>.gitignore
+fpb="$(fp)"
+echo '{}' >.ai/av.config.json.local
+[ -n "$fpb" ] && [ "$(fp)" != "$fpb" ] && ok || fail "fingerprint: a planted .ai/av.config.json.local changes nothing"
+rm .ai/av.config.json.local
+git update-index --skip-worktree a.txt; echo changed >>a.txt
+[ "$(fp)" != "$fpb" ] && ok || fail "fingerprint: a skip-worktree edit is invisible"
+git update-index --no-skip-worktree a.txt; git checkout -q a.txt
+git update-index --assume-unchanged a.txt; echo changed >>a.txt
+[ "$(fp)" != "$fpb" ] && ok || fail "fingerprint: an assume-unchanged edit is invisible"
+git update-index --no-assume-unchanged a.txt; git checkout -q a.txt
+fpx() { GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="$1" GIT_CONFIG_VALUE_0="$2" bash "$GATE" --fingerprint | sed -n 's/^FINGERPRINT //p'; }
+fpe="$(fpx diff.external /usr/bin/true)"; echo changed >>a.txt
+[ -n "$fpe" ] && [ "$(fpx diff.external /usr/bin/true)" != "$fpe" ] && ok || fail "fingerprint: an external diff driver hides an edit"
+git checkout -q a.txt
+[ "$(fp)" = "$fpb" ] && ok || fail "fingerprint: not back to the base value after the edits"
+SUB="$TMP/sub"; git init -q "$SUB" && git -C "$SUB" -c user.email=t@t -c user.name=t commit -qm s --allow-empty
+git -c protocol.file.allow=always submodule add -q "$SUB" sub 2>/dev/null && git commit -qm sub
+fps="$(fpx diff.ignoreSubmodules all)"; echo x >sub/new.txt
+[ -n "$fps" ] && [ "$(fpx diff.ignoreSubmodules all)" != "$fps" ] && ok || fail "fingerprint: an untracked file in a submodule is invisible (diff.ignoreSubmodules=all)"
+rm sub/new.txt
+git -C sub -c user.email=t@t -c user.name=t commit -qm c --allow-empty
+[ "$(fpx diff.ignoreSubmodules all)" != "$fps" ] && ok || fail "fingerprint: a new submodule commit is invisible (diff.ignoreSubmodules=all)"
+git rm -qf sub && rm -rf .git/modules/sub && git checkout -q .gitignore && git commit -qm "drop sub"
+
 # --- 12e. tree changed during the gate: evidence STALE, code 3 (R10)
 jq '.validation.commands += {"mut": {"run": "echo m >new.txt; echo done"},
                              "mutfail": {"run": "echo m >new.txt; exit 1"}}
