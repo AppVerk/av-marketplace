@@ -548,6 +548,9 @@ ln -s "$OUT/creds" "$LR/.nvmrc"
 ln -s "$OUT/leak.sh" "$LR/scripts/leak.sh"
 ln -s "$OUT/docsdir" "$LR/docs"
 ln -s /dev/zero "$LR/AGENTS.md"
+mkdir -p "$OUT/sub" && printf 'MARK_DOTDOT_42\n' >"$OUT/creds2"
+ln -s ../outside/sub "$LR/lnk"
+ln -s lnk/../creds2 "$LR/.node-version"
 printf 'MARK_ENV_42\n' >"$LR/.husky/local.env"
 printf 'npx lint-staged\n' >"$LR/.husky/pre-push"
 printf '# Repo\n' >"$LR/CLAUDE.md"
@@ -556,6 +559,8 @@ bash "$SCAN" "$LR" --timeout 60 >"$TMP/links.out" 2>"$TMP/links.err"; rc=$?
 took=$(( $(date +%s) - t0 ))
 [ "$rc" -eq 0 ] && [ "$took" -lt 30 ] && ok || fail "links: scan exit $rc after ${took}s (AGENTS.md -> /dev/zero must not hang)"
 grep -qE 'MARK_(KEY|CREDS|SCRIPT|DOCS|ENV)_42' "$TMP/links.out" && fail "links: content read through a symlink or from a secret name: $(grep -oE 'MARK_[A-Z]+_42' "$TMP/links.out" | sort -u | tr '\n' ' ')" || ok
+grep -q 'MARK_DOTDOT_42' "$TMP/links.out" && fail "links: a target with .. behind a symlink (lnk/../creds2) was read from outside the repo" || ok
+check "$TMP/links.out" '(.tooling.versions // {}) | has(".node-version") | not' "links: .node-version read through lnk/.."
 check "$TMP/links.out" '.ai_setup["AGENTS.md"] | .symlink_to == "/dev/zero" and .lines == null' "links: AGENTS.md -> /dev/zero not reported by name only"
 check "$TMP/links.out" '.tooling.husky_hooks | has("pre-push") and (has("pre-commit") | not) and (has("local.env") | not)' "links: husky hooks read a symlink or a secret: $(jq -c .tooling.husky_hooks "$TMP/links.out" 2>/dev/null)"
 check "$TMP/links.out" '(.tooling.versions // {}) | has(".nvmrc") | not' "links: .nvmrc read through a symlink"

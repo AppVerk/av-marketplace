@@ -101,7 +101,8 @@ secret_path() { av_secret_name "$1" "$root"; }
 
 # readable PATH - code 0 when the scan may read PATH: it resolves (symlinks followed, the file
 # and its directories) to a regular file inside the repo, and neither PATH nor the target has a
-# secret name. A symlink out of the repo, to a device or a FIFO is never read.
+# secret name. A symlink out of the repo, to a device or a FIFO is never read. The directory is
+# entered with cd -P, so ".." in a target ("lnk/../creds") goes up from the real directory.
 readable() {
   local p="$1" t d n=0
   while [ -L "$p" ] && [ "$n" -lt 20 ]; do
@@ -110,7 +111,7 @@ readable() {
     n=$((n + 1))
   done
   [ ! -L "$p" ] && [ -f "$p" ] || return 1
-  d="$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)" || return 1
+  d="$(cd -P "$(dirname "$p")" 2>/dev/null && pwd -P)" || return 1
   case "$d/" in "$root_real"/*) ;; *) return 1 ;; esac
   secret_path "$1" && return 1
   secret_path "$d/$(basename "$p")" && return 1
