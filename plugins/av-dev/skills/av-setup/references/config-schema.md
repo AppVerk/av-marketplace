@@ -141,9 +141,9 @@ Rules:
 ## Fields
 
 **requires** (optional)
-- `{"av-dev": ">=X.Y.Z"}`: the minimum version of the av-* skills. The `VERSION` file in a skill's directory gives its version. No file means version `dev`.
+- `{"av-dev": ">=X.Y.Z"}`: the minimum version of the av-* skills. The plugin's `.claude-plugin/plugin.json` gives the version. No file means version `dev`.
 - `gate.sh --list` compares versions. Version `dev` gives a `WARNING`. A version that is too low is a config error (code 2).
-- `av-setup` writes the version of the installed skills here, when it knows it (the `VERSION` file next to the skills). With `dev`, it skips the field.
+- `av-setup` writes the version of the installed skills here, when it knows it (`plugin.json` of the installed plugin). With `dev`, it skips the field.
 
 **project**
 - `language`: the language of generated docs, plans and reports. Code and commands are always in English.

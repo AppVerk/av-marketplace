@@ -51,8 +51,8 @@
 #   dead gate left (process groups recorded with their start time), so they cannot write to
 #   the logs of the new gate.
 # Command environment: AV_SKILLS_DIR = directory with the av-* skills (parent of av-verify).
-# Version: VERSION file in the skill directory (missing = dev); the config may require
-#   "requires": {"av-dev": ">=X.Y.Z"}.
+# Version: "version" in the plugin's .claude-plugin/plugin.json (missing = dev); the config
+#   may require "requires": {"av-dev": ">=X.Y.Z"}.
 # Requires: bash 3.2+, git, jq, awk.
 
 set -uo pipefail
@@ -73,8 +73,9 @@ skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
 AV_SKILLS_DIR="$(cd "$skill_dir/.." && pwd)"
 export AV_SKILLS_DIR
 av_version="dev"
-if [ -f "$skill_dir/VERSION" ]; then
-  av_version="$(head -n 1 "$skill_dir/VERSION" | tr -d ' \t\r')"
+plugin_json="$AV_SKILLS_DIR/../.claude-plugin/plugin.json"
+if [ -f "$plugin_json" ]; then
+  av_version="$(jq -r '.version // empty' "$plugin_json" 2>/dev/null | tr -d ' \t\r')"
   [ -n "$av_version" ] || av_version="dev"
 fi
 

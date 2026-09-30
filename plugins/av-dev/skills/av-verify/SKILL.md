@@ -82,7 +82,7 @@ Result: a gate is PASS only when every selected command has PASS or SKIPPED and 
 
 Fingerprint: needs git that can read the repo and a commit. A git error (not a repo, `safe.directory`, a broken index, no commit) gives `GIT_ERROR` and code 2 in `--fingerprint`, `--status` and a gate, never a fingerprint, so no evidence becomes FRESH without git. An untracked symlink or nested repository (a worktree under `.claude/worktrees/`) goes into the fingerprint by name and target and is not an error. The verdict of a gate comes from the records of that run; when the evidence file cannot be written, the gate reports `WRITE_ERROR` with code 2 and keeps the records in a `.unsaved` file.
 
-The skill version comes from the `VERSION` file in the skill directory. No file means `dev`. `--list` prints the line `AV_DEV <version>`. The config can require a version: `"requires": {"av-dev": ">=0.1.0"}`. Only the `>=X.Y.Z` format is supported.
+The version comes from `version` in the plugin's `.claude-plugin/plugin.json`. No file means `dev`. `--list` prints the line `AV_DEV <version>`. The config can require a version: `"requires": {"av-dev": ">=0.1.0"}`. Only the `>=X.Y.Z` format is supported.
 - Version `dev`: a `WARNING` that the av-dev version is unknown; the gate keeps running.
 - Version lower than required: config error, code 2. Update the av-* skills.
 

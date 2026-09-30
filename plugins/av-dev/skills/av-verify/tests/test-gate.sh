@@ -498,7 +498,7 @@ out="$(bash "$G2" --config "$TMP/req.json" --list)"; rc=$?
 has "$out" "AV_DEV dev" && has "$out" "WARNING av-dev version unknown (dev), required >=0.1.0" && [ "$rc" -eq 0 ] && ok || fail "version dev: $rc $out"
 out="$(bash "$G2" --config "$TMP/req.json" --gate quick --run-id r16)"; rc=$?
 has "$out" "WARNING av-dev version unknown" && has "$out" "GATE quick PASS" && [ "$rc" -eq 0 ] && ok || fail "version dev: gate did not start ($rc)"
-echo "0.2.0" >"$SK/av-verify/VERSION"
+mkdir -p "$TMP/.claude-plugin" && echo '{"name": "av-dev", "version": "0.2.0"}' >"$TMP/.claude-plugin/plugin.json"
 out="$(bash "$G2" --config "$TMP/req.json" --list)"; rc=$?
 has "$out" "AV_DEV 0.2.0" && [ "$rc" -eq 0 ] && ok || fail "version 0.2.0: $rc $out"
 has "$out" "WARNING av-dev version" && fail "version 0.2.0: needless warning" || ok
@@ -507,7 +507,7 @@ out="$(bash "$G2" --config "$TMP/req2.json" --list)"; rc=$?
 has "$out" "CONFIG_ERROR requires.av-dev: installed av-dev version 0.2.0, required >=0.10.0" && [ "$rc" -eq 2 ] && ok || fail "version too low --list: $rc $out"
 out="$(bash "$G2" --config "$TMP/req2.json" --gate quick --run-id r17)"; rc=$?
 has "$out" "CONFIG_ERROR requires.av-dev" && [ "$rc" -eq 2 ] && ok || fail "version too low --gate: $rc"
-echo "0.10.0" >"$SK/av-verify/VERSION"
+echo '{"name": "av-dev", "version": "0.10.0"}' >"$TMP/.claude-plugin/plugin.json"
 out="$(bash "$G2" --config "$TMP/req2.json" --list)"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "version 0.10.0 >= 0.10.0: code $rc"
 jq '.requires = {"av-dev": ">=0.9.1"}' "$TMP/sk.json" >"$TMP/req3.json"

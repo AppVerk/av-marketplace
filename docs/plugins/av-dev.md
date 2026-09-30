@@ -115,4 +115,4 @@ Then run `av-setup` in the repo.
 bash plugins/av-dev/tests/run.sh
 ```
 
-2122 script tests: gates, config merge, setup validator, repo scan, stack adapters (PHP/Symfony, iOS/Xcode, Android, Angular) with their scan integration, adoption diff, doc reference checks. A test passes only with exit code 0 and a last line `PASS n FAIL 0`. The runner also checks that each skill's `VERSION` matches `plugin.json`.
+2122 script tests: gates, config merge, setup validator, repo scan, stack adapters (PHP/Symfony, iOS/Xcode, Android, Angular) with their scan integration, adoption diff, doc reference checks. A test passes only with exit code 0 and a last line `PASS n FAIL 0`.

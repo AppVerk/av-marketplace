@@ -24,8 +24,7 @@ tool name and does not fail the build, so that half rests on author and reviewer
 ## Plugin versioning
 
 When modifying a plugin, update its version following SemVer, in **all four**
-places `scripts/check_plugin_versions.py` checks, plus the per-skill `VERSION`
-files of a plugin that has them (`plugins/<name>/skills/*/VERSION`, e.g. av-dev):
+places `scripts/check_plugin_versions.py` checks:
 
 1. `plugins/<name>/.claude-plugin/plugin.json`
 2. `.claude-plugin/marketplace.json`
