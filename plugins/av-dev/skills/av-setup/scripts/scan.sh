@@ -55,6 +55,8 @@ secret_names="$(cd "$(dirname "$0")" && pwd)/secret_names.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 root_real="$(cd "$root" && pwd -P)"
+# root_glob - the root for find -path, which matches a pattern: [, ], * and ? in the path are escaped
+root_glob="$(printf '%s' "$root" | sed 's/[][*?\\]/\\&/g')"
 
 # MARK: time limit
 # The watchdog stops the scan's descendants first (bash runs a trap only after the foreground
@@ -99,6 +101,21 @@ trunc() { [ "${3:-0}" -gt "${2:-0}" ] && printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>
 # secret_path PATH - code 0 for a file whose name looks like a secret (secret_names.sh): never read
 secret_path() { av_secret_name "$1" "$root"; }
 
+# redact_text - stdin to stdout with token-like values replaced by <redacted>: credentials in a
+# URL, an Authorization header, a Bearer token, known token prefixes (GitHub, Slack, AWS, OpenAI,
+# Stripe, Google, GitLab, npm) and the value after a key named token, secret, password, api key,
+# access key or private key (a $VAR reference stays). Every command text the scan copies goes
+# through it: CI steps, hooks, package and composer scripts, documented commands, script lines.
+cat >"$tmp/redact.sed" <<'EOF_REDACT'
+s#([A-Za-z][A-Za-z0-9+.-]*://)[^/@[:space:]"']+:[^/@[:space:]"']+@#\1<redacted>@#g
+s#(["'])([Aa]uthorization[[:space:]]*[:=][[:space:]]*)[^"']+(["'])#\1\2<redacted>\3#g
+s#([Aa]uthorization[[:space:]]*[:=][[:space:]]*)[^[:space:]"']+#\1<redacted>#g
+s#([Bb]earer[[:space:]]+)[A-Za-z0-9._~+/=-]{8,}#\1<redacted>#g
+s#gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,}|[sr]k_(live|test)_[A-Za-z0-9]{10,}|AIza[0-9A-Za-z_-]{30,}|glpat-[A-Za-z0-9_-]{16,}|npm_[A-Za-z0-9]{30,}#<redacted>#g
+s#((token|TOKEN|Token|secret|SECRET|Secret|passwd|PASSWD|password|PASSWORD|Password|api[_-]?key|API[_-]?KEY|api[_-]?Key|apiKey|access[_-]?key|ACCESS[_-]?KEY|accessKey|private[_-]?key|PRIVATE[_-]?KEY|privateKey)[A-Za-z0-9_]*[[:space:]]*[=:][[:space:]]*["']?)[^[:space:]"',;&|$][^[:space:]"',;&|]*#\1<redacted>#g
+EOF_REDACT
+redact_text() { LC_ALL=C sed -E -f "$tmp/redact.sed"; }
+
 # readable PATH - code 0 when the scan may read PATH: it resolves (symlinks followed, the file
 # and its directories) to a regular file inside the repo, and neither PATH nor the target has a
 # secret name. A symlink out of the repo, to a device or a FIFO is never read. The directory is
@@ -122,6 +139,7 @@ SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name D
   -o -name dist -o -name .angular -o -name .idea -o -name .vscode -o -name var -o -name coverage -o -name .gradle
   -o -name __pycache__ -o -name .venv -o -name venv -o -name tmp -o -name public
   -o -name .next -o -name .nuxt -o -name Carthage -o -name test-reports -o -name workspace
+  -o -path '*/.claude/worktrees'
   -o \( -name '.*' ! -name .ai ! -name .claude ! -name .github ! -name .agents ! -name .codex ! -name .husky \) )
 
 # walk DIR MAXDEPTH TYPE(f|d) - files or directories, skipping technical directories
@@ -131,7 +149,7 @@ walk() {
 
 lines_to_json() { jq -R -s -c 'split("\n") | map(select(length > 0))'; }
 json_or_null() { if [ -s "$1" ]; then cat "$1"; else echo null; fi; }
-rel() { printf '%s\n' "${1#$root/}"; }
+rel() { printf '%s\n' "${1#"$root"/}"; }
 
 # MARK: git
 
@@ -212,21 +230,26 @@ manifest_id() {
 # id names the ecosystem of the manifest or build file found (npm, composer, xcode, gradle, ...),
 # dir is the directory of the manifest ("." for the root), evidence lists the files found.
 # Scans the root and 3 levels below it; invalid package.json and composer.json files are skipped.
+# At most MAX_LIST entries and 20 evidence files each; a cut goes to scan.truncated.
 stacks_json() {
-  local p id dir
+  local p id dir n
   { walk "$root" 3 f; walk "$root" 3 d | grep -E '\.(xcodeproj|xcworkspace)$'; } | grep -v '\.xcodeproj/' |
     grep -E "/($MANIFEST_RE)\$" | LC_ALL=C sort -u |
   while IFS= read -r p; do
     id="$(manifest_id "$(basename "$p")")"
     [ -n "$id" ] || continue
     case "$id" in npm|composer) jq empty "$p" 2>/dev/null || continue ;; esac
-    dir="$(dirname "$p")"; dir="${dir#$root}"; dir="${dir#/}"; [ -n "$dir" ] || dir="."
+    dir="$(dirname "$p")"; dir="${dir#"$root"}"; dir="${dir#/}"; [ -n "$dir" ] || dir="."
     printf '%s\t%s\t%s\n' "$id" "$dir" "$(rel "$p")"
-  done | jq -R -s -c --argjson max "$MAX_LIST" '
+  done | jq -R -s -c '
     split("\n") | map(select(length > 0) | split("\t"))
     | group_by([.[1], .[0]])
-    | map({id: .[0][0], dir: .[0][1], evidence: (map(.[2]) | sort | .[:20])})
-    | sort_by([(.dir != "."), .dir, .id]) | .[:$max]'
+    | map({id: .[0][0], dir: .[0][1], evidence: (map(.[2]) | sort)})
+    | sort_by([(.dir != "."), .dir, .id])' >"$tmp/stacksall"
+  trunc stacks "$MAX_LIST" "$(jq 'length' "$tmp/stacksall")"
+  jq -r --argjson max "$MAX_LIST" '.[:$max][] | select((.evidence | length) > 20) | "\(.dir)\t\(.id)\t\(.evidence | length)"' "$tmp/stacksall" |
+    while IFS=$'\t' read -r dir id n; do trunc "stacks[$dir].$id.evidence" 20 "$n"; done
+  jq -c --argjson max "$MAX_LIST" '.[:$max] | map(.evidence |= .[:20])' "$tmp/stacksall"
 }
 
 # MARK: commands and CI
@@ -400,7 +423,7 @@ parse_ci() {
         if (val == "" || val ~ /^[|>][-+0-9]*$/) { script_indent = kin; script_list = (val == ""); if (step == 0) new_step() }
         else cmd(unquote(val))
       }
-    }' "$1" | jq -R -s -c --argjson max 60 '
+    }' "$1" | redact_text | jq -R -s -c --argjson max 60 '
       split("\n") | map(select(length > 0) | split("\t"))
       | (map(select(.[0] == "T")) | length) as $cut
       | (map(select(.[0] == "M")) | reduce .[] as $r ({}; .[$r[1]][$r[2]] = $r[3])) as $m
@@ -424,7 +447,7 @@ parse_ci() {
 commands_json() {
   local out="{}" pkg dir runner key f kind
   if readable "$root/composer.json" && jq -e '.scripts' "$root/composer.json" >/dev/null 2>&1; then
-    out="$(jq -c --slurpfile c "$root/composer.json" '. + {composer: ($c[0].scripts | with_entries(select(.key | test("^(post-|pre-|auto-)") | not)))}' <<<"$out")"
+    out="$(jq -c --argjson c "$(jq -c '.scripts | with_entries(select(.key | test("^(post-|pre-|auto-)") | not))' "$root/composer.json" | redact_text)" '. + {composer: $c}' <<<"$out")"
   fi
   while IFS= read -r pkg; do
     readable "$pkg" || continue
@@ -435,7 +458,7 @@ commands_json() {
     elif [ -f "$dir/yarn.lock" ]; then runner="yarn"
     elif [ -f "$dir/bun.lockb" ]; then runner="bun run"; fi
     key="package.json:$(rel "$dir")"; [ "$dir" = "$root" ] && key="package.json:."
-    out="$(jq -c --arg k "$key" --arg r "$runner" --slurpfile p "$pkg" '. + {($k): {runner: $r, scripts: $p[0].scripts}}' <<<"$out")"
+    out="$(jq -c --arg k "$key" --arg r "$runner" --argjson p "$(jq -c '.scripts' "$pkg" | redact_text)" '. + {($k): {runner: $r, scripts: $p}}' <<<"$out")"
   done < <({ [ -f "$root/package.json" ] && echo "$root/package.json"; walk "$root" 3 f | grep '/package\.json$'; } | sort -u | tee "$tmp/pkgs")
   if readable "$root/Makefile"; then
     grep -oE '^[A-Za-z][A-Za-z0-9_-]*:' "$root/Makefile" | tr -d : | sort -u >"$tmp/make"
@@ -447,7 +470,7 @@ commands_json() {
     while IFS= read -r f; do
       case "$f" in *.sh|*.bash|*.py|*.rb|*.mjs|*.cjs|*.js|*.ts|*.php) ;; *) continue ;; esac
       readable "$f" || continue
-      jq -n -c --arg file "$(rel "$f")" --arg doc "$(script_doc "$f")" '{file: $file, doc: $doc}' >>"$tmp/scripts"
+      jq -n -c --arg file "$(rel "$f")" --arg doc "$(script_doc "$f" | redact_text)" '{file: $file, doc: $doc}' >>"$tmp/scripts"
     done < <(walk "$root/scripts" 2 f | grep -v '/tests\?/' | LC_ALL=C sort)
     trunc commands.scripts_dir "$MAX_LIST" "$(wc -l <"$tmp/scripts" | tr -d ' ')"
     out="$(jq -c --argjson s "$(jq -s -c ".[:$MAX_LIST]" "$tmp/scripts")" '. + {scripts_dir: $s}' <<<"$out")"
@@ -514,7 +537,7 @@ commands_json() {
   [ "$compose" != "[]" ] && out="$(jq -c --argjson d "$compose" '. + {docker_compose: $d}' <<<"$out")"
   if [ -s "$tmp/doccmds" ]; then
     trunc commands.documented_commands 40 "$(wc -l <"$tmp/doccmds" | tr -d ' ')"
-    out="$(jq -c --argjson d "$(head -40 "$tmp/doccmds" | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {doc: .[0], cmd: .[1]})')" '. + {documented_commands: $d}' <<<"$out")"
+    out="$(jq -c --argjson d "$(head -40 "$tmp/doccmds" | redact_text | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {doc: .[0], cmd: .[1]})')" '. + {documented_commands: $d}' <<<"$out")"
   fi
   printf '%s\n' "$out"
 }
@@ -525,7 +548,7 @@ tooling_json() {
     : >"$tmp/husky"
     for f in "$root"/.husky/*; do
       readable "$f" || continue
-      jq -n -c --arg k "$(basename "$f")" --argjson v "$(grep -v '^#' "$f" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//' | awk 'NR <= 30 { print } NR == 31 { print "[truncated: the hook has more lines]" }' | lines_to_json)" '{($k): $v}' >>"$tmp/husky"
+      jq -n -c --arg k "$(basename "$f")" --argjson v "$(grep -v '^#' "$f" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//' | awk 'NR <= 30 { print } NR == 31 { print "[truncated: the hook has more lines]" }' | redact_text | lines_to_json)" '{($k): $v}' >>"$tmp/husky"
     done
     out="$(jq -c --argjson h "$(jq -s -c 'add // {}' "$tmp/husky")" '. + {husky_hooks: $h}' <<<"$out")"
   fi
@@ -769,7 +792,7 @@ pipeline_docs_json() {
   for d in .ai docs .claude; do
     [ -d "$root/$d" ] || continue
     [ -L "$root/$d" ] && continue
-    find "$root/$d" \( -path "$root/.ai/workspace" -o -path "$root/.ai/sessions" -o -name node_modules \) -prune \
+    find "$root/$d" \( -path "$root_glob/.ai/workspace" -o -path "$root_glob/.ai/sessions" -o -name node_modules \) -prune \
       -o -type f -name '*.md' -size -257k -print 2>/dev/null
   done | LC_ALL=C sort >"$tmp/pipeall"
   trunc 'ai_setup.pipeline_docs (files read)' "$PIPELINE_MAX_FILES" "$(wc -l <"$tmp/pipeall" | tr -d ' ')"
@@ -847,7 +870,11 @@ ai_json() {
                      co_authored_setting: (if ($s | has("co_authored_setting")) then $s.co_authored_setting else null end)}}' <<<"$out")"
   local codex agents_skills
   codex="null"
-  [ -d "$root/.codex" ] && codex="$(find "$root/.codex" -mindepth 1 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort | head -$MAX_LIST | lines_to_json)"
+  if [ -d "$root/.codex" ]; then
+    find "$root/.codex" -mindepth 1 2>/dev/null | while IFS= read -r f; do rel "$f"; done | sort >"$tmp/codexall"
+    trunc 'ai_setup[.codex]' "$MAX_LIST" "$(wc -l <"$tmp/codexall" | tr -d ' ')"
+    codex="$(head -$MAX_LIST "$tmp/codexall" | lines_to_json)"
+  fi
   if [ -L "$root/.agents/skills" ]; then
     agents_skills="$(jq -n -c --arg t "$(readlink "$root/.agents/skills")" '{symlink_to: $t}')"
   else
@@ -875,12 +902,16 @@ ai_json() {
     | . + {mcp_servers: $mcp, gitignore_ai: $gi, gitignore_has_env: $env}' <<<"$out"
 }
 
-# SECRET_SKIP - only generated and dependency trees; hidden directories and any depth are
-# searched, because secrets often live in .secrets/ or config/secrets/prod/.
+# SECRET_SKIP - only dependency trees, tool caches and the build output of the root or of a
+# first-level project (build, dist, coverage at depth 1 or 2); hidden directories and any other
+# depth are searched, because secrets often live in .secrets/, config/secrets/prod/ or
+# config/cache/. Worktrees under .claude/worktrees and the workspace are copies or working files.
 SECRET_SKIP=( -name .git -o -name node_modules -o -name vendor -o -name Pods -o -name DerivedData -o -name Carthage
-  -o -name .gradle -o -name build -o -name .build -o -name dist -o -name coverage -o -name .next -o -name .nuxt
-  -o -name .angular -o -name __pycache__ -o -name .venv -o -name venv -o -name cache -o -name worktrees
-  -o -path "$root/.ai/workspace" )
+  -o -name .gradle -o -name .build -o -name .next -o -name .nuxt -o -name .angular -o -name __pycache__
+  -o -name .venv -o -name venv
+  -o -path "$root_glob/build" -o -path "$root_glob/*/build" -o -path "$root_glob/dist" -o -path "$root_glob/*/dist"
+  -o -path "$root_glob/coverage" -o -path "$root_glob/*/coverage"
+  -o -path "$root_glob/.claude/worktrees" -o -path "$root_glob/.ai/workspace" )
 
 secrets_json() {
   find "$root" -mindepth 1 -type d \( "${SECRET_SKIP[@]}" \) -prune -o \( -type f -o -type l \) -print 2>/dev/null |
@@ -970,14 +1001,15 @@ EOF_FLAGS
 )"
 
 # flag_scripts - [{path, lines}] of the scripts behind commands.scripts_meta and scripts_dir:
-# lines without comments, at most MAX_SCRIPT_LINES per script; env and key files are skipped
+# lines without comments and with token-like values redacted, at most MAX_SCRIPT_LINES per script;
+# env and key files are skipped
 flag_scripts() {
   local f n
   { cat "$tmp/flagscripts" 2>/dev/null; } | LC_ALL=C sort -u | while IFS= read -r f; do
     readable "$f" || continue
     n="$(grep -cv '^[[:space:]]*\(#\|//\|$\)' "$f" 2>/dev/null)"
     trunc "commands.flags script $(rel "$f")" "$MAX_SCRIPT_LINES" "${n:-0}"
-    jq -n -c --arg p "$(rel "$f")" --argjson l "$(grep -v '^[[:space:]]*\(#\|//\|$\)' "$f" 2>/dev/null | head -$MAX_SCRIPT_LINES | jq -R -s -c 'split("\n") | map(select(length > 0))')" '{path: $p, lines: $l}'
+    jq -n -c --arg p "$(rel "$f")" --argjson l "$(grep -v '^[[:space:]]*\(#\|//\|$\)' "$f" 2>/dev/null | head -$MAX_SCRIPT_LINES | redact_text | jq -R -s -c 'split("\n") | map(select(length > 0))')" '{path: $p, lines: $l}'
   done | jq -s -c .
 }
 

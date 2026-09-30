@@ -582,5 +582,71 @@ pgrep -f "sleep 53" >/dev/null && fail "timeout: a process of the scan is still 
 bash "$SCAN" "$LR" --timeout 0 >"$TMP/bad.out"; rc=$?
 [ "$rc" -eq 2 ] && ok || fail "timeout: 0 accepted ($rc)"
 
+# --- review of PR #19 (Medium/Low): a [ in the repo path, cuts of stacks and .codex reported,
+# token-like values redacted in copied command text, .claude/worktrees never a source, secrets
+# under config/cache/ listed. Marker words stand for secrets; none may reach the output.
+BR="$TMP/br[ack]et repo"
+init_repo "$BR"
+mkdir -p "$BR/scripts" "$BR/.husky" "$BR/.github/workflows" "$BR/.codex/agents" "$BR/gems" "$BR/config/cache" "$BR/build" "$BR/.ai/workspace" \
+  "$BR/.claude/worktrees/wt/scripts" "$BR/.claude/worktrees/wt/tests"
+cat >"$BR/package.json" <<'EOF_P'
+{"scripts": {"deploy": "publish --token=MARK_PKG_42 --dry-run", "fetch": "curl https://bob:MARK_URL_42@example.com/x", "env": "run --token=$NPM_TOKEN"}}
+EOF_P
+printf '{"scripts": {"push": "php push.php --password=MARK_COMPOSER_42"}}\n' >"$BR/composer.json"
+printf 'npx semantic-release --token=MARK_HUSKY_42\necho ok\n' >"$BR/.husky/pre-push"
+cat >"$BR/.github/workflows/ci.yml" <<'EOF_W'
+jobs:
+  build:
+    steps:
+      - name: Call
+        run: curl -H "Authorization: Bearer MARK_CI_42" https://api.example.com
+      - name: Token
+        run: export GH=ghp_MARKCIPREFIX0000000000000000 && echo "${{ secrets.NPM_TOKEN }}"
+      - name: Ship
+        run: scripts/deploy.sh
+EOF_W
+printf '#!/bin/bash\n# Deploys with a key PLAIN_DOC_42.\nexport AWS_SECRET_ACCESS_KEY=MARK_SCRIPT_42\nrsync -a dist/ host:/srv\n' >"$BR/scripts/deploy.sh"
+printf '# Repo\n\n```sh\nnpm run build\nAPI_KEY=MARK_README_42 npm test\n```\n' >"$BR/README.md"
+for i in $(seq 1 65); do printf 'x\n' >"$BR/.codex/agents/a$i.md"; done
+for i in $(seq 1 21); do printf 'x\n' >"$BR/gems/g$i.gemspec"; done
+for i in $(seq 1 61); do mkdir -p "$BR/pkgs/p$i" && printf '{}\n' >"$BR/pkgs/p$i/package.json"; done
+printf 'x\n' >"$BR/config/cache/service.key"
+printf 'x\n' >"$BR/build/bundle.pem"
+printf 'x\n' >"$BR/.ai/workspace/local.env"
+printf '{"scripts": {"wt": "echo MARK_WT_42"}}\n' >"$BR/.claude/worktrees/wt/package.json"
+printf '#!/bin/sh\necho MARK_WT_42\n' >"$BR/.claude/worktrees/wt/scripts/wt.sh"
+printf 'gem\n' >"$BR/.claude/worktrees/wt/Gemfile"
+printf 'x\n' >"$BR/.claude/worktrees/wt/tests/a_test.rb"
+printf '.ai/workspace/\n' >"$BR/.gitignore"
+commit "$BR" init
+git -C "$BR/.claude/worktrees/wt" init -q
+scan "$BR" "$TMP/br.out"
+# 12: relative paths with [ and a space in the root
+check "$TMP/br.out" '[.stacks[] | select(.dir == "." and .id == "npm")] | .[0].evidence == ["package.json"]' "bracket: stacks evidence not relative: $(jq -c '[.stacks[] | select(.dir == ".")]' "$TMP/br.out" 2>/dev/null | head -c 200)"
+check "$TMP/br.out" '[.stacks[].dir, .commands.scripts_dir[].file, (.commands.scripts_meta // [])[].path, (.secret_like_files // [])[]] | all(startswith("/") | not)' "bracket: an absolute path in the output"
+check "$TMP/br.out" '.commands | has("package.json:.")' "bracket: package.json key not relative: $(jq -c '.commands | keys' "$TMP/br.out" 2>/dev/null | head -c 200)"
+check "$TMP/br.out" '.secret_like_files | index(".ai/workspace/local.env") == null' "bracket: -path with [ in the root did not exclude the workspace"
+# 8: cuts of stacks, stacks[].evidence and .codex go to scan.truncated
+check "$TMP/br.out" '.scan.complete == false and (.stacks | length) == 60 and (.scan.truncated | any(.field == "stacks" and .shown == 60 and .total == 64))' "stacks cut: not in scan.truncated: $(jq -c '[.scan.truncated[] | select(.field | startswith("stacks"))]' "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '([.stacks[] | select(.dir == "gems")] | .[0].evidence | length) == 20 and (.scan.truncated | any((.field | startswith("stacks[gems].")) and (.field | endswith(".evidence")) and .shown == 20 and .total == 21))' "evidence cut: not in scan.truncated: $(jq -c '[.scan.truncated[] | select(.field | startswith("stacks"))]' "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '(.ai_setup[".codex"] | length) == 60 and (.scan.truncated | any(.field == "ai_setup[.codex]" and .shown == 60 and .total == 66))' ".codex cut: not in scan.truncated: $(jq -c '[.scan.truncated[] | select(.field | test("codex"))]' "$TMP/br.out" 2>/dev/null)"
+# 9: token-like values never reach the output, the command text around them stays
+grep -oE 'MARK_[A-Z]+_42|ghp_MARKCIPREFIX[0-9]+' "$TMP/br.out" | sort -u >"$TMP/br.leak"
+[ -s "$TMP/br.leak" ] && fail "redaction: values copied into the scan: $(tr '\n' ' ' <"$TMP/br.leak")" || ok
+check "$TMP/br.out" '.commands["package.json:."].scripts == {"deploy": "publish --token=<redacted> --dry-run", "fetch": "curl https://<redacted>@example.com/x", "env": "run --token=$NPM_TOKEN"}' "redaction: package scripts: $(jq -c '.commands["package.json:."].scripts' "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '.commands.composer.push == "php push.php --password=<redacted>"' "redaction: composer script: $(jq -c .commands.composer "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '.tooling.husky_hooks["pre-push"] == ["npx semantic-release --token=<redacted>", "echo ok"]' "redaction: husky hook: $(jq -c '.tooling.husky_hooks' "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '[.commands.ci[0].steps[].commands[]] == ["curl -H \"Authorization: <redacted>\" https://api.example.com", "export GH=<redacted> && echo \"${{ secrets.NPM_TOKEN }}\"", "scripts/deploy.sh"]' "redaction: CI steps: $(jq -c '[.commands.ci[0].steps[].commands[]]' "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '.commands.documented_commands | map(.cmd) == ["npm run build", "API_KEY=<redacted> npm test"]' "redaction: documented commands: $(jq -c '.commands.documented_commands' "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '[.commands.flags.items[] | select(.source == "scripts/deploy.sh")] | length > 0' "redaction: the script still reaches the flags"
+check "$TMP/br.out" '.commands.scripts_dir | any(.file == "scripts/deploy.sh" and .doc == "Deploys with a key PLAIN_DOC_42.")' "redaction: a plain comment is left alone: $(jq -c '.commands.scripts_dir' "$TMP/br.out" 2>/dev/null)"
+# 11: nothing under .claude/worktrees is a stack, command, script or test source
+check "$TMP/br.out" '[.stacks[].dir | select(startswith(".claude/worktrees"))] == []' "worktrees: counted as a stack: $(jq -c '[.stacks[].dir | select(startswith(".claude"))]' "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '[.commands | keys[] | select(test("worktrees"))] == [] and ([.commands.scripts_dir[].file, (.commands.scripts_meta // [])[].path, (.tests.dirs // [])[]] | map(select(test("worktrees"))) == [])' "worktrees: a command or test source: $(jq -c '[.commands | keys[], .tests.dirs[] | select(test("worktrees"))]' "$TMP/br.out" 2>/dev/null)"
+grep -q 'MARK_WT_42' "$TMP/br.out" && fail "worktrees: content of the worktree copied" || ok
+# 10: a secret under config/cache/ is listed; build output at the root is still skipped
+check "$TMP/br.out" '.secret_like_files | index("config/cache/service.key") != null' "secrets: config/cache/ pruned: $(jq -c .secret_like_files "$TMP/br.out" 2>/dev/null)"
+check "$TMP/br.out" '.secret_like_files | index("build/bundle.pem") == null' "secrets: root build output listed"
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

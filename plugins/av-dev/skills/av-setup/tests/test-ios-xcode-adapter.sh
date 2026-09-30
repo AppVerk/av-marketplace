@@ -492,8 +492,8 @@ scan_case scan_app "$fx/ios-app"
 code_is scan_app 0
 check scan_app "status ok with facts" '.adapters.ios_xcode | .status == "ok" and .ran == true and .exit_code == 0 and .reason == null
   and .summary.projects == 2 and .adapter == "ios-xcode" and (has("root") or has("started") | not)'
-# scan.sh walk enters .claude, so .claude/worktrees/wt1/App.xcodeproj counts in the trigger; the adapter skips it
-check scan_app "trigger evidence" '.adapters.ios_xcode.trigger == {xcode_dirs: 4, podfile_or_package_swift_files: 1, stacks_ios_entries: 4}
+# scan.sh walk prunes .claude/worktrees (review of PR #19), so .claude/worktrees/wt1/App.xcodeproj is not in the trigger; the adapter skips it too
+check scan_app "trigger evidence" '.adapters.ios_xcode.trigger == {xcode_dirs: 3, podfile_or_package_swift_files: 1, stacks_ios_entries: 3}
   and ([.adapters.ios_xcode.projects[].path] | index(".claude/worktrees/wt1/App.xcodeproj")) == null'
 check scan_app "no ios entry in scan.incomplete or scan.truncated" '([.scan.incomplete[] | select(.field | startswith("adapters.ios_xcode"))] == [])
   and ([.scan.truncated[] | select(.field | startswith("adapters.ios_xcode"))] == [])'
