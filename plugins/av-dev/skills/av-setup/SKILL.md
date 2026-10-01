@@ -201,6 +201,7 @@ Follow `references/doc-set.md`, the facts from steps 1-3 and, for section header
 
 **`CLAUDE.md`:** in NEW mode, create it. In other modes, edit only the sections from the plan. Keep the critical rules, the response style and everything the plan does not list.
 - In ADOPTION and COMPLETION, the "Task routing" and "Working with the agent" sections are required. Add the other template sections only when the topic has no place in the file yet.
+- "Working with the agent" lists the marketplace plugins enabled in the repo (scan: `ai_setup[".claude"].enabled_plugins`) with the stage each one owns and what the av-* skills hand over to it (`references/doc-set.md`). In REFRESH, update that list when the enabled plugins changed.
 - When the file exceeds about 170 lines, move details from sections that duplicate the docs to the owner file and leave a link. Do not shorten the critical rules.
 
 ## Step 8: Overlays

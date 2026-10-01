@@ -41,6 +41,8 @@ Flow: `<layer A> -> <layer B> -> ...` (when the architecture has a clear flow).
 ## Working with the agent
 <Which av-* skills for what. A 5-row table. A link to the overlays and to `<docs.root>/agents.md`, section "Models". One sentence: `agents.models` in the config sets the slots; one person's settings go to `.ai/av.config.json.local`.>
 
+Installed plugins: <one row per marketplace plugin from the scan (`ai_setup[".claude"].enabled_plugins`) that owns a stage of the cycle, with what the av-* skills hand over to it: `code-review` (review findings as `docs/reviews/` blocks, fixes with `/fix`), `commit` (commits with `/commit`), `delivery` or a developer plugin (implementation by the agent that owns the files), `qa` (QA reports). Without such plugins, one sentence: "No marketplace plugins installed; the av-* skills run every stage themselves.">
+
 ## Documentation
 <Table: file | description. All files from docs.root.>
 
@@ -50,6 +52,8 @@ Flow: `<layer A> -> <layer B> -> ...` (when the architecture has a clear flow).
 ## Session learnings
 At the start of a session, read `<paths.learnings>` if it exists.
 ```
+
+**Working with the agent** names the marketplace plugins installed in the repo, not only the av-* skills: a reader of `CLAUDE.md` must see which plugin owns review, fixes, commits, implementation and QA there, and that the av-* skills hand over to it (findings to `/fix`, commits to `/commit`). The list comes from the scan; do not guess plugins that are not enabled.
 
 **Task routing** is the most important section. One row per relevant area: domain module, layer, UI, tests, CI, translations. `Read first` contains real paths. `Key rules` contains conventions observed in the code, e.g. "new endpoint = a handler in `src/api/` + a schema in `src/api/schemas/`".
 

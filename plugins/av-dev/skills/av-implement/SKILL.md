@@ -203,6 +203,8 @@ Commit according to `git.commit`:
 - `after-green-gate`: commit after a READY_FOR_COMMIT result.
 - `free`: commit after a READY_FOR_COMMIT result, only on the task branch, never on a protected branch (`develop`, `main`, `master`, `release/*`).
 
+How to commit (`after-green-gate`, `free`, or `on-request` when the user asks): when the Commit plugin of the marketplace is installed in the repo (`commit` in `enabledPlugins` of `.claude/settings.json`, or `/commit` available), commit through `/commit <TICKET>`. It carries the guard marker `AV_COMMIT_SKILL=1` and writes a Conventional Commits message with the ticket in `Refs:`; a direct `git commit` is blocked by the plugin's guard in such a repo, so do not try it. Without the Commit plugin, run `git commit` yourself with the message from `git.commitPattern`. In both cases: no AI signature, the task branch only, and the report shows the message.
+
 Push only when `git.push` is `on-request` and the user asks for it explicitly.
 
 ## Step 10: Learnings

@@ -100,6 +100,8 @@ Write the plan in `project.language`. Take the section headers in that language 
 ## Open questions
 ```
 
+A plan can be handed to `/delivery:execute` of the marketplace Delivery plugin after the conversion in `<skill-dir>/references/delivery-plan.md`: the "Order" steps become `### Task N: <title>` blocks with a `**Files:**` list, "Validation" becomes `## Verification`. When the user asks for the Delivery format, write the Task blocks directly in the "Order" section, following that reference; the other sections stay as above.
+
 ## Step 5: Plan verification
 
 Required in LARGE mode, for high risk or with `--verify-plan`. Start a fresh `planReview` slot executor (an `av-slot-read` subagent, section "Slots" of `av-implement`). Do not pass it your reasoning, only the plan path. When the executor wrote the plan, you also do not fix the plan before verification. It checks 3 axes:
