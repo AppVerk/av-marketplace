@@ -56,7 +56,7 @@ State lives in `<paths.runs>/<RUN_ID>/state.md`. Update it after every step. Thi
 # <RUN_ID>
 Task: <1 sentence> | Ticket: <from the task or the branch name; none = "none"> | Plan: <path or none>
 Mode: <SMALL/STANDARD/LARGE> | Risk: <high/normal> | Reason: <1 sentence>
-Base: HEAD <sha>, foreign changes before start: <file list or none>
+Base: HEAD <sha>, snapshot <tree>, foreign changes before start: <file list or none>
 Steps: [x] baseline [x] implementation [ ] quick [ ] docs [ ] review r1 + full [ ] fixes r1 [ ] review r2 + full [ ] final gates [ ] report
 Gates: <name: status, fingerprint> (current state from `gate.sh --status`, not from memory)
 Red test before fix: <test name and log or "not applicable">
@@ -99,7 +99,7 @@ The mode may grow during the work (e.g. it turns out the contract must change). 
 
 ## Step 3: Baseline
 
-1. Record `git rev-parse HEAD` and `git status --porcelain`. Other people's uncommitted changes stay untouched. Record their list in the state, because the review excludes them from scope.
+1. Record `git rev-parse HEAD` and `git status --porcelain`. Other people's uncommitted changes stay untouched. Record their list in the state. Then take the snapshot of the working tree: `bash <av-dev>/skills/av-verify/scripts/run_scope.sh --root <repo-root> snapshot --run-id <RUN_ID>`. It saves `baseline.tree`, `baseline.head` and `baseline.patch` in `<paths.runs>/<RUN_ID>/`, and the review measures the run's changes against that snapshot, so the run's own edits in a file that was already modified are reviewed and the earlier edits stay PRE_EXISTING. Record the printed tree hash in the state. Take the snapshot once, before the first edit; a snapshot that already exists is an error, not a reason to replace it.
 2. Run `gate.sh --root <repo-root> --baseline --gate quick --run-id <RUN_ID>`. Skip it when the overlay says the baseline is too expensive. The baseline result tells which errors existed before the change.
 
 ## Step 4: Implementation

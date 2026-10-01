@@ -22,13 +22,13 @@ Independent review of changes. Returns findings with evidence and a verdict. Nev
 
 | Input | Diff |
 |---|---|
-| `--run <RUN_ID>` | from the HEAD recorded in `<paths.runs>/<RUN_ID>/state.md` to the working tree |
+| `--run <RUN_ID>` | the run's changes since its snapshot: `run_scope.sh --root <repo-root> diff --run-id <RUN_ID>` (with `--name-only` for the file list); without a snapshot, from the HEAD recorded in `<paths.runs>/<RUN_ID>/state.md` to the working tree |
 | `--base <ref>` | `git diff <ref>...HEAD` plus working changes; with `--committed-only` only commits |
 | `--files` | only the given files, against HEAD |
 | PR number or branch | use the tracker tools from `integrations`, if available; otherwise ask for the branch name |
 | none | working and untracked changes against HEAD; when there are none, `merge-base(git.baseBranch)..HEAD` |
 
-`--files` narrows every other scope, also `--run`. With `--run`, exclude from scope the files on the "foreign changes before start" list in `state.md` (in Polish state files from earlier runs: "zmiany obce przed startem"). List them in the report as not reviewed.
+`--files` narrows every other scope, also `--run`. With `--run`, the scope is the diff from the snapshot av-implement took before the implementation (`<av-dev>/skills/av-verify/scripts/run_scope.sh`), so an edit the run made inside a file that someone had modified before the start is reviewed like any other change. The changes that existed before the start come from `run_scope.sh --root <repo-root> foreign --run-id <RUN_ID>`: their origin is PRE_EXISTING, and the report lists their files under "Not reviewed" with the note "changes from before the run". A run without a snapshot (an older state file) falls back to the HEAD recorded in `state.md`; then exclude the files on the "foreign changes before start" list (in Polish state files from earlier runs: "zmiany obce przed startem"), list them as not reviewed, and say in the report that the run's edits in those files were not reviewed.
 
 List the changed files and assign them to roles with the script: `<skill-dir>/../av-setup/scripts/check_setup.sh --root <repo-root> --owner <files>`. Roles and their globs are in the config, field `roles` (one source). The result `implementer` is a file outside the roles. Check a `generated` result (lockfile, `project.pbxproj`) only for accidental changes. An `unowned` result (repo tooling) needs a justification in the plan. For a large diff, group by globs (e.g. "`src/User/**` - 18 files, backend").
 
@@ -97,7 +97,7 @@ Gates: <quick PASS FRESH | NOT_RUN: reason>
 
 Questions: <"to be confirmed" findings with a premise to check outside the repo>
 Debt: <PRE_EXISTING findings>
-Not reviewed: <foreign files, secret files>
+Not reviewed: <files with changes from before the run (PRE_EXISTING), secret files>
 ```
 
 Severity:

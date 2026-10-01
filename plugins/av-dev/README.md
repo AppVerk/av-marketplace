@@ -207,6 +207,7 @@ Gates:
 - `timeoutSec`: one budget for `precheck` and `run`.
 - `parallel`: runs in the background next to the other commands of the gate.
 - `compose_container.sh <service>`: the container of this checkout only, never one started from another copy of the repo.
+- `run_scope.sh snapshot|diff|foreign --run-id <RUN_ID>`: a snapshot of the working tree before an av-implement run, the run's changes measured against it (also inside files that were already modified) and the changes from before the run. `av-review --run` reads its scope from it.
 
 Local override: `.ai/av.config.json.local` changes settings only on your machine. Objects merge, arrays replace, `null` removes a key.
 
