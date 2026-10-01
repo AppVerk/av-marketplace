@@ -18,7 +18,17 @@ fail() { FAIL=$((FAIL+1)); printf 'FAIL: %s\n' "$1" >&2; }
 for f in "$SKILLS"/*/SKILL.md; do
   desc="$(awk 'NR == 1 && /^---$/ { fm = 1; next } fm && /^---$/ { exit } fm && /^description:/ { print }' "$f")"
   [ -n "$desc" ] && ok || { fail "no description in ${f#"$SKILLS"/}"; continue; }
-  for phrase in '"do it"' '"zrób to"' '"zrob to"' '"roll out the plan"' '"wdroż plan"' '"wdroz plan"' '"go"' '"start"'; do
+  # Merge condition from the review of PR #19: a description may name only av-dev, the skill or
+  # its config, never an ordinary request ("run the tests", "check my changes") that any session
+  # with the plugin installed would match.
+  for phrase in '"do it"' '"zrób to"' '"zrob to"' '"roll out the plan"' '"wdroż plan"' '"wdroz plan"' '"go"' '"start"' \
+      '"run the tests"' '"build the project"' '"does the build pass"' '"odpal testy"' '"zbuduj projekt"' \
+      '"check my changes"' '"review the diff"' '"do a code review of the branch"' '"sprawdź moje zmiany"' \
+      '"update the docs"' '"check if the docs are up to date"' '"audit the docs"' '"zaktualizuj docs"' \
+      '"prepare a plan"' '"break down the implementation"' '"analyze ticket PROJ-123"' '"przygotuj plan"' \
+      '"implement PROJ-123"' '"implement the plan"' '"zaimplementuj PROJ-123"' '"zaimplementuj plan"' \
+      '"set up the project for Claude"' '"bootstrap AI docs"' '"skonfigurować projekt dla Claude"' \
+      'before a PR' 'after implementation' 'before a large change' 'after code changes' 'after review fixes'; do
     case "$desc" in
       *"$phrase"*) fail "generic trigger $phrase in ${f#"$SKILLS"/}" ;;
       *) ok ;;

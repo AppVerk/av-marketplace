@@ -1,6 +1,6 @@
 ---
 name: av-review
-description: Code review of changes in the repo according to project rules - axes from `code-review.md`, tools from `.ai/overlays/av-review.md`, contracts from `contracts.md`, gate evidence, findings with severity, NEW/PRE_EXISTING origin and file:line evidence, verdict APPROVED, NEEDS_FIXES or NEEDS_HUMAN. Use when the user asks for a review, "check my changes", "review the diff", "do a code review of the branch", "sprawdź moje zmiany", "przejrzyj diff", "zrób code review brancha", before a PR, after implementation, or when av-implement needs an independent review. Does not edit files.
+description: Code review of changes in the repo according to project rules - axes from `code-review.md`, tools from `.ai/overlays/av-review.md`, contracts from `contracts.md`, gate evidence, findings with severity, NEW/PRE_EXISTING origin and file:line evidence, verdict APPROVED, NEEDS_FIXES or NEEDS_HUMAN. Use when the user names this skill: "av-review", "av-review of the branch", "the av-dev review of my changes", or when av-implement needs an independent review. Does not edit files.
 argument-hint: "[--base <ref>] [--committed-only] [--run <RUN_ID>] [--round N] [--files a,b] [--security] [--no-gate]"
 ---
 

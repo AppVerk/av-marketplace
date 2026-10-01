@@ -1,6 +1,6 @@
 ---
 name: av-setup
-description: Scans a repository and sets up work with an AI agent - config `.ai/av.config.json`, docs in `.ai/` or `docs/`, CLAUDE.md with a routing table, overlays for the av-plan, av-implement, av-review, av-verify and av-docs-sync skills, role skills with the knowledge of each layer (backend, views, TS, E2E). Works with any stack: it derives commands and conventions from the repo itself, without stack templates. Moves existing pipelines, agents and commands to skills (adoption mode). Use when the user wants to prepare a repo for AI agents, generate or refresh AI docs, "set up the project for Claude", "skonfigurować projekt dla Claude", "bootstrap AI docs", move from a pipeline to skills, or when another av-* skill reports a missing config.
+description: Scans a repository and sets up work with an AI agent - config `.ai/av.config.json`, docs in `.ai/` or `docs/`, CLAUDE.md with a routing table, overlays for the av-plan, av-implement, av-review, av-verify and av-docs-sync skills, role skills with the knowledge of each layer (backend, views, TS, E2E). Works with any stack: it derives commands and conventions from the repo itself, without stack templates. Moves existing pipelines, agents and commands to skills (adoption mode). Use when the user names this skill or its config: "av-setup", "av-setup for this repo", "refresh the av-dev setup", "create .ai/av.config.json", or when another av-* skill reports a missing config.
 argument-hint: "[--defaults] [--dry-run] [--all-modules] [--eval] [--only config|docs|overlays|roles]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: av-verify
-description: Runs the repo validation gates (lint, tests, build, UI, e2e) from `.ai/av.config.json` and reports the result with evidence - exit code, log, code state fingerprint, FRESH/STALE. Use when you need to check that a change passes build and tests, "run the tests", "build the project", "does the build pass", "odpal testy", "zbuduj projekt", "czy build przechodzi", before an implementation report, after review fixes, or when another av-* skill needs gate evidence. Does not edit code.
+description: Runs the repo validation gates (lint, tests, build, UI, e2e) from `.ai/av.config.json` and reports the result with evidence - exit code, log, code state fingerprint, FRESH/STALE. Use when the user names this skill or its gates: "av-verify", "run the av-dev gates", "the quick gate from .ai/av.config.json", or when another av-* skill needs gate evidence. Does not edit code.
 argument-hint: "[quick|full|<gate>] [--only a,b] [--env KEY=VALUE] [--run-id ID] [--status]"
 ---
 

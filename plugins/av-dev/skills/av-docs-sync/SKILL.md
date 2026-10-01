@@ -1,6 +1,6 @@
 ---
 name: av-docs-sync
-description: Keeps the repo AI docs (`.ai/` or `docs/`, CLAUDE.md, module descriptions) in line with the code. Sync mode updates docs from git changes. Audit mode checks paths, names, commands, numbers and versions in docs against the code and returns DOCS_OK or DOCS_DRIFT. Use after code changes, after a merge from develop, before a PR, when the user says "update the docs", "check if the docs are up to date", "audit the docs", "zaktualizuj docs", "sprawdź, czy dokumentacja jest aktualna", "audyt docs", or when av-implement or av-setup requests a sync or an audit.
+description: Keeps the repo AI docs (`.ai/` or `docs/`, CLAUDE.md, module descriptions) in line with the code. Sync mode updates docs from git changes. Audit mode checks paths, names, commands, numbers and versions in docs against the code and returns DOCS_OK or DOCS_DRIFT. Use when the user names this skill or the av-dev docs: "av-docs-sync", "sync the av-dev docs", "audit the docs with av-docs-sync", "av-docs-sync audit", or when av-implement or av-setup requests a sync or an audit.
 argument-hint: "[sync [--staged | <git range>] [--dry-run] | audit [paths] [--fix]]"
 ---
 

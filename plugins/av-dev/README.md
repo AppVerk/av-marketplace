@@ -50,7 +50,7 @@ Requirements: `bash` 3.2+, `git`, `jq` (`brew install jq`).
    /av-dev:av-implement PROJ-123
    ```
 
-You can also ask in plain words. "Set up this repo for Claude", "implement PROJ-123" or "review my changes" start the right skill.
+A skill starts when you name it or its config: "av-setup for this repo", "av-implement PROJ-123", "av-review of the branch", "run the av-dev gates". A plain "run the tests" or "review my changes" does not start an av-dev run, so the plugin stays out of the way of other plugins in the session.
 
 ## Skills and examples
 
@@ -115,7 +115,7 @@ Setup ready: 38 files created, 1 updated, 0 to delete.
 
 A task in a high-risk area is always at least STANDARD and always gets an independent review.
 
-By default (`git.commit: on-request`) the run stops before the commit and proposes a message. With `after-green-gate` or `free` it commits after a READY_FOR_COMMIT result (`free` only on the task branch); see `git` in `skills/av-setup/references/config-schema.md`:
+By default (`git.commit: on-request`) the run stops before the commit and proposes a message. With `after-green-gate` or `free` it commits after a READY_FOR_COMMIT result (`free` only on the task branch), through the marketplace Commit plugin (`/commit`, Conventional Commits, guard marker) when it is installed, otherwise with `git commit` and `git.commitPattern`; see `git` in `skills/av-setup/references/config-schema.md`:
 
 ```
 READY_FOR_COMMIT: CSV export added to the orders list.

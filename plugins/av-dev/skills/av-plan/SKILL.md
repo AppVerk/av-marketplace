@@ -1,6 +1,6 @@
 ---
 name: av-plan
-description: Creates an implementation plan for a task in the repo - scope, SMALL/STANDARD/LARGE mode, risk, contract between layers, files with owners, tests, gates, docs to update - according to project rules from `.ai/overlays/av-plan.md`. Saves the plan to the workspace and does not implement. Use when the user wants to plan a feature, ticket or fix, "prepare a plan", "break down the implementation", "analyze ticket PROJ-123", "przygotuj plan", "rozpisz implementację", "przeanalizuj ticket PROJ-123", before a large change, or when av-implement needs a plan for LARGE mode.
+description: Creates an implementation plan for a task in the repo - scope, SMALL/STANDARD/LARGE mode, risk, contract between layers, files with owners, tests, gates, docs to update - according to project rules from `.ai/overlays/av-plan.md`. Saves the plan to the workspace and does not implement. Use when the user names this skill: "av-plan PROJ-123", "plan with av-plan", "an av-dev plan for this ticket", or when av-implement needs a plan for LARGE mode.
 argument-hint: "<task description | TICKET | link> [--verify-plan]"
 ---
 
