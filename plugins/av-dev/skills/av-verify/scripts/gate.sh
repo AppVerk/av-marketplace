@@ -551,11 +551,21 @@ run_timed() {
   proc_start "$watcher" >"$bg_dir/watch.$watcher"
   rc=0
   wait "$pid" 2>/dev/null || rc=$?
+  timed_out=0
+  if [ -f "$marker" ]; then
+    # Timed out: the leader left on TERM, but a member that ignores TERM (trap '' TERM) is
+    # still in the group, which outlives its leader. Kill the whole group now and wait until
+    # it is gone, so nothing of this command survives the gate, its record or its lock.
+    timed_out=1
+    kill -KILL -- "-$pid" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      kill -0 -- "-$pid" 2>/dev/null || break
+      sleep 0.1
+    done
+  fi
   kill -TERM -- "-$watcher" 2>/dev/null
   wait "$watcher" 2>/dev/null
   rm -f "$bg_dir/watch.$watcher"
-  timed_out=0
-  [ -f "$marker" ] && timed_out=1
   rm -f "$marker"
   return 0
 }

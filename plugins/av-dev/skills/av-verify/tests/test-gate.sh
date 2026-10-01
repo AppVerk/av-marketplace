@@ -703,5 +703,26 @@ has "$out" "RUN probe" && ok || fail "legacy evidence reused"
 bash "$GATE" --config "$TMP/reuse.json" --only probe --env SUITE=A --env PRIVATE_VALUE=unique-private-test-value --run-id secret >/dev/null
 if grep -R -q 'unique-private-test-value' .ai/workspace/runs/secret; then fail "env value leaked"; else ok; fi
 
+# --- review of PR #19 (threads 4149059447, 4153324207): a child that ignores TERM must not
+# survive a timeout, in a precheck and in run, sequential and parallel. Each case has its own
+# sleep length so the process table can be checked exactly after the gate returns.
+jq '.validation.commands += {
+      "hangpre":  {"run": "echo RAN", "precheck": "(trap \"\" TERM; sleep 77.31) & wait", "timeoutSec": 1},
+      "hangrun":  {"run": "(trap \"\" TERM; sleep 77.32) & wait", "timeoutSec": 1},
+      "hangprep": {"run": "echo RAN", "precheck": "(trap \"\" TERM; sleep 77.33) & wait", "timeoutSec": 1, "parallel": true},
+      "hangrunp": {"run": "(trap \"\" TERM; sleep 77.34) & wait", "timeoutSec": 1, "parallel": true}}
+    | .validation.gates += {"hang": ["hangpre", "hangrun", "hangprep", "hangrunp"]}' "$good" >"$TMP/hang.json"
+t0="$(date +%s)"
+out="$(bash "$GATE" --config "$TMP/hang.json" --gate hang --run-id hang)"; rc=$?
+took=$(( $(date +%s) - t0 ))
+has "$out" "CHECK hangpre NOT_RUN" && has "$out" "CHECK hangprep NOT_RUN" && ok || fail "hang: precheck timeouts not NOT_RUN: $out"
+has "$out" "CHECK hangrun FAIL" && has "$out" "CHECK hangrunp FAIL" && ok || fail "hang: run timeouts not FAIL: $out"
+[ "$took" -lt 12 ] && ok || fail "hang: the gate took ${took}s"
+left="$(ps -axo args= | grep -E '^sleep 77\.3[1-4]$' | sort | tr '\n' ' ')"
+[ -z "$left" ] && ok || fail "hang: processes survived the timeout: $left"
+[ ! -d .ai/workspace/runs/hang/.lock ] && ok || fail "hang: lock left behind"
+ls .ai/workspace/runs/hang/.bg.* >/dev/null 2>&1 && fail "hang: .bg directory left behind" || ok
+pkill -f 'sleep 77\.3[1-4]' 2>/dev/null
+
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
