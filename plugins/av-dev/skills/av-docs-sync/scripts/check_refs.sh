@@ -210,7 +210,7 @@ fi
         if (substr(strip(tok), 1, 3) == "../") cls = "external"
       }
       if (substr(strip(tok), 1, 3) == "../" && escapes(docdir, strip(tok))) cls = "external"
-      else if (row_other || about_other_repo(line, a, b)) cls = "external"
+      else if (row_other || about_other_repo(line, a, b, strip(tok))) cls = "external"
       printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, cls, strip(tok), ign, rel2
     }
     function escapes(dir, t,    n, parts, i, depth) {
@@ -246,14 +246,17 @@ fi
     # so "[my-backend](url) repository" names a repo), and "repository" needs a qualifier:
     # - always: other/another/separate/sibling/different repo, "innym repozytorium", or a repo
     #   name with "-" or "_" (billing-service repository) other than the name of this repo;
-    # - a component word (backend, api, admin, web, ...) only after a preposition ("in the
-    #   backend repository", "w repozytorium backendu") or as a label ("Backend repository:"),
-    #   because "The admin repository `src/Repository/AdminRepository.php`" names a class.
+    # - a component word (backend, api, web, ...) only after a preposition ("in the backend
+    #   repository", "w repozytorium backendu") or as a label ("Backend repository:"), because
+    #   "The admin repository `src/Repository/AdminRepository.php`" names a class;
+    # - a weak word (admin, client, "klienta", "admina") in those forms only when the top
+    #   directory of the path does not exist here: "W repozytorium klienta `src/X.php`" with
+    #   a `src/` in this repo is a Doctrine repository, so a deleted file there is MISSING.
     # A table with a repo column (Repo, Repository, Repozytorium) also names the repo of each
     # row, when its value looks like a repo: a slug with "-", "_" or "/", a URL, or a component
     # word (backend, api, ...). A class name in a Doctrine "Repository" column (OrderRepository),
     # an empty cell, -, this, ten or the name of this repo keeps the row in this repo.
-    function about_other_repo(l, pa, pb,    m, rest, off, a, b, t, i, left, right) {
+    function about_other_repo(l, pa, pb, tok,    m, rest, off, a, b, t, i, left, right, top) {
       m = l; rest = l; off = 0
       while (match(rest, /`[^`]+`/)) {
         a = off + RSTART; b = off + RSTART + RLENGTH - 1
@@ -275,7 +278,13 @@ fi
       if (match(right, /[.!?]([ \t]|$)|;/)) right = substr(right, 1, RSTART - 1)
       m = left " " right
       if (self != "") while ((i = index(m, self)) > 0) m = substr(m, 1, i - 1) "this" substr(m, i + length(self))
-      return (m ~ other_repo)
+      if (m ~ other_repo) return 1
+      if (m !~ weak_repo) return 0
+      # a weak word: the path stays in this repo when its top directory exists here
+      top = tok; while (substr(top, 1, 2) == "./") top = substr(top, 3)
+      if (index(top, "/") == 0) return 1
+      top = substr(top, 1, index(top, "/") - 1)
+      return !(top in topdir)
     }
     # negated(a, b): a negation word in the same sentence as the span a..b of the line,
     # at most near_words words away (the words of the negation phrase included).
@@ -294,6 +303,7 @@ fi
       near_words = 5
       while ((getline line < index_file) > 0) {
         full[line] = 1
+        if (index(line, "/") > 0) topdir[substr(line, 1, index(line, "/") - 1)] = 1
         n = split(line, parts, "/"); s = ""
         for (i = n; i >= 1; i--) { s = (s == "" ? parts[i] : parts[i] "/" s); suffix[s] = 1 }
       }
@@ -302,8 +312,13 @@ fi
       neg = "(^|[^A-Za-z])(brak|nie istnieje|nie ma|nigdy|never|usuni(e|ę)t[a-z]*|usun(a|ą)(c|ć)|relokow[a-z]*|przeniesion[a-z]*|dawn(y|a|e|iej)|nie w|not in|removed|deleted|moved|formerly|previously|no longer|does not exist|missing)([^A-Za-z]|$)"
       repo_word = "(repo|repos|repository|repositories|repozytori[a-z]*)"
       repo_name = "[a-z0-9]+[-_][a-z0-9_-]*[a-z0-9]"
-      component = "(backend|frontend|mobile|api|admin|web|server|client|shared)"
-      component_pl = "(backendu?|frontendu?|mobile|api|admina?|web|serwer[a-z]*|klient[a-z]*)"
+      # Strong component words name a repo of their own (the backend repository); weak ones
+      # (admin, client) are as often a Doctrine repository class, so with them the path decides:
+      # a top directory that exists in this repo keeps the path here (see weak_repo below).
+      component = "(backend|frontend|mobile|api|web|server|shared)"
+      component_pl = "(backendu?|frontendu?|mobile|api|web|serwer[a-z]*)"
+      weak = "(admin|client)"
+      weak_pl = "(admina?|klient[a-z]*)"
       prep = "(in|into|from|to|of|see|w|we|z|ze|do)[ \t]+(the[ \t]+|our[ \t]+|a[ \t]+)?"
       other_repo = "(^|[^a-z])((other|another|separate|sibling|different)[ -]+" repo_word \
         "|" prep component "[ -]+" repo_word \
@@ -313,6 +328,10 @@ fi
         "|" repo_word " +" component_pl "[ \t]*:" \
         "|" repo_name "`?[ -]+" repo_word \
         "|" repo_word " +`?" repo_name ")([^a-z0-9_-]|$)"
+      weak_repo = "(^|[^a-z])(" prep weak "[ -]+" repo_word \
+        "|" weak "[ -]+" repo_word "[ \t]*:" \
+        "|" prep repo_word " +" weak_pl \
+        "|" repo_word " +" weak_pl "[ \t]*:" ")([^a-z0-9_-]|$)"
     }
     FNR == 1 { in_code = 0; in_table = 0; header_pending = 0; repo_col = 0; row_other = 0; docdir = FILENAME; sub(/\/?[^\/]*$/, "", docdir) }
     /^[ \t]*```/ { in_code = !in_code; next }

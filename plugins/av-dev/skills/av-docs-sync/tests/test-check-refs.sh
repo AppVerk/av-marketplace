@@ -112,7 +112,9 @@ out7="$(bash "$CHECK" "$SELF/.ai/self.md" --root "$SELF")"
 has "$out7" "MISSING 2 UNRESOLVED 0 EXTERNAL 1" && ok || fail "the name of this repo is not another repo: $out7"
 
 # --- 2d2. review of PR #19 (#3): a component word before "repository" names another repo only
-# after a preposition or as a label; a link text and a table repo column name a repo too
+# after a preposition or as a label; a link text and a table repo column name a repo too; a weak
+# word (admin, client, "klienta") with a preposition keeps the path here when its top directory
+# exists (round 4 of the thread: "W repozytorium klienta `src/...`" is a Doctrine repository)
 cat >"$REPO/.ai/repo2.md" <<'EOF'
 # r2
 The admin repository `src/Repository/AdminGone.php` handles admins.
@@ -123,7 +125,11 @@ See [the admin repository](src/Repository/Gone9.php) docs.
 In the [my-backend](https://example.com/my-backend) repository: `src/Remote1.php`.
 Backend repository: `api/Q.php`.
 See the api repo: `api/R.php`.
-W repozytorium admina: `app/S.php`.
+W repozytorium admina: `panel/S.php`.
+W repozytorium klienta `src/Repository/ClientGone.php` jest zapytanie.
+Dodaj zapytanie do repozytorium admina `src/Repository/AdminGone3.php`.
+In the admin repository `src/Repository/AdminGone4.php` the query lives.
+In the backend repository `src/Backend1.php` the same query lives.
 
 | Repo | File |
 |---|---|
@@ -137,13 +143,13 @@ W repozytorium admina: `app/S.php`.
 | `src/GoneV.php` | my-backend |
 EOF
 out8="$(bash "$CHECK" .ai/repo2.md --root .)"
-for t in src/Repository/AdminGone.php src/Repository/ApiGone.php src/Repository/Gone8.php src/Repository/AdminGone2.php src/Repository/Gone9.php src/GoneT.php src/GoneU.php src/GoneV.php; do
+for t in src/Repository/AdminGone.php src/Repository/ApiGone.php src/Repository/Gone8.php src/Repository/AdminGone2.php src/Repository/Gone9.php src/GoneT.php src/GoneU.php src/GoneV.php src/Repository/ClientGone.php src/Repository/AdminGone3.php src/Repository/AdminGone4.php; do
   printf '%s\n' "$out8" | grep '^MISSING' | grep -qF -- "$t" && ok || fail "#3: this repo, deleted file not MISSING: $t: $out8"
 done
-for t in src/Remote1.php api/Q.php api/R.php app/S.php src/Remote2.php src/Remote3.php; do
+for t in src/Remote1.php api/Q.php api/R.php panel/S.php src/Backend1.php src/Remote2.php src/Remote3.php; do
   printf '%s\n' "$out8" | grep '^EXTERNAL' | grep -qF -- "$t" && ok || fail "#3: another repo not EXTERNAL: $t: $out8"
 done
-has "$out8" "MISSING 8 UNRESOLVED 0 EXTERNAL 6" && ok || fail "#3: counters: $(printf '%s' "$out8" | tail -1)"
+has "$out8" "MISSING 11 UNRESOLVED 0 EXTERNAL 7" && ok || fail "#3: counters: $(printf '%s' "$out8" | tail -1)"
 printf '# r3\nIn the [my-backend](https://example.com/my-backend) repository: `src/Remote1.php`.\n\n| Repository | Path |\n|---|---|\n| my-backend | `src/Remote2.php` |\n' >"$REPO/.ai/repo3.md"
 bash "$CHECK" .ai/repo3.md --root . --strict >/dev/null; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "#3: references to another repo fail --strict (code $rc)"
