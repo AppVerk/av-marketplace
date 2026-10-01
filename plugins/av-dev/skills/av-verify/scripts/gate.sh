@@ -593,8 +593,15 @@ budget_left() {
 }
 
 lock="$out_dir/.lock"
-# mtime FILE - modification time in seconds since the epoch (BSD and GNU stat); empty on error
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+# mtime FILE - modification time in seconds since the epoch: GNU stat first (-c %Y), then BSD
+# stat (-f %m; on GNU, -f is the file system status and would print a mount point); code 1
+# when neither gives a number
+mtime() {
+  local t
+  t="$(stat -c %Y "$1" 2>/dev/null)" || t="$(stat -f %m "$1" 2>/dev/null)" || return 1
+  case "$t" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$t"
+}
 
 # takeover_dead DIR - code 0 when the gate that made the takeover directory is gone: its pid
 # file names a process that does not run (or ran with another start time), or the directory
