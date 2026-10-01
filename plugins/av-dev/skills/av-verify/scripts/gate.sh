@@ -593,13 +593,30 @@ budget_left() {
 }
 
 lock="$out_dir/.lock"
+# mtime FILE - modification time in seconds since the epoch (BSD and GNU stat); empty on error
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+
+# takeover_dead DIR - code 0 when the gate that made the takeover directory is gone: its pid
+# file names a process that does not run (or ran with another start time), or the directory
+# has no pid file and is older than TAKEOVER_GRACE seconds (a gate that died between mkdir
+# and writing its pid). A fresh pid-less directory belongs to a gate that is still writing it.
+TAKEOVER_GRACE=5
+takeover_dead() {
+  local tp tstart age
+  if read -r tp tstart <"$1/pid" 2>/dev/null && [ -n "${tp:-}" ]; then
+    ! same_proc "$tp" "${tstart:-}"
+    return
+  fi
+  age=$(( $(date +%s) - $(mtime "$1" || date +%s) ))
+  [ "$age" -ge "$TAKEOVER_GRACE" ]
+}
+
 # take_over - replaces a stale lock; one gate at a time (mkdir of <lock>.takeover is atomic).
 # A takeover directory whose gate is gone is removed first. Code 0 when this gate made the lock.
 take_over() {
-  local t="$lock.takeover" tp tstart stale_owner stale_pid made=1
+  local t="$lock.takeover" stale_owner stale_pid made=1
   if ! mkdir "$t" 2>/dev/null; then
-    read -r tp tstart <"$t/pid" 2>/dev/null
-    [ -n "${tp:-}" ] && ! same_proc "$tp" "${tstart:-}" || return 1
+    takeover_dead "$t" || return 1
     rm -rf "$t"
     mkdir "$t" 2>/dev/null || return 1
   fi

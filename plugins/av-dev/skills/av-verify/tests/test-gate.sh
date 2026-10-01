@@ -309,6 +309,14 @@ has "$out" "BUSY" && [ "$rc" -eq 4 ] && grep -q "quick pid $dead" "$L/owner" && 
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
 out="$(bash "$GATE" --gate quick --run-id r33)"; rc=$?
 has "$out" "WARNING stale lock of run r33" && [ "$rc" -eq 0 ] && [ ! -d "$L.takeover" ] && ok || fail "takeover: a takeover left by a dead gate blocks for ever ($rc): $out"
+# a takeover directory without a pid file (a gate died between mkdir and writing its pid): a
+# fresh one belongs to a gate still writing it and stays BUSY, an old one is stale (review of PR #19)
+mkdir -p "$L" "$L.takeover" && echo "quick pid $dead" >"$L/owner"
+out="$(bash "$GATE" --gate quick --run-id r33)"; rc=$?
+has "$out" "BUSY" && [ "$rc" -eq 4 ] && [ -d "$L.takeover" ] && ok || fail "takeover: a fresh pid-less takeover directory was taken over ($rc): $out"
+touch -t 202001010000 "$L.takeover"
+out="$(bash "$GATE" --gate quick --run-id r33)"; rc=$?
+has "$out" "WARNING stale lock of run r33" && [ "$rc" -eq 0 ] && [ ! -d "$L.takeover" ] && ok || fail "takeover: an old pid-less takeover directory blocks for ever ($rc): $out"
 
 for i in 1 2 3; do
   rm -rf .ai/workspace/runs/r34
