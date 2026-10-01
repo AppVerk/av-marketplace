@@ -1,6 +1,6 @@
 # av-dev
 
-Set up a repo for AI agents once, then plan, implement, review and verify every task the same way, with evidence.
+Set up a repo for AI agents once, then plan, implement, review and verify every task the same way, with evidence. Status: experimental, see [the roadmap](../../docs/plugins/av-dev.md#status-experimental).
 
 - `av-setup` reads the repo and writes its agent setup: config, docs, overlays, role skills.
 - Five working skills use that setup: `av-plan`, `av-implement`, `av-review`, `av-verify`, `av-docs-sync`.

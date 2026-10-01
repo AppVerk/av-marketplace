@@ -6,6 +6,21 @@ One agent workflow for every repo. `av-setup` configures the repo once; five wor
 
 Usage guide with examples: [plugins/av-dev/README.md](../../plugins/av-dev/README.md).
 
+## Status: experimental
+
+AV Dev ships as an experimental plugin. Two of its skills overlap stages that other plugins own: `av-review` covers code review, where Code Review is the owner, and `av-implement` covers implementation, where Delivery and the developer plugins are. The overlap is deliberate for now: av-dev keeps one automated loop from a task to a `READY_FOR_COMMIT` report, and the marketplace will judge whether that loop earns its place.
+
+Roadmap, in this order:
+
+1. `av-review` findings written as code-review blocks in `docs/reviews/`, so `/fix`, `/fix-report` and `/fix-all` read them, and tasks routed to the installed developer agents. First pull request after this one.
+2. `gate.sh`, `config.sh` and `compose_container.sh` move to a shared verification plugin that Delivery, `/qa:loop`, `/develop` and Code Review use. `av-verify` then calls it.
+3. `check_refs.sh`, `check_names.sh` and `check_linerefs.sh` move to Code Review as the documentation auditor's pre-pass; the review rules (finding origin, plan compliance, contracts, high-risk paths) go into Code Review's report format and verdict.
+4. `scan.sh`, the adapters, the doc set and the role skills move to an onboarding plugin.
+
+The lifecycle (`av-plan`, `av-implement`, `av-review`) is evaluated after a few weeks on one client repo running both cycles, by commands per task, person touches per task and defects caught before the pull request. If Delivery takes the mode and risk rules and the fix rounds, and a task then needs no more person touches than with `av-implement`, the lifecycle folds into it. Until then it stays as it is.
+
+Repos set up with this version keep working through the split: the shared plugins read `.ai/av.config.json` with `version: 1` or migrate it, and `av-setup` refreshes the generated files.
+
 ## Why
 
 Hand-written agent pipelines drift apart between repos and go stale within weeks. AV Dev keeps the workflow in one plugin and moves everything repo-specific into files inside the repo:
