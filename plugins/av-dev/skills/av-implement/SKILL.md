@@ -203,7 +203,11 @@ Commit according to `git.commit`:
 - `after-green-gate`: commit after a READY_FOR_COMMIT result.
 - `free`: commit after a READY_FOR_COMMIT result, only on the task branch, never on a protected branch (`develop`, `main`, `master`, `release/*`).
 
-How to commit (`after-green-gate`, `free`, or `on-request` when the user asks): when the Commit plugin of the marketplace is installed in the repo (`commit` in `enabledPlugins` of `.claude/settings.json`, or `/commit` available), commit through `/commit <TICKET>`. It carries the guard marker `AV_COMMIT_SKILL=1` and writes a Conventional Commits message with the ticket in `Refs:`; a direct `git commit` is blocked by the plugin's guard in such a repo, so do not try it. Without the Commit plugin, run `git commit` yourself with the message from `git.commitPattern`. In both cases: no AI signature, the task branch only, and the report shows the message.
+How to commit (`after-green-gate`, `free`, or `on-request` when the user asks): commit yourself, the way Delivery does, never through `/commit`, because `/commit` builds the commit from every uncommitted change and lets the model pick the files, while a run must leave the changes from before its start untouched.
+1. Stage only the run's files: `bash <av-dev>/skills/av-verify/scripts/run_scope.sh --root <repo-root> diff --run-id <RUN_ID> --name-only`, then `git add -- <those files>`. Never `git add -A`. A file that holds both the run's edit and someone's earlier edit is staged whole; say so in the report, because the commit then carries that earlier edit too.
+2. Run the commit with the guard marker: `AV_COMMIT_SKILL=1 git commit -m "<message>"`. The marker lets the command through the Commit plugin's guard; a `git commit` without it is blocked in a repo with that plugin. The marker is not part of the message.
+3. The message: with the Commit plugin installed (`commit` in `enabledPlugins` of `.claude/settings.json`), Conventional Commits with the ticket in `Refs: <TICKET>`; without the plugin, the repo's `git.commitPattern`. When the Commit plugin gets a configurable message pattern, `git.commitPattern` defers to it.
+In every case: no AI signature, the task branch only, and the report shows the message and the staged files.
 
 Push only when `git.push` is `on-request` and the user asks for it explicitly.
 

@@ -115,7 +115,7 @@ Setup ready: 38 files created, 1 updated, 0 to delete.
 
 A task in a high-risk area is always at least STANDARD and always gets an independent review.
 
-By default (`git.commit: on-request`) the run stops before the commit and proposes a message. With `after-green-gate` or `free` it commits after a READY_FOR_COMMIT result (`free` only on the task branch), through the marketplace Commit plugin (`/commit`, Conventional Commits, guard marker) when it is installed, otherwise with `git commit` and `git.commitPattern`; see `git` in `skills/av-setup/references/config-schema.md`:
+By default (`git.commit: on-request`) the run stops before the commit and proposes a message. With `after-green-gate` or `free` it commits after a READY_FOR_COMMIT result (`free` only on the task branch), staging only the run's own files and running `AV_COMMIT_SKILL=1 git commit` (the marker of the marketplace Commit guard; never `/commit`, which would sweep in every uncommitted change), with a Conventional Commits message and the ticket in `Refs:` when the Commit plugin is installed, otherwise `git.commitPattern`; see `git` in `skills/av-setup/references/config-schema.md`:
 
 ```
 READY_FOR_COMMIT: CSV export added to the orders list.

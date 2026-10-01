@@ -92,6 +92,14 @@ grep -F -- '--defaults' "$readme" | grep -q 'no interview' && grep -F -- '--defa
 [ -z "$page" ] || { grep -F -- '--defaults' "$page" | grep -q 'stops once for approval' && ok || fail "docs page: --defaults does not say it stops once for approval"; }
 grep -q '`on-request`: stop' "$SKILLS/av-implement/SKILL.md" && grep -q '`after-green-gate`: commit' "$SKILLS/av-implement/SKILL.md" && ok || fail "av-implement: commit policy changed; update this test and the docs"
 grep -q 'stops before the commit' "$readme" && ! grep 'stops before the commit' "$readme" | grep -vq 'on-request' && ok || fail "README: stopping before the commit is not tied to git.commit: on-request"
+# A run commits only its own files with the Commit guard marker, never through /commit, which
+# would sweep in changes from before the start (review of PR #19); the CLAUDE.md plugin list
+# names its source, the repo settings (user-level plugins are outside it).
+impl="$SKILLS/av-implement/SKILL.md"
+grep -q 'AV_COMMIT_SKILL=1 git commit' "$impl" && grep -q -- '--name-only' "$impl" && ok || fail "av-implement: a run must stage only its files and commit with the guard marker"
+grep -n -E 'commit through `/commit|\(`/commit`,' "$impl" "$readme" "$SKILLS/av-setup/references/config-schema.md" && fail "a run's commit must not go through /commit" || ok
+grep -q 'None enabled in this repo'"'"'s settings' "$SKILLS/av-setup/references/doc-set.md" && ok || fail "doc-set: the empty plugin list must name its source"
+grep -q 'No marketplace plugins installed' "$SKILLS/av-setup/references/doc-set.md" && fail "doc-set: 'installed' is wrong for a list from the repo settings" || ok
 grep -q 'Stops before commit unless `git.commit`' "$SKILLS/av-implement/SKILL.md" && ok || fail "av-implement description: stopping before commit is not tied to git.commit"
 
 # --- 6. review verdict (review of PR #19): UNKNOWN origin blocks like NEW, a "to be confirmed"
