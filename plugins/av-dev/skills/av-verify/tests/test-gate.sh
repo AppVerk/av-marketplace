@@ -586,7 +586,7 @@ jq '.validation.commands += {"skills": {"run": "test -f \"$AV_SKILLS_DIR/av-veri
     | .validation.gates += {"sk": ["skills"]}' "$good" >"$TMP/sk.json"
 out="$(bash "$G2" --config "$TMP/sk.json" --gate sk --run-id r15)"; rc=$?
 has "$out" "CHECK skills PASS" && [ "$rc" -eq 0 ] && ok || fail "skills dir: command not PASS ($rc): $out"
-grep -qF "SKILLS_OK $SK" .ai/workspace/runs/r15/sk.skills.log && ok || fail "skills dir: AV_SKILLS_DIR does not point to the av-* directory"
+grep -qF "SKILLS_OK $(cd "$SK" && pwd -P)" .ai/workspace/runs/r15/sk.skills.log && ok || fail "skills dir: AV_SKILLS_DIR does not point to the av-* directory (physical path)"
 jq '.requires = {"av-dev": ">=0.1.0"}' "$TMP/sk.json" >"$TMP/req.json"
 out="$(bash "$G2" --config "$TMP/req.json" --list)"; rc=$?
 has "$out" "AV_DEV dev" && has "$out" "WARNING av-dev version unknown (dev), required >=0.1.0" && [ "$rc" -eq 0 ] && ok || fail "version dev: $rc $out"
@@ -602,6 +602,11 @@ has "$out" "CONFIG_ERROR requires.av-dev: installed av-dev version 0.2.0, requir
 out="$(bash "$G2" --config "$TMP/req2.json" --gate quick --run-id r17)"; rc=$?
 has "$out" "CONFIG_ERROR requires.av-dev" && [ "$rc" -eq 2 ] && ok || fail "version too low --gate: $rc"
 echo '{"name": "av-dev", "version": "0.10.0"}' >"$TMP/.claude-plugin/plugin.json"
+# the skill reached through a symlink (an install without the plugin) still finds plugin.json
+mkdir -p "$TMP/home/.claude/skills" && ln -s "$SK/av-verify" "$TMP/home/.claude/skills/av-verify"
+out="$(bash "$TMP/home/.claude/skills/av-verify/scripts/gate.sh" --config "$TMP/sk.json" --list)"; rc=$?
+has "$out" "AV_DEV 0.10.0" && [ "$rc" -eq 0 ] && ok || fail "symlinked skill: version not read through the physical path ($rc): $(printf '%s' "$out" | grep AV_DEV)"
+has "$out" "version unknown" && fail "symlinked skill: warned about an unknown version" || ok
 out="$(bash "$G2" --config "$TMP/req2.json" --list)"; rc=$?
 [ "$rc" -eq 0 ] && ok || fail "version 0.10.0 >= 0.10.0: code $rc"
 jq '.requires = {"av-dev": ">=0.9.1"}' "$TMP/sk.json" >"$TMP/req3.json"

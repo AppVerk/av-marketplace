@@ -177,7 +177,7 @@ Write `.ai/av.config.json` according to `references/config-schema.md`. In REFRES
 
 Do not create or edit the local override `.ai/av.config.json.local`. It is one person's file. In REFRESH, compare the scan with the team config: `gate.sh --list --no-local` and `check_setup.sh --no-local`. When the file exists, list its keys in the report (`config.sh --sources`). A person's decision that does not fit the team (e.g. another slot model) goes to `.local`, not to the team config (`references/config-schema.md`, section "Local override").
 
-`requires`: read `version` from `<skill-dir>/../../.claude-plugin/plugin.json`. When the file exists, write `"requires": {"av-dev": ">=<version>"}`. No file means version `dev`: skip the field and note this in the report.
+`requires`: read `version` from `<skill-dir>/../../.claude-plugin/plugin.json`, with `<skill-dir>` resolved to its physical path (`pwd -P`), because an install without the plugin reaches the skills through symlinks. When the file exists, write `"requires": {"av-dev": ">=<version>"}`. No file means version `dev`: skip the field and note this in the report.
 
 Check the config with the script from the `av-verify` skill (the av-* skills sit side by side):
 

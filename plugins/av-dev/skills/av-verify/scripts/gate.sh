@@ -75,8 +75,10 @@ config_error() {
 command -v jq >/dev/null 2>&1 || config_error "jq missing; install jq (brew install jq)"
 command -v git >/dev/null 2>&1 || config_error "git missing"
 
-skill_dir="$(cd "$(dirname "$0")/.." && pwd)"
-AV_SKILLS_DIR="$(cd "$skill_dir/.." && pwd)"
+# physical paths: a skill reached through a symlink (~/.claude/skills/av-verify -> the plugin
+# checkout) must still find its sibling skills and the plugin's plugin.json
+skill_dir="$(cd "$(dirname "$0")/.." && pwd -P)"
+AV_SKILLS_DIR="$(cd "$skill_dir/.." && pwd -P)"
 export AV_SKILLS_DIR
 av_version="dev"
 plugin_json="$AV_SKILLS_DIR/../.claude-plugin/plugin.json"
