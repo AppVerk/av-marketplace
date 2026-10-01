@@ -367,6 +367,23 @@ bad_case() {
 }
 bad_case '.requires = "0.1.0"' "requires: expected an object" "requires not an object"
 bad_case '.validation.gates.quick = "ok"' "gate 'quick': expected a non-empty array of command names" "gate as a string"
+# run must be a non-blank string and timeoutSec a positive integer (review of PR #19, round 5)
+bad_case '.validation.commands.ok.run = []' "command 'ok': run must be a non-blank string" "run as an empty array"
+bad_case '.validation.commands.ok.run = "  "' "command 'ok': run must be a non-blank string" "run blank"
+bad_case '.validation.commands.ok.run = ["echo", "x"]' "command 'ok': run must be a non-blank string" "run as an array of words"
+bad_case '.validation.commands.ok.precheck = " "' "command 'ok': precheck must be a non-blank string" "precheck blank"
+bad_case '.validation.commands.ok.timeoutSec = 1.5' "command 'ok': timeoutSec must be a positive integer (seconds)" "timeoutSec 1.5"
+bad_case '.validation.commands.ok.timeoutSec = 0' "command 'ok': timeoutSec must be a positive integer (seconds)" "timeoutSec 0"
+bad_case '.validation.commands.ok.timeoutSec = "5"' "command 'ok': timeoutSec must be a positive integer (seconds)" "timeoutSec as a string"
+jq '.validation.commands.ok.run = [] | .validation.commands.ok.timeoutSec = 1.5' "$good" >"$TMP/badrun.json"
+out="$(bash "$GATE" --config "$TMP/badrun.json" --gate quick --run-id r12h 2>/dev/null)"; rc=$?
+has "$out" "CONFIG_ERROR commands with an invalid run, precheck or timeoutSec: ok" && [ "$rc" -eq 2 ] && ok || fail "gate with run []: did not stop before running ($rc): $out"
+has "$out" "CHECK ok" && fail "gate with run []: a command ran: $out" || ok
+[ ! -f .ai/workspace/runs/r12h/evidence.json ] && ok || fail "gate with run []: evidence written for a command that never ran"
+jq '.validation.commands.ok.timeoutSec = 1.5' "$good" >"$TMP/badto.json"
+out="$(bash "$GATE" --config "$TMP/badto.json" --only ok --run-id r12i 2>/dev/null)"; rc=$?
+has "$out" "CONFIG_ERROR commands with an invalid run, precheck or timeoutSec: ok" && [ "$rc" -eq 2 ] && ok || fail "timeoutSec 1.5: not rejected before the run ($rc): $out"
+has "$out" "timeout 1.5s" && fail "timeoutSec 1.5: the command was started and killed" || ok
 bad_case '.validation.gates.quick = []' "gate 'quick': expected a non-empty array of command names" "empty gate"
 bad_case '.validation.gates.quick = [3]' "gate 'quick': element 3 is not a command name" "gate element not a string"
 bad_case '.validation.commands["unit tests"] = {"run": "exit 1"}' "command 'unit tests': name must use only letters, digits, _ . -" "command name with a space"

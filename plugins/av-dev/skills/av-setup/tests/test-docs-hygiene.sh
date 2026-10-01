@@ -62,6 +62,12 @@ hits="$(grep -rnIE -- "$runner" "$PLUGIN" ${page:+"$page"} 2>/dev/null | grep -v
 [ -z "$hits" ] && ok || fail "runner leftovers:
 $hits"
 [ ! -e "$PLUGIN/hooks" ] && ok || fail "hooks/ is back; the plugin ships no hooks"
+# The word Codex may only explain a removed config field ("removed with Codex slots"); the
+# .codex directory that the scan reports is a path, not the product. Checked in the plugin, the
+# docs page, the marketplace catalog and the root README row (review of PR #19).
+codex_hits="$(grep -rnI 'Codex' "$PLUGIN" ${page:+"$page"} "$PLUGIN/../../.claude-plugin/marketplace.json" "$PLUGIN/../../README.md" 2>/dev/null | grep -vF "$self:" | grep -v '/tests/' | grep -v 'removed with Codex slots')"
+[ -z "$codex_hits" ] && ok || fail "Codex is still named outside a removed-field message:
+$codex_hits"
 [ "$(find "$PLUGIN/agents" -name '*.md' | wc -l | tr -d ' ')" -eq 2 ] && ok || fail "expected 2 slot agents: av-slot and av-slot-read"
 
 # --- 4. the adoption grep keeps its Polish words on purpose, and says why

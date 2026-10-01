@@ -20,7 +20,7 @@
 # Effective config: team config plus <config>.local (config.sh next to this script).
 #   --list prints CONFIG_LOCAL and the overridden keys, a gate prints the CONFIG_LOCAL line.
 #
-# Command fields: run, expect, precheck, needs, timeoutSec, cwd,
+# Command fields: run (non-blank string), expect, precheck, needs, timeoutSec (positive integer), cwd,
 #   notRunExitCodes, optional, covers, parallel.
 # run and precheck go to bash with pipefail: in "npm test | tail -50" a failing test fails
 #   the command, not only the last program. Do not cut output with head in a command.
@@ -284,8 +284,14 @@ validation_errors() {
     | ( $c | keys[] | select(test("^[A-Za-z0-9_.-]+$") | not)
         | "command \($q)\(.)\($q): name must use only letters, digits, _ . -" ),
       ( $c | to_entries[]
-        | select((.value | type) != "object" or ((.value.run // "") == ""))
-        | "command \($q)\(.key)\($q) has no run field" ),
+        | select((.value | type) != "object" or (.value.run | type) != "string" or (.value.run | test("^[[:space:]]*$")))
+        | "command \($q)\(.key)\($q): run must be a non-blank string" ),
+      ( $c | to_entries[] | select(.value | type == "object")
+        | select((.value | has("precheck")) and ((.value.precheck | type) != "string" or (.value.precheck | test("^[[:space:]]*$"))))
+        | "command \($q)\(.key)\($q): precheck must be a non-blank string" ),
+      ( $c | to_entries[] | select(.value | type == "object")
+        | select(.value | has("timeoutSec") and ((.timeoutSec | type) != "number" or .timeoutSec != (.timeoutSec | floor) or .timeoutSec < 1))
+        | "command \($q)\(.key)\($q): timeoutSec must be a positive integer (seconds)" ),
       ( $c | to_entries[] | select(.value | type == "object") | .key as $k
         | (.value.covers // [])[] | select($c[.] == null)
         | "command \($q)\($k)\($q) covers unknown command \($q)\(.)\($q)" ),
@@ -507,11 +513,19 @@ fi
 
 bad_names="$(printf '%s' "$names_json" | jq -r '[.[] | select(test("^[A-Za-z0-9_.-]+$") | not)] | map(tojson) | join(", ")')"
 [ -z "$bad_names" ] || config_error "invalid command names: $bad_names; a name uses only letters, digits, _ . -"
-bad="$(jq -r --argjson n "$names_json" '[ $n[] as $x | select((.validation.commands[$x].run // "") == "") | $x ] | join(", ")' "$cfg")"
+bad="$(jq -r --argjson n "$names_json" '[ $n[] as $x | select((.validation.commands[$x] | type) != "object") | $x ] | join(", ")' "$cfg")"
 if [ -n "$bad" ]; then
   if [ -n "$gate_name" ]; then config_error "gate '$gate_name' has invalid commands: $bad"; fi
   config_error "unknown commands: $bad"
 fi
+# A selected command with a blank run, a bad precheck or a non-integer timeoutSec stops the gate
+# before anything starts: an empty command would exit 0 and count as PASS.
+bad="$(jq -r --argjson n "$names_json" '[ $n[] as $x | .validation.commands[$x]
+  | select((.run | type) != "string" or (.run | test("^[[:space:]]*$"))
+           or (has("precheck") and ((.precheck | type) != "string" or (.precheck | test("^[[:space:]]*$"))))
+           or (has("timeoutSec") and ((.timeoutSec | type) != "number" or .timeoutSec != (.timeoutSec | floor) or .timeoutSec < 1)))
+  | $x ] | join(", ")' "$cfg")"
+[ -z "$bad" ] || config_error "commands with an invalid run, precheck or timeoutSec: $bad (see --list)"
 
 ordered="$(jq -r --argjson n "$names_json" '
   .validation.commands as $c
