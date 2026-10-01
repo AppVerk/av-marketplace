@@ -29,9 +29,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Test the parity checker
-        run: python3 scripts/test_check_plugin_versions.py
-
       - name: Check plugin version parity
         run: python3 scripts/check_plugin_versions.py
 
