@@ -63,7 +63,7 @@ SKILL_RELPATH = PurePath("plugins/code-review/skills/decision-gate/SKILL.md")
 CONSUMER_GLOBS = ("*/commands/*.md", "*/skills/*/SKILL.md")
 
 # Any mention at all, not just the `code-review:decision-gate` Skill-load
-# spelling: `/qa:loop` refers to the skill as "`code-review`'s `decision-gate`
+# spelling: `/qa:run` refers to the skill as "`code-review`'s `decision-gate`
 # skill" and must still be classified.
 CONSUMER_TOKEN = "decision-gate"
 

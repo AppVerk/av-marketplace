@@ -14,6 +14,7 @@ Usage:
     route_task.py check <root> <plan.md>  # JSON {"tasks": N, "problems": [...], "no_files": [...]}
     route_task.py message <root> <plan.md> <N> [--open-findings]  # task commit with trailers
     route_task.py done <root> <plan.md>  # JSON delivered tasks, conflicts, base
+    route_task.py testable <root> <base>  # JSON changed paths of <base>..HEAD that QA can exercise
     route_task.py files <root> <path>...  # JSON routing for these paths
     route_task.py layout <root>           # JSON repo layout for a judge
     route_task.py slug <plan.md> [--in-repo]  # print heading or filename slug
@@ -66,6 +67,31 @@ FENCE_STACKS = {
     "tsx": "web", "jsx": "web", "ts": "web", "typescript": "web",
     "js": "web", "javascript": "web", "css": "web", "scss": "web",
 }
+UNTESTABLE = tuple(re.compile(pattern) for pattern in (
+    r"^docs?/",
+    r"\.(md|markdown|rst|adoc)$",
+    r"(^|/)(LICENSE|LICENCE|CHANGELOG|CONTRIBUTING|AUTHORS|NOTICE|CODEOWNERS)(\.[A-Za-z0-9]+)?$",
+    r"^\.(github|gitlab|circleci|buildkite|vscode|idea)/",
+    r"(^|/)(Jenkinsfile|\.gitlab-ci\.yml|\.travis\.yml|azure-pipelines\.yml|\.pre-commit-config\.yaml)$",
+    r"(^|/)(tests?|__tests__|e2e|cypress|playwright)/|^spec/",
+    r"(^|/)(test_[^/]*\.py|[^/]*_test\.py|conftest\.py|[^/]*\.(test|spec)\.[cm]?[jt]sx?)$",
+    r"(^|/)\.(editorconfig|gitignore|gitattributes|gitmodules|prettierrc[^/]*|prettierignore|eslintrc[^/]*|eslintignore|stylelintrc[^/]*|flake8|pylintrc|php-cs-fixer(\.dist)?\.php)$",
+    r"(^|/)(ruff\.toml|mypy\.ini|pytest\.ini|tox\.ini|phpstan\.neon(\.dist)?|phpunit\.xml(\.dist)?|biome\.jsonc?|(eslint|prettier|stylelint)\.config\.[cm]?[jt]s)$",
+    r"^\.av/",
+))
+
+
+def split_testable(paths: list[str]) -> tuple[list[str], list[str]]:
+    """QA can exercise anything that is not docs, CI, tests, tooling or `.av/`."""
+    files: list[str] = []
+    excluded: list[str] = []
+    for path in paths:
+        if any(pattern.search(path) for pattern in UNTESTABLE):
+            excluded.append(path)
+        else:
+            files.append(path)
+
+    return files, excluded
 
 
 def clean_path(raw: str) -> str:
@@ -412,6 +438,20 @@ def delivered(root: Path, rel: str, tasks: list[dict]) -> dict:
     return {"done": sorted(done), "conflicts": conflicts, "base": base.stdout.strip()}
 
 
+def testable(root: Path, base: str) -> dict:
+    """Classify changed paths in base..HEAD, including both endpoints of moves."""
+    diff = subprocess.run(
+        ["git", "-C", str(root), "diff", "--name-only", "-z", "--no-renames",
+         "--end-of-options", base, "HEAD"],
+        capture_output=True, text=True,
+    )
+    if diff.returncode != 0:
+        raise RuntimeError(diff.stderr.strip())
+
+    files, excluded = split_testable([path for path in diff.stdout.split("\0") if path])
+    return {"testable": bool(files), "files": files, "excluded": excluded}
+
+
 def slug(plan_file: Path, in_repo: bool) -> str:
     """Build a branch-safe slug from an external title or an in-repo filename."""
     name = plan_file.name
@@ -427,7 +467,7 @@ def slug(plan_file: Path, in_repo: bool) -> str:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[0] not in {
-        "plan", "check", "files", "layout", "message", "done", "slug",
+        "plan", "check", "files", "layout", "message", "done", "slug", "testable",
     }:
         print(__doc__, file=sys.stderr)
         return 2
@@ -448,6 +488,17 @@ def main(argv: list[str]) -> int:
         return 0
     if command == "files":
         print(json.dumps(route(root, argv[2:])))
+        return 0
+    if command == "testable":
+        if len(argv) != 3:
+            print("usage: route_task.py testable <root> <base>", file=sys.stderr)
+            return 2
+        try:
+            result = testable(root, argv[2])
+        except RuntimeError as error:
+            print(error, file=sys.stderr)
+            return 2
+        print(json.dumps(result))
         return 0
     if command == "message":
         valid = len(argv) == 4 or (len(argv) == 5 and argv[4] == "--open-findings")

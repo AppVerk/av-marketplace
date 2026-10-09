@@ -95,6 +95,26 @@ class TestGenerated(unittest.TestCase):
             self.assertEqual((plugin / "scripts/utility.py").read_text(), "print('ok')\n")
             self.assertEqual(json.loads((plugin / ".omp-plugin/plugin.json").read_text()), MANIFEST)
 
+    def test_generated_skills_and_scripts_exclude_python_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            fixture(source)
+            for directory in ("skills/review/scripts", "scripts"):
+                base = source / "plugins/sample" / directory
+                put(base / "helper.py", "print('helper')\n")
+                put(base / "__pycache__/helper.cpython-311.pyc", "cache")
+                put(base / "__pycache__/nested/ignored.py", "cache-only source")
+                put(base / "stray.pyc", "cache")
+
+            build(root / "output", source)
+            plugin = root / "output/plugins-omp/sample"
+            for directory in ("skills/review/scripts", "scripts"):
+                base = plugin / directory
+                self.assertEqual((base / "helper.py").read_text(), "print('helper')\n")
+                self.assertFalse((base / "__pycache__").exists())
+                self.assertFalse((base / "stray.pyc").exists())
+
     def test_overlay_description_replaces_claude_capability_in_generated_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

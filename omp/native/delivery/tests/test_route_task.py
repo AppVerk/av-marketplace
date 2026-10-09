@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Routing contract for delivery tasks: which developer agent owns a task.
+"""Routing and QA eligibility contracts for delivery tasks.
 
 Run: python3 omp/native/delivery/tests/test_route_task.py
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from route_task import check, layout, parse_plan, route, route_text, scan_delivery_log  # noqa: E402
+from route_task import check, layout, parse_plan, route, route_text, scan_delivery_log, split_testable  # noqa: E402
 
 ROUTER = SCRIPTS / "route_task.py"
 
@@ -25,6 +25,76 @@ def write(root: Path, rel: str, content: str) -> None:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
+
+
+class SplitTestableTest(unittest.TestCase):
+    def test_excludes_docs_ci_tests_tooling_and_qa_configuration(self) -> None:
+        paths = [
+            "README.md",
+            "docs/plans/x.md",
+            "docs/testing/reports/r.md",
+            "CHANGELOG.md",
+            "LICENSE",
+            "LICENSE.txt",
+            "src/NOTICE.txt",
+            "doc/parser.go",
+            "docs/views.py",
+            "spec/orders.rb",
+            ".github/workflows/ci.yml",
+            ".gitlab-ci.yml",
+            "backend/tests/test_orders.py",
+            "backend/app/conftest.py",
+            "web/src/List.test.tsx",
+            "web/e2e/login.spec.ts",
+            "shop/tests/OrderTest.php",
+            ".editorconfig",
+            ".gitignore",
+            "ruff.toml",
+            "eslint.config.js",
+            ".av/config.toml",
+        ]
+        self.assertEqual(split_testable(paths), ([], paths))
+
+    def test_includes_code_dependencies_templates_and_runtime_configuration(self) -> None:
+        paths = [
+            "src/app.py",
+            "backend/app/orders.py",
+            "templates/index.html",
+            "pyproject.toml",
+            "requirements.txt",
+            "package.json",
+            "web/src/List.tsx",
+            "migrations/0002_orders.sql",
+            "Dockerfile",
+            "config/settings.yaml",
+            "shop/src/Controller/OrderController.php",
+        ]
+        self.assertEqual(split_testable(paths), (paths, []))
+
+    def test_rule_boundaries(self) -> None:
+        for path, excluded in (
+            ("docs/conf.py", True),
+            ("app/docs/views.py", False),
+            ("src/doc/parser.go", False),
+            ("api/spec/openapi.yaml", False),
+            ("src/NOTICEBoard.tsx", False),
+            ("src/LICENSEServer.ts", False),
+            ("src/ABTest.php", False),
+            ("src/Service/SpeedTest.php", False),
+            ("src/attest.py", False),
+            ("pkg/load_test.py", True),
+        ):
+            with self.subTest(path=path):
+                expected = ([], [path]) if excluded else ([path], [])
+                self.assertEqual(split_testable([path]), expected)
+
+    def test_mixed_and_empty_inputs(self) -> None:
+        for paths, expected in (
+            (["README.md", "src/app.py"], (["src/app.py"], ["README.md"])),
+            ([], ([], [])),
+        ):
+            with self.subTest(paths=paths):
+                self.assertEqual(split_testable(paths), expected)
 
 
 class RoutingFixture(unittest.TestCase):
@@ -576,8 +646,106 @@ class ScanDeliveryLogTest(unittest.TestCase):
         ])
         self.assertEqual(first, "first")
 
+    def test_qa_fix_commit_is_neither_done_nor_conflict(self) -> None:
+        rel = "docs/plans/plan.md"
+        log = (
+            f"task-sha\0feat: orders\n\nDelivery-Plan: {rel}\n"
+            "Delivery-Task: 1\nDelivery-Task-Title: Orders endpoint\n\0\n"
+            f"qa-sha\0fix: apply QA fixes of delivery plan\n\nDelivery-Plan: {rel}\n"
+            "Delivery-QA: docs/testing/reports/r.md\nDelivery-QA-Result: Pass\n\0\n"
+        )
+
+        done, conflicts, first_commit = scan_delivery_log(log, rel, {1: "Orders endpoint"})
+
+        self.assertEqual(done, {1})
+        self.assertEqual(conflicts, [])
+        self.assertEqual(first_commit, "task-sha")
+
     def test_empty_log_has_no_first_commit(self) -> None:
         self.assertEqual(scan_delivery_log("", "docs/plans/plan.md", {1: "Orders"}), (set(), [], None))
+
+
+class TestableCliTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        write(self.root, "README.md", "initial docs\n")
+        write(self.root, "src/app.py", "initial code\n")
+        self.commit(self.root, "init\n")
+        write(self.root, "README.md", "changed docs\n")
+        self.commit(self.root, "docs\n")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def commit(self, repo: Path, message: str) -> str:
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=test", "-c", "user.email=test@example.com",
+             "-c", "commit.gpgsign=false", "commit", "-q", "-F", "-"],
+            input=message, text=True, check=True,
+        )
+        return subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+    def run_router(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(ROUTER), *args], capture_output=True, text=True)
+
+    def test_docs_only_range_and_empty_range(self) -> None:
+        for base, excluded in (("HEAD~1", ["README.md"]), ("HEAD", [])):
+            with self.subTest(base=base):
+                result = self.run_router("testable", str(self.root), base)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {
+                    "testable": False, "files": [], "excluded": excluded,
+                })
+
+    def test_code_change_is_included_with_and_without_docs(self) -> None:
+        write(self.root, "src/app.py", "changed code\n")
+        self.commit(self.root, "code\n")
+
+        for base, excluded in (("HEAD~2", ["README.md"]), ("HEAD~1", [])):
+            with self.subTest(base=base):
+                result = self.run_router("testable", str(self.root), base)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {
+                    "testable": True, "files": ["src/app.py"], "excluded": excluded,
+                })
+
+    def test_move_into_tests_keeps_the_production_deletion_testable(self) -> None:
+        (self.root / "tests").mkdir()
+        subprocess.run(["git", "-C", str(self.root), "config", "diff.renames", "true"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "mv", "src/app.py", "tests/app.py"], check=True)
+        self.commit(self.root, "move code into tests\n")
+
+        result = self.run_router("testable", str(self.root), "HEAD~1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "testable": True, "files": ["src/app.py"], "excluded": ["tests/app.py"],
+        })
+
+    def test_invalid_base_reports_git_error(self) -> None:
+        result = self.run_router("testable", str(self.root), "no-such-ref")
+        self.assertEqual(result.returncode, 2)
+        self.assertRegex(result.stderr, r"bad revision|unknown revision")
+
+    def test_option_like_base_cannot_write_output(self) -> None:
+        output = self.root / "git-output"
+
+        result = self.run_router("testable", str(self.root), f"--output={output}")
+
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertFalse(output.exists())
+        self.assertEqual(result.stdout, "")
+
+    def test_missing_base_reports_usage(self) -> None:
+        result = self.run_router("testable", str(self.root))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("usage: route_task.py testable <root> <base>", result.stderr)
 
 
 class DoneTest(unittest.TestCase):

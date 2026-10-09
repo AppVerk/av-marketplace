@@ -1,6 +1,6 @@
 {
   "name": "delivery",
-  "version": "0.5.0",
-  "description": "Delivers approved plan-mode plans: each task goes to the developer agent that owns its files, is reviewed and committed, then the plan's verification and the full code review run.",
+  "version": "0.6.0",
+  "description": "Delivers approved plan-mode plans: each task goes to the developer agent that owns its files, is reviewed and committed, then the plan's verification, QA when the change is testable, and the full code review run.",
   "category": "development"
 }

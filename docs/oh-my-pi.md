@@ -2,7 +2,7 @@
 
 Most OMP plugins are generated from the same sources as their Claude Code editions. The OMP column of [Available Plugins](../README.md#available-plugins) shows which plugins it contains. Plan Review exists only in OMP; Delivery's OMP edition is written for OMP instead of generated from its Claude Code edition:
 
-- [Delivery](plugins/delivery.md) delivers an approved plan-mode plan task by task: each task goes to the developer agent that owns its files, is reviewed, and gets its own commit.
+- [Delivery](plugins/delivery.md) delivers an approved plan-mode plan task by task: each task goes to the developer agent that owns its files, is reviewed, and gets its own commit; then QA runs when the change is testable, and a code review closes the delivery.
 - [Plan Review](plugins/plan-review.md) has a second model review every plan-mode plan before it reaches the approval dialog.
 
 ## Installation
@@ -12,9 +12,9 @@ omp plugin marketplace add AppVerk/av-marketplace
 omp plugin install <plugin>@av-marketplace
 ```
 
-`omp plugin install` accepts several plugin IDs at once. Delivery hands tasks to the developer plugins, and `/qa:loop` needs Code Review. Start a new OMP session after installing: a running session does not load the extensions that Commit, Delivery and Plan Review ship.
+`omp plugin install` accepts several plugin IDs at once. Delivery hands tasks to the developer plugins and, with QA installed, runs `/qa:run` on testable deliveries; `/qa:run` needs Code Review for fixes. Start a new OMP session after installing: a running session does not load the extensions that Commit, Delivery and Plan Review ship.
 
-Delivery needs Python 3.9 or newer as `python3`, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
+QA needs Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
 
 ## Updating
 
@@ -36,7 +36,7 @@ Agents pick their model through model roles instead of a fixed model:
 | `tester` | QA's FE and BE testers |
 | `challenger` | Code Review's challenger and cross-verifier |
 | `analyst` | Code Review's composition analyst, decision analyst and feedback analyzer |
-| `plan` | OMP plan mode, QA's test planner |
+| `plan` | OMP plan mode, QA's test planner and config author |
 | `advisor` | Plan Review's reviewer, QA's test-plan reviewer, the Advisor of QA's test planner |
 
 ### Recommended models

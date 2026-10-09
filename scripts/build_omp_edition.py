@@ -550,14 +550,14 @@ def build_generated(
     for name in VERBATIM_DIRS:
         if (src_root / name).is_dir():
             for src in sorted((src_root / name).rglob("*")):
-                if src.is_file():
+                if src.is_file() and "__pycache__" not in src.relative_to(src_root).parts and src.suffix != ".pyc":
                     copy(src, dst_root / src.relative_to(src_root), out_root)
 
     skills_root = src_root / "skills"
     skill_names: set[str] = set()
     if skills_root.is_dir():
         for src in sorted(skills_root.rglob("*")):
-            if not src.is_file():
+            if not src.is_file() or "__pycache__" in src.relative_to(skills_root).parts or src.suffix == ".pyc":
                 continue
             dst = dst_root / src.relative_to(src_root)
             if src.name == "SKILL.md" and src.parent.parent == skills_root:

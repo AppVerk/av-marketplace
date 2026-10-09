@@ -1,5 +1,5 @@
 {
   "name": "delivery",
-  "description": "Delivers implementation plans task by task: picking subagent-driven execution for a Superpowers plan, or approving a plan in plan mode, sends each task to the developer agent that owns it, where it is reviewed and committed; then the plan's verification and a full code review run.",
-  "version": "0.5.0"
+  "description": "Delivers implementation plans task by task: picking subagent-driven execution for a Superpowers plan, or approving a plan in plan mode, sends each task to the developer agent that owns it, where it is reviewed and committed; then the plan's verification, QA when the change is testable, and a full code review run.",
+  "version": "0.6.0"
 }

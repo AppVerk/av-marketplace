@@ -1,19 +1,23 @@
 ---
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(command:*), Bash(echo:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(head:*), Bash(mkdir:*), Bash(jq:*), Bash(date:*), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, Skill
+allowed-tools: Bash(gh:*), Bash(git:*), Bash(command:*), Bash(echo:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(head:*), Bash(mkdir:*), Bash(jq:*), Bash(date:*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/engine/scripts/qa.py *), mcp__plugin_playwright_playwright__browser_navigate, Read, Write, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, Skill
 description: Analyze code changes (PR, branch, commits) and generate a detailed QA test plan with FE and BE scenarios, edge cases, and tool detection; a reviewer agent checks the plan against the repository before it is handed over.
 model: opus
-argument-hint: [PR number, branch name, or natural language description of changes to analyze]
+argument-hint: [change-source]
 ---
 
 # QA Test Plan Generator
 
-You coordinate QA test-plan authoring. The `qa:test-planner` agent analyzes the changes and writes the plan; the `qa:test-plan-reviewer` agent checks it against the repository, and the planner resolves what the review finds. You detect tools, dispatch both agents and relay between them. Never write or edit the plan yourself: a finding the planner does not resolve stays open and goes to the user.
+You coordinate QA test-plan authoring through the shared `qa:plan-authoring` skill, also used by `/qa:run`. The `qa:test-planner` agent analyzes the changes and writes the plan; the `qa:test-plan-reviewer` agent checks it against the repository, and the planner resolves what the review finds. Never write or edit the plan yourself: a finding the planner does not resolve stays open and goes to the user. This command authors and reviews only; it never bootstraps config or executes tests.
 
 ## Arguments
 
 **Input:** `$ARGUMENTS`
 
 Pass the argument to the planner verbatim. It resolves the source of changes: by default the open PR of the current branch (falling back to the branch diff), otherwise a PR number (`#123`), a branch name, `this branch` / `ten branch`, `last N commits` / `ostatnie N commitów`, or `staged`.
+
+No options are accepted. If an argument token starts with `--`, stop before calling the engine or dispatching agents:
+
+> Error: /qa:create-plan takes no options; set policy in .av/config.toml (see docs/plugins/qa.md#configuration).
 
 ---
 
@@ -29,107 +33,31 @@ Create the following tasks immediately:
 | 2 | Draft test plan | Drafting test plan... |
 | 3 | Review test plan | Reviewing test plan... |
 
-### Step 2: Detect Available Tools
+### Step 2: Read Config Metadata
 
-**Task Update:** Mark task 1 as `in_progress`.
+Load `qa:engine` and resolve the installed engine script using its harness-specific instructions. Run its `config` subcommand in the repository:
 
-Check which testing tools are available in the environment:
-
-**Playwright MCP:**
-```
-Try: browser_navigate(url: "about:blank")
-```
-If it works → Playwright available. If it fails → Playwright unavailable.
-
-**HTTP clients:**
 ```bash
-command -v curl >/dev/null 2>&1 && echo "curl: available" || echo "curl: unavailable"
-command -v http >/dev/null 2>&1 && echo "httpie: available" || echo "httpie: unavailable"
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/engine/scripts/qa.py config
 ```
 
-**Database clients (CLI):**
-```bash
-command -v psql >/dev/null 2>&1 && echo "psql: available" || echo "psql: unavailable"
-command -v sqlite3 >/dev/null 2>&1 && echo "sqlite3: available" || echo "sqlite3: unavailable"
-command -v mysql >/dev/null 2>&1 && echo "mysql: available" || echo "mysql: unavailable"
-```
+In OMP use the absolute path returned by `realpath skill://qa:engine/scripts/qa.py` instead of `CLAUDE_PLUGIN_ROOT`.
 
-**Database MCP servers:**
-Check the available tools list for database MCP servers (e.g., `mcp__postgres`, `mcp__supabase`, `mcp__neon`, `mcp__mysql`, `mcp__mongodb`, `mcp__redis`).
+Keep the JSON object, including `state`, for `qa:plan-authoring`. Print any validation errors and warnings, but a recognized `missing-file`, `missing-table` or `invalid` state does not prevent authoring: the skill passes `Config: none`, and the planner writes `$QA_…` names and target names grounded in the repository. Without a valid config, `/qa:run`'s `plan check` identifies missing users, values, targets and stores for its config flow to fill; a missing cleanup recipe alone is a soft gap. Never bootstrap config here, execute sources, ask for trust or read secret values.
 
-Write the results as a `Detected tools:` block: one `<tool>: available` or `<tool>: unavailable` line per tool above, then one line per available database MCP server. The planner copies it into the plan's `## Detected Tools`.
+An engine/version/I/O error without a recognized config state is not a missing config. Stop and display its error instead of dispatching the planner.
 
-**Task Update:** Mark task 1 as `completed`, task 2 as `in_progress`.
+### Step 3: Author and Review Through the Shared Skill
 
-### Step 3: Draft the Plan
+Load `qa:plan-authoring` with the user's argument verbatim (or `(empty)`), the `config` JSON and the three progress tasks. Follow its Steps 2-4: engine tool detection plus the browser probe, planner draft and at most three reviewer/revision rounds. It sends the same safe `Config:` projection of `targets`, `defaults`, `users`, `values` and `stores` to both agents in every round.
 
-```
-Task(
-  subagent_type: "qa:test-planner",
-  run_in_background: false,
-  description: "Draft QA test plan",
-  prompt: "Mode: draft
-Arguments: <$ARGUMENTS verbatim, or (empty)>
-Detected tools:
-<the Step 2 block>"
-)
-```
-
-The planner answers with one JSON object. On `{"error": ...}`, a failed dispatch, an answer that is not the expected JSON, or no file at its `plan` path, stop:
-
-> Test plan generation failed: <reason>
-
-Keep `plan`, `source` and `changed_files` for the review.
-
-**Task Update:** Mark task 2 as `completed`, task 3 as `in_progress`.
-
-### Step 4: Review the Plan
-
-Run at most 3 review rounds. In round `n`:
-
-1. Dispatch the reviewer:
-
-   ```
-   Task(
-     subagent_type: "qa:test-plan-reviewer",
-     run_in_background: false,
-     description: "Review QA test plan (round <n>)",
-     prompt: "Plan: <plan>
-   Diff source: <source>
-   Changed files:
-   <changed_files, one path per line>
-   Round: <n> of 3
-   Previous findings:
-   <none, or every earlier finding with the number it was sent under, followed by the planner's disposition and note>"
-   )
-   ```
-
-2. The reviewer's answer must be one JSON object `{"findings": [...]}` whose findings each carry a `severity` of `blocker`, `concern` or `nit`. On a failed dispatch or any other answer, the review could not run: end the review and keep the plan unreviewed, with the reason.
-3. No `blocker` or `concern` → the plan is approved; end the review.
-4. `n` is 3 → end the review; this round's blockers and concerns stay open for the user.
-5. Otherwise number this round's findings, continuing after the last number of earlier rounds, and dispatch the planner:
-
-   ```
-   Task(
-     subagent_type: "qa:test-planner",
-     run_in_background: false,
-     description: "Revise QA test plan (round <n>)",
-     prompt: "Mode: revise
-   Plan: <plan>
-   Diff source: <source>
-   Round: <n> of 3
-   Findings:
-   <this round's findings, one per line: number, [severity] location: issue Fix: fix>"
-   )
-   ```
-
-   The planner answers `{"plan": ..., "dispositions": [...]}`. On `{"error": ...}`, a failed dispatch or any other answer, end the review; this round's blockers and concerns stay open. Otherwise record each disposition with its finding and start round `n + 1`.
-
-**Task Update:** Mark task 3 as `completed`.
+Consume its return contract: `plan`, `review` outcome and `open_findings`, plus optional nits and declined findings. On `{"error": ...}`, stop with `Test plan generation failed: <reason>`; do not propose running a nonexistent plan. Never duplicate the skill's detection, drafting or review logic in this command.
 
 ### Step 5: Propose Next Step
 
 Display:
+
+Use the returned `plan`, `review`, `open_findings`, `nits` and `declined_findings` for this display. Select the review line from `review.outcome`: `approved`, `open` or `unreviewed`; include `review.reason` when present. Do not turn exhausted rounds or a declined finding into approval.
 
 > **Test plan saved to `<plan>`.**
 >

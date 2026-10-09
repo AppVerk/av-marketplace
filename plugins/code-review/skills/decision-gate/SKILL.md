@@ -244,7 +244,7 @@ The pre-existing `**Status:**` line travels because it is not loop-written for t
 
 All of the stripped lines **stay in the source report**, which is what the replay path and stage 3.5 read: a fixer holding unrestricted `Edit`, `Write` and `Bash`, told to iterate until verification passes, must not be handed the checks stage 3.5 will grade it with.
 
-The rule binds **every dispatcher of a finding block**, not this stage alone: `/qa:loop`'s Step 3c forwards the same block to `fix-auto` and applies the same closed list.
+The rule binds **every dispatcher of a finding block**, not this stage alone: `/qa:run`'s fix step forwards the same block to `fix-auto` and applies the same closed list.
 
 The `**Location:**` dispatched is the one the source report now carries: stage 2 already wrote the correction there, in the normalised `path:line` form, so the Location the report carries is **already in dispatch form** and this stage neither re-normalises nor re-derives it. Persisting the substitution rather than patching the dispatched copy alone is what keeps the replay path working — otherwise the verified target is rendered to the user and then discarded, and a resumed run dispatches `—` into a fixer that treats Location as required and stops to ask from inside a subagent.
 
@@ -323,7 +323,7 @@ A grant here is **not** a boundary permission and never licenses a check. It rec
 | `plugins/code-review/commands/fix-report.md` | runs-the-stage | Loads this skill in full. Step 2.4 runs stages 0–2 and hands the decided findings to Step 3; stage 3.5's verification then runs over those findings, under this boundary — see *Where the stages run* above, which is authoritative for the split. |
 | `plugins/code-review/skills/decision-gate/SKILL.md` | runs-the-stage | This file. Declares no `allowed-tools:`; the row keeps it that way. |
 | `plugins/code-review/commands/fix.md` | dispatch-only | Loads the `**Alternatives:**` render format, and follows stage 3's dispatch-copy rule when it builds a composite payload (`/fix COMP-NNN`). Runs no stage, so no check of its executes under this boundary; its `Bash(git:*)` wildcard stays outside the grant diff only while its kind is not `runs-the-stage`. |
-| `plugins/qa/commands/loop.md` | dispatch-only | Follows stage 3's dispatch-copy rule and strips `**Verification-plan:**`. Runs neither the sweep nor stage 3.5. |
+| `plugins/qa/commands/run.md` | dispatch-only | Follows stage 3's dispatch-copy rule and strips `**Verification-plan:**`. Runs neither the sweep nor stage 3.5. |
 | `plugins/qa/skills/report-format/SKILL.md` | reference-only | Reproduces the finding-block fields this skill writes. Declares no `allowed-tools:` and executes nothing. |
 
 #### Grants — every `Bash(...)` on a runs-the-stage consumer

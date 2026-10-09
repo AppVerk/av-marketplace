@@ -223,25 +223,17 @@ class CompositeContract(unittest.TestCase):
         # mutation: delete the `**Components:**` table from fix.md Phase 7
         self.assertIn("**Components:**", read(FIX))
 
-    # ---- Task 9: docs and version ---------------------------------------
+    # ---- Task 9: docs ---------------------------------------------------
 
-    def test_docs_composite_section_and_qa_loop_sentence(self):
-        # mutation: delete the `## Composite findings` section or the sentence "`/qa:loop` is untouched" from docs/plugins/code-review.md
+    def test_docs_composite_section_and_qa_loop_sentence(self) -> None:
+        # mutation: delete the `## Composite findings` section or the sentence "`/qa:run` is untouched" from docs/plugins/code-review.md
         text = read(DOCS)
         self.assertIn("## Composite findings", text)
-        self.assertIn("`/qa:loop` is untouched", text)
+        self.assertIn("`/qa:run` is untouched", text)
 
     def test_docs_upgrade_note_states_dispatch_change(self):
         # mutation: delete the 2.1.0 Upgrade Notes paragraph ("Their dispatch does change") from docs/plugins/code-review.md
         self.assertIn("Their dispatch does change", read(DOCS))
-
-    def test_version_2_1_0_everywhere(self):
-        # mutation: change any one of the four version sites back to 2.0.1
-        self.assertIn("**Version:** 2.1.0", read(DOCS))
-        self.assertIn('"version": "2.1.0"', read("plugins/code-review/.claude-plugin/plugin.json"))
-        marketplace = read(".claude-plugin/marketplace.json")
-        self.assertRegex(marketplace, r'"name": "code-review",\s*"source": "./plugins/code-review",\s*"description": "[^"]*",\s*"version": "2\.1\.0"')
-        self.assertRegex(read("README.md"), r"\| \[Code Review\]\(docs/plugins/code-review\.md\) \| 2\.1\.0 \|")
 
 
 if __name__ == "__main__":

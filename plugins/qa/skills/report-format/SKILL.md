@@ -16,6 +16,8 @@ description: Test report format with QA-XXX issue IDs compatible with code-revie
 
 ## Report Structure
 
+For `/qa:run`, the engine renders reports through its `report` subcommand; the format below is the contract it implements. The model supplies sanitized issue prose using engine-assigned QA IDs, never edits the report or sidecar by hand, and relays the engine's `summary` for the final result and Coverage.
+
 Every test report MUST follow this structure. `## Setup gaps` is conditional: include it only when a main flow or edge case returns NEED_INFO; omit the section entirely when there are no gaps:
 
 ~~~markdown
@@ -24,11 +26,15 @@ Every test report MUST follow this structure. `## Setup gaps` is conditional: in
 ## Summary
 - Total: <N> | Pass: <N> | Fail: <N> | Skip: <N> | Need info: <N>
 - Plan: <path to test plan file>
+- Plan provenance: auto-generated|existing
 - Date: <YYYY-MM-DD>
 - Duration: <approximate execution time>
+- Accounts: registered <N> (deleted <D>, left <L>, manual <M>)
 
 ## Setup gaps
-- <kind>: `<identifier>`, `<identifier>` — <scenario IDs; use BE-01 (edge 2) for an edge gap>
+- service: `http://127.0.0.1:8000` — BE-04
+- tool: `psql` — BE-08
+- fixture: `fixtures/resume.pdf` — BE-05 (edge 2)
 
 ## Issues Found
 
@@ -59,11 +65,15 @@ Every test report MUST follow this structure. `## Setup gaps` is conditional: in
 ## Detailed Results
 
 ### Pass: FE-01: <scenario name>
-### Skip: FE-03: <scenario name> (reason)
+### Skip: FE-03: <scenario name> (cannot-confirm)
 ### Pass: BE-01: <scenario name>
 ### Fail: BE-03: <scenario name> — see QA-001
-### Need info: BE-04: <scenario name> (credentials: QA_STRIPE_TEST_KEY)
+### Need info: BE-04: <scenario name> (BE-04: service: http://127.0.0.1:8000)
+### Need info: BE-05: <scenario name> (BE-05 (edge 2): fixture: fixtures/resume.pdf)
+### Need info: BE-08: <scenario name> (BE-08: tool: psql)
 ~~~
+
+The Accounts line is `- Accounts: registered 0` when this run has no ledger records; otherwise it is `- Accounts: registered N (deleted D, left L, manual M)`. It counts tester-registered accounts for this run, not configured existing users.
 
 ---
 
@@ -186,9 +196,9 @@ Verify the onClick handler in `src/components/Header.tsx:23`. The most likely ca
 
 ## Detailed Results Format
 
-List ALL scenarios (pass, fail, skip, need info) in plan order. Derive one verdict per scenario: `fail` if the main Status or any edge is FAIL; otherwise `need-info` if the main Status or any edge is NEED_INFO; otherwise (loop only) `auth-unverified` for a reclassified main flow; otherwise `skip` if the main Status or any edge is SKIP. The `**DB check:** SKIP` field does not count. Only when the main flow and every edge passed is the verdict `pass`. An edge gap never hides a main-flow FAIL.
+List ALL scenarios (pass, fail, skip, need info) in plan order. The engine derives one verdict per scenario: `fail` if the main Status or any edge is FAIL; otherwise `need-info` if the main Status or any edge is NEED_INFO; otherwise `skip` if the main Status or any edge is SKIP. The `**State Check:** SKIP` field does not count. Only when the main flow and every edge passed is the verdict `pass`. An edge gap never hides a main-flow FAIL.
 
-For `/qa:loop` only, the sidecar keeps `auth-unverified` as its own verdict. In the report's four-count Summary and Detailed Results, display it under **Skip (auth-unverified)** so `Total = Pass + Fail + Skip + Need info`; count it separately as `auth-unverified` under Coverage. This is a reporting bucket only: never turn the sidecar verdict into `skip`, credit it as PASS, or use it as a fix candidate.
+For `/qa:run`, a BE feature main flow expecting 2xx but returning 401/403 is always FAIL flagged `auth`, never auto-fixed; `approve` surfaces the flag for review. The engine logs nobody in. Summary counts remain `Total = Pass + Fail + Skip + Need info`.
 
 ```markdown
 ## Detailed Results
@@ -196,46 +206,49 @@ For `/qa:loop` only, the sidecar keeps `auth-unverified` as its own verdict. In 
 ### Pass: FE-01: Homepage renders correctly
 ### Pass: FE-02: Login form validation
 ### Fail: FE-03: Logout button — see QA-001
-### Skip: FE-05: Mobile responsive layout (out of harness scope)
+### Skip: FE-05: Mobile responsive layout (cannot-confirm)
 ### Pass: BE-01: GET /api/users returns list
 ### Fail: BE-03: POST /api/users duplicate handling — see QA-002
-### Need info: BE-04: <name> (credentials: QA_STRIPE_TEST_KEY)
-### Need info: BE-05: <name> (main flow passed; edge 2 need info: fixture: users.seed)
-### Skip: BE-06: <name> (edge 1 skipped: out of harness scope)
-### Skip: BE-07: <name> (auth-unverified; main flow gated)
+### Need info: BE-04: <name> (BE-04: service: http://127.0.0.1:8000)
+### Need info: BE-05: <name> (BE-05 (edge 2): fixture: fixtures/resume.pdf)
+### Skip: BE-06: <name> (cannot-confirm)
+### Skip: BE-07: <name> (mutation-guard)
+### Need info: BE-08: <name> (BE-08: tool: psql)
 ```
 
 - **Pass:** just the status and scenario name
 - **Fail:** status, scenario name, reference to QA-XXX issue
-- **Skip:** status, scenario name, reason in parentheses
-- **Need info:** status, scenario name, kind and missing identifiers (main or edge); list every gap under `## Setup gaps` too
+- **Skip:** status, scenario name, the engine's reason token in parentheses (`mutation-guard`, `cannot-confirm`, `tool-unavailable`, or `transport`)
+- **Need info:** status, scenario name, each gap as `<key>: <kind>: <identifiers>` in parentheses, where `<key>` is the scenario ID or `<scenario ID> (edge N)`; separate multiple gaps with `; ` and list every gap under `## Setup gaps` too
 
 ## Setup gaps (conditional)
 
 Place directly after `## Summary` and before `## Issues Found` when any scenario or edge case returns NEED_INFO, **even if a FAIL edge/main flow wins the scenario verdict**. One bullet per kind: `- <kind>: \`<identifier>\`, \`<identifier>\` — <scenario IDs, e.g. BE-01 (edge 2)>`. Include only names/URLs, never values. No `### [SEVERITY]` headings and no `---` separators in this section. Omit it entirely if no gaps exist.
 
+Service gaps name the unreachable target origin (for example, `service: http://127.0.0.1:8000`); the engine's `summary` points to `env.targets` and `env.services` for the fix. Tool gaps name unavailable tools (`tool: psql`), and fixture gaps name fixtures the app cannot create (`fixture: fixtures/resume.pdf`). Missing user, value, target or store configuration is a `plan check` gap to resolve before dispatch, not a runtime NEED_INFO credential gap. Credential unlock hints name `qa.users.<user>.<email|password|id>` only for configured users, `env.stores` for native store-client names or their `STORE_<NAME>_<CLIENT>` forms, and `env.values.<name>` for all other names, including unrecognised `<X>_EMAIL|PASSWORD|ID` names; they never include values. Scenario preconditions create ordinary application data; do not treat an assumed seed account or record as a missing fixture.
+
 ---
 
-## Coverage (optional — written by `/qa:loop`)
+## Coverage (optional — written by the engine for `/qa:run`)
 
 An optional `## Coverage` block may appear in the Summary section, immediately after the Summary stats. It is `##`-level with **no** `### [SEVERITY]` headings and **no** `---` separators (so `/fix-report`'s block parser skips it — same rule as Loop History). Shape:
 
 ```
 ## Coverage
 - Exercised: <feature-PASS> feature · <sanity-PASS> sanity · <negative-PASS> enforcement
-- Not verified: auth-unverified <N> · need-info <M> · mutation-guard SKIP <K> · tool-unavailable <J> · …
+- Not verified: need-info <N> · mutation-guard SKIP <M> · tool-unavailable <K> · cannot-confirm <J> · transport <L>
 - Confidence: <high | low — reason>
 ```
 
 ---
 
-## Loop History (optional — written by `/qa:loop`)
+## Loop History (optional — written by the engine for `/qa:run`)
 
 A `##`-level section placed **AFTER** `## Detailed Results`. It MUST NOT contain any
 `### [SEVERITY] …` headings or `---` separators (so `/fix-report`'s block parser
 ignores it). One row per loop iteration:
 
-`/qa:loop` appends a **Final** row for its authoritative final run, even if no fix iterations ran. In that row `Still failing` includes scenarios with open issues whose main flow passed but an edge did not, annotated `(edge need info)` or `(edge skipped)`. This row does not count as a fix iteration.
+The engine's `report --final` for `/qa:run` appends a **Final** row for its authoritative final run, even if no fix iterations ran. In that row `Still failing` includes scenarios with open issues whose main flow passed but an edge did not, annotated `(edge need info)` or `(edge skipped)`. This row does not count as a fix iteration.
 
 | Iteration | Failing in | Now passing | Still failing | Warnings | Regressions | Dispatches |
 |------|-----------|-------------|---------------|----------|-------------|------------|

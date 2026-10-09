@@ -86,8 +86,8 @@ a superpowers plan hands the plan to Delivery instead: each task goes to
 the developer agent that owns its files, with no `CLAUDE.md` note needed,
 and is reviewed and committed on a new `delivery/<slug>` branch when you
 start on `main` or `master`, or on the current branch otherwise; then the
-plan's Verification and a full code review run. See the
-[Delivery guide](plugins/delivery.md).
+plan's Verification, QA when the change is testable, and a full code
+review run. See the [Delivery guide](plugins/delivery.md).
 
 ```
 /develop <task>
@@ -110,13 +110,26 @@ from it.
 review.
 
 ```
-/qa:loop
+/qa:run
 ```
 
-`/qa:loop` is the recommended first choice: it generates a test plan for
-the branch when none exists, runs it, fixes failures, and re-tests until
-green or budget exhausted. Prefer the manual pair `/qa:create-plan` →
-`/qa:run` when you want to inspect or edit the plan before execution.
+On first use, `/qa:run` proposes the project config. It then reuses or
+generates a reviewed plan for the branch and tests with configured existing
+users and with accounts that testers register. It fixes eligible failures and
+re-tests within the engine's fixed limits. A configured cleanup recipe
+deletes registered accounts at teardown; without one, QA warns that they
+remain in the app.
+Commit `.av/config.toml` so later runs reuse the team's setup. Source fixes
+need batch approval by default; `qa.fix = "off"` tests and reports
+without fixing. Use `/qa:create-plan` → `/qa:run <plan-path>` when you want
+to inspect or edit the plan first. See the [QA guide](plugins/qa.md) for
+mutation policy, trust and headless behavior.
+
+With the delivery plugin, Delivery runs this stage itself after the plan's
+Verification when the delivered change is testable, with the same
+questions, and commits QA's fixes, configuration, plan and report before
+its final review (see [Delivery: QA](plugins/delivery.md#qa)). Run
+`/qa:run` yourself outside Delivery, or to test again later.
 
 **Artifact:** test plans in `docs/testing/plans/`, reports with `QA-XXX`
 issue IDs in `docs/testing/reports/`.
@@ -166,7 +179,7 @@ with pushes guarded by the plugin; feedback analysis persisted by
 | 1. Idea → Spec | superpowers *(external)* | brainstorm with Claude | `docs/superpowers/specs/*.md` |
 | 2. Spec review | superutils | `/superutils:spec-review` | `docs/superpowers/specs/reviews/*` |
 | 3. Plan & implement | delivery or frontend/php/python-developer (or superpowers) | superpowers plan → subagent-driven execution (Delivery), or `CLAUDE.md` note → `developer` agent (or `/develop <task>`) | code on the branch |
-| 4. QA | qa | `/qa:loop` | `docs/testing/plans/*`, `docs/testing/reports/*` |
+| 4. QA | qa | `/qa:run` (or `/qa:create-plan` first); Delivery runs it for testable deliveries | `.av/config.toml`, `docs/testing/plans/*`, `docs/testing/reports/*` |
 | 5. Code review | code-review | `/review`, then `/fix` · `/fix-report` · `/fix-all` | `docs/reviews/*` |
 | 6. Commit & PR | commit | `/commit` | commits (PR opened manually) |
 

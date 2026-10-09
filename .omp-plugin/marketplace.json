@@ -12,7 +12,7 @@
       "name": "code-review",
       "source": "./code-review",
       "description": "Perform comprehensive code review for security, performance, and architecture. Save reviews to file, fix issues via /fix-report (paginated) or /fix-all (bulk, then offers to resolve needs-decision findings, optional severity floor). Persist PR review feedback via /analyze-feedback. Optional verification phase for cross-analysis and adversarial review. Composite findings group symptoms with one cause and are fixed as one unit.",
-      "version": "2.1.0",
+      "version": "2.1.1",
       "category": "development"
     },
     {
@@ -25,8 +25,8 @@
     {
       "name": "delivery",
       "source": "./delivery",
-      "description": "Delivers approved plan-mode plans: each task goes to the developer agent that owns its files, is reviewed and committed, then the plan's verification and the full code review run.",
-      "version": "0.5.0",
+      "description": "Delivers approved plan-mode plans: each task goes to the developer agent that owns its files, is reviewed and committed, then the plan's verification, QA when the change is testable, and the full code review run.",
+      "version": "0.6.0",
       "category": "development"
     },
     {
@@ -60,8 +60,8 @@
     {
       "name": "qa",
       "source": "./qa",
-      "description": "Automated QA testing plugin — analyzes code changes, generates test plans, executes FE and BE tests, and self-drives a test→fix→retest loop (`/qa:loop` generates a plan when none exists). Reports compatible with code-review.",
-      "version": "2.9.0",
+      "description": "Automated QA testing plugin — /qa:run bootstraps project config with stores and users, reuses or generates a reviewed plan, and runs a bounded FE/BE test→fix→retest loop with batch fix approval by default. Testers register accounts; a configured cleanup recipe removes them at teardown. /qa:create-plan supports plan review before execution. Reports compatible with code-review.",
+      "version": "3.0.0",
       "category": "testing"
     }
   ]

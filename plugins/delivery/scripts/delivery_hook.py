@@ -57,7 +57,7 @@ TASK_RULES = """- Every file change belongs to a task. Text outside tasks is con
 
 PLAN_MODE_FORMAT = f"""# Delivery plans
 
-This session has the delivery plugin. An approved plan that changes files in this git repository is delivered task by task: each `### Task` goes to the developer agent that owns its files and is reviewed and committed on its own; then the plan's `## Verification` runs and a full code review closes the delivery. Write such a plan's steps as numbered tasks in exactly this shape:
+This session has the delivery plugin. An approved plan that changes files in this git repository is delivered task by task: each `### Task` goes to the developer agent that owns its files and is reviewed and committed on its own; then the plan's `## Verification` runs, QA tests the change when it is testable, and a full code review closes the delivery. Write such a plan's steps as numbered tasks in exactly this shape:
 
 ### Task 1: <short title>
 **Commit:** <conventional commit subject>
@@ -170,7 +170,7 @@ def takeover(plan: Path, tasks: int, replaced: str) -> str:
     return (
         f"Delivery takes over this plan instead of {replaced}: {plan} has {tasks} task(s) under `### Task` headings. "
         "Each task goes to the developer agent the router picks for it, is reviewed and committed; then the plan's "
-        "Verification and a full code review run. Do not implement the plan yourself.\n\n"
+        "Verification, QA when the change is testable, and a full code review run. Do not implement the plan yourself.\n\n"
         f"Invoke the Skill tool now with skill `{RUN_SKILL}` and args `{plan}`, and carry out its Delivery run."
     )
 

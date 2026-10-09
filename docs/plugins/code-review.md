@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 2.1.0
+**Version:** 2.1.1
 
 ## Commands
 
@@ -295,7 +295,7 @@ Several findings often share one cause: five "missing validation in endpoint X" 
 
 Each component carries `**Part-of:** COMP-001` after its `**ID:**` line. `**Composed-of:**` is the source of truth for membership (two to twelve IDs from the same report, on one physical line); `Part-of` is a derived back-reference. A composite's severity is never below its components' maximum (the fix commands raise a hand-edited block's effective severity to that maximum for the run without rewriting it); composites never nest; a component belongs to at most one open composite. `**Fix-policy:** needs-decision` is inherited when any component carries a non-`auto` policy.
 
-**Where composites come from.** `/review` renders the cross-verifier's composite findings as `COMP` blocks — only where one change resolves every basis, bases kept disjoint, `COMP` IDs assigned last so `Composed-of` carries final IDs. `/fix-all` and `/fix-report` additionally run a **composition pass** (Step 1.6) before their pre-flight: a read-only `composition-analyst` agent reads the unfixed, ungrouped findings of each review report and proposes groups that share one cause and one fix, with a citation per member and a self-falsification battery; the command re-validates every proposal (membership, size, disjointness, a usable and contained `Location`) and assigns the next `COMP-NNN`. A composite whose `Composed-of` names an ID with no block in the report is malformed: the pass sets it aside, lists it as `malformed-composite`, fixes its present components individually, and leaves it open until repaired or dissolved. QA reports are never grouped, and `/qa:loop` is untouched.
+**Where composites come from.** `/review` renders the cross-verifier's composite findings as `COMP` blocks — only where one change resolves every basis, bases kept disjoint, `COMP` IDs assigned last so `Composed-of` carries final IDs. `/fix-all` and `/fix-report` additionally run a **composition pass** (Step 1.6) before their pre-flight: a read-only `composition-analyst` agent reads the unfixed, ungrouped findings of each review report and proposes groups that share one cause and one fix, with a citation per member and a self-falsification battery; the command re-validates every proposal (membership, size, disjointness, a usable and contained `Location`) and assigns the next `COMP-NNN`. A composite whose `Composed-of` names an ID with no block in the report is malformed: the pass sets it aside, lists it as `malformed-composite`, fixes its present components individually, and leaves it open until repaired or dissolved. QA reports are never grouped, and `/qa:run` is untouched.
 
 **The dissolve question — the one human gate on a grouping.** Before the confirmation gate (`/fix-all`) or before the checklist (`/fix-report`), one multi-select question lists every composite the run holds, proposed and persisted alike, four per page, with its Problem and Remediation on screen: dissolve a proposal and its components are fixed individually and nothing is written; dissolve a persisted composite and its block gets `🚫 Rejected (date) — dissolved into components`, releasing its components. If the question cannot be asked, every composite is dissolved for the run — silence is never read as consent. Accepted composites are persisted into the report (`Origin: fix-time`, `Part-of` on each component) only after the run has committed to dispatching, so an aborted run writes nothing.
 
@@ -349,7 +349,7 @@ After the review, if issues were found and the report was saved, the review sugg
 
 **Recommended workflow (local review):**
 
-1. Run `/review` and save the report. Optionally run `/qa:run` if you also have a QA test plan — when both reports exist, `/fix-report` (no argument) auto-merges them into a single checklist.
+1. Run `/review` and save the report. Optionally run `/qa:run` (it reuses the branch's QA plan or generates one) — when both reports exist, `/fix-report` (no argument) auto-merges them into a single checklist.
 2. Fix using one of these methods:
    - `/fix-report` — auto-merge mode: fixes issues from the newest review report and the newest QA report in one pass
    - `/fix-all` — bulk-fix every unfixed `auto`-policy issue across the newest review + QA reports after one yes/no confirmation
@@ -452,7 +452,7 @@ scripts themselves are the canonical implementation.
 
 Do not open, or run any code-review command against, a report written after this release with a `code-review` build older than 2.0.0.
 
-**`code-review` 2.0.0 also expects `qa` ≥ 2.6.0 for any shared report that can carry a decision-stage rejection.** An older `/qa:loop` (< 2.6.0) does not know to preserve a `🚫 Rejected` line: its Step 4.1 in-place Status update overwrites it — losing the rejection and its reason — whenever a sibling issue passes on the same scenario in a later iteration. Unlike the reader skew above, this one has a precondition attached: `**Fix-policy:** needs-decision` is emitted only by this plugin's producers — today, reports written by `/review` — so a report the `qa` plugin produced cannot presently reach the decision gate or acquire a rejection at all, and `qa` 2.6.0's handling of the field is forward compatibility for a schema the QA producers do not yet emit. Pair the minimums for reports that can carry one. See [qa.md's Upgrade Notes](qa.md#upgrade-notes) for the mirror of this note.
+**`code-review` 2.0.0 also expects `qa` ≥ 2.6.0 for any shared report that can carry a decision-stage rejection.** An older `/qa:loop` (< 2.6.0) does not know to preserve a `🚫 Rejected` line: its Step 4.1 in-place Status update overwrites it — losing the rejection and its reason — whenever a sibling issue passes on the same scenario in a later iteration. Unlike the reader skew above, this one has a precondition attached: `**Fix-policy:** needs-decision` is emitted only by this plugin's producers — today, reports written by `/review` — so a report the `qa` plugin produced cannot presently reach the decision gate or acquire a rejection at all, and `qa` 2.6.0's handling of the field is forward compatibility for a schema the QA producers do not yet emit. Pair the minimums for reports that can carry one. See [QA's historical compatibility notes](qa/changelog.md#earlier-releases-historical-compatibility) for the mirror of this note.
 
 ## Optional Tools
 

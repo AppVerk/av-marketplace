@@ -22,7 +22,7 @@ const APPROVED_PLAN_TAG = approvedPlanPrompt.match(/^<plan path="\{\{planFilePat
 
 const PLAN_FORMAT = `# Delivery plans
 
-This session has the delivery plugin. An approved plan that changes files in this git repository is delivered task by task: each \`### Task\` goes to the developer agent that owns its files and is reviewed and committed on its own; then the plan's \`## Verification\` runs and a full code review closes the delivery. Write such a plan's Approach as numbered tasks in exactly this shape:
+This session has the delivery plugin. An approved plan that changes files in this git repository is delivered task by task: each \`### Task\` goes to the developer agent that owns its files and is reviewed and committed on its own; then the plan's \`## Verification\` runs, QA tests the change when it is testable, and a full code review closes the delivery. Write such a plan's Approach as numbered tasks in exactly this shape:
 
 ### Task 1: <short title>
 **Commit:** <conventional commit subject>
@@ -136,7 +136,7 @@ export default function deliveryExtension(pi: ExtensionAPI): void {
 				customType: "delivery-run",
 				content: [
 					"<critical>",
-					`Delivery takes over this approved plan: it has ${tasks} task(s) under \`### Task\` headings. This replaces the instruction above to execute the plan step by step yourself. Implementing this plan means running the delivery: each task goes to the developer agent that owns its files, is reviewed and committed; then the plan's Verification and the full code review run. Do not edit project files yourself.`,
+					`Delivery takes over this approved plan: it has ${tasks} task(s) under \`### Task\` headings. This replaces the instruction above to execute the plan step by step yourself. Implementing this plan means running the delivery: each task goes to the developer agent that owns its files, is reviewed and committed; then the plan's Verification, QA when the change is testable, and the full code review run. Do not edit project files yourself.`,
 					"",
 					"`read skill://delivery:orchestration` and run its **Delivery run** section with:",
 					`- PLAN_SOURCE: ${url}`,

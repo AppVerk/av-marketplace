@@ -27,3 +27,6 @@ node_modules
 # Delivery plans and code-review reports (local working artifacts, never committed)
 docs/plans/
 docs/reviews/
+
+# Serena MCP project config (per-developer)
+.serena/

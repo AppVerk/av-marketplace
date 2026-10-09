@@ -1,0 +1,36 @@
+name: QA engine
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-qa-engine:
+    name: Check QA engine
+    runs-on: ubuntu-latest
+    # The suite spawns the engine CLI hundreds of times and takes 4-5.5 minutes on hosted runners.
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.11"
+
+      # Stdlib-only: no pip step. The runner's Perl provides JSON::PP.
+
+      - name: Run the QA engine tests
+        run: python3 -m unittest discover -s plugins/qa/tests -p 'test_*.py'
