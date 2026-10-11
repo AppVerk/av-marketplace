@@ -55,7 +55,7 @@ Extract the following fields from the issue block:
 |-------|---------|----------|
 | Severity | `[CRITICAL\|HIGH\|MEDIUM\|LOW]` in title | Yes |
 | Title | Text after severity in first line | Yes |
-| Location | `**Location:** \`path:line\`` (plain form) or `**Location:** \`path:line\` (was: \`original\`)` (extended form, written when a location is corrected) — take the first backticked token as the location, ignoring any trailing parenthetical; if the line carries no backticked token at all, take the first whitespace-delimited token after the field name instead. Under either clause, `—`, `unknown:0`, or anything that does not parse as `path:line` or `path:line-range` is location-less. | Yes |
+| Location | `**Location:** \`path:line\`` (plain form) or `**Location:** \`path:line\` (was: \`original\`)` (extended form, written when a location is corrected) — take the first backticked token as the location, ignoring any trailing parenthetical; if the line carries no backticked token at all, take the first whitespace-delimited token after the field name instead. Under either clause, `—`, `unknown:0`, or anything that does not parse as `path:line` or `path:line-range` is location-less. So is a path that parses but fails containment, the test of *Containment, not just existence* in `code-review:decision-gate`: the path is absolute or has a `..` segment; or its containing directory, resolved with `cd "$(dirname "<path>")" && pwd -P` and joined with the final component, does not begin with `<root>/`, where `<root>` is `git rev-parse --show-toplevel` resolved with `pwd -P`; or its final component is a symbolic link; or the file does not exist. | Yes |
 | Category | `**Category:** Security\|Performance\|Architecture\|Maintainability\|Documentation\|Testing\|Composite` | Yes |
 | OWASP | `**OWASP:** A##:####` | No |
 | CWE | `**CWE:** CWE-###` | No |
@@ -67,13 +67,7 @@ Extract the following fields from the issue block:
 
 **If `User decision` is present:** that resolution is authoritative — implement it, overriding any conflicting direction in the Remediation. It carries the user's choice for a `needs-decision` issue (e.g. "remove the mention" vs "restore the referent").
 
-**If required fields are missing:**
-
-Ask user to provide:
-
-- Location (file path and line number)
-- Problem description
-- Remediation suggestion
+**If a required field is missing, or the Location is location-less by the rule above:** you run as a subagent and cannot ask anyone. Do not read, edit or create any file for this issue. Mark tasks 2–4 completed, go straight to Phase 6 and report `**Status:** ❌ Failed`, `**Changes Made:**` with the single bullet `- none`, and one `**Remaining Issues:**` bullet per cause: `missing field: <field>` or `location not usable: <value> (<does not parse | absolute path | .. segment | outside the repository | symbolic link | does not exist>)`. The dispatching command records the issue as Failed and offers it again on its next run. In composite mode this applies to the composite's own Location; components keep the rule below.
 
 **If the block already carries a `**Status:**` line whose value begins with `🚫 Rejected`:** abort immediately — `🚫 Rejected` is terminal, and a rejected finding must never be fixed again. Report an explicit error naming the issue's title and the rejected status line, then stop; do not proceed to Phase 2. Match by **prefix**, not whole-line equality: the `**Status:**` line may carry a ` — <reason>` tail (e.g. `**Status:** 🚫 Rejected (2026-08-27) — duplicate of QA-004`), so compare only the leading `🚫 Rejected` text.
 
