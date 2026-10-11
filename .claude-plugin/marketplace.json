@@ -15,7 +15,7 @@
       "name": "commit",
       "source": "./plugins/commit",
       "description": "Generate meaningful commit messages and block force-push while guarding pushes to protected branches",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "category": "development"
     },
     {
