@@ -19,6 +19,8 @@ allowed-tools:
   - Bash(git reset -q)
   - Bash(git stash push *)
   - Bash(git check-ignore *)
+  - Bash(AV_COMMIT_SKILL=1 git commit *)
+  - Bash(printf *)
   - Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/route_task.py *)
   - "Bash(python3 -c 'import os,sys; print(os.path.relpath(os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2])))' *)"
 ---

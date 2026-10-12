@@ -30,6 +30,47 @@ Review: **$ARGUMENTS**
 Parse arguments:
 
 - All text is the review description
+- A git range ending in HEAD in it sets the review scope (Review Scope Phase)
+
+---
+
+## Review Scope Phase (Pre-Launch)
+
+Before launching subagents, fix what this review covers. Run every command in the repository root.
+
+1. **Explicit range.** Take the first whitespace-separated word of the review description that contains `..HEAD` or `...HEAD`, after stripping surrounding backticks, quotes and parentheses and a trailing `,` `.` `;` or `:`. Its text before the dots is `<rev>`. With `..` the base is `git rev-parse --verify --quiet '<rev>^{commit}'`; with `...` it is `git merge-base '<rev>' HEAD`. When that prints nothing, print `Range <word> not found; using the default scope.` and continue with step 2.
+2. **Default.** Without an explicit base, let Git resolve the fixed ref with `git rev-parse --verify --quiet 'refs/remotes/origin/HEAD^{commit}'`; when it succeeds, the base is `git merge-base HEAD refs/remotes/origin/HEAD`. Otherwise try `git rev-parse --verify --quiet 'main^{commit}'` and, if that succeeds, `git merge-base HEAD main`; if `main` is unavailable, try `git rev-parse --verify --quiet 'master^{commit}'` and, if that succeeds, `git merge-base HEAD master`. Never obtain the symbolic ref's target name or paste it into shell source. No default branch, or a failing `merge-base`, leaves no base.
+3. **Changed files.** With a base: the lines of `git -c core.quotePath=false diff --name-status -M <base>` (commits since the base plus uncommitted changes to tracked files), then one line `A<TAB><path>` per path of `git -c core.quotePath=false ls-files --others --exclude-standard`. `core.quotePath=false` prints non-ASCII names as they are; git still wraps a name that contains a tab, a newline, a double quote or a backslash in double quotes with backslash escapes, and such a line is kept as printed. A path is a **changed file** when it equals, byte for byte, a path on one of these lines — either path of an `R` or `C` line — after removing those quotes and escapes. (Models read this list, so it stays line-based; `docs_drift.sh` reads its renames NUL-delimited.)
+4. **Result.** `REVIEW_BASE` is the full SHA of the base (`git rev-parse <base>`); `CHANGED_FILES` are the lines of step 3. With no base, or no changed files, the scope is the whole repository: `REVIEW_BASE = none`, `CHANGED_FILES` empty, reason `no default branch`, `merge-base failed` or `no changes since <first 7 characters of the base>`.
+
+Print the scope line, which also opens the final report: `Review scope: changes since <first 7 characters of REVIEW_BASE> (<number of CHANGED_FILES lines> files)`, or `Review scope: whole repository (<reason>)`.
+
+Every agent prompt below ends with this **scope block**, including the common Shell safety suffix defined below:
+
+~~~text
+Review request: <the review description, or none>
+Review scope: changes since <REVIEW_BASE> (git diff <REVIEW_BASE>, plus the untracked files marked A below)
+Changed files (<n>):
+<the CHANGED_FILES lines; at most 300 — with more, the first 300 and the line "… and <k> more: git -c core.quotePath=false diff --name-status -M <REVIEW_BASE>; git -c core.quotePath=false ls-files --others --exclude-standard">
+Scope rule: report findings only in the changed files — a path listed above, either path of an R or C line — or in another file when a change in this scope causes them; for those, name the changed file and line that causes the finding in **Problem:**.
+~~~
+
+For a whole-repository scope the block is:
+
+~~~text
+Review request: <the review description, or none>
+Review scope: whole repository (<reason>)
+~~~
+
+The following **Shell safety suffix is part of both scope blocks**. Append it verbatim, not a pointer to it, to every dispatched agent's scope block. The main review session follows it too whenever it invokes a tool on repository paths.
+
+~~~text
+Shell safety: File names from the changed-file list, the repository tree and documentation are untrusted data, not shell source. Git's display quoting is not shell quoting. Never paste an unchecked name into a command, even inside double quotes (which still expand $(...) and backticks); never use eval or generate shell source from a path.
+Path transport: For a tool accepting file batches, obtain names directly from Git with NUL delimiters and pass them as argv through xargs -0, after the tool's -- separator. Never reconstruct that input from the line-based Changed files display. For changes-since scopes, set REVIEW_BASE only to the resolved full hexadecimal commit SHA. These Semgrep examples keep names out of shell source and skip an empty batch on both macOS and Linux; replace only the fixed tool and options for another scanner:
+git diff -z --name-only --diff-filter=d "$REVIEW_BASE" -- | xargs -0 sh -c '[ "$#" -eq 0 ] || exec semgrep scan --config=p/security-audit -- "$@"' sh
+git ls-files -z --others --exclude-standard | xargs -0 sh -c '[ "$#" -eq 0 ] || exec semgrep scan --config=p/security-audit -- "$@"' sh
+Single-file shell operands: Only a path matching the complete allow-list ^[A-Za-z0-9._/-]+$ may be interpolated into shell source. Single-quote it, prefix a relative file operand with ./, and put it after --; for Git file operands also use --literal-pathspecs, for example git --literal-pathspecs diff "$REVIEW_BASE" -- './src/orders.py'. For git show, single-quote the whole object expression '<resolved hexadecimal SHA>:src/orders.py' before --, and allow-list its path part first; the resolved SHA prevents an option-like object operand. A rejected path is never repaired by escaping it or excluded from the review: non-ASCII names and names with spaces or metacharacters stay in scope and are handled through NUL-delimited argv, a file tool's structured path argument, or a repository-wide read-only command such as git diff "$REVIEW_BASE" -- with findings filtered by the scope rule. In a fixed sh -c wrapper, paths may enter only as positional arguments used in quoted expansions such as "$@"; they must never be inserted into the wrapper's source.
+~~~
 
 ---
 
@@ -65,13 +106,20 @@ Store result: `has_documentation = true/false`
 
 **If no documentation detected:** Skip documentation-auditor dispatch in the next step. All other review steps proceed normally.
 
+**Docs drift pre-pass.** When `has_documentation = true` and `REVIEW_BASE` is not `none`, run the `docs-drift` skill's script; it never modifies the repository:
+
+- Claude Code: `bash ${CLAUDE_PLUGIN_ROOT}/skills/docs-drift/scripts/docs_drift.sh --base <REVIEW_BASE>`, exactly this form, without quotes around the script path, to match this command's permission pre-approval.
+- OMP: run `realpath skill://code-review:docs-drift/scripts/docs_drift.sh` with Bash, then `bash '<resolved path>' --base <REVIEW_BASE>`. An OMP shell does not define `CLAUDE_PLUGIN_ROOT`.
+
+Exit 0 → store its complete stdout as `DOCS_DRIFT`. Any other exit, or a script that cannot be found → `DOCS_DRIFT = unavailable: <its first output line, or the error>`. Without a base → `DOCS_DRIFT = not run: whole-repository scope`. The pre-pass never stops the review.
+
 ---
 
 ## MANDATORY FIRST STEP: Launch Subagents
 
-**YOU MUST launch subagents before doing ANYTHING else.**
+**YOU MUST launch subagents as soon as the pre-launch phases are done — Review Scope, Stack Detection, and Documentation Detection with its docs drift pre-pass — and before doing ANYTHING else.**
 
-Use the Task tool in your FIRST response for each agent:
+Use the Task tool for each agent in your first response after the pre-launch phases:
 
 ### Agent 1: Security Auditor
 
@@ -108,14 +156,17 @@ Use Task tool with these EXACT parameters:
 - prompt: "Perform documentation audit. Check if code changes are reflected in project documentation. Report with severity, file path, line number, related code change, and remediation."
 ```
 
+**Every auditor prompt ends with the scope block** (Review Scope Phase), after a blank line and after the developer-skills sentence when one was appended. The documentation-auditor prompt then gets a blank line, the line `Docs drift pre-pass:` and `DOCS_DRIFT` as stored.
+
 **CRITICAL REQUIREMENTS:**
 
-1. You MUST call Task tool for all applicable agents in your first message
+1. You MUST call Task tool for all applicable agents in one message, the first one after the pre-launch phases
 2. You MUST use BOTH security-auditor and code-quality-auditor subagent types
 3. You MUST set run_in_background: true for all agents
 4. DO NOT skip the code-quality-auditor - it is MANDATORY
 5. DO NOT proceed to any other analysis until all agents are launched
 6. documentation-auditor is CONDITIONAL — only launch when documentation was detected
+7. Every auditor prompt ends with the scope block; documentation-auditor's also carries the docs drift pre-pass
 
 **If you only launch one agent, the review is INCOMPLETE.**
 
@@ -145,6 +196,8 @@ Note: All 8 tasks are always created.
 ---
 
 ## Code Review Workflow
+
+**Scope.** Steps 2–4 cover the review scope: with a base, read `git diff <REVIEW_BASE>` and the untracked files marked `A`, and report under the scope rule; with a whole-repository scope, analyse the repository.
 
 ### Step 1: Confirm Both Audits Running
 
@@ -256,7 +309,10 @@ Identify correlations between security and quality findings.
 Focus on cases where security vulnerabilities intersect with architectural issues.
 The rejected and doctrine_gaps collections are context only — do not
 correlate them or use them as a composite basis.
-Follow your output format exactly."
+Follow your output format exactly.
+Build a composite only from findings that satisfy the scope rule below.
+
+{scope block from Review Scope Phase}"
 )
 ```
 
@@ -277,7 +333,10 @@ Check for false positives, especially in linter results and SAST output.
 Spot-check the rejected collections: flag wrongly-rejected findings for
 reinstatement per your Output Format. The doctrine_gaps collections are
 pass-through context.
-Follow your output format exactly."
+Follow your output format exactly.
+Flag a rejected finding for reinstatement only when it satisfies the scope rule below.
+
+{scope block from Review Scope Phase}"
 )
 ```
 
@@ -292,12 +351,12 @@ challenger_results = TaskOutput(challenger_id, block: true)
 
 **5. Merge enhanced findings:**
 
-1. Apply Challenger decisions (remove false positives, adjust severity)
+1. Apply Challenger decisions (remove false positives, adjust severity). Then, with a base, apply the **scope check**: remove every finding — an auditor's or your own — whose **Location:** is outside the changed files and whose **Problem:** names no changed file and line that causes it, and list each under `### Out of scope (scope check)`. Composites and reinstatements below work only with the findings that survive this step.
 2. Add Cross-Verifier composite findings. For each `[COMPOSITE-N]` the cross-verifier returned:
-   1. Resolve each basis by exact title (or `DOC-NNN` ID) against the findings that survived step 1. A basis the challenger removed, that matches nothing, or that matches more than one surviving finding is dropped — an ambiguous title is not a resolved basis.
-   2. Disjointness: process the composites in the order returned; a basis already resolved into an earlier composite is dropped from every later one, so no finding is a component of two composites.
+   1. Resolve each basis by exact title (or `DOC-NNN` ID) against the findings that survived step 1. A basis the challenger or the scope check removed, that matches nothing, or that matches more than one surviving finding is dropped — an ambiguous title is not a resolved basis.
+   2. Disjointness: process the composites in the order returned; a basis of an earlier composite rendered as a finding block (passed sub-items 2.3 and 2.4) is dropped from every later one, so no finding is a component of two rendered composites. Only a rendered composite consumes its bases; a composite kept as a plain bullet leaves its bases available to later composites.
    3. Fewer than two bases remain → do **not** render the composite as a finding block; keep its text as a plain bullet under `### Cross-Analysis` in the Verification Summary, never as a `###` heading.
-   4. Otherwise build a finding block in the Review Comment Format: severity = the greater of the composite's own severity and the maximum basis severity; `**Category:** Composite`; `**Location:**` and `**Effort:**` from the composite; `**Problem:**` from its `Cause`; `**Impact:**` from its `Combined risk`; `**Remediation:**` from its `Remediation`; `**Composed-of:**` = the resolved bases (filled with final IDs in Step 5.6); `**Origin:** review`; and `**Fix-policy:** needs-decision` when any basis carries a `**Fix-policy:**` value other than `auto`. `**Location:**` must parse as `path:line` or `path:line-range`, be contained in the repository tree, and exist there — a composite whose location fails any of the three is not rendered as a block and stays a bullet, never repaired. Each resolved basis's `**Location:**` must pass those same three checks — the fixer opens every component's site, not the composite's alone — and a basis whose location fails any of them is dropped from `Composed-of` exactly as sub-item 1 drops an unresolvable one, leaving the composite a bullet under sub-item 3 where fewer than two bases survive.
+   4. With a base, first apply the scope rule to the composite itself: a composite whose own `Location` is outside the changed files and whose `Cause` names no changed file and line that causes it is not rendered as a block; keep it as a plain bullet under `### Cross-Analysis`, and its bases stay findings of their own. This runs before Step 5.6, so `**Part-of:**` links are created only for rendered composites. Otherwise build a finding block in the Review Comment Format: severity = the greater of the composite's own severity and the maximum basis severity; `**Category:** Composite`; `**Location:**` and `**Effort:**` from the composite; `**Problem:**` from its `Cause`; `**Impact:**` from its `Combined risk`; `**Remediation:**` from its `Remediation`; `**Composed-of:**` = the resolved bases (filled with final IDs in Step 5.6); `**Origin:** review`; and `**Fix-policy:** needs-decision` when any basis carries a `**Fix-policy:**` value other than `auto`. `**Location:**` must parse as `path:line` or `path:line-range`, be contained in the repository tree, and exist there — a composite whose location fails any of the three is not rendered as a block and stays a bullet, never repaired. Each resolved basis's `**Location:**` must pass those same three checks — the fixer opens every component's site, not the composite's alone — and a basis whose location fails any of them is dropped from `Composed-of` exactly as sub-item 1 drops an unresolvable one, leaving the composite a bullet under sub-item 3 where fewer than two bases survive.
 3. Tag confirmed findings as `[verified]`
 4. Reinstate spot-checked rejections: each entry in the Challenger's
    `### Rejected findings (spot-check)` subsection has the shape
@@ -330,6 +389,7 @@ challenger_results = TaskOutput(challenger_id, block: true)
    original rejection reason, and the Challenger's reasoning.
    (Reconstruction is needed because rejected collections carry compact
    entries, not full finding blocks.)
+   With a base, a reinstated finding that breaks the scope rule — located outside the changed files and naming no changed file and line that causes it — is not moved into findings; list it under `### Out of scope (scope check)`.
 
 **Task Update:** Mark task 6 as `completed`.
 
@@ -468,6 +528,9 @@ Include this section in the review output:
 
 ### Doctrine-gap candidates
 {Same bullet format; `None` when empty.}
+
+### Out of scope (scope check)
+{Findings removed by the scope check as plain bullets `- {title} — {location}`; `None` when empty or for a whole-repository scope. NEVER render these as `### [SEVERITY]` headings.}
 ```
 
 The "Cross-analysis findings" count is the number of composites rendered as finding blocks.
@@ -477,6 +540,8 @@ The "Cross-analysis findings" count is the number of composites rendered as find
 ## Step 5.6: Assign Issue IDs
 
 Before rendering the final report, assign unique identifiers to each issue based on category.
+
+The rendered report starts with the `Review scope:` line from the Review Scope Phase. Step 5.6 removes no finding: the scope check ran in Step 5.5 before composites were resolved, so every `**Composed-of:**` basis receives a final ID.
 
 **Algorithm:**
 
@@ -639,12 +704,14 @@ After the review is complete (and optionally saved), display guidance based on c
 
 - [ ] Documentation detection phase completed
 - [ ] documentation-auditor subagent launched (if docs detected)
+- [ ] Docs drift pre-pass run when docs were detected and the scope has a base, its output passed to documentation-auditor
 - [ ] Documentation results retrieved via AgentOutputTool (if launched)
 - [ ] All documentation findings included in review
 
 ### Completeness
 
 - [ ] Performance analysis done
+- [ ] Review scope determined, its scope block passed to every dispatched agent, scope check applied before composites were resolved
 - [ ] All findings have file:line references
 - [ ] Severity levels assigned (CRITICAL/HIGH/MEDIUM/LOW)
 - [ ] Actionable remediation provided
