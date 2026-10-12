@@ -224,44 +224,47 @@ class CompositeContract(unittest.TestCase):
         # mutation: change fix.md's scope-table row back to `render-only`
         self.assertRegex(read(GATE), r"\| `plugins/code-review/commands/fix\.md` \| dispatch-only \|")
 
-    def test_gate_containment_allow_list_precedes_resolution(self) -> None:
-        # mutation: delete rule 0 from "Containment, not just existence" in decision-gate SKILL.md
-        section = read(GATE).split("### Containment, not just existence", 1)[1]
-        section = section.split("### Asking for what is missing", 1)[0]
-        self.assertIn("0. **Allow-list before any shell command.**", section)
-        self.assertIn("`A–Z a–z 0–9 . _ / -`", section)
-        self.assertIn("unsafe characters", section)
-        self.assertIn("Never interpolate a rejected value into a shell command", section)
-        self.assertLess(section.index("0. **Allow-list"), section.index("1. **Reject"))
-
-    def test_fix_locations_allow_list_before_shell(self) -> None:
-        # mutation: delete the allow-list restatement from fix-auto.md or fix.md
-        for path in (FIX_AUTO, FIX):
-            with self.subTest(path=path):
-                text = read(path)
-                self.assertIn("first check the extracted path as data", text)
-                self.assertIn("`A–Z a–z 0–9 . _ / -`", text)
-                self.assertIn("`unsafe characters`", text)
-                self.assertIn("never interpolate a rejected value into a shell command", text)
-                self.assertNotIn('cd "$(dirname "<path>")"', text)
-
-    def test_containment_uses_validated_single_quoted_operands(self) -> None:
-        # mutation: restore the double-quoted literal placeholder or drop ./ from a containment command
-        for path in (GATE, FIX_AUTO, FIX):
-            with self.subTest(path=path):
-                text = read(path)
-                self.assertIn('d=$(dirname -- \'./<path>\') && cd -- "$d" && pwd -P', text)
-                self.assertIn("test -L './<path>'", text)
-                self.assertNotIn('cd "$(dirname "<path>")"', text)
-
-    def test_unsafe_location_failure_reason_and_docs(self) -> None:
-        # mutation: drop "unsafe characters" from fix-auto's failure reasons or the Decision Stage docs
-        self.assertIn(
-            "(<does not parse | unsafe characters | absolute path",
-            read(FIX_AUTO),
+    def test_containment_commands_take_path_characters_as_data(self) -> None:
+        # mutation: put `<path>` back inside double quotes (`cd "$(dirname "<path>")"`) or drop the single quotes around './<path>' in a containment command of decision-gate SKILL.md, fix-auto.md or fix.md
+        names = (
+            "src/routes/users/$userId.tsx",
+            "app/[id]/page.tsx",
+            "app/(auth)/login/page.tsx",
+            "src/routes/+page.svelte",
+            "src/@types/env.d.ts",
+            "docs/przegląd.md",
+            "My Docs/setup.md",
+            "src/x$(touch PWNED).py",
+            "src/y`touch PWNED`.py",
         )
-        self.assertIn("`A–Z a–z 0–9 . _ / -`", read(DOCS))
-        self.assertIn("before constructing any shell command", read(DOCS))
+        template = re.compile(r"(?<=`)[^`]*'\./<path>'[^`]*(?=`)")
+        for rel in (GATE, FIX_AUTO, FIX):
+            commands = set(template.findall(read(rel)))
+            resolve = [c for c in commands if "dirname" in c]
+            link = [c for c in commands if c.startswith("test -L ")]
+            with self.subTest(path=rel):
+                self.assertTrue(resolve and link, f"no containment commands found in {rel}")
+            for name in names:
+                with self.subTest(path=rel, name=name), tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp).resolve()
+                    target = repo / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("x\n", encoding="utf-8")
+
+                    def run(command: str) -> subprocess.CompletedProcess[str]:
+                        literal = command.replace("<path>", name)
+                        return subprocess.run(["bash", "-c", literal], cwd=repo, capture_output=True, text=True)
+
+                    for command in resolve:
+                        result = run(command)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stdout.strip(), str(target.parent))
+                    for command in link:
+                        self.assertEqual(run(command).returncode, 1, "a regular file must not read as a symbolic link")
+                        target.unlink()
+                        target.symlink_to(repo / "elsewhere")
+                        self.assertEqual(run(command).returncode, 0, "a symlinked final component must be detected")
+                    self.assertEqual(list(repo.rglob("PWNED")), [], "a name's command substitution ran")
 
     def test_fix_containment_finishes_before_any_content_read(self) -> None:
         # mutation: delete the "Containment before content" gate or its metadata-only validation rule from fix.md
