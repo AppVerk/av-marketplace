@@ -1,6 +1,6 @@
 # Configuration
 
-Use `.av/config.toml` for shared environment settings and each plugin's settings. QA's first interactive run proposes the file from repository evidence. This page covers `[env]`; [QA configuration](plugins/qa/configuration.md) owns `[qa]` policy, users and cleanup.
+Use `.av/config.toml` for shared environment settings and each plugin's settings. QA's first interactive run proposes the file from repository evidence. This page covers `[env]`; [QA configuration](plugins/qa/configuration.md) owns `[qa]` policy, users and cleanup, and [Code Review configuration](plugins/code-review.md#configuration) owns `[code-review]`.
 
 ## Minimal file
 
@@ -184,6 +184,8 @@ QA pins these settings:
 - The whole cleanup recipe and its SQL store table.
 - Explicitly configured `fix`, `mutations` and `start_services` values.
 
+Code Review pins the shared `[env]` subset above and an explicitly configured `auto_accept_min_confidence`.
+
 </details>
 
 | Reported `trust` | Meaning |
@@ -230,5 +232,6 @@ These 3 shell variables are example inputs, not configuration sources. The engin
 |---|---|
 | `[env]` | Shared environment; [this page](#configuration). |
 | `[qa]` | [QA configuration](plugins/qa/configuration.md). |
+| `[code-review]` | [Code Review configuration](plugins/code-review.md#configuration). |
 
 Register each new plugin's table here with its key reference. Keep plugin-specific policy and recipes out of `[env]`.

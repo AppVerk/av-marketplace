@@ -202,7 +202,7 @@ A plugin that covers a stage another plugin already owns says so in its pull req
 1. **Own exactly one top-level table named after the plugin**, such as `[qa]`. Use the root `version` and shared `[env]` schema; read settings only from `.av/config.toml` and `.av/local.toml`, with private values obtained through sources. Do not introduce a plugin-specific config directory or parallel file convention.
 2. **Validate only your table plus the shared schema.** Ignore other plugins' top-level tables; preserve the warning-only treatment of unknown `[env]` sub-tables. Report `state`, `provenance`, file/key diagnostics and masked trust metadata through your engine.
 3. **Pin capabilities before use.** Combine the shared sensitive subset with your sources, executable recipes and keys that widen gates. Scope acceptance by repository and plugin; never resolve a source or run an untrusted command while inspecting config.
-4. **Use the bootstrap protocol below** from the plugin's entry command in `create`, `extend` and `repair` situations. Reuse the generic loader and environment detector, adding only your table's validation, recipes and policy questions.
+4. **Use the bootstrap protocol below** from the plugin's entry command in `create`, `extend` and `repair` situations. Reuse the generic loader and environment detector, adding only your table's validation, recipes and policy questions. A plugin whose table holds only optional policy keys (Code Review's `auto_accept_min_confidence`) has no `create`, `extend` or `repair` situation: a missing file or table means its defaults, and users add keys by hand.
 5. **Register and document the change together.** Add your table to the `## Tables by plugin` registry in `docs/configuration.md` with a link to its key reference, and document every plugin-owned key, type, default, allowed value and trust-pinned gate in that reference (QA keeps its reference in [`docs/plugins/qa/configuration.md`](plugins/qa/configuration.md); its plugin guide links there). Validation errors are reported by the engine's `config` output, not listed in docs. Document any new shared `[env]` keys in `docs/configuration.md`. Update `docs/configuration.md` in the same change that makes the plugin configurable.
 
 ### Bootstrap protocol
@@ -226,9 +226,10 @@ An invalid config is reported and stopped, not overwritten as a missing config. 
 
 ### Shared code
 
-The plugin-neutral implementation currently lives in QA:
+The plugin-neutral implementation lives in QA, and every other configurable plugin ships a byte-identical copy:
 
 - [`plugins/qa/skills/engine/scripts/av_config/`](../plugins/qa/skills/engine/scripts/av_config/): `files.py` owns loading/merge, provenance and shared `[env]` validation; `sources.py` owns value sources, restrictions and masking; `origins.py` owns origins/loopback; `trust.py` owns per-plugin pins; `transaction.py` owns section-preserving guarded writes. The package has no QA imports. Consumers import from the owning module; its `__init__.py` does not re-export the old monolithic API.
+- [`plugins/code-review/skills/decision-gate/scripts/av_config/`](../plugins/code-review/skills/decision-gate/scripts/av_config/): the byte-identical package read by `auto_accept.py` for shared loading, validation, masking and trust; Code Review keeps its own policy validation in that call site.
 - [`plugins/qa/skills/env-config/`](../plugins/qa/skills/env-config/SKILL.md): read-only repository detection and proposal rules for `[env]`, with no QA policy or recipe logic.
 
 Consumers pass their declared value-source key pattern to `av_config.sources.mask` and `av_config.transaction.ConfigTransaction`; the shared layer does not infer source positions from string contents. The same pattern applies to nested configuration tables, dotted trust-subset keys and persisted run metadata.
@@ -237,7 +238,7 @@ Schema validators register each value source with `Configuration.source(value, k
 
 The optional executor receives `(command, key)` and returns decoded stdout, raising a safe `ConfigError` on execution failure. Without it, `av_config` uses its bounded subprocess executor. The shared resolver strips trailing newlines and rejects empty command output in both cases. QA supplies an executor that runs the command with the engine's inherited environment and logs only exit/line-count summaries on success, never source stdout/stderr; failed source output is discarded. Its runtime keeps only trust checks and caching around the shared resolution entry point.
 
-When a second configurable plugin is introduced, extract this generic layer into a small core plugin the consumers require, or ship byte-identical copies checked in CI. Choose the packaging at that point, and do not create a second loader or `[env]` detector. Each plugin keeps only its call site and its own table's validation, recipes and policy choices.
+Copies under `plugins/*/skills/*/scripts/av_config/` must equal QA's; `scripts/check_av_config_copies.py` (workflow `av-config-copies.yml`) fails the build otherwise. Change the package in QA, copy it over every copy in the same change and bump each changed plugin's version. Still no second loader or `[env]` detector — each plugin keeps only its call site and its own table's validation, recipes and policy choices.
 
 ## Pull Request Requirements
 

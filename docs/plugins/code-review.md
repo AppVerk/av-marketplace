@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 2.2.0
+**Version:** 2.3.0
 
 ## Commands
 
@@ -98,7 +98,7 @@ Issues flagged `**Fix-policy:** needs-decision` show a `[needs-decision: <drift-
 
 ### `/fix-all`
 
-Bulk-fix every unfixed `auto`-policy issue from one or more saved reports after a single yes/no confirmation, then offers to resolve the `**Fix-policy:** needs-decision` findings it skipped — one question per finding, with the code analysed for you. Supports an optional minimum severity filter.
+Bulk-fix every unfixed `auto`-policy issue from one or more saved reports after a single yes/no confirmation, then offers to resolve the `**Fix-policy:** needs-decision` findings it skipped — one question per finding, with the code analysed for you, unless configured auto-accept resolves an eligible documentation finding without a question. Supports an optional minimum severity filter.
 
 ```bash
 # Auto-merge: fix every unfixed issue (except needs-decision) in the newest review + newest QA report
@@ -125,7 +125,7 @@ The command:
 7. *(auto-batch path only)* Asks one yes/no question: `Proceed with fixing all N issues sequentially?`
 8. Sequentially invokes `fix-auto` on every queued issue, continuing through any individual failures.
 9. Marks each Fixed/Partially Fixed issue with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file it came from, then displays a final summary table, which repeats the "Requires user decision" list.
-10. Offers to resolve the skipped `needs-decision` findings — a second yes/no question, then the [Decision Stage](#decision-stage) below runs the whole flow and writes its own results back. On the zero-auto path this step prints the "Requires user decision" list itself, since neither summary ran. Declining leaves those findings for a later run.
+10. Offers to resolve the skipped `needs-decision` findings — a second yes/no question, then the [Decision Stage](#decision-stage) below runs the whole flow and writes its own results back. When configured, auto-accept resolves eligible documentation findings without a per-finding question. On the zero-auto path this step prints the "Requires user decision" list itself, since neither summary ran. Declining leaves those findings for a later run.
 
 **When to use `/fix-all` vs `/fix-report`:**
 
@@ -216,8 +216,9 @@ Reports sourced from `/review` directly do not include a `Source:` field and car
 
 1. **Location pre-check.** A finding whose `**Location:**` field isn't a usable `path:line` is asked for one first, in batches of up to 4 questions. Before constructing any shell command, check the extracted path as data: a single quote or a control character is rejected as `unsafe characters`, never escaped or interpolated into a shell guard. Every other character is accepted — `$`, brackets, parentheses, `+`, spaces and non-ASCII letters, as in `src/routes/users/$userId.tsx` or `app/[id]/page.tsx` — because path operands are always single-quoted and prefixed with `./`, and the shell expands nothing inside single quotes. Containment also requires a relative path with no `..` segment, its containing directory resolved physically inside the physical repository root, and no symbolic link as its final component — even a link pointing inside the repository fails. The file must also exist. A declined target is reported Failed and left for the next run rather than dispatched.
 2. **Analysis fan-out.** The read-only `decision-analyst` agent runs once per finding, in parallel, in batches of at most 8 — announced before anything is dispatched (e.g. "13 findings to analyse, in 2 batches of at most 8"). Each analyst reads the code the finding actually points at and returns a rendered fix proposal. It never edits.
-3. **The sweep.** One finding at a time, you're shown the target, the recommendation and its reason, the risk, and both alternatives in full, then asked for one of five outcomes: `[A] [B] [skip] [reject]`, plus the tool's built-in `other…` free-form answer. `A`/`B` dispatch the chosen alternative; `other…` lets you write your own resolution, which is restated as a full self-contained fix and confirmed before dispatch; `skip` leaves the finding for the next run with nothing written; `reject` writes a terminal `🚫 Rejected` status (below) and is offered only where the reason is grounded in evidence or your own stated reason.
-4. **The batch.** Every decision is collected before any fix is dispatched — decide everything, then fix in bulk. Decided findings are then dispatched to `fix-auto` sequentially, and the orchestrator itself — not `fix-auto`'s own verdict — runs the persisted verification plan for each, logging raw output before writing the status back to the source report.
+3. **Auto-accept screening (stage 1.5).** With the [opt-in policy](#configuration) on and trusted for this worktree, the gate checks all seven eligibility rules, then seeks an independent second opinion: Jev through OMP's `judge_batch` when the `judge` role is a Jev model and an answer is available, otherwise a second analyst in confirm mode. The recommendation is auto-accepted only when both opinions choose the same alternative and both confidence scores reach the configured threshold. A disagreeing Jev answer is final for this run, not retried with an analyst. Automatic decisions are recorded before the first sweep question.
+4. **The sweep.** One remaining finding at a time, you're shown the target, the recommendation and its reason, the analyst's confidence, the risk, and both alternatives in full, then asked for one of five outcomes: `[A] [B] [skip] [reject]`, plus the tool's built-in `other…` free-form answer. With auto-accept on, the render also names why this finding was not auto-accepted and shows any second opinion. `A`/`B` dispatch the chosen alternative; `other…` lets you write your own resolution, which is restated as a full self-contained fix and confirmed before dispatch; `skip` leaves the finding for the next run with nothing written; `reject` writes a terminal `🚫 Rejected` status (below) and is offered only where the reason is grounded in evidence or your own stated reason.
+5. **The batch.** Every decision is collected before any fix is dispatched — decide everything, then fix in bulk. Decided findings, including auto-accepted ones, are then dispatched to `fix-auto` sequentially, and the orchestrator itself — not `fix-auto`'s own verdict — runs the persisted verification plan for each, logging raw output before writing the status back to the source report.
 
 > **Residual risk, accepted and unmitigated.** The execution boundary around the stage's own commands is model-enforced, not machine-enforced. Both the sweep's re-run of cited reject evidence and the batch's verification run execute with the orchestrator's grants rather than the read-only analyst's. Those grants are narrowed to the seven read-only git subcommands the stage actually runs (`log`, `show`, `diff`, `blame`, `status`, `hash-object`, `rev-parse`), so a destructive subcommand is no longer pre-approved and raises the platform's prompt. That prompt is a backstop, not the boundary: it can be answered in haste, it is not the sweep's `AskUserQuestion`, and what still keeps `git restore` and `git checkout` out of a re-run in the first place is prose the orchestrating model follows. The pin pipeline's own grants are not part of this risk — `head`, `tail`, `grep`, `shasum` and `sha256sum` have no write mode, which is why the excerpt is cut with `head`/`tail` rather than `sed`, whose prefix grant would have admitted `sed -i`. What it destroys is the working tree's uncommitted diff — which is exactly the recovery path this loop leaves you for a wrong call, since every fix is deliberately left uncommitted so you can read it and throw it away yourself. A lapse takes the undo with it.
 >
@@ -235,13 +236,15 @@ A needs-decision composite goes through the stage as one finding: the analyst re
 
 ### The `decision-analyst` agent
 
-A read-only subagent (`code-review:decision-analyst`) analyses exactly one `needs-decision` finding against the code it actually points at and returns a rendered fix proposal: `Target`, `Findings` (every claim backed by a citable command or tool call plus its verbatim output), `Alternatives` (A and B, or A alone where the code supports no second direction), `Recommendation`, `Risk`, `Code Preview`, a per-alternative `Verification Plan`, and an optional `Rejection candidate`. It writes nothing — reading and reporting is the whole of its job. Its `tools:` grant is `Read`, `Grep`, `Glob`, `Bash` and `Skill`, with `disallowedTools` closing `Edit`, `Write` and `NotebookEdit`, and its agent definition binds it to read-only inspection. Keeping the agent that reads separate from the agent that writes is what keeps the decision with you.
+A read-only subagent (`code-review:decision-analyst`) analyses exactly one `needs-decision` finding against the code it actually points at and returns a rendered fix proposal: `Target`, `Findings` (every claim backed by a citable command or tool call plus its verbatim output), `Alternatives` (A and B, or A alone where the code supports no second direction), `Recommendation`, `Confidence`, `Risk`, `Code Preview`, a per-alternative `Verification Plan`, and an optional `Rejection candidate`. It writes nothing — reading and reporting is the whole of its job. Its `tools:` grant is `Read`, `Grep`, `Glob`, `Bash` and `Skill`, with `disallowedTools` closing `Edit`, `Write` and `NotebookEdit`, and its agent definition binds it to read-only inspection. Keeping the agent that reads separate from the agent that writes keeps every proposal behind the decision gate.
+
+In `Mode: confirm`, a second analyst independently re-reads the target and checks the first analyst's cited evidence and alternatives, without seeing its recommendation or confidence; it returns its own `Recommendation` and `Confidence`, plus an optional cited `Disagreement`, and never invents a new alternative.
 
 > **Residual risk, probe run and confirmed (2026-08-29).** Earlier releases declared this agent's shell as four two-word specifiers (`Bash(git log:*)`, `Bash(git show:*)`, `Bash(git diff:*)`, `Bash(git blame:*)`) and described that as a read-only *property*. It is not one. A probe dispatched the agent under that grant and it ran `git status --porcelain` — a git subcommand outside the declared four — and then `echo grant-probe`, which is not git at all. The two-word form scopes nothing; the grant resolves to base `Bash`. (A `git commit --dry-run` in the same probe was refused, but by this repository's own pre-commit hook rather than by the grant, so it proves nothing either way.) The declaration has been corrected to plain `Bash` as of 2.0.1 — the agent's capability did not change, only the honesty of the line describing it.
 >
 > **So: assume the analyst can run anything a shell can run.** `disallowedTools` closes `Edit`, `Write` and `NotebookEdit`, which stops the tool-mediated writes and only those — a script that opens a file for writing is not an `Edit` call. The grant also carries `Skill` with no restriction on which skills load; since the shell is already unrestricted, that adds no capability, but a loaded skill's `allowed-tools:` can turn execution that would have prompted you into execution that does not.
 >
-> What actually protects you is not the frontmatter. It is, first, the untrusted-input protocol: a feedback-origin finding — one whose text came from a third party's PR comment via `/analyze-feedback` — reaches the analyst wrapped in nonce-bound delimiters and labelled as data, never instructions, so a report's own text cannot steer the agent holding that shell. And second, the human decision gate: every proposal the analyst returns is shown to you with the code in view, and nothing is dispatched to a fixer until you pick an outcome. The agent proposes; you decide; only then does anything get written. What you should *not* assume is that the platform is preventing the analyst from writing — its read-only behaviour is a discipline its definition imposes on it, and the gate is what the design actually rests on.
+> What actually protects you is not the frontmatter. It is, first, the untrusted-input protocol: a feedback-origin finding — one whose text came from a third party's PR comment via `/analyze-feedback` — reaches the analyst wrapped in nonce-bound delimiters and labelled as data, never instructions, so a report's own text cannot steer the agent holding that shell. And second, the human decision gate: normally every proposal the analyst returns is shown to you with the code in view, and nothing is dispatched to a fixer until you pick an outcome. Auto-accept is the one opt-in exception and never applies to a feedback-origin finding, so for third-party text the human gate stays unconditional. The agent proposes; the decision gate authorises; only then does a fixer write. What you should *not* assume is that the platform is preventing the analyst from writing — its read-only behaviour is a discipline its definition imposes on it, and the gate is what the design actually rests on.
 
 ### The `🚫 Rejected` status
 
@@ -269,8 +272,8 @@ The decision stage writes up to six additional fields into a finding block, alon
 
 | Field | Written when | Carries |
 |---|---|---|
-| `**Decision:**` | `A`, `B` or `other…` is chosen | `<label> — <resolution text> [<who>, <date>; attempt N: <outcome>…]` — the dispatchable resolution plus attempt bookkeeping |
-| `**Decision-retired:**` | A decision fails twice without ever writing a status | The superseded decision's full history, kept rather than deleted, so the next sweep shows what was already tried |
+| `**Decision:**` | `A`, `B` or `other…` is chosen, or stage 1.5 auto-accepts the recommendation | `<label> — <resolution text> [<who>, <date>; attempt N: <outcome>…]` — the dispatchable resolution plus attempt bookkeeping; `<who>` is `user` or `auto@<c1>/<source>:<c2>`, where `c1` is the analyst's confidence, `source` is `jev` or `analyst`, and `c2` is the second opinion's confidence |
+| `**Decision-retired:**` | A decision fails twice without ever writing a status, a pin mismatch supersedes it, or an automatic decision is revoked | The superseded decision's full history, kept rather than deleted, so the next sweep shows what was already tried; a final `revoked` entry marks a policy or documentation-path revocation and does not count toward `stalled — no progress` |
 | `**Verification-plan:**` | Alongside `**Decision:**` | The per-check plan (`<check> → <expected>[ (soft)]; …`) the orchestrator runs at verification time, persisted so a resumed run can verify without re-analysing |
 | `**Decision-pin:**` | Alongside `**Decision:**` | A content hash of the finding block plus one hash per file the resolution touches, so an edit to those files between decision and dispatch is detected |
 | `**Dispatch:**` | Immediately before each `fix-auto` call | `attempt <N> dispatched <date>` — distinguishes "decided, never dispatched" from "dispatched, outcome unknown" on a resumed run |
@@ -462,8 +465,49 @@ Until those tests exist, the `O_CREAT|O_EXCL|O_NOFOLLOW` invariant and the
 slug contract are verified only by code review. Tracked as a follow-up; the
 scripts themselves are the canonical implementation.
 
+## Configuration
+
+Code Review owns the `[code-review]` table in [`.av/config.toml`](../configuration.md). The same opt-in policy applies to the shared decision gate used by `/fix-all` and `/fix-report`; it does not change a finding's `needs-decision` classification.
+
+| Key | Default | Allowed values and behavior |
+|---|---|---|
+| `auto_accept_min_confidence` | Unset — every `needs-decision` finding is asked | Integer **70–100**. Below 70, the analyst's rubric means a judgment call, which is never auto-accepted. An eligible `**Category:** Documentation` finding is fixed without a question when the analyst's `Confidence` and an independent second opinion agree on the alternative and both reach this threshold. The second opinion is Jev in OMP when the `judge` role is a Jev model and an answer is available; otherwise it is a second analyst. Trust-pinned per worktree: the first run after setting or changing it asks you to trust the settings. |
+
+All seven eligibility rules must pass; no confidence score overrides a failed rule:
+
+1. The finding carries `**Category:** Documentation`, not `Composite` or another category.
+2. It has no `**Source:**` line — feedback-origin findings are always asked.
+3. It has no `**Decision-retired:**` line — a retired decision, including a revoked automatic one, sends the finding back to the user.
+4. The analyst returns usable analysis with no `Rejection candidate`.
+5. Its `Confidence` starts with an integer percentage from 0 to 100 at or above the configured threshold, and its `Recommendation` names a returned alternative (`A`, or `B` when present).
+6. The recommended alternative has at least one usable post-condition verification check, passes the gate's plan-rejection test, and every check is read-only inspection inside the execution boundary (soft prose re-reads included), so no check needs an approval call.
+7. Every edited path — the target and every secondary edit — is pinnable, safe to pass to the engine, physically contained in the repository, and positively identified as documentation: a `.md`/`.mdx`/`.rst`/`.adoc` file under the root `docs/` or `doc/` directory, or a file with one of those suffixes and the stem `README`, `CHANGELOG` or `CONTRIBUTING` at any depth. Parent directories are resolved before classification; file symlinks and aliases whose physical target is not documentation fail. Code, configuration, tests and instruction Markdown outside these documentation paths do not qualify.
+
+Only after eligibility passes does the gate request the independent second opinion. Both opinions must choose the same alternative at or above the threshold. A missing second opinion leaves the finding for the sweep; a Jev answer that disagrees or falls below the threshold is final for this run, with no analyst fallback.
+
+For example, in `.av/config.toml`:
+
+```toml
+version = 1
+
+[code-review]
+auto_accept_min_confidence = 90
+```
+
+**90 is the suggested starting point: analysts' scores cluster high.** Scores below 70 never qualify; the rubric caps unrecorded intent or team preference, lowering a documented aspiration or promise to match code, and changes to code, configuration or tests at 69.
+
+The shared file must contain `[code-review]` for a `.av/local.toml` override to count. Trust is stored against this worktree's real path and includes the shared `[env]` sensitive subset as well as the explicitly configured threshold. Choosing `Not now` at the trust question, or being unable to ask it, leaves auto-accept off for the run. A missing file, table or key keeps the default question-per-finding behavior; invalid configuration leaves auto-accept off with a message instead of stopping the decision stage. The engine needs **Python 3.11+**; if it is unavailable, auto-accept stays off with a message.
+
+A recorded automatic decision is replayed only while the setting is on, trusted here, and at or below both recorded confidence scores. Otherwise it is retired with a final `revoked` entry and the finding is asked instead. Documentation paths are re-checked before every automatic dispatch, including replay, so a changed directory symlink can revoke a decision even when its content pin still matches. If a prior dispatch was interrupted, verification runs first whatever the policy: a pass records the outcome without dispatching again; a failure is recorded before the replay or revocation rule is applied.
+
+Each auto-accepted finding is listed under **Auto-accepted** in the run summary, and its `**Decision:**` line carries `auto@<c1>/<source>:<c2>` provenance. Fixes still go through orchestrator-run verification. **A threshold is no correctness guarantee — review the diff before committing.**
+
 <a id="upgrade-notes"></a>
 ## Upgrade Notes
+
+**`code-review` 2.3.0 adds opt-in automatic documentation decisions.** Every reader of a report that may carry `auto@…` provenance should run code-review **2.3.0 or newer in both harnesses**. Only 2.3.0 and newer re-check the policy, this worktree's trust and the documentation paths before replaying an automatic decision. An older reader replays a recorded `auto@…` decision exactly as it replays any recorded `**Decision:**` line, including a teammate's `user` decision or a hand-written one — it does not enforce the new auto-accept conditions.
+
+A live automatic decision stays unfinished in a report after an interrupted run and also after a failed or unverified attempt: stage 4's third and fourth cases write no status. It remains live until the fix lands or the decision is retired, so this reader-version guidance applies to all of those reports, not only runs stopped before dispatch.
 
 **`code-review` 2.1.0 changes how a pre-existing review report is dispatched, not how it is parsed.** Every new field (`**Composed-of:**`, `**Part-of:**`, `**Origin:**`, `**Category:** Composite`) is additive: the `### [SEVERITY]` block extraction, `fix-auto`'s field table, `extract-issue-ids.sh` and the `**Status:**` grammar all read an old report unchanged. Their dispatch does change: the fix-time composition pass may group an old review or feedback report's unfixed findings, persist `Composed-of`/`Part-of`/`Origin` markers into the file and dispatch a group as one `fix-auto` call. The dissolve question is the per-run veto, no write happens before the run's commitment point (the confirmation gate, or the `yes` to the decision offer on `/fix-all`'s zero-auto path), and the pass is fail-safe — an unavailable analyst means no grouping, never a blocked run. A reader older than 2.1.0 ignores the new fields and dispatches a `COMP` block like any finding, applying its Remediation without the component checks; pair versions when a report carries composites.
 
