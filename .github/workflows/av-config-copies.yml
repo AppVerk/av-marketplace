@@ -1,0 +1,36 @@
+name: av_config copies
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: av-config-copies-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-av-config-copies:
+    name: Check av_config copies
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.12"
+
+      # Stdlib-only: no pip step.
+
+      - name: Run copy checker unit tests
+        run: python3 scripts/test_check_av_config_copies.py
+
+      - name: Check av_config copies
+        run: python3 scripts/check_av_config_copies.py
