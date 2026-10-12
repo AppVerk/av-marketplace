@@ -18,7 +18,6 @@
 # A backtick token looks like a path when it has a known extension, ends with "/"
 # or names a dotfile after a directory (config/.toolrc).
 # Skips placeholders (YYYY, <x>, [x], {x}, $VAR, ${VAR}, Foo), package names from manifests,
-# scripts shipped with the av-* skills (bare name or a path under the skills directory),
 # paths ignored by git (installed dependencies, build output) and paths that the docs
 # themselves call missing: a negation word (Polish or English) in the same sentence
 # (up to ". ", "! ", "? " or ";") and at most 5 words before or after the path.
@@ -62,13 +61,14 @@ while [ $# -gt 0 ]; do
     --overlay) [ -n "${2:-}" ] || { echo "USAGE --overlay needs a file"; exit 2; }; overlay="$2"; shift ;;
     --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
     --strict) ;;
-    -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
 done
 [ -n "$paths" ] || { echo "USAGE check_refs.sh <file.md|dir> [...] [--root DIR] [--exclude GLOB]"; exit 2; }
 root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
+physical_root="$(cd "$root" && pwd -P)"
 if [ -n "$overlay" ]; then
   case "$overlay" in
     /*) DOCS_OVERLAY="$overlay" ;;
@@ -98,7 +98,9 @@ while IFS= read -r g; do
   NESTED+=( -o -path "$(printf '%s' "${g%/.git}" | sed 's/[][*?\\]/\\&/g')" )
 done < <(find "$root" \( "${PRUNE[@]}" \) -prune -o -mindepth 2 -name .git -print 2>/dev/null)
 find "$root" \( -name .git -o "${PRUNE[@]}" -o "${NESTED[@]}" \) -prune \
-  -o -name '*.xcresult' -prune -print -o -print 2>/dev/null | sed "s|^$root/||" | grep -v "^$root\$" >"$tmp/index"
+  -o -name '*.xcresult' -prune -print -o -print 2>/dev/null | while IFS= read -r entry; do
+  [ "$entry" = "$root" ] || printf '%s\n' "${entry#"$root"/}"
+done >"$tmp/index"
 
 
 # MARK: package names
@@ -106,9 +108,9 @@ find "$root" \( -name .git -o "${PRUNE[@]}" -o "${NESTED[@]}" \) -prune \
 : >"$tmp/packages"
 if command -v jq >/dev/null 2>&1; then
   for manifest in "$root/package.json" "$root"/*/package.json; do
-    [ -f "$manifest" ] && jq -r '(.dependencies // {}), (.devDependencies // {}), (.peerDependencies // {}) | keys[]' "$manifest" 2>/dev/null >>"$tmp/packages"
+    [ -f "$manifest" ] && docs_repo_path "$physical_root" "$manifest" && jq -r '(.dependencies // {}), (.devDependencies // {}), (.peerDependencies // {}) | keys[]' "$manifest" 2>/dev/null >>"$tmp/packages"
   done
-  [ -f "$root/composer.json" ] && jq -r '(.require // {}), (."require-dev" // {}) | keys[]' "$root/composer.json" 2>/dev/null >>"$tmp/packages"
+  [ -f "$root/composer.json" ] && docs_repo_path "$physical_root" "$root/composer.json" && jq -r '(.require // {}), (."require-dev" // {}) | keys[]' "$root/composer.json" 2>/dev/null >>"$tmp/packages"
 fi
 
 # MARK: document list (relative to root)
@@ -120,9 +122,11 @@ printf '%s' "$paths" | while IFS= read -r p; do
     /*) abs="$p" ;;
     *) if [ -e "$root/$p" ]; then abs="$root/$p"; else abs="$(pwd)/$p"; fi ;;
   esac
+  [ ! -L "${abs%/}" ] || continue
+  case "$abs" in "$root"|"$root"/*) docs_repo_path "$physical_root" "$abs" || continue ;; esac
   if [ -d "$abs" ]; then
     find "$abs" \( -path '*/workspace' -o -path '*/sessions' \) -prune \
-      -o -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' -print 2>/dev/null
+      -o -type f -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' -print 2>/dev/null
   elif [ -f "$abs" ]; then
     case "$abs" in *.md) printf '%s\n' "$abs" ;; esac
   else
@@ -130,8 +134,9 @@ printf '%s' "$paths" | while IFS= read -r p; do
   fi
 done | while IFS= read -r f; do
   d="$(cd "$(dirname "$f")" && pwd)"
-  printf '%s\n' "${d#$root/}/$(basename "$f")" | sed "s|^$root/||; s|^\\./||"
-done | sed "s|^$root\$||" | sort -u | docs_exclude "$root" "$tmp/excludes" "$tmp/excluded" >"$tmp/docs"
+  f="$d/$(basename "$f")"
+  printf '%s\n' "${f#"$root"/}"
+done | sort -u | docs_exclude "$root" "$tmp/excludes" "$tmp/excluded" >"$tmp/docs"
 excluded="$(cat "$tmp/excluded" 2>/dev/null)"
 
 # MARK: extraction and check

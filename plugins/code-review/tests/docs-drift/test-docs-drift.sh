@@ -69,6 +69,18 @@ printf '%s\n' "$out" | grep -q '^NEW ' && fail 'unchanged tree has NEW hits' || 
 has "$out" 'head_hits=2 base_hits=2' && ok || fail "unchanged hit counts: $out"
 no_legacy unchanged
 
+# Default discovery from a subdirectory and a symlink to the top level remain valid.
+cd src || exit 1
+run_check 'default root from subdirectory' --base "$BASE"
+[ "$rc" -eq 0 ] && ok || fail "default subdirectory root exit $rc instead of 0"
+new_count 0 'default root from subdirectory'
+cd "$REPO" || exit 1
+ln -s "$REPO" "$TMP/root-link"
+run_check 'symlinked top-level root' --base "$BASE" --root "$TMP/root-link"
+[ "$rc" -eq 0 ] && ok || fail "symlinked top-level root exit $rc instead of 0"
+new_count 0 'symlinked top-level root'
+rm "$TMP/root-link"
+
 # Gitignored docs are outside the scope, even when they contain broken references.
 mkdir -p docs/generated
 printf 'Private: `src/private.py`.\n' >NOTES.md
@@ -146,6 +158,18 @@ run_check 'invalid base' --base nosuchrev
 run_check 'non-repository root' --base "$BASE" --root "$TMP/plain"
 [ "$rc" -eq 2 ] && ok || fail "non-repository root exit $rc instead of 2"
 [ "$out" = "DOCS_DRIFT_ERROR not a git repository: $TMP/plain" ] && ok || fail "non-repository error: $out"
+run_check 'missing root' --base "$BASE" --root
+[ "$rc" -eq 2 ] && [ "$out" = 'DOCS_DRIFT_ERROR --root needs a directory' ] && ok || fail "missing root: $rc $out"
+run_check 'empty root' --base "$BASE" --root ''
+[ "$rc" -eq 2 ] && [ "$out" = 'DOCS_DRIFT_ERROR --root needs a directory' ] && ok || fail "empty root: $rc $out"
+run_check 'relative subdirectory root' --base "$BASE" --root src
+[ "$rc" -eq 2 ] && [ "$out" = 'DOCS_DRIFT_ERROR not a git repository: src' ] && ok || fail "relative subdirectory root: $rc $out"
+run_check 'absolute subdirectory root' --base "$BASE" --root "$REPO/src"
+[ "$rc" -eq 2 ] && [ "$out" = "DOCS_DRIFT_ERROR not a git repository: $REPO/src" ] && ok || fail "absolute subdirectory root: $rc $out"
+ln -s "$REPO/src" "$TMP/subdirectory-link"
+run_check 'symlinked subdirectory root' --base "$BASE" --root "$TMP/subdirectory-link"
+[ "$rc" -eq 2 ] && [ "$out" = "DOCS_DRIFT_ERROR not a git repository: $TMP/subdirectory-link" ] && ok || fail "symlinked subdirectory root: $rc $out"
+rm "$TMP/subdirectory-link"
 run_check 'invalid max' --base "$BASE" --max 0
 [ "$rc" -eq 2 ] && ok || fail "max 0 exit $rc instead of 2"
 [ "$out" = 'DOCS_DRIFT_ERROR --max needs a positive integer' ] && ok || fail "max 0 error: $out"
@@ -180,6 +204,59 @@ has "$out" 'NEW MISSING docs/untracked.md:1 src/phantom.py' && ok || fail 'untra
 has "$out" 'src/skip.py' && fail 'an excluded doc was checked' || ok
 new_count 5 'explicit root and untracked docs'
 rm docs/untracked.md docs/plans/new.md docs/reviews/new.md docs/testing/new.md docs/superpowers/new.md CHANGELOG.md
+
+# Symlinked docs, including top-level doc directories, never expose external contents.
+mkdir -p "$TMP/outside-docs"
+printf 'Outside: `src/missing_secret_value.py` and `Sup3rS3cretIdent` and `src/hidden.py:99`.\n' >"$TMP/outside-docs/leak.md"
+ln -s "$TMP/outside-docs/leak.md" docs/leak.md
+ln -s reference.md docs/local.md
+ln -s "$TMP/outside-docs/absent.md" docs/broken.md
+ln -s "$TMP/outside-docs" docs/outside
+ln -s "$TMP/outside-docs" doc
+ln -s "$TMP/outside-docs" documentation
+ln -s "$TMP/outside-docs/leak.md" LEAK.md
+printf 'outside\n' >"$TMP/outside-docs/target.py"
+ln -s "$TMP/outside-docs/target.py" src/linked.py
+printf 'Citation: `src/linked.py:99`.\n' >docs/citation.md
+run_check 'symlinked docs' --base "$BASE"
+[ "$rc" -eq 0 ] && ok || fail "symlinked docs exit $rc instead of 0"
+new_count 4 'symlinked docs'
+for token in missing_secret_value Sup3rS3cretIdent hidden.py leak.md local.md broken.md LEAK.md; do
+  has "$out" "$token" && fail "external doc content or symlink input leaked ($token): $out" || ok
+done
+rm docs/leak.md docs/local.md docs/broken.md docs/outside docs/citation.md doc documentation LEAK.md src/linked.py
+
+# Root prefixes are literal, not shell glob patterns or regular expressions.
+for parent in '[brackets]' 'star*' 'question?' 'regex.^$|&'; do
+  literal_repo="$TMP/$parent/my-app"
+  mkdir -p "$literal_repo/src" "$literal_repo/docs"
+  cd "$literal_repo" || exit 1
+  git init -q
+  git config user.email docs-drift@example.test
+  git config user.name 'Docs Drift Tests'
+  printf 'value = 1\n' >src/stable.py
+  printf 'Root: `src/rootgone.py`.\n' >README.md
+  printf 'Existing: `stable.py` and `src/stable.py`.\nPath: `src/gone.py`.\nCitation: `src/stable.py:9`.\n' >docs/api.md
+  commit_fixture 'literal root base'
+  literal_base="$(git rev-parse HEAD)"
+  run_check "unchanged literal root $parent" --base "$literal_base" --root "$literal_repo"
+  [ "$rc" -eq 0 ] && ok || fail "literal root $parent exit $rc instead of 0: $out"
+  has "$out" 'head_hits=3 base_hits=3' && ok || fail "literal root $parent hit counts: $out"
+  new_count 0 "unchanged literal root $parent"
+  printf '%s\n' "$out" | grep -q '^NEW ' && fail "literal root $parent has pre-existing NEW hits: $out" || ok
+
+  printf 'New: `src/phantom.py`.\n' >>docs/api.md
+  printf 'Root new: `src/another.py`.\n' >>README.md
+  run_check "new drift under literal root $parent" --base "$literal_base" --root "$literal_repo"
+  [ "$rc" -eq 0 ] && ok || fail "new drift under literal root $parent exit $rc instead of 0: $out"
+  has "$out" 'NEW MISSING docs/api.md:4 src/phantom.py' && ok || fail "literal root $parent lost nested doc hit: $out"
+  has "$out" 'NEW MISSING README.md:2 src/another.py' && ok || fail "literal root $parent lost root doc hit: $out"
+  new_count 2 "new drift under literal root $parent"
+  for token in rootgone.py gone.py stable.py; do
+    has "$out" "$token" && fail "literal root $parent reported pre-existing or valid reference $token: $out" || ok
+  done
+done
+cd "$REPO" || exit 1
 
 # Trees without any doc inputs have no hits and need no checker invocations.
 git rm -qr docs README.md

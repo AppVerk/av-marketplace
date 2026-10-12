@@ -11,6 +11,22 @@ ok()   { PASS=$((PASS+1)); }
 fail() { FAIL=$((FAIL+1)); printf 'FAIL: %s\n' "$1" >&2; }
 has()  { printf '%s' "$1" | grep -qF -- "$2"; }
 
+# --- help prints the complete leading comment header without checking a root
+expected_help=""
+while IFS= read -r line; do
+  case "$line" in
+    '#!'*) continue ;;
+    '#'* ) expected_help="$expected_help$line"$'\n' ;;
+    *) break ;;
+  esac
+done <"$CHECK"
+expected_help="${expected_help%$'\n'}"
+for help_flag in -h --help; do
+  out="$(bash "$CHECK" "$help_flag" --root "$TMP/missing")"; rc=$?
+  [ "$rc" -eq 0 ] && ok || fail "$help_flag: code $rc instead of 0"
+  [ "$out" = "$expected_help" ] && ok || fail "$help_flag: incomplete header or extra output"
+done
+
 REPO="$TMP/repo with space"
 mkdir -p "$REPO/src/Orders" "$REPO/.ai"
 cd "$REPO" || exit 1
@@ -344,6 +360,32 @@ for w in ClientSecretNameXyz P8OnlyNameXyz NpmrcNameXyz; do
   has "$out" "$w" && ok || fail "secrets: name only in a secret file ($w) must not count as found"
 done
 has "$out" "TemplateNameXyz" && fail "secrets: a template (.env.example) is not a secret, its names count" || ok
+
+# --- symlinked documents and UTF-16 code files never contribute their target's contents
+mkdir -p docs-links "$TMP/outside-docs"
+printf 'Outside: `Sup3rS3cretIdent`.\n' >"$TMP/outside-docs/leak.md"
+printf 'Regular: `RegularMissingName`.\n' >docs-links/regular.md
+ln -s "$TMP/outside-docs/leak.md" docs-links/leak.md
+ln -s regular.md docs-links/local.md
+ln -s "$TMP/outside-docs/absent.md" docs-links/broken.md
+ln -s "$TMP/outside-docs" docs-links/outside
+out="$(bash "$CHECK" docs-links --root .)"; rc=$?
+has "$out" 'NAME_MISSING docs-links/regular.md:1 RegularMissingName' && [ "$rc" -eq 1 ] && ok || fail "regular doc beside symlinks was skipped: $out"
+for token in Sup3rS3cretIdent leak.md local.md broken.md; do
+  has "$out" "$token" && fail "symlinked doc contributed $token: $out" || ok
+done
+for input in docs-links/leak.md docs-links/local.md docs-links/broken.md docs-links/outside docs-links/outside/; do
+  out="$(bash "$CHECK" "$input" --root .)"; rc=$?
+  has "$out" 'CHECKED 0 NAME_MISSING 0' && [ "$rc" -eq 0 ] && ok || fail "explicit symlink input was read ($input): $out"
+done
+out="$(bash "$CHECK" docs-links/outside/leak.md --root .)"; rc=$?
+has "$out" 'CHECKED 0 NAME_MISSING 0' && [ "$rc" -eq 0 ] && ok || fail "document through an outside directory symlink was read: $out"
+printf '"ExternalStringName" = "value";\n' | iconv -f UTF-8 -t UTF-16 >"$TMP/outside-docs/Localizable.strings"
+ln -s "$TMP/outside-docs/Localizable.strings" src/External.strings
+printf 'String: `ExternalStringName`.\n' >docs-links/strings.md
+out="$(bash "$CHECK" docs-links/strings.md --root .)"
+has "$out" 'NAME_MISSING docs-links/strings.md:1 ExternalStringName' && ok || fail "symlinked UTF-16 code entered the dictionary: $out"
+rm -rf docs-links src/External.strings
 
 printf 'PASS %d FAIL %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

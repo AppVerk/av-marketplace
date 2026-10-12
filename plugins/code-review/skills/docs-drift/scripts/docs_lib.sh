@@ -25,7 +25,7 @@
 #                                        without "*" or "?" also matches everything under it.
 #   docs_secret_path <path> [<root>]     code 0 when the file name looks like a secret: env, key,
 #                                        certificate, credentials (av_secret_name from
-#                                        av-setup/scripts/secret_names.sh): scripts never read it
+#                                        secret_names.sh, next to this file): scripts never read it
 #   docs_secret_excludes <root>          prints ":(exclude,literal)<path>" git pathspecs, one per line,
 #                                        for every tracked or untracked, not ignored secret file
 #   docs_known_paths <root>              prints the entries of the overlay section "Known false paths":
@@ -40,7 +40,17 @@
 #                                        a path entry when a path in <index_file> matches it (the path
 #                                        now exists), a <doc>:<line> entry (only with doc_lines 1) when
 #                                        the document is in <docs_file> (it was checked)
+#   docs_repo_path <physical-root> <path> code 0 when the final component is not a symlink and
+#                                        its physical containing directory stays in the root
 # Requires: bash 3.2+, awk; jq optional.
+
+docs_repo_path() {
+  local root="$1" path="${2%/}" dir
+  [ ! -L "$path" ] || return 1
+  if [ -d "$path" ]; then dir="$path"; else dir="$(dirname "$path")"; fi
+  dir="$(cd "$dir" 2>/dev/null && pwd -P)" || return 1
+  case "$dir/" in "$root/"*) return 0 ;; *) return 1 ;; esac
+}
 
 docs_overlay_file() {
   [ -n "${DOCS_OVERLAY:-}" ] && [ -f "$DOCS_OVERLAY" ] && printf '%s\n' "$DOCS_OVERLAY"
@@ -66,7 +76,7 @@ docs_section_items() {
       if (t != "") print t
     }
     { lines[NR] = $0 }
-    # Section headers: canonical English name or the Polish alias (references/localization.md).
+    # Section headers: canonical English name or the Polish alias.
     kind == "names" && /^#+[ \t]+(Known false names|Znane fa(ł|l)szywe nazwy)/ { sec = NR }
     kind == "paths" && /^#+[ \t]+(Excluded docs paths|Wykluczone (ś|s)cie(ż|z)ki docs)/ { sec = NR }
     kind == "known" && /^#+[ \t]+(Known false paths|Znane fa(ł|l)szywe (ś|s)cie(ż|z)ki)/ { sec = NR }

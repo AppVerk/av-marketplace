@@ -71,12 +71,13 @@ Never scan the whole line. A `—` or an `unknown:0` inside the `(was: …)` tai
 
 Containment is therefore a conjunct of the usability rule in its own right, with the semantics `scripts/allocate-feedback-file.sh` already ships for its own target:
 
+0. **Allow-list before any shell command.** Check the extracted path as data before constructing or running a shell command: only `A–Z a–z 0–9 . _ / -` are allowed. Any other character fails as `unsafe characters`, including quotes, dollar signs, backticks, whitespace and non-ASCII characters. Never interpolate a rejected value into a shell command — not even a `case` guard intended to reject it — and never escape or repair it. Only a path that passes this check may enter the commands below; substitute its validated literal for `<path>`, single-quoted and `./`-prefixed for every path operand.
 1. **Reject before resolving.** A path that is absolute, or that carries a `..` segment, fails outright.
-2. **Resolve physically.** Take the *physical* path of the containing directory — `cd "$(dirname "$path")" && pwd -P`, symlinks followed — and re-attach the final component, so that a symlink pointing out of the tree cannot smuggle the target back in. Resolving the parent rather than the leaf keeps the test identical for a path that does not exist.
+2. **Resolve physically.** Take the *physical* path of the containing directory — `d=$(dirname -- './<path>') && cd -- "$d" && pwd -P`, symlinks followed — and re-attach the final component, so that a symlink pointing out of the tree cannot smuggle the target back in. Resolving the parent rather than the leaf keeps the test identical for a path that does not exist.
 3. **Prefix-match against the repository root**, taken as `git rev-parse --show-toplevel` and itself resolved with `pwd -P`. The path is contained **iff** the resolved value begins with `<root>/`. Keep that trailing separator: a bare prefix match on `<root>` also admits a sibling `<root>-evil/…`.
-4. **No symlinked file.** A path whose final component is a symbolic link fails, wherever it points: an edit through it writes the link's target, which rules 2 and 3 never resolve.
+4. **No symlinked file.** A path whose final component is a symbolic link fails, wherever it points: `test -L './<path>'` checks the validated literal without reading its target. An edit through it writes the link's target, which rules 2 and 3 never resolve.
 
-A path failing any of the four is **location-less — never merely non-existent**. Never report it as a missing file, never offer to create it, and never dispatch it: it takes the declined-target path under *Declined targets* below. A replacement the user supplies is validated by this same rule, under the single re-ask *Asking for what is missing* allows.
+A path failing any of the five is **location-less — never merely non-existent**. Never report it as a missing file, never offer to create it, and never dispatch it: it takes the declined-target path under *Declined targets* below. A replacement the user supplies is validated by this same rule, under the single re-ask *Asking for what is missing* allows.
 
 ### Asking for what is missing
 

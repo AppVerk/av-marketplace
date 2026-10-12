@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Contract test for code-review's composite findings.
+"""Contract tests for code-review's composite findings and review scope safety.
 
-Contract: docs/plugins/code-review.md, "Composite findings".
+Contract: docs/plugins/code-review.md, "Composite findings" and "Scope".
 Run:  python3 plugins/code-review/tests/test_composite_contract.py
 
-Each test greps one invariant across the plugin's prose files. Each carries a
+Each test checks an invariant across the plugin's prose files; default-branch
+commands also run in disposable Git repositories. Each carries a
 `# mutation:` comment quoting the sentence whose deletion must make it fail;
 the mutation run (delete the sentence, watch the test fail, restore it) is
 recorded in the pull request description. An assertion without that comment
@@ -13,7 +14,10 @@ is not a contract test.
 
 from __future__ import annotations
 
+import re
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -127,6 +131,27 @@ class CompositeContract(unittest.TestCase):
         self.assertIn("**Part-of:**", text)
         self.assertIn("Disjointness", text)
 
+    def test_review_disjointness_only_consumes_rendered_composites(self) -> None:
+        # mutation: remove the rendered-block condition or bullet-release sentence from review.md's Disjointness rule
+        rule = read(REVIEW).split("   2. Disjointness:", 1)[1].split("\n", 1)[0]
+        self.assertIn(
+            "a basis of an earlier composite rendered as a finding block "
+            "(passed sub-items 2.3 and 2.4)",
+            rule,
+        )
+        self.assertIn(
+            "a composite kept as a plain bullet leaves its bases available to later composites",
+            rule,
+        )
+
+    def test_docs_only_rendered_composites_consume_bases(self) -> None:
+        # mutation: delete "Only rendered composite blocks consume bases" from docs/plugins/code-review.md
+        self.assertIn(
+            "Only rendered composite blocks consume bases; a proposal kept as a plain "
+            "bullet leaves them available to later proposals.",
+            read(DOCS),
+        )
+
     # ---- Task 5: /fix-all ------------------------------------------------
 
     def test_fix_all_has_composition_steps(self):
@@ -199,6 +224,77 @@ class CompositeContract(unittest.TestCase):
         # mutation: change fix.md's scope-table row back to `render-only`
         self.assertRegex(read(GATE), r"\| `plugins/code-review/commands/fix\.md` \| dispatch-only \|")
 
+    def test_gate_containment_allow_list_precedes_resolution(self) -> None:
+        # mutation: delete rule 0 from "Containment, not just existence" in decision-gate SKILL.md
+        section = read(GATE).split("### Containment, not just existence", 1)[1]
+        section = section.split("### Asking for what is missing", 1)[0]
+        self.assertIn("0. **Allow-list before any shell command.**", section)
+        self.assertIn("`A–Z a–z 0–9 . _ / -`", section)
+        self.assertIn("unsafe characters", section)
+        self.assertIn("Never interpolate a rejected value into a shell command", section)
+        self.assertLess(section.index("0. **Allow-list"), section.index("1. **Reject"))
+
+    def test_fix_locations_allow_list_before_shell(self) -> None:
+        # mutation: delete the allow-list restatement from fix-auto.md or fix.md
+        for path in (FIX_AUTO, FIX):
+            with self.subTest(path=path):
+                text = read(path)
+                self.assertIn("first check the extracted path as data", text)
+                self.assertIn("`A–Z a–z 0–9 . _ / -`", text)
+                self.assertIn("`unsafe characters`", text)
+                self.assertIn("never interpolate a rejected value into a shell command", text)
+                self.assertNotIn('cd "$(dirname "<path>")"', text)
+
+    def test_containment_uses_validated_single_quoted_operands(self) -> None:
+        # mutation: restore the double-quoted literal placeholder or drop ./ from a containment command
+        for path in (GATE, FIX_AUTO, FIX):
+            with self.subTest(path=path):
+                text = read(path)
+                self.assertIn('d=$(dirname -- \'./<path>\') && cd -- "$d" && pwd -P', text)
+                self.assertIn("test -L './<path>'", text)
+                self.assertNotIn('cd "$(dirname "<path>")"', text)
+
+    def test_unsafe_location_failure_reason_and_docs(self) -> None:
+        # mutation: drop "unsafe characters" from fix-auto's failure reasons or the Decision Stage docs
+        self.assertIn(
+            "(<does not parse | unsafe characters | absolute path",
+            read(FIX_AUTO),
+        )
+        self.assertIn("`A–Z a–z 0–9 . _ / -`", read(DOCS))
+        self.assertIn("before constructing any shell command", read(DOCS))
+
+    def test_fix_containment_finishes_before_any_content_read(self) -> None:
+        # mutation: delete the "Containment before content" gate or its metadata-only validation rule from fix.md
+        text = read(FIX)
+        phase = text.split("## Phase 1: Parse Issue", 1)[1].split("## Phase 2: Analyze Context", 1)[0]
+        gate = phase.split("**Containment before content.**", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("initial Location and every replacement reply", gate)
+        self.assertIn("complete the entire containment test before any read", gate)
+        self.assertIn("only the root/parent directory resolution above (`pwd -P`)", gate)
+        for check in ("`test -L`", "`[ -L`", "`test -e`"):
+            with self.subTest(check=check):
+                self.assertIn(check, gate)
+        self.assertIn("Never use `cat`, `head`, `Read`", gate)
+        self.assertIn("anything else that prints the candidate file's content", gate)
+        self.assertIn("including in a chained command", gate)
+        self.assertIn("Only after all checks pass may Phase 2 read the file", gate)
+        self.assertLess(phase.index("**Containment before content.**"), phase.index("> This issue's location"))
+
+    def test_fix_reply_validation_reuses_no_read_gate(self) -> None:
+        # mutation: delete the "Containment before content" reference from the reply-validation paragraph
+        phase = read(FIX).split("## Phase 1: Parse Issue", 1)[1].split("## Phase 2: Analyze Context", 1)[0]
+        reply = phase.split("Validate the reply", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("the **Containment before content** gate above", reply)
+        self.assertIn("before any read", reply)
+        self.assertIn("without opening any file", reply)
+
+    def test_docs_describe_metadata_only_reply_validation(self) -> None:
+        # mutation: delete the metadata-only reply-validation sentence from the Fixing Issues docs
+        section = read(DOCS).split("## Fixing Issues", 1)[1].split("**Recommended workflow", 1)[0]
+        self.assertIn("initial location and every replacement reply before any read", section)
+        self.assertIn("`pwd -P`, `test -L` / `[ -L` and `test -e`", section)
+        self.assertIn("never reads or prints the candidate file's content", section)
+
     def test_decision_analyst_knows_composites(self):
         # mutation: delete the composite paragraph from decision-analyst.md's Input section
         self.assertIn("composite block plus each component block", read(DECISION_ANALYST))
@@ -234,6 +330,92 @@ class CompositeContract(unittest.TestCase):
     def test_docs_upgrade_note_states_dispatch_change(self):
         # mutation: delete the 2.1.0 Upgrade Notes paragraph ("Their dispatch does change") from docs/plugins/code-review.md
         self.assertIn("Their dispatch does change", read(DOCS))
+
+    # ---- Review scope: default-branch shell safety ---------------------
+
+    def test_default_branch_commands_use_only_fixed_refs(self) -> None:
+        # mutation: restore symbolic-ref output or the <default branch> placeholder in Review Scope step 2
+        step = read(REVIEW).split("2. **Default.**", 1)[1].split("\n3.", 1)[0]
+        self.assertEqual(
+            re.findall(r"`(git [^`]+)`", step),
+            [
+                "git rev-parse --verify --quiet 'refs/remotes/origin/HEAD^{commit}'",
+                "git merge-base HEAD refs/remotes/origin/HEAD",
+                "git rev-parse --verify --quiet 'main^{commit}'",
+                "git merge-base HEAD main",
+                "git rev-parse --verify --quiet 'master^{commit}'",
+                "git merge-base HEAD master",
+            ],
+        )
+        self.assertIn("Never obtain the symbolic ref's target name", step)
+        self.assertIn("resolves the literal `refs/remotes/origin/HEAD`", read(DOCS))
+
+    def test_default_branch_resolution_and_fallbacks(self) -> None:
+        # mutation: change an origin probe/merge operand or the fixed main-before-master fallback order
+        step = read(REVIEW).split("2. **Default.**", 1)[1].split("\n3.", 1)[0]
+        commands = re.findall(r"`(git [^`]+)`", step)
+        self.assertEqual(len(commands), 6)
+        cases = [
+            ("origin", "normal", True, True, "base"),
+            ("substitution", "$(touch${IFS}sec003-sentinel)", True, True, "base"),
+            ("backticks", "`touch${IFS}sec003-sentinel`", True, True, "base"),
+            ("pipeline", "topic|$(touch${IFS}sec003-sentinel)", True, True, "base"),
+            ("main", None, True, True, "head"),
+            ("master", None, False, True, "base"),
+            ("no-default", None, False, False, None),
+            ("dangling-origin", "missing", True, True, "head"),
+            ("unrelated-origin", "unrelated", True, True, None),
+        ]
+        for label, remote_name, main_exists, master_exists, expected in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as temporary:
+                repo = Path(temporary)
+
+                def git(
+                    *args: str, input_text: str | None = None, directory: Path = repo,
+                ) -> str:
+                    result = subprocess.run(
+                        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.test", *args],
+                        cwd=directory, input=input_text, text=True, capture_output=True, check=True,
+                    )
+                    return result.stdout.strip()
+
+                git("init", "--quiet")
+                git("symbolic-ref", "HEAD", "refs/heads/topic")
+                tree = git("mktree", input_text="")
+                base = git("commit-tree", tree, "-m", "base")
+                head = git("commit-tree", tree, "-p", base, "-m", "head")
+                git("update-ref", "HEAD", head)
+                if main_exists:
+                    git("update-ref", "refs/heads/main", head)
+                if master_exists:
+                    git("update-ref", "refs/heads/master", base)
+                if remote_name is not None:
+                    remote_ref = f"refs/remotes/origin/{remote_name}"
+                    if remote_name != "missing":
+                        remote_commit = (
+                            git("commit-tree", tree, "-m", "unrelated")
+                            if remote_name == "unrelated" else base
+                        )
+                        git("update-ref", remote_ref, remote_commit)
+                    git("symbolic-ref", "refs/remotes/origin/HEAD", remote_ref)
+
+                resolved = None
+                for index in (0, 2, 4):
+                    probe = subprocess.run(
+                        ["bash", "-c", commands[index]],
+                        cwd=repo, text=True, capture_output=True, check=False,
+                    )
+                    if probe.returncode == 0:
+                        merge = subprocess.run(
+                            ["bash", "-c", commands[index + 1]],
+                            cwd=repo, text=True, capture_output=True, check=False,
+                        )
+                        if merge.returncode == 0:
+                            resolved = merge.stdout.strip()
+                        break
+                expected_sha = {"base": base, "head": head, None: None}[expected]
+                self.assertEqual(resolved, expected_sha)
+                self.assertFalse((repo / "sec003-sentinel").exists())
 
 
 if __name__ == "__main__":

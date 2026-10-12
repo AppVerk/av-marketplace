@@ -10,6 +10,22 @@ ok()   { PASS=$((PASS+1)); }
 fail() { FAIL=$((FAIL+1)); printf 'FAIL: %s\n' "$1" >&2; }
 has()  { printf '%s' "$1" | grep -qF -- "$2"; }
 
+# --- help prints the complete leading comment header without checking a root
+expected_help=""
+while IFS= read -r line; do
+  case "$line" in
+    '#!'*) continue ;;
+    '#'* ) expected_help="$expected_help$line"$'\n' ;;
+    *) break ;;
+  esac
+done <"$CHECK"
+expected_help="${expected_help%$'\n'}"
+for help_flag in -h --help; do
+  out="$(bash "$CHECK" "$help_flag" --root "$TMP/missing")"; rc=$?
+  [ "$rc" -eq 0 ] && ok || fail "$help_flag: code $rc instead of 0"
+  [ "$out" = "$expected_help" ] && ok || fail "$help_flag: incomplete header or extra output"
+done
+
 REPO="$TMP/repo with space"
 mkdir -p "$REPO/src/core" "$REPO/.ai"
 cd "$REPO" || exit 1
@@ -327,6 +343,46 @@ out="$(bash "$CHECK" .ai/nonl.md --root .)"
 printf '%s\n' "$out" | grep -q 'LINEREF_RANGE .ai/nonl.md:2 ' && fail "no final newline: the last line counts as outside the file: $out" || ok
 has "$out" "LINEREF_RANGE .ai/nonl.md:3 src/core/nonl.ts:4 (file has 3 lines)" && ok || fail "no final newline: line 4 not RANGE with 3 lines: $out"
 git rm -q src/core/nonl.ts .ai/nonl.md && git commit -qm nonl-clean
+
+# --- symlinked documents and cited targets are skipped before any content or length read
+mkdir -p docs-links "$TMP/outside-docs" src/links/nested
+printf 'Outside: `src/hidden.py:99`.\n' >"$TMP/outside-docs/leak.md"
+printf 'Regular: `src/core/stable.ts:99`.\n' >docs-links/regular.md
+ln -s "$TMP/outside-docs/leak.md" docs-links/leak.md
+ln -s regular.md docs-links/local.md
+ln -s "$TMP/outside-docs/absent.md" docs-links/broken.md
+ln -s "$TMP/outside-docs" docs-links/outside
+out="$(bash "$CHECK" docs-links --root .)"; rc=$?
+has "$out" 'LINEREF_RANGE docs-links/regular.md:1 src/core/stable.ts:99' && [ "$rc" -eq 1 ] && ok || fail "regular doc beside symlinks was skipped: $out"
+for token in hidden.py leak.md local.md broken.md; do
+  has "$out" "$token" && fail "symlinked doc contributed $token: $out" || ok
+done
+for input in docs-links/leak.md docs-links/local.md docs-links/broken.md docs-links/outside docs-links/outside/; do
+  out="$(bash "$CHECK" "$input" --root .)"; rc=$?
+  has "$out" 'CHECKED 0 LINEREF_CHANGED 0' && [ "$rc" -eq 0 ] && ok || fail "explicit symlink input was read ($input): $out"
+done
+out="$(bash "$CHECK" docs-links/outside/leak.md --root .)"; rc=$?
+has "$out" 'CHECKED 0 LINEREF_CHANGED 0' && [ "$rc" -eq 0 ] && ok || fail "document through an outside directory symlink was read: $out"
+printf 'OutsideOnlyIdentifier\n' >"$TMP/outside-docs/target.py"
+ln -s "$TMP/outside-docs/target.py" src/links/external.py
+ln -s ../core/stable.ts src/links/internal.ts
+ln -s "$TMP/outside-docs/absent.py" src/links/dangling.py
+printf 'original\n' >src/links/nested/target.py
+printf 'original\n' >src/links/primary.py
+printf '`src/links/external.py:99` `src/links/internal.ts:99` `src/links/dangling.py:99` `src/links/nested/target.py:99` `external.py:99`\n' >docs-links/targets.md
+printf '`OutsideOnlyIdentifier` at `src/links/primary.py:1` and `src/links/external.py:1`.\n' >docs-links/secondary.md
+git add -A && git commit -qm symlink-fixtures
+rm -rf src/links/nested
+ln -s "$TMP/outside-docs" src/links/nested
+out="$(bash "$CHECK" docs-links/targets.md --root .)"; rc=$?
+has "$out" 'CHECKED 5 LINEREF_CHANGED 0 LINEREF_RANGE 0 LINEREF_NOFILE 0' && [ "$rc" -eq 0 ] && ok || fail "symlinked citation was checked: $out"
+has "$out" 'file has' && fail "outside line count leaked: $out" || ok
+printf 'changed\n' >src/links/primary.py
+out="$(bash "$CHECK" docs-links/secondary.md --root .)"
+has "$out" 'LINEREF_GONE docs-links/secondary.md:1 src/links/primary.py:1' && ok || fail "secondary symlinked target was scanned for identifiers: $out"
+has "$out" 'identifiers from the line are in another file' && fail "identifier from a symlinked target affected the result: $out" || ok
+rm -rf docs-links src/links
+git add -A && git commit -qm symlink-clean
 
 bash "$CHECK" >/dev/null; [ $? -eq 2 ] && ok || fail "no arguments"
 bash "$CHECK" .ai --root . --overlay >/dev/null; [ $? -eq 2 ] && ok || fail "--overlay without a file: code 2"

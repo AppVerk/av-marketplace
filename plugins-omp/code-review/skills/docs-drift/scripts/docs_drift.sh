@@ -4,6 +4,7 @@
 # Usage:
 #   docs_drift.sh --base REV [--root DIR] [--max N]
 #   docs_drift.sh -h|--help
+# --root must name the repository top level (after resolving symlinks).
 # Head is the working tree, including uncommitted and untracked docs but excluding
 # gitignored docs. Base is a temporary shared clone with full history and the same
 # repository directory name.
@@ -35,7 +36,7 @@ while [ $# -gt 0 ]; do
       [ -n "${2:-}" ] || error '--base needs a revision'
       base="$2"; shift ;;
     --root)
-      [ -n "${2:-}" ] || error "not a git repository: ${2:-}"
+      [ -n "${2:-}" ] || error '--root needs a directory'
       root="$2"; shift ;;
     --max)
       [ -n "${2:-}" ] || error '--max needs a positive integer'
@@ -55,7 +56,9 @@ if [ -z "$root" ]; then
 fi
 root_arg="$root"
 root="$(cd "$root" 2>/dev/null && pwd -P)" || error "not a git repository: $root_arg"
-[ "$(git -C "$root" rev-parse --is-inside-work-tree 2>/dev/null)" = true ] || error "not a git repository: $root_arg"
+worktree_root="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || error "not a git repository: $root_arg"
+worktree_root="$(cd "$worktree_root" 2>/dev/null && pwd -P)" || error "not a git repository: $root_arg"
+[ "$root" = "$worktree_root" ] || error "not a git repository: $root_arg"
 base_sha="$(git -C "$root" rev-parse --verify --quiet "$base^{commit}")"
 [ -n "$base_sha" ] || error "base $base is not a commit"
 
@@ -77,7 +80,7 @@ collect_hits() (
   inputs=()
   count=0
   for doc in docs doc documentation; do
-    if [ -d "$doc" ]; then
+    if [ -d "$doc" ] && [ ! -L "$doc" ]; then
       inputs+=("$doc")
       count=$((count+1))
     fi

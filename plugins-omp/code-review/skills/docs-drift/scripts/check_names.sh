@@ -64,13 +64,14 @@ while [ $# -gt 0 ]; do
     --ignore-file) ignore_files="$ignore_files${2:-}"$'\n'; shift ;;
     --overlay) [ -n "${2:-}" ] || { echo "USAGE --overlay needs a file"; exit 2; }; overlay="$2"; shift ;;
     --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
-    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
 done
 [ -n "$paths" ] || { echo "USAGE check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE] [--exclude GLOB]"; exit 2; }
 root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
+physical_root="$(cd "$root" && pwd -P)"
 git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root is not a git repo"; exit 2; }
 if [ -n "$overlay" ]; then
   case "$overlay" in
@@ -121,6 +122,7 @@ LC_ALL=C git -C "$root" grep --threads=1 -I -h -o -w -E --untracked "$word_re" -
 git -C "$root" -c core.quotePath=false ls-files --cached --others --exclude-standard -- '*.strings' '*.stringsdict' 2>/dev/null |
   while IFS= read -r f; do
     [ -f "$root/$f" ] || continue
+    docs_repo_path "$physical_root" "$root/$f" || continue
     bom="$(LC_ALL=C head -c 2 "$root/$f" | od -An -tx1 | tr -d ' \n')"
     case "$bom" in
       fffe|feff) iconv -f UTF-16 -t UTF-8 "$root/$f" 2>/dev/null |
@@ -142,9 +144,11 @@ printf '%s' "$paths" | while IFS= read -r p; do
     /*) abs="$p" ;;
     *) if [ -e "$root/$p" ]; then abs="$root/$p"; else abs="$(pwd)/$p"; fi ;;
   esac
+  [ ! -L "${abs%/}" ] || continue
+  case "$abs" in "$root"|"$root"/*) docs_repo_path "$physical_root" "$abs" || continue ;; esac
   if [ -d "$abs" ]; then
     find "$abs" \( -path '*/workspace' -o -path '*/sessions' \) -prune \
-      -o -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' -print 2>/dev/null
+      -o -type f -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' -print 2>/dev/null
   elif [ -f "$abs" ]; then
     printf '%s\n' "$abs"
   else

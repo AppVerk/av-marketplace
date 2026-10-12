@@ -12,6 +12,22 @@ ok()   { PASS=$((PASS+1)); }
 fail() { FAIL=$((FAIL+1)); printf 'FAIL: %s\n' "$1" >&2; }
 has()  { printf '%s' "$1" | grep -qF -- "$2"; }
 
+# --- help prints the complete leading comment header without checking a root
+expected_help=""
+while IFS= read -r line; do
+  case "$line" in
+    '#!'*) continue ;;
+    '#'* ) expected_help="$expected_help$line"$'\n' ;;
+    *) break ;;
+  esac
+done <"$CHECK"
+expected_help="${expected_help%$'\n'}"
+for help_flag in -h --help; do
+  out="$(bash "$CHECK" "$help_flag" --root "$TMP/missing")"; rc=$?
+  [ "$rc" -eq 0 ] && ok || fail "$help_flag: code $rc instead of 0"
+  [ "$out" = "$expected_help" ] && ok || fail "$help_flag: incomplete header or extra output"
+done
+
 REPO="$TMP/repo with space"
 mkdir -p "$REPO/src/modules/Orders_" "$REPO/.ai/modules" "$REPO/scripts" "$REPO/app/models/request"
 cd "$REPO" || exit 1
@@ -423,6 +439,35 @@ done
 has "$out" "UNRESOLVED .ai/ext.md:3 settings.gradle.kts" && ok || fail "ext: bare settings.gradle.kts not UNRESOLVED: $out"
 has "$out" "CHECKED 7 MISSING 4 UNRESOLVED 1" && ok || fail "ext: counters: $(printf '%s' "$out" | tail -1)"
 rm -rf src/ui build.gradle .ai/ext.md
+
+# --- symlinked documents and directory inputs never contribute their target's contents
+mkdir -p docs-links "$TMP/outside-docs"
+printf 'Outside: `src/missing_secret_value.py`.\n' >"$TMP/outside-docs/leak.md"
+printf 'Regular: `src/regular_missing.py`.\n' >docs-links/regular.md
+ln -s "$TMP/outside-docs/leak.md" docs-links/leak.md
+ln -s regular.md docs-links/local.md
+ln -s "$TMP/outside-docs/absent.md" docs-links/broken.md
+ln -s "$TMP/outside-docs" docs-links/outside
+mkdir -p packages-links
+printf '{"dependencies":{"external.pkg.js":"1"}}\n' >"$TMP/outside-docs/linked-package.json"
+printf '{"dependencies":{"outside.pkg.js":"1"}}\n' >"$TMP/outside-docs/package.json"
+ln -s "$TMP/outside-docs/linked-package.json" packages-links/package.json
+ln -s "$TMP/outside-docs" packages-outside
+printf 'Packages: `external.pkg.js` and `outside.pkg.js`.\n' >docs-links/packages.md
+out="$(bash "$CHECK" docs-links --root .)"; rc=$?
+has "$out" 'MISSING docs-links/regular.md:1 src/regular_missing.py' && [ "$rc" -eq 1 ] && ok || fail "regular doc beside symlinks was skipped: $out"
+has "$out" 'UNRESOLVED docs-links/packages.md:1 external.pkg.js' && ok || fail "symlinked manifest entered the package dictionary: $out"
+has "$out" 'UNRESOLVED docs-links/packages.md:1 outside.pkg.js' && ok || fail "manifest through an outside directory symlink entered the package dictionary: $out"
+for token in missing_secret_value leak.md local.md broken.md; do
+  has "$out" "$token" && fail "symlinked doc contributed $token: $out" || ok
+done
+for input in docs-links/leak.md docs-links/local.md docs-links/broken.md docs-links/outside docs-links/outside/; do
+  out="$(bash "$CHECK" "$input" --root .)"; rc=$?
+  has "$out" 'CHECKED 0 MISSING 0' && [ "$rc" -eq 0 ] && ok || fail "explicit symlink input was read ($input): $out"
+done
+out="$(bash "$CHECK" docs-links/outside/leak.md --root .)"; rc=$?
+has "$out" 'CHECKED 0 MISSING 0' && [ "$rc" -eq 0 ] && ok || fail "document through an outside directory symlink was read: $out"
+rm -rf docs-links packages-links packages-outside
 
 # --- 6. no arguments: code 2
 bash "$CHECK" >/dev/null; rc=$?

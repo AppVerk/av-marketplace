@@ -55,7 +55,7 @@ Run the documentation detection algorithm:
 
 ### Step 2: Analyze Code Changes
 
-With a changes-since scope, read `git diff <base>` (per file `git diff <base> -- <file>`), an earlier version with `git show <base>:<path>`, and the untracked files marked `A`.
+With a changes-since scope, read `git diff "$REVIEW_BASE" --`, where `REVIEW_BASE` is the resolved full hexadecimal SHA from the scope. For a per-file diff or an earlier version, follow the scope block's **Shell safety** suffix before constructing an operand: its permitted examples are `git --literal-pathspecs diff "$REVIEW_BASE" -- './src/orders.py'` and `git show '<resolved hexadecimal SHA>:src/orders.py' --`, only after the path passes that suffix's allow-list. Other names, including non-ASCII names, remain in scope: use Git-generated NUL-delimited argv or the full diff, never paste them into shell source. Read the untracked files marked `A` with Read's structured path argument.
 
 - Identify changed files and the nature of changes
 - Extract: new functions/classes/endpoints, changed signatures, changed parameters, removed elements

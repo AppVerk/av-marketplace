@@ -64,13 +64,14 @@ while [ $# -gt 0 ]; do
     --strict) strict=1 ;;
     --overlay) [ -n "${2:-}" ] || { echo "USAGE --overlay needs a file"; exit 2; }; overlay="$2"; shift ;;
     --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
-    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
     *) paths="$paths$1"$'\n' ;;
   esac
   shift
 done
 [ -n "$paths" ] || { echo "USAGE check_linerefs.sh <file.md|dir> [...] [--root DIR] [--exclude GLOB] [--strict]"; exit 2; }
 root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
+physical_root="$(cd "$root" && pwd -P)"
 git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "USAGE root is not a git repo"; exit 2; }
 if [ -n "$overlay" ]; then
   case "$overlay" in
@@ -114,9 +115,11 @@ printf '%s' "$paths" | while IFS= read -r p; do
     /*) abs="$p" ;;
     *) if [ -e "$root/$p" ]; then abs="$root/$p"; else abs="$(pwd)/$p"; fi ;;
   esac
+  [ ! -L "${abs%/}" ] || continue
+  case "$abs" in "$root"|"$root"/*) docs_repo_path "$physical_root" "$abs" || continue ;; esac
   if [ -d "$abs" ]; then
     find "$abs" \( -path '*/workspace' -o -path '*/sessions' \) -prune \
-      -o -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' -print 2>/dev/null
+      -o -type f -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' -print 2>/dev/null
   elif [ -f "$abs" ]; then
     printf '%s\n' "$abs"
   else
@@ -190,7 +193,7 @@ scan_ids() {
 }
 
 while IFS= read -r doc; do
-  rel_doc="${doc#$root/}"
+  rel_doc="${doc#"$root"/}"
   # Row: docs_line<TAB>reference<TAB>identifiers (space separated, "-" when none)<TAB>
   # 1 when the line has a reference without an extension (alias) or talks about removal
   # (neg matches Polish and English words: repos keep their own language)
@@ -268,6 +271,7 @@ while IFS= read -r doc; do
       continue
     fi
     case "$target" in *$'\n'*) continue ;; esac
+    [ -f "$root/$target" ] && docs_repo_path "$physical_root" "$root/$target" || continue
     if docs_secret_path "$target" "$root"; then
       printf 'LINEREF_SECRET %s:%s %s (env or key file, content not read)\n' "$rel_doc" "$ln" "$ref"
       secret=$((secret + 1))
@@ -333,6 +337,7 @@ EOF_MOVED
           otarget="$(resolve "${oref%:*}")"
           [ -n "$otarget" ] && [ "$otarget" != "$target" ] || continue
           [ "$(printf '%s\n' "$otarget" | wc -l | tr -d ' ')" -eq 1 ] || continue
+          [ -f "$root/$otarget" ] && docs_repo_path "$physical_root" "$root/$otarget" || continue
           case "$(scan_ids "$root/$otarget" 1 0 "$ids")" in NONE) ;; *) elsewhere=1; break ;; esac
         done <"$tmp/refs"
         [ "$elsewhere" -ne 0 ] || [ "$unsure" != "1" ] || elsewhere=2

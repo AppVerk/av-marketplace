@@ -14,7 +14,7 @@ Use the installed plugin's script, never a project's own copy.
 - **Claude Code:** run `bash ${CLAUDE_PLUGIN_ROOT}/skills/docs-drift/scripts/docs_drift.sh --base <rev>`, exactly this form without quotes around the script path, to match `/code-review:review`'s permission pre-approval.
 - **OMP:** run `realpath skill://code-review:docs-drift/scripts/docs_drift.sh` with Bash, then invoke `bash '<resolved path>' --base <rev>`. An OMP shell does not define `CLAUDE_PLUGIN_ROOT`; never guess a path.
 
-Full usage: `docs_drift.sh --base REV [--root DIR] [--max N]`. The root defaults to the current repository's top level; `--max` defaults to `200` and must be a positive integer. `-h` or `--help` prints the script header and exits `0`.
+Full usage: `docs_drift.sh --base REV [--root DIR] [--max N]`. The root defaults to the current repository's top level. An explicit `--root` must resolve to a repository's top level, not a subdirectory; symlinks to the top level are accepted. `--max` defaults to `200` and must be a positive integer. `-h` or `--help` prints the script header and exits `0`.
 
 ## What it checks
 
@@ -27,6 +27,8 @@ Each tree contributes its existing `docs/`, `doc/` and `documentation/` director
 - `CHANGELOG.md`
 
 Head is the working tree, including uncommitted edits and untracked files but excluding gitignored files. Base is a temporary shared clone checked out at the base revision with full history, under the same final directory name as the repository so references to the repository's own name are classified consistently. The clone is removed on exit. The repository is not modified: no files, refs or worktrees are created in it.
+
+The checkers skip symlinked document files and directory inputs. Before reading a cited target, a package manifest or a UTF-16 string file, they reject a symlinked final component or a containing directory whose physical path is outside the tree root. Skipped citations contribute no content-derived hits or line counts.
 
 Requirements: bash `3.2+`, git, awk and find; jq is optional for package-name detection, and iconv is used for UTF-16 string files. Cost: two runs of the three checkers, plus a checkout of the base tree.
 
@@ -41,6 +43,8 @@ NEW <checker hit>
 
 `head_hits` and `base_hits` count lines of kinds `MISSING`, `UNRESOLVED`, `NAME_MISSING`, `LINEREF_CHANGED`, `LINEREF_MOVED`, `LINEREF_GONE`, `LINEREF_RANGE` and `LINEREF_NOFILE`. Other checker output, including summaries and hints, is not a hit. A hit's key is its kind, doc path and target; the doc line number is ignored, and line-reference targets also drop ` -> …` candidate ranges and trailing ` (…)` notes. Renamed docs map base keys to their new paths.
 
+Doc paths in hits are relative to the tree root. Root prefixes are stripped literally, so glob or regular-expression characters in a repository's parent directory do not make pre-existing hits appear new.
+
 A key is new when it occurs more often at head than at base. Every head hit line for a new key is printed with the prefix `NEW `, preserving checker order: refs, then names, then line references. At most `--max` lines are printed. If there are more, output ends with:
 
 ```text
@@ -53,7 +57,7 @@ Success exits `0`, including when new hits exist. Errors print one line on stdou
 DOCS_DRIFT_ERROR <reason>
 ```
 
-Reasons identify a missing base revision, an invalid or missing positive maximum, an unknown option, a non-repository root, a base that is not a commit, a failed base checkout (with its first stderr line), or a failed checker (with the tree, `head` or `base`, and its first stdout line). A failed pre-pass never stops `/code-review:review`; the auditor falls back to semantic review.
+Reasons identify a missing base revision, a missing root directory (`--root needs a directory`), an invalid or missing positive maximum, an unknown option, a root that is not a repository's top level (`not a git repository: <dir>`), a base that is not a commit, a failed base checkout (with its first stderr line), or a failed checker (with the tree, `head` or `base`, and its first stdout line). A failed pre-pass never stops `/code-review:review`; the auditor falls back to semantic review.
 
 ## Reading the hits
 
@@ -83,6 +87,8 @@ check_refs.sh <file.md|dir> [...] [--root DIR] [--workspace DIR] [--overlay FILE
 check_names.sh <file.md|dir> [...] [--root DIR] [--ignore-file FILE]... [--overlay FILE] [--exclude GLOB]...
 check_linerefs.sh <file.md|dir> [...] [--root DIR] [--overlay FILE] [--exclude GLOB]... [--strict]
 ```
+
+Each checker accepts `-h` or `--help` without document arguments, prints its complete leading comment header (without the shebang), including requirements, and exits `0`.
 
 - `check_refs.sh`: exit `0` without `MISSING`, `1` with `MISSING`, `2` for usage errors. `UNRESOLVED`, `EXTERNAL` and `WORKSPACE` do not change the exit code; `--strict` keeps the same contract.
 - `check_names.sh`: exit `0` without candidates, `1` with candidates, `2` for usage errors. `KNOWN_STALE` hints do not change the exit code.
