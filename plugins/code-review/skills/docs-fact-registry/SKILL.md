@@ -25,8 +25,8 @@ Drift is checked against a registry: *claim in docs → source of truth in code 
 ## Three-way classification (MUST — not binary)
 
 - **mechanical** — uniquely derivable fact (version string, script name, file count) → auto-fixable.
-- **decision** — judgment call (aspirational threshold, descriptive prose, "is docs or code the target?") → escalate; never silently overwrite.
-- **dead reference** — docs cite code that no longer exists: mechanically *detectable*, but the fix (delete the mention vs restore the code) is a **decision** — never auto-delete doc content.
+- **decision** — judgment call (aspirational threshold, descriptive prose, "is docs or code the target?") → escalate; never silently overwrite. An auto-accepted decision is recorded on the finding's `**Decision:**` line and listed in the run summary, so it is never silent.
+- **dead reference** — docs cite code that no longer exists: mechanically *detectable*, but the fix (delete the mention vs restore the code) is a **decision** — never delete doc content without a decision: a fixer never deletes it on its own and the class stays `needs-decision`. The decision is the user's or, only where the user opted in, the decision gate's auto-accept (`code-review:decision-gate` stage 1.5: a trusted setting for this worktree, documentation files only, an agreeing second opinion, orchestrator-run verification).
 
 Findings retain the class end-to-end: each carries `**Drift-class:** mechanical | decision | dead-reference` **and** the derived routing field `**Fix-policy:** auto | needs-decision` (mechanical → auto; decision and dead-reference → needs-decision). Collapsing to the binary at the finding level erases the delete-vs-restore rationale exactly where the user decides. Missing-entry findings (new functionality with no doc — no registry claim to classify) carry `Drift-class: decision`: authoring new doc content is a judgment call, never an auto-fix.
 
@@ -38,8 +38,8 @@ Findings retain the class end-to-end: each carries `**Drift-class:** mechanical 
 ## Anti-patterns
 
 - **Self-referential verification** — checking a claim against the doc that makes it.
-- **Auto-deleting doc content** because its referent vanished — the mention may be the only surviving record of intent.
-- **Auto-editing an aspiration to match reality** — that silently lowers the bar instead of flagging the miss.
+- **Auto-deleting doc content without a decision** because its referent vanished — the mention may be the only surviving record of intent.
+- **Auto-editing an aspiration to match reality** — that silently lowers the bar instead of flagging the miss — a judgment call the decision analyst scores below 70, which auto-accept never takes.
 - **Transcribing an enumeration between docs** — the duplicate is a second drift site; cite by pointer.
 - **Dropping the class before the fix decision** — routing on the binary alone forfeits the delete-vs-restore context.
 
@@ -54,7 +54,7 @@ Paste into any docs-drift checker review:
 - [ ] 1. Registry instantiated per run (claim → source → policy), not implied
 - [ ] 2. Every finding classified three-way, not pass/fail
 - [ ] 3. Findings carry both `Drift-class` and derived `Fix-policy`
-- [ ] 4. Dead references escalate — never auto-deleted
+- [ ] 4. Dead references escalate (`needs-decision`) — never deleted without a decision
 - [ ] 5. Missing-entry findings classified `decision`
 - [ ] 6. Line-number citations escalate; moved paths may auto-fix
 - [ ] 7. Every number recomputed from its source, never from the doc under check
