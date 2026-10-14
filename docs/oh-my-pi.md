@@ -14,7 +14,7 @@ omp plugin install <plugin>@av-marketplace
 
 `omp plugin install` accepts several plugin IDs at once. Delivery hands tasks to the developer plugins and, with QA installed, runs `/qa:run` on testable deliveries; `/qa:run` needs Code Review for fixes. Start a new OMP session after installing: a running session does not load the extensions that Commit, Delivery and Plan Review ship.
 
-QA needs Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
+QA and Code Review's opt-in auto-accept need Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
 
 ## Updating
 
@@ -64,7 +64,7 @@ The suffix after a model sets its thinking level. The mapping pairs each check w
 
 The models need the `anthropic` and `openai-codex` providers logged in (`/login anthropic`, `/login openai-codex`); `omp models anthropic` and `omp models openai-codex` list what your account offers. If you use other providers, keep the pairing: map each checking role to a different model family than the role it checks.
 
-Leave `judge` unmapped: OMP's default list for it starts with `typesafe/jev-latest`, the model Delivery asks first to route a task that lists no files (see the [Delivery guide](plugins/delivery.md#routing)). Delivery asks the judge only in a repository with a Python, PHP or React project and uses its answer only from a model whose name contains `jev`, so with `judge` mapped to another model, tasks without a file list are routed by their text.
+Leave `judge` unmapped: OMP's default list for it starts with `typesafe/jev-latest`, the model Delivery asks first to route a task that lists no files (see the [Delivery guide](plugins/delivery.md#routing)). Delivery asks the judge only in a repository with a Python, PHP or React project and uses its answer only from a model whose name contains `jev`, so with `judge` mapped to another model, tasks without a file list are routed by their text. Code Review's opt-in auto-accept also asks the judge, for its second opinion on a documentation decision, and uses the answer only from a model whose name contains `jev`, so with `judge` mapped to another model a second `decision-analyst` gives that opinion instead (see the [Code Review guide](plugins/code-review.md#configuration)).
 
 ### Fallbacks
 

@@ -1,4 +1,4 @@
-"""Behavioral checks for code-review's opt-in policy and documentation paths.
+"""Behavioral checks for code-review's opt-in policy, secret masking and documentation paths.
 
 Run: PYTHONDONTWRITEBYTECODE=1 uv run python3 plugins/code-review/tests/test_auto_accept.py
 """
@@ -173,16 +173,53 @@ class AutoAcceptTests(unittest.TestCase):
         self.assertEqual(cast(dict[str, str], report["provenance"])[KEY], ".av/local.toml")
 
     def test_local_override_cannot_supply_shared_plugin_presence(self) -> None:
+        for value in ("95", '"x"'):
+            with self.subTest(value=value, state="missing-file"):
+                self.put(
+                    f"[code-review]\nauto_accept_min_confidence = {value}\n",
+                    ".av/local.toml",
+                )
+                report = self.report(self.cli("config"))
+                self.assertEqual(report["state"], "missing-file")
+                self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+                self.assertEqual(report["trust_subset"], {})
+                self.assertEqual(report["trust"], "not-required")
+
         self.put("[code-review]\nauto_accept_min_confidence = 95\n", ".av/local.toml")
-        self.assertEqual(self.report(self.cli("config"))["state"], "missing-file")
         self.put("version = 1\n")
-        self.assertEqual(self.report(self.cli("config"))["state"], "missing-table")
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["state"], "missing-table")
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+        self.assertEqual(report["trust_subset"], {})
+        self.assertEqual(report["trust"], "not-required")
+
+        self.put('version = 1\n[env.values]\nGREETING = "env:AV_GREETING"\n')
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["state"], "missing-table")
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+        self.assertEqual(report["trust_subset"], {"env.values.GREETING": "env:AV_GREETING"})
+        self.assertEqual(report["trust"], "new")
 
     def test_shared_environment_sources_are_trust_pinned(self) -> None:
         self.put(BASE + 'auto_accept_min_confidence = 90\n[env.values]\nGREETING = "env:AV_GREETING"\n')
         report = self.report(self.cli("config"))
         self.assertEqual(report["trust_subset"], {KEY: 90, "env.values.GREETING": "env:AV_GREETING"})
         self.assertEqual(report["trust"], "new")
+
+    def test_literal_store_password_is_masked_in_trust_report(self) -> None:
+        self.put(
+            BASE + 'auto_accept_min_confidence = 90\n'
+            '[env.stores.db]\nkind = "sql"\nengine = "postgres"\n'
+            'host = "localhost"\nuser = "u"\nname = "db"\npassword = "literal:hunter2"\n'
+        )
+        result = self.cli("config")
+        report = self.report(result)
+        self.assertEqual(report["state"], "ok")
+        self.assertEqual(
+            cast(dict[str, object], report["trust_subset"])["env.stores.db.password"],
+            "literal:***",
+        )
+        self.assertNotIn("hunter2", result.stdout)
 
     def test_regular_file_is_not_a_repository_directory(self) -> None:
         regular_file = self.put("text", "regular-file")
@@ -221,6 +258,49 @@ class AutoAcceptTests(unittest.TestCase):
         self.assertEqual(reasons["../docs/a.md"], "outside the repository")
         self.assertEqual(reasons["/etc/docs/a.md"], "outside the repository")
 
+    def test_doc_paths_reject_loop_records_case_insensitively(self) -> None:
+        documentation = [
+            "docs/guide.md", "doc/guide.md", "README.md",
+            "docs/reviews-guide.md", "docs/reviews-archive/guide.md",
+            "docs/testing-guide/README.md", "docs/plans-archive/index.mdx",
+        ]
+        records = [
+            "docs/reviews/finding.md", "docs/reviews/README.md",
+            "docs/testing/reports/QA-001.md", "docs/testing/guide.mdx",
+            "docs/plans/delivery.rst", "./docs/plans/CONTRIBUTING.adoc",
+            "docs/Reviews/review.md", "DOCS/TESTING/reports/QA-001.md",
+            "Docs/Plans/CHANGELOG.md",
+        ]
+        report = self.report(self.cli("doc-paths", "--", *documentation, *records))
+        self.assertEqual(report, {
+            "documentation": documentation,
+            "other": records,
+            "reasons": {path: "review or QA record, not documentation" for path in records},
+        })
+
+    def test_doc_paths_reject_physical_record_targets_through_parent_aliases(self) -> None:
+        (self.repo / "doc").mkdir()
+        (self.repo / "src").mkdir()
+        records = []
+
+        for name in ("reviews", "testing", "plans"):
+            target = self.put("# Record\n", f"docs/{name}/README.md")
+            (self.repo / "doc" / name).symlink_to(target.parent, target_is_directory=True)
+            records.append(f"doc/{name}/README.md")
+
+        (self.repo / "docs/ordinary").symlink_to("reviews", target_is_directory=True)
+        (self.repo / "src/records").symlink_to("../docs/reviews", target_is_directory=True)
+        (self.repo / "doc/dangling").symlink_to("../docs/plans/missing", target_is_directory=True)
+        records.extend([
+            "docs/ordinary/README.md", "src/records/README.md", "doc/dangling/new.md",
+        ])
+        report = self.report(self.cli("doc-paths", "--", *records))
+        self.assertEqual(report, {
+            "documentation": [],
+            "other": records,
+            "reasons": {path: "review or QA record, not documentation" for path in records},
+        })
+
     def test_documentation_paths_follow_parent_symlinks_and_reject_file_symlinks(self) -> None:
         self.put("# Guide\n", "docs/guide.md")
         (self.repo / "src").mkdir()
@@ -253,6 +333,24 @@ class AutoAcceptTests(unittest.TestCase):
         (self.repo / "docs/shared").symlink_to("../doc/shared", target_is_directory=True)
         report = self.report(self.cli("doc-paths", "--", "docs/shared/notes.md"))
         self.assertEqual(report, {"documentation": ["docs/shared/notes.md"], "other": [], "reasons": {}})
+
+    def test_doc_paths_reject_symlink_loops_in_any_parent(self) -> None:
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/loop").symlink_to("loop", target_is_directory=True)
+        (self.repo / "docs/cycle-a").symlink_to("cycle-b", target_is_directory=True)
+        (self.repo / "docs/cycle-b").symlink_to("cycle-a", target_is_directory=True)
+        paths = [
+            "docs/loop/x.md",
+            "docs/loop/new/deep/x.md",
+            "docs/cycle-a/x.md",
+            "docs/cycle-b/new/x.md",
+        ]
+        report = self.report(self.cli("doc-paths", "--", *paths))
+        self.assertEqual(report, {
+            "documentation": [],
+            "other": paths,
+            "reasons": {path: "unresolvable path" for path in paths},
+        })
 
     def test_doc_paths_reject_unsafe_characters_before_other_rules(self) -> None:
         for path in ("docs/it's.md", "docs/a\tb.md", "docs/a\x7fb.md", "/outside/it's.md"):

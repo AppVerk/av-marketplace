@@ -80,10 +80,9 @@ A live `**Decision:**` whose provenance is `auto@<c1>/<source>:<c2>` is **replay
 
 A non-replayable one is **revoked**: apply the supersession rewrite, `**Decision:**` → `**Decision-retired:**`, with attempt entries intact, and append `revoked` as the **last bracketed entry** — `[auto@95/jev:96, 2026-10-12; revoked]`. Print `Auto-accepted decision for <ID> retired: auto-accept is off here or below its recorded scores; asking instead.` Then send the finding through stages 0–2 like an undecided one; stage 1.5 test 3 sends it to the sweep.
 
-- **Decided, never dispatched:** a replayable automatic decision enters stage 3 as today; a non-replayable one is revoked instead.
-- **Dispatched, outcome unknown:** stage 3.5's verification runs **first, whatever the policy**. A pass writes the stage 4 status with no new dispatch. On a failure, record `attempt N: interrupted, unverified` as today; only then re-dispatch a replayable decision, or revoke a non-replayable one instead of re-dispatching.
-- A `user` decision replays exactly as today.
-
+- **Decided, never dispatched:** a replayable automatic decision enters stage 3 like any decided, never-dispatched finding; a non-replayable one is revoked instead.
+- **Dispatched, outcome unknown:** stage 3.5's verification runs **first, whatever the policy**. A pass writes the stage 4 status with no new dispatch. On a failure, record `attempt N: interrupted, unverified` exactly as the replay check above states; only then re-dispatch a replayable decision, or revoke a non-replayable one instead of re-dispatching. If recording that attempt triggers the two-attempt retirement, the decision remains retired as a failure with no `revoked` entry; revocation applies only to a decision still live after the attempt entry.
+- A `user` decision replays under the rules above, unchanged.
 
 ---
 
@@ -174,7 +173,7 @@ The analyst receives a composite as the same payload the fixer would: the compos
 
 ## Stage 1.5: auto-accept screening
 
-Run **only with the policy on**. This stage writes nothing: it decides per finding **auto-accept** or **ask**.
+Run **only with the policy on**. This stage writes nothing to the report: it decides per finding **auto-accept** or **ask**. The Jev route writes its input to a scratch JSON file as described below.
 
 ### Eligibility
 
@@ -188,21 +187,27 @@ Try these tests **in order**. The first failing test is the finding's reason, re
 6. The recommended alternative's `Verification Plan` has at least one check, passes the plan-rejection test (*The plan-rejection test applies to a derived plan too*), and every check is read-only inspection inside *The execution boundary* (soft re-reads included), so no approval call is needed — reasons `no usable verification plan` / `verification plan needs approval`.
 7. **Documentation files only, positively identified:** derive the recommended resolution's `:edit` paths with the *Decision-pin* membership rule (Target first, `:<line>` suffixes stripped) and its *Sanitisation* allow-list. An `unpinnable` `:edit` path fails outright — reason `edits <unpinnable token>: unpinnable`. Pass the surviving paths, each single-quoted, to `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py doc-paths --repo '<repository root>' -- …` in Claude Code, with the resolved-path form under *Entry: the auto-accept policy* in OMP. The test passes **only when exit is 0 and `other` is empty**. Otherwise the reason is `edits <first path under other>: <its reason>`; if the engine fails or its output cannot be parsed, use its error or first output line as the reason for the first edit path, and ask.
 
-   The engine applies stage 0's physical containment to **every path**, refuses symbolic links and classifies the physical target, so this rejects code, configuration and test files (`requirements.txt`, `CMakeLists.txt`, `pyproject.toml`, `src/…`), agent or plugin instruction Markdown outside `docs/`/`doc/` (`SKILL.md`, `CLAUDE.md`, `commands/*.md`), and documentation-named paths that escape the repository or alias another file — whatever the threshold. `fix-auto`'s own containment guard covers only its primary Location, so this test is what keeps **every secondary edit** of an auto-accepted resolution inside the repository's documentation.
+   The engine applies stage 0's physical containment to **every path**, refuses symbolic links and classifies the physical target. It excludes physical paths under `docs/reviews/`, `docs/testing/` and `docs/plans/`, compared case-insensitively, with the reason `review or QA record, not documentation`: these reports and plans are the loops' records, not inert documentation, even when reached through a directory alias or named `README`, `CHANGELOG` or `CONTRIBUTING`. It also rejects code, configuration and test files (`requirements.txt`, `CMakeLists.txt`, `pyproject.toml`, `src/…`), agent or plugin instruction Markdown outside `docs/`/`doc/` (`SKILL.md`, `CLAUDE.md`, `commands/*.md`), and documentation-named paths that escape the repository or alias another file — whatever the threshold. `fix-auto`'s own containment guard covers only its primary Location, so this test is what keeps **every secondary edit** of an auto-accepted resolution inside the repository's documentation.
 
 ### Second opinion
 
 One per eligible finding, by **exactly one route**:
 
-**Jev route — OMP only, when the `eval` tool is available.** Run the snippet below **once** in the `eval` tool (python), with `T`, `REC` (recommended label per finding ID) and `STATES` filled in. A state holds the finding block with the loop-written lines removed, the analyst's `Target`, its `Findings` verbatim and the alternatives — **never its `Recommendation`, `Confidence`, `Risk` or `Code Preview`**.
+**Jev route — OMP only, when the `eval` tool is available.** Pass `T`, `REC` (recommended label per finding ID) and `STATES` **as JSON data, never as Python source**. Each `STATES` entry has `finding`, `target`, `evidence` and `alternatives` fields: the finding block with the loop-written lines removed, the analyst's `Target`, its `Findings` verbatim and the alternatives keyed by `A` and, where returned, `B` — **never its `Recommendation`, `Confidence`, `Risk` or `Code Preview`**.
+
+1. Use the **`write` tool** to serialize one JSON object with keys `T`, `REC` and `STATES` to a fresh scratch file `local://code-review-second-opinion-<run-id>.json`. Choose the name yourself, using only letters, digits, `.`, `_` and `-`; never derive it from finding or repository text. Do not create the file with a shell command, heredoc or `eval`.
+2. Resolve it with **`realpath local://code-review-second-opinion-<run-id>.json`** in `Bash`. Before inserting the returned absolute path into any executable source, check it **as data** against the *Sanitisation* allow-list: every character must be one of `A–Z a–z 0–9 . _ / -` (no line suffix applies here). Reject an unsafe path, **never escape or repair it**.
+3. Run the snippet below **once** in the `eval` tool (python), substituting **only that resolved, allow-listed path** into the single-quoted `open` argument. All other source stays unchanged. **Finding, target, evidence/raw tool output and alternative text never appear in the snippet's source**, nor do finding IDs or the recommendation map: no ordinary or triple-quoted literals, f-strings, or pasted `repr`/`json.dumps` output containing them. They are loaded only from the scratch JSON file.
+
+If writing, resolving or loading the JSON fails, or the resolved path fails the allow-list, the Jev route is unavailable and the affected findings take the analyst route. Never fall back to embedding the input in source.
 
 For a finding, Jev **agrees** when the printed `model` contains `jev` (case-insensitive), the finding has an answer, `choice == REC[id]` and `c2 = floor(100 × probabilities[REC[id]]) ≥ T`; source `jev`. A finding with no answer (oversized state, item error, timeout, batch error) or a `model` without `jev` takes the analyst route. A Jev answer that disagrees (other label, `unclear`, or `c2 < T`) is **final for this run — no fallback**.
 
 ```python
 import json
-T = 90
-REC = {"DOC-001": "A"}
-STATES = {"DOC-001": {"finding": "...", "target": "...", "evidence": "...", "alternatives": {"A": "...", "B": "..."}}}
+with open('<realpath-resolved, allow-listed path>', encoding="utf-8") as stream:
+    data = json.load(stream)
+T, REC, STATES = data["T"], data["REC"], data["STATES"]
 INSTR = ("A documentation finding from a code review, the evidence an analyst gathered from the repository, "
          "and the alternative resolutions. Pick the alternative that correctly resolves the finding given that "
          "evidence. Pick 'unclear' when the evidence does not decide it or no listed alternative resolves the finding.")
@@ -816,7 +821,7 @@ The render is explicit: the call carries **four options, `[A] [B] [skip] [reject
 
 **The orchestrator never supplies a decision on the user's behalf and never infers one from the analyst's recommendation — except under auto-accept, which the user opts into.** It applies a recommendation only when the user set and trusted `auto_accept_min_confidence` for this worktree (*Entry: the auto-accept policy*), only for a finding that passed every stage 1.5 eligibility test and whose second opinion agreed at or above the threshold, and it replays such a decision only while that still holds.
 
-If `AskUserQuestion` is unavailable or errors during a finding's decision or target question, the decision stage **aborts immediately**: no dispatch, and no further `**Decision:**` line. Decisions already written stay in the report and are replayed next run, and the abort reports how many findings were left undecided. The entry's trust question instead leaves auto-accept off as stated there. At stage 3.5 the same unavailability is **not an abort but a refusal to run**: the escalation call — which shows the exact command text and asks for approval to run it — then counts as a check that cannot be run, and the finding takes stage 4's fourth case.
+If `AskUserQuestion` is unavailable or errors at any question of the decision stage other than the entry's trust question, the decision stage **aborts immediately**: no dispatch, and no further `**Decision:**` line. Decisions already written stay in the report and are replayed next run, and the abort reports how many findings were left undecided. The trust question's failure only leaves auto-accept off (*Entry: the auto-accept policy*). At stage 3.5 the same unavailability is **not an abort but a refusal to run**: the escalation call — which shows the exact command text and asks for approval to run it — then counts as a check that cannot be run, and the finding takes stage 4's fourth case.
 
 | Outcome | Effect |
 |---|---|

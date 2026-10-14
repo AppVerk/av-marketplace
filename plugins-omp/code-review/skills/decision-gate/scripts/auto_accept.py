@@ -38,6 +38,7 @@ VALUE_SOURCE_KEYS = re.compile(
 DOC_SUFFIXES = {".md", ".mdx", ".rst", ".adoc"}
 DOC_DIRS = {"docs", "doc"}
 DOC_STEMS = {"README", "CHANGELOG", "CONTRIBUTING"}
+RECORD_DIRS = {("docs", "reviews"), ("docs", "testing"), ("docs", "plans")}
 
 
 class AutoAcceptConfig:
@@ -61,7 +62,7 @@ class AutoAcceptConfig:
 
         self.trust_subset = {} if self.errors else self.shared.env_sensitive_subset()
 
-        if not self.errors and AUTO_ACCEPT in self.table:
+        if self.state == "ok" and AUTO_ACCEPT in self.table:
             self.trust_subset[f"{TABLE}.{AUTO_ACCEPT}"] = self.table[AUTO_ACCEPT]
 
         self.trust_hash = canonical_hash(self.trust_subset)
@@ -95,7 +96,7 @@ class AutoAcceptConfig:
         }
 
         if not self.errors:
-            report["policy"] = {AUTO_ACCEPT: self.table.get(AUTO_ACCEPT)}
+            report["policy"] = {AUTO_ACCEPT: self.table.get(AUTO_ACCEPT) if self.state == "ok" else None}
 
         return report
 
@@ -139,10 +140,21 @@ def _doc_path_reason(repo: Path, path: str) -> str | None:
     if not parent.is_relative_to(repo):
         return "outside the repository"
 
+    # Python 3.13+ leaves symlink loops unresolved in non-strict resolve().
+    if any(
+        component.is_symlink()
+        for component in (parent, *parent.parents)
+        if component.is_relative_to(repo)
+    ):
+        return "unresolvable path"
+
     if (repo / candidate).is_symlink():
         return "symbolic link"
 
     physical = (parent / candidate.name).relative_to(repo)
+
+    if tuple(part.lower() for part in physical.parts[:2]) in RECORD_DIRS:
+        return "review or QA record, not documentation"
 
     if physical.suffix.lower() in DOC_SUFFIXES and (
         (physical.parts and physical.parts[0] in DOC_DIRS)
