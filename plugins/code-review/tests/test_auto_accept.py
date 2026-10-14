@@ -14,8 +14,14 @@ import unittest
 from typing import cast
 
 SCRIPT = Path(__file__).resolve().parents[1] / "skills/decision-gate/scripts/auto_accept.py"
+sys.path.insert(0, str(SCRIPT.parent))
+
+from av_config.errors import InvalidConfig
+from auto_accept import AutoAcceptConfig
+
 BASE = "version = 1\n[code-review]\n"
 KEY = "code-review.auto_accept_min_confidence"
+GATE_KEY = "code-review.auto_accept_gate"
 
 
 class AutoAcceptTests(unittest.TestCase):
@@ -26,6 +32,8 @@ class AutoAcceptTests(unittest.TestCase):
         self.repo.mkdir()
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         self.state = Path(self.tmp.name) / "state"
+        self.config_home = Path(self.tmp.name) / "config"
+        self.user_file = self.config_home / "av/config.toml"
         self.put(".av/local.toml\n", ".git/info/exclude")
 
     def put(self, text: str, name: str = ".av/config.toml") -> Path:
@@ -33,6 +41,10 @@ class AutoAcceptTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         return path
+
+    def put_user(self, text: str) -> None:
+        self.user_file.parent.mkdir(parents=True, exist_ok=True)
+        self.user_file.write_text(text, encoding="utf-8")
 
     def cli(self, *args: str, repo: Path | None = None) -> subprocess.CompletedProcess[str]:
         # Insert before doc-paths' --, never among its path arguments.
@@ -44,7 +56,10 @@ class AutoAcceptTests(unittest.TestCase):
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             cwd=cwd or self.repo,
-            env={**os.environ, "XDG_STATE_HOME": str(self.state)},
+            env={
+                **os.environ, "XDG_STATE_HOME": str(self.state),
+                "XDG_CONFIG_HOME": str(self.config_home),
+            },
             capture_output=True,
             text=True,
             check=False,
@@ -60,21 +75,21 @@ class AutoAcceptTests(unittest.TestCase):
     def test_missing_file_uses_disabled_policy(self) -> None:
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "missing-file")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
         self.assertEqual(report["trust"], "not-required")
 
     def test_missing_table_uses_disabled_policy(self) -> None:
         self.put("version = 1\n")
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "missing-table")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
         self.assertEqual(report["trust"], "not-required")
 
     def test_empty_table_does_not_need_trust(self) -> None:
         self.put(BASE)
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "ok")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
         self.assertEqual(report["trust_subset"], {})
         self.assertEqual(report["trust"], "not-required")
 
@@ -82,7 +97,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.put(BASE + "auto_accept_min_confidence = 90\n")
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "ok")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 90})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 90, "auto_accept_gate": "analyst"})
         self.assertEqual(report["trust"], "new")
         self.assertEqual(report["trust_subset"], {KEY: 90})
         approved_hash = cast(str, report["trust_hash"])
@@ -110,13 +125,13 @@ class AutoAcceptTests(unittest.TestCase):
         self.assertEqual(self.report(self.cli("config"))["trust"], "trusted")
 
     def test_threshold_rejects_wrong_types_and_out_of_range_values(self) -> None:
-        for value in ("69", "101", "-1", '"90"', "true", "90.5"):
+        for value in ("69", "101", "-1", "0", '"90"', '"false"', "true", "90.5"):
             with self.subTest(value=value):
                 self.put(BASE + f"auto_accept_min_confidence = {value}\n")
                 report = self.report(self.cli("config"), 2)
                 self.assertEqual(report["state"], "invalid")
                 self.assertIn(
-                    {"file": ".av/config.toml", "key": KEY, "error": "expected an integer from 70 to 100"},
+                    {"file": ".av/config.toml", "key": KEY, "error": "expected an integer from 70 to 100, or false"},
                     cast(list[dict[str, str]], report["errors"]),
                 )
                 self.assertNotIn("policy", report)
@@ -128,7 +143,7 @@ class AutoAcceptTests(unittest.TestCase):
                 self.put(BASE + f"auto_accept_min_confidence = {value}\n")
                 report = self.report(self.cli("config"))
                 self.assertEqual(report["state"], "ok")
-                self.assertEqual(report["policy"], {"auto_accept_min_confidence": value})
+                self.assertEqual(report["policy"], {"auto_accept_min_confidence": value, "auto_accept_gate": "analyst"})
                 self.assertEqual(report["trust_subset"], {KEY: value})
 
     def test_unknown_plugin_key_is_invalid(self) -> None:
@@ -169,7 +184,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.put("[code-review]\nauto_accept_min_confidence = 95\n", ".av/local.toml")
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "ok")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 95})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 95, "auto_accept_gate": "analyst"})
         self.assertEqual(cast(dict[str, str], report["provenance"])[KEY], ".av/local.toml")
 
     def test_local_override_cannot_supply_shared_plugin_presence(self) -> None:
@@ -181,7 +196,7 @@ class AutoAcceptTests(unittest.TestCase):
                 )
                 report = self.report(self.cli("config"))
                 self.assertEqual(report["state"], "missing-file")
-                self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+                self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
                 self.assertEqual(report["trust_subset"], {})
                 self.assertEqual(report["trust"], "not-required")
 
@@ -189,16 +204,165 @@ class AutoAcceptTests(unittest.TestCase):
         self.put("version = 1\n")
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "missing-table")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
         self.assertEqual(report["trust_subset"], {})
         self.assertEqual(report["trust"], "not-required")
 
         self.put('version = 1\n[env.values]\nGREETING = "env:AV_GREETING"\n')
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "missing-table")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
         self.assertEqual(report["trust_subset"], {"env.values.GREETING": "env:AV_GREETING"})
         self.assertEqual(report["trust"], "new")
+
+    def test_user_only_policy_does_not_require_repository_trust(self) -> None:
+        self.put_user(BASE + "auto_accept_min_confidence = 90\n")
+        report = self.report(self.cli("config"))
+        self.assertFalse((self.repo / ".av").exists())
+        self.assertEqual(report["state"], "ok")
+        self.assertEqual(report["policy"], {
+            "auto_accept_min_confidence": 90, "auto_accept_gate": "analyst",
+        })
+        self.assertEqual(report["trust"], "not-required")
+        self.assertEqual(report["trust_subset"], {})
+        self.assertEqual(cast(dict[str, str], report["provenance"])[KEY], str(self.user_file))
+
+    def test_user_decision_model_gate_does_not_require_trust(self) -> None:
+        self.put_user(BASE + 'auto_accept_min_confidence = 90\nauto_accept_gate = "decision-model"\n')
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["state"], "ok")
+        self.assertEqual(report["policy"], {
+            "auto_accept_min_confidence": 90, "auto_accept_gate": "decision-model",
+        })
+        self.assertEqual(report["trust"], "not-required")
+        self.assertEqual(report["trust_subset"], {})
+        provenance = cast(dict[str, str], report["provenance"])
+        self.assertEqual(provenance[KEY], str(self.user_file))
+        self.assertEqual(provenance[GATE_KEY], str(self.user_file))
+
+    def test_repository_decision_model_gate_is_pinned_but_analyst_is_not(self) -> None:
+        self.put_user(BASE + "auto_accept_min_confidence = 90\n")
+        for gate, subset, trust in (
+            ("decision-model", {GATE_KEY: "decision-model"}, "new"),
+            ("analyst", {}, "not-required"),
+        ):
+            with self.subTest(gate=gate):
+                self.put(BASE + f'auto_accept_gate = "{gate}"\n')
+                report = self.report(self.cli("config"))
+                self.assertEqual(report["policy"], {
+                    "auto_accept_min_confidence": 90, "auto_accept_gate": gate,
+                })
+                self.assertEqual(report["trust_subset"], subset)
+                self.assertEqual(report["trust"], trust)
+                self.assertEqual(cast(dict[str, str], report["provenance"])[GATE_KEY], ".av/config.toml")
+
+    def test_shared_false_vetoes_user_threshold_and_local_can_override(self) -> None:
+        self.put_user(BASE + "auto_accept_min_confidence = 90\n")
+        self.put(BASE + "auto_accept_min_confidence = false\n")
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["state"], "ok")
+        self.assertEqual(report["policy"], {
+            "auto_accept_min_confidence": None, "auto_accept_gate": "analyst",
+        })
+        self.assertEqual(report["trust"], "not-required")
+        self.assertEqual(report["trust_subset"], {})
+        self.assertEqual(cast(dict[str, str], report["provenance"])[KEY], ".av/config.toml")
+        self.put("[code-review]\nauto_accept_min_confidence = 95\n", ".av/local.toml")
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["policy"], {
+            "auto_accept_min_confidence": 95, "auto_accept_gate": "analyst",
+        })
+        self.assertEqual(report["trust_subset"], {KEY: 95})
+        self.assertEqual(report["trust"], "new")
+        self.assertEqual(cast(dict[str, str], report["provenance"])[KEY], ".av/local.toml")
+
+    def test_local_policy_overrides_user_only_table_and_is_pinned(self) -> None:
+        self.put_user(BASE + "auto_accept_min_confidence = 90\n")
+        self.put(
+            '[code-review]\nauto_accept_min_confidence = 95\nauto_accept_gate = "decision-model"\n',
+            ".av/local.toml",
+        )
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["state"], "ok")
+        self.assertEqual(report["policy"], {
+            "auto_accept_min_confidence": 95, "auto_accept_gate": "decision-model",
+        })
+        self.assertEqual(report["trust_subset"], {KEY: 95, GATE_KEY: "decision-model"})
+        self.assertEqual(report["trust"], "new")
+        provenance = cast(dict[str, str], report["provenance"])
+        self.assertEqual(provenance[KEY], ".av/local.toml")
+        self.assertEqual(provenance[GATE_KEY], ".av/local.toml")
+
+    def test_false_is_allowed_in_every_layer_without_pinning(self) -> None:
+        for layer in ("user", "shared", "local"):
+            with self.subTest(layer=layer):
+                self.put_user(BASE + "auto_accept_min_confidence = false\n")
+                if layer == "shared":
+                    self.put(BASE + "auto_accept_min_confidence = false\n")
+                elif layer == "local":
+                    self.put("[code-review]\nauto_accept_min_confidence = false\n", ".av/local.toml")
+                report = self.report(self.cli("config"))
+                self.assertEqual(report["state"], "ok")
+                self.assertEqual(report["policy"], {
+                    "auto_accept_min_confidence": None, "auto_accept_gate": "analyst",
+                })
+                self.assertEqual(report["trust_subset"], {})
+                self.assertEqual(report["trust"], "not-required")
+
+    def test_gate_rejects_unknown_names_and_wrong_types(self) -> None:
+        for value in ('"jev"', "1", "false"):
+            with self.subTest(value=value):
+                self.put(BASE + f"auto_accept_gate = {value}\n")
+                report = self.report(self.cli("config"), 2)
+                self.assertEqual(report["state"], "invalid")
+                self.assertIn(
+                    {"file": ".av/config.toml", "key": GATE_KEY, "error": 'expected "analyst" or "decision-model"'},
+                    cast(list[dict[str, str]], report["errors"]),
+                )
+                self.assertNotIn("policy", report)
+                self.assertEqual(report["trust_subset"], {})
+
+    def test_user_values_use_policy_validation_with_user_provenance(self) -> None:
+        for text, key, message in (
+            ("auto_accept_min_confidence = true\n", KEY, "expected an integer from 70 to 100, or false"),
+            ('auto_accept_gate = "jev"\n', GATE_KEY, 'expected "analyst" or "decision-model"'),
+        ):
+            with self.subTest(key=key):
+                self.put_user(BASE + text)
+                report = self.report(self.cli("config"), 2)
+                self.assertEqual(report["state"], "invalid")
+                self.assertIn(
+                    {"file": str(self.user_file), "key": key, "error": message},
+                    cast(list[dict[str, str]], report["errors"]),
+                )
+                self.assertNotIn("policy", report)
+
+    def test_user_forbidden_keys_and_environment_disable_the_policy(self) -> None:
+        for text, key in (("foo = 1\n", "code-review.foo"), ("[env]\n", "env")):
+            with self.subTest(key=key):
+                self.put_user(BASE + text)
+                report = self.report(self.cli("config"), 2)
+                self.assertEqual(report["state"], "invalid")
+                self.assertIn(
+                    {"file": str(self.user_file), "key": key, "error": "not allowed in the user config"},
+                    cast(list[dict[str, str]], report["errors"]),
+                )
+                self.assertNotIn("policy", report)
+
+    def test_explicit_config_home_is_preserved_when_accepting_trust(self) -> None:
+        self.put_user(BASE + "auto_accept_min_confidence = 90\n")
+        self.put(BASE + 'auto_accept_gate = "decision-model"\n')
+        config = AutoAcceptConfig(self.repo, state_home=self.state, config_home=self.config_home)
+        self.assertEqual(config.trust_subset, {GATE_KEY: "decision-model"})
+        self.assertEqual(config.accept(config.trust_hash), {"trusted": config.trust_hash})
+        reloaded = AutoAcceptConfig(self.repo, state_home=self.state, config_home=self.config_home)
+        self.assertEqual(reloaded.trust, "trusted")
+        self.assertEqual(reloaded.report()["policy"], {
+            "auto_accept_min_confidence": 90, "auto_accept_gate": "decision-model",
+        })
+        self.put_user(BASE + "foo = 1\n")
+        with self.assertRaisesRegex(InvalidConfig, "invalid config cannot be trusted"):
+            config.accept(config.trust_hash)
 
     def test_shared_environment_sources_are_trust_pinned(self) -> None:
         self.put(BASE + 'auto_accept_min_confidence = 90\n[env.values]\nGREETING = "env:AV_GREETING"\n')
@@ -233,7 +397,7 @@ class AutoAcceptTests(unittest.TestCase):
         nested = self.repo / "nested"
         nested.mkdir()
         report = self.report(self.raw_cli("config", cwd=nested))
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 90})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 90, "auto_accept_gate": "analyst"})
 
     def test_repository_outside_git_needs_explicit_root(self) -> None:
         self.assertEqual(

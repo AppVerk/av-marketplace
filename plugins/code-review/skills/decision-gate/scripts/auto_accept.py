@@ -31,6 +31,9 @@ from av_config.trust import TrustStore
 
 TABLE = "code-review"
 AUTO_ACCEPT = "auto_accept_min_confidence"
+GATE = "auto_accept_gate"
+GATES = ("analyst", "decision-model")
+USER_KEYS = {AUTO_ACCEPT, GATE}
 FLOOR = 70
 VALUE_SOURCE_KEYS = re.compile(
     r"env\.(?:secrets|values)\.[A-Za-z_][A-Za-z0-9_]*|env\.stores\.[A-Za-z_][A-Za-z0-9_]*\.password"
@@ -48,22 +51,34 @@ class AutoAcceptConfig:
     under the trust-store lock so approval cannot pin a stale configuration.
     """
 
-    def __init__(self, repo: Path, *, state_home: Path | None = None) -> None:
+    def __init__(
+        self, repo: Path, *, state_home: Path | None = None,
+        config_home: Path | None = None,
+    ) -> None:
         self.repo = repo.resolve()
         self.state_home = state_home
-        self.shared = Configuration(self.repo, plugin_prefix="AV_")
+        self.config_home = config_home
+        self.shared = Configuration(
+            self.repo, plugin_prefix="AV_", user_table=TABLE,
+            user_keys=USER_KEYS, config_home=config_home,
+        )
         self.errors = self.shared.errors
         self.store = TrustStore(self.repo, TABLE, state_home)
         table = self.shared.data.get(TABLE)
         self.table = cast(dict[str, object], table) if isinstance(table, dict) else {}
 
-        if self.shared.exists and TABLE in self.shared.data:
+        if TABLE in self.shared.data:
             self._validate()
 
         self.trust_subset = {} if self.errors else self.shared.env_sensitive_subset()
 
-        if self.state == "ok" and AUTO_ACCEPT in self.table:
-            self.trust_subset[f"{TABLE}.{AUTO_ACCEPT}"] = self.table[AUTO_ACCEPT]
+        if self.state == "ok":
+            threshold = self.table.get(AUTO_ACCEPT)
+            gate = self.table.get(GATE)
+            if type(threshold) is int and not self.shared.from_user(f"{TABLE}.{AUTO_ACCEPT}"):
+                self.trust_subset[f"{TABLE}.{AUTO_ACCEPT}"] = threshold
+            if gate == "decision-model" and not self.shared.from_user(f"{TABLE}.{GATE}"):
+                self.trust_subset[f"{TABLE}.{GATE}"] = gate
 
         self.trust_hash = canonical_hash(self.trust_subset)
         self.trust = self.store.status(self.trust_subset)
@@ -73,14 +88,20 @@ class AutoAcceptConfig:
         return self.shared.state(TABLE)
 
     def _validate(self) -> None:
+        # A local-only table cannot activate the plugin's policy.
+        if self.state in ("missing-file", "missing-table") and self.shared.file_for(TABLE) == ".av/local.toml":
+            return
         table = self.shared.table(self.shared.data[TABLE], TABLE)
-        self.shared.keys(table, {AUTO_ACCEPT}, TABLE)
+        self.shared.keys(table, USER_KEYS, TABLE)
 
         if AUTO_ACCEPT in table:
             value = table[AUTO_ACCEPT]
 
-            if type(value) is not int or not FLOOR <= value <= 100:
-                self.shared.error(f"{TABLE}.{AUTO_ACCEPT}", "expected an integer from 70 to 100")
+            if value is not False and (type(value) is not int or not FLOOR <= cast(int, value) <= 100):
+                self.shared.error(f"{TABLE}.{AUTO_ACCEPT}", "expected an integer from 70 to 100, or false")
+
+        if GATE in table and table[GATE] not in GATES:
+            self.shared.error(f"{TABLE}.{GATE}", 'expected "analyst" or "decision-model"')
 
     def report(self) -> dict[str, object]:
         """Return JSON-safe policy metadata without resolving value sources."""
@@ -96,7 +117,11 @@ class AutoAcceptConfig:
         }
 
         if not self.errors:
-            report["policy"] = {AUTO_ACCEPT: self.table.get(AUTO_ACCEPT) if self.state == "ok" else None}
+            threshold = self.table.get(AUTO_ACCEPT) if self.state == "ok" else None
+            report["policy"] = {
+                AUTO_ACCEPT: threshold if type(threshold) is int else None,
+                GATE: self.table.get(GATE, "analyst") if self.state == "ok" else "analyst",
+            }
 
         return report
 
@@ -104,7 +129,7 @@ class AutoAcceptConfig:
         """Pin the current policy only if it still matches the approved hash."""
 
         def current() -> Mapping[str, object]:
-            config = AutoAcceptConfig(self.repo, state_home=self.state_home)
+            config = AutoAcceptConfig(self.repo, state_home=self.state_home, config_home=self.config_home)
 
             if config.errors:
                 raise InvalidConfig("invalid config cannot be trusted")
