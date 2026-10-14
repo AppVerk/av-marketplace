@@ -44,8 +44,10 @@ Plugins with an OMP edition either have an `omp/overlay/<name>.json`, from which
 
 Configurable plugins share `.av/config.toml` and `.av/local.toml`, own one
 top-level table named after the plugin, and reuse the generic loader and
-environment bootstrap. See [Making a plugin configurable](#making-a-plugin-configurable)
-for table ownership, validation, trust and documentation requirements.
+environment bootstrap. A plugin may also let users set some of its policy keys
+in the user file `${XDG_CONFIG_HOME:-~/.config}/av/config.toml`. See
+[Making a plugin configurable](#making-a-plugin-configurable) for table
+ownership, validation, trust and documentation requirements.
 
 ### plugin.json
 
@@ -199,7 +201,8 @@ A plugin that covers a stage another plugin already owns says so in its pull req
 
 ### Making a plugin configurable
 
-1. **Own exactly one top-level table named after the plugin**, such as `[qa]`. Use the root `version` and shared `[env]` schema; read settings only from `.av/config.toml` and `.av/local.toml`, with private values obtained through sources. Do not introduce a plugin-specific config directory or parallel file convention.
+1. **Own exactly one top-level table named after the plugin**, such as `[qa]`. Use the root `version` and shared `[env]` schema; read settings only from `.av/config.toml`, `.av/local.toml` and, for the keys you allow there, the user file `${XDG_CONFIG_HOME:-~/.config}/av/config.toml`, with private values obtained through sources. Do not introduce a plugin-specific config directory or parallel file convention.
+   **User-file keys are opt-in per key.** Pass `user_table=<your table>` and `user_keys=<keys>` to `Configuration`; without them the user file is never read. Allow only personal policy keys there, never `[env]`, a source, a command or a target. User-file values are never trust-pinned, so a key that widens a gate is pinned only when it comes from the repository's files; give the project a value that turns the policy off (Code Review's `auto_accept_min_confidence = false`), because the user file otherwise applies in every repository.
 2. **Validate only your table plus the shared schema.** Ignore other plugins' top-level tables; preserve the warning-only treatment of unknown `[env]` sub-tables. Report `state`, `provenance`, file/key diagnostics and masked trust metadata through your engine.
 3. **Pin capabilities before use.** Combine the shared sensitive subset with your sources, executable recipes and keys that widen gates. Scope acceptance by repository and plugin; never resolve a source or run an untrusted command while inspecting config.
 4. **Use the bootstrap protocol below** from the plugin's entry command in `create`, `extend` and `repair` situations. Reuse the generic loader and environment detector, adding only your table's validation, recipes and policy questions. A plugin whose table holds only optional policy keys (Code Review's `auto_accept_min_confidence`) has no `create`, `extend` or `repair` situation: a missing file or table means its defaults, and users add keys by hand.

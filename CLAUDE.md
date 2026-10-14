@@ -44,8 +44,10 @@ loses an OMP edition updates its row.
 
 ## Plugin configuration
 
-Configurable plugins read settings only from `.av/config.toml` and
-`.av/local.toml`, own one top-level table named after the plugin, and share
+Configurable plugins read settings only from `.av/config.toml`,
+`.av/local.toml` and, for the policy keys a plugin allows there, the user file
+`${XDG_CONFIG_HOME:-~/.config}/av/config.toml`; they own one top-level table
+named after the plugin, and share
 `[env]`. Create, extend and repair their configuration through the
 [bootstrap protocol](docs/contributing.md#bootstrap-protocol), using the
 shared generic layer — never a second loader or `[env]` detector.

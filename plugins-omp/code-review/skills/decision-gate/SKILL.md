@@ -43,9 +43,9 @@ Run this entry **once per gate invocation from `/fix-all` and `/fix-report`**, b
 
 Run the engine's `config`: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py config` in Claude Code, with the resolved-path form above in OMP. **Read the JSON and the exit code together**, checking errors before treating a missing policy as a default:
 
-- **Off with a message:** exit 2 with `errors` → `Auto-accept off: .av/config.toml is invalid — <file> <key>: <error>[; …]`. Any other non-zero exit, unparseable output or a missing interpreter → `Auto-accept off: <error text, or the first output line>`.
-- **Off, silently:** a successful report whose `state` is `missing-file` or `missing-table`, or whose `policy.auto_accept_min_confidence` is `null`.
-- **On:** `state` is `ok`, the value is non-null and `trust` is `trusted`; the threshold `T` is that value.
+- **Off with a message:** exit 2 with `errors` → `Auto-accept off: the configuration is invalid — <file> <key>: <error>[; …]`. Any other non-zero exit, unparseable output or a missing interpreter → `Auto-accept off: <error text, or the first output line>`.
+- **Off, silently:** a successful report whose `state` is `missing-file` or `missing-table`, or whose `policy.auto_accept_min_confidence` is `null` — unset, or `false` in a repository file that vetoes a user-file value.
+- **On:** `state` is `ok`, the value is non-null and `trust` is `trusted` or `not-required`; the threshold `T` is that value. `not-required` means no repository-file setting needs trust — for example, every setting comes from the user configuration file, `~/.config/av/config.toml`, whose values are never trust-pinned.
 - **Trust not yet recorded:** `state` is `ok`, the value is non-null and `trust` is `new` or `changed` → one `AskUserQuestion`, with this question:
 
   `Trust the code-review settings? With them, a documentation finding is fixed without asking when the analyst and an independent second opinion agree at or above <T>% confidence.`
@@ -57,7 +57,9 @@ Run the engine's `config`: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/s
 
   On `Trust and use it`, run the engine's `trust accept <trust_hash>`: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py trust accept <trust_hash>` in Claude Code, with the resolved-path form in OMP. Exit 0 turns the policy on; otherwise print `Auto-accept off: trust not recorded — <error>`. On `Not now`, or when the question cannot be asked, print `Auto-accept off for this run: settings not trusted.`
 
-When on, print **once**: `Auto-accept on: documentation findings at or above <T>% confidence are fixed without asking when a second opinion agrees.`
+With the policy on, read the second-opinion gate `G = policy.auto_accept_gate`: `analyst` or `decision-model`. When `G` is `decision-model` and the `eval` tool is unavailable — always so in Claude Code — print once `Decision model unavailable here: second opinions come from a second analyst.` and use `analyst` as `G` for this run.
+
+When on, print **once**: `Auto-accept on: documentation findings at or above <T>% confidence are fixed without asking when a second opinion (<route>) agrees.`, where `<route>` is `a second analyst` when `G` is `analyst` and `the decision model, then a second analyst` when `G` is `decision-model`.
 
 An invalid configuration **never stops the decision stage**: it only leaves auto-accept off. Asking every finding is the safe default.
 
@@ -76,9 +78,9 @@ After *Entry: the auto-accept policy* and before stage 0, read each selected fin
 
 ### Replay of an automatic decision
 
-A live `**Decision:**` whose provenance is `auto@<c1>/<source>:<c2>` is **replayable** only when the policy is on in this run — including trust for this worktree's real path — and both `c1 ≥ T` and `c2 ≥ T`.
+A live `**Decision:**` whose provenance is `auto@<c1>/<source>:<c2>` is **replayable** only when the policy is **on in this run** — set in the user configuration file, or set in the repository's files and trusted for this worktree's real path — and both `c1 ≥ T` and `c2 ≥ T`.
 
-A non-replayable one is **revoked**: apply the supersession rewrite, `**Decision:**` → `**Decision-retired:**`, with attempt entries intact, and append `revoked` as the **last bracketed entry** — `[auto@95/jev:96, 2026-10-12; revoked]`. Print `Auto-accepted decision for <ID> retired: auto-accept is off here or below its recorded scores; asking instead.` Then send the finding through stages 0–2 like an undecided one; stage 1.5 test 3 sends it to the sweep.
+A non-replayable one is **revoked**: apply the supersession rewrite, `**Decision:**` → `**Decision-retired:**`, with attempt entries intact, and append `revoked` as the **last bracketed entry** — `[auto@95/decision-model:96, 2026-10-12; revoked]`. Print `Auto-accepted decision for <ID> retired: auto-accept is off here or below its recorded scores; asking instead.` Then send the finding through stages 0–2 like an undecided one; stage 1.5 test 3 sends it to the sweep.
 
 - **Decided, never dispatched:** a replayable automatic decision enters stage 3 like any decided, never-dispatched finding; a non-replayable one is revoked instead.
 - **Dispatched, outcome unknown:** stage 3.5's verification runs **first, whatever the policy**. A pass writes the stage 4 status with no new dispatch. On a failure, record `attempt N: interrupted, unverified` exactly as the replay check above states; only then re-dispatch a replayable decision, or revoke a non-replayable one instead of re-dispatching. If recording that attempt triggers the two-attempt retirement, the decision remains retired as a failure with no `revoked` entry; revocation applies only to a decision still live after the attempt entry.
@@ -173,7 +175,7 @@ The analyst receives a composite as the same payload the fixer would: the compos
 
 ## Stage 1.5: auto-accept screening
 
-Run **only with the policy on**. This stage writes nothing to the report: it decides per finding **auto-accept** or **ask**. The Jev route writes its input to a scratch JSON file as described below.
+Run **only with the policy on**. This stage writes nothing to the report: it decides per finding **auto-accept** or **ask**. The decision-model route re-runs cited evidence under *The execution boundary* and writes its input to a scratch JSON file as described below.
 
 ### Eligibility
 
@@ -191,60 +193,121 @@ Try these tests **in order**. The first failing test is the finding's reason, re
 
 ### Second opinion
 
-One per eligible finding, by **exactly one route**:
+One per eligible finding. With `G` = `analyst`, the analyst route is the **only** route. With `G` = `decision-model`, the second opinion is a **cascade**: the decision-model route first, then the analyst route for every finding the decision model did not auto-accept. **Only a confirm analyst's answer is final.**
 
-**Jev route — OMP only, when the `eval` tool is available.** Pass `T`, `REC` (recommended label per finding ID) and `STATES` **as JSON data, never as Python source**. Each `STATES` entry has `finding`, `target`, `evidence` and `alternatives` fields: the finding block with the loop-written lines removed, the analyst's `Target`, its `Findings` verbatim and the alternatives keyed by `A` and, where returned, `B` — **never its `Recommendation`, `Confidence`, `Risk` or `Code Preview`**.
+**Decision-model route — OMP only, when `G` is `decision-model` and the `eval` tool is available.** The decision model is whatever model the user maps to OMP's `judge` role: `judge_batch` takes no role or model of its own, so the snippet checks the model that actually answered each item.
+
+**Evidence is re-run, never copied.** For each eligible finding, re-run every command and tool call cited in its `Findings` exactly as *The reject evidence gate* re-runs a candidate's citations — under *The execution boundary*, with nothing offered for approval — and apply *The support test, stated once* to each citation. A citation that is refused, errors or fails the test makes the finding's reason `cited evidence did not reproduce`: it goes to the sweep with **no further second opinion**.
+
+Pass `T`, `REC` (recommended label per finding ID) and `STATES` **as JSON data, never as Python source**. Each `STATES` entry has `finding`, `target`, `evidence` and `alternatives` fields: the finding block with the loop-written lines removed, the analyst's `Target`, a list of `{"citation": <the cited command or tool call, verbatim>, "output": <the fresh raw output>}` from the re-run, and the alternatives keyed by `A` and, where returned, `B` — **never the analyst's prose claims, `Recommendation`, `Confidence`, `Risk` or `Code Preview`**.
 
 1. Use the **`write` tool** to serialize one JSON object with keys `T`, `REC` and `STATES` to a fresh scratch file `local://code-review-second-opinion-<run-id>.json`. Choose the name yourself, using only letters, digits, `.`, `_` and `-`; never derive it from finding or repository text. Do not create the file with a shell command, heredoc or `eval`.
 2. Resolve it with **`realpath local://code-review-second-opinion-<run-id>.json`** in `Bash`. Before inserting the returned absolute path into any executable source, check it **as data** against the *Sanitisation* allow-list: every character must be one of `A–Z a–z 0–9 . _ / -` (no line suffix applies here). Reject an unsafe path, **never escape or repair it**.
 3. Run the snippet below **once** in the `eval` tool (python), substituting **only that resolved, allow-listed path** into the single-quoted `open` argument. All other source stays unchanged. **Finding, target, evidence/raw tool output and alternative text never appear in the snippet's source**, nor do finding IDs or the recommendation map: no ordinary or triple-quoted literals, f-strings, or pasted `repr`/`json.dumps` output containing them. They are loaded only from the scratch JSON file.
 
-If writing, resolving or loading the JSON fails, or the resolved path fails the allow-list, the Jev route is unavailable and the affected findings take the analyst route. Never fall back to embedding the input in source.
+If writing, resolving or loading the JSON fails, or the resolved path fails the allow-list, the decision-model route is unavailable and the affected findings take the analyst route. Never fall back to embedding the input in source.
 
-For a finding, Jev **agrees** when the printed `model` contains `jev` (case-insensitive), the finding has an answer, `choice == REC[id]` and `c2 = floor(100 × probabilities[REC[id]]) ≥ T`; source `jev`. A finding with no answer (oversized state, item error, timeout, batch error) or a `model` without `jev` takes the analyst route. A Jev answer that disagrees (other label, `unclear`, or `c2 < T`) is **final for this run — no fallback**.
+The snippet lists the decision models once with `omp models --kind judge --json`; a failed listing leaves none. It judges a two-alternative state **twice**, the second time with A and B swapped and the answer mapped back, and a single-alternative state once. It passes `concurrency=4`, because a local model times out at the default of 32, and never sends a state over 60000 JSON characters. It prints `findings` — per finding ID `{"agree", "label", "c2", "model"}`, where `label` is the choice in the original labels, or `unclear` when the calls differ — plus `unanswered` (IDs without an answer from every call) and `errors`.
+
+**The decision-model check.** An answer counts only when its answering model (`item.model`) is a selector listed by `omp models --kind judge --json`, or such a selector followed by `-` and eight digits: `openrouter/typesafe/jev-1.13-20260917` passes when the catalog lists `openrouter/typesafe/jev-1.13`. A chat model on the `judge` role, such as one from OMP's fallback chain, fails it.
+
+`agree` holds only when every call answered, every answering model passes the decision-model check, every choice equals `REC[id]`, and `c2 = floor(100 × min(p[REC[id]] over the calls)) ≥ T`. **`agree` → auto-accepted**, source `decision-model`. Anything else — disagreement, `unclear`, `c2 < T`, a model that fails the check, no answer, an oversized state or a failed listing — sends the finding to the analyst route.
 
 ```python
-import json
+import json, math, re, subprocess
 with open('<realpath-resolved, allow-listed path>', encoding="utf-8") as stream:
     data = json.load(stream)
 T, REC, STATES = data["T"], data["REC"], data["STATES"]
-INSTR = ("A documentation finding from a code review, the evidence an analyst gathered from the repository, "
-         "and the alternative resolutions. Pick the alternative that correctly resolves the finding given that "
-         "evidence. Pick 'unclear' when the evidence does not decide it or no listed alternative resolves the finding.")
-UNCLEAR = "The evidence does not decide it, or no listed alternative resolves the finding."
-out = {"model": None, "answers": {}, "errors": []}
+INSTR = ("A documentation finding from a code review, the commands and tool calls an analyst cited with their output "
+         "re-run just now in the repository, and the alternative resolutions. Pick the alternative that correctly "
+         "resolves the finding given that output. Pick 'unclear' when the output does not decide it or no listed "
+         "alternative resolves the finding.")
+UNCLEAR = "The output does not decide it, or no listed alternative resolves the finding."
+SWAP = {"A": "B", "B": "A"}
+out = {"findings": {}, "unanswered": [], "errors": []}
+models = set()
+try:
+    listing = subprocess.run(["omp", "models", "--kind", "judge", "--json"], capture_output=True, text=True, timeout=60)
+    if listing.returncode == 0:
+        models = {m["selector"] for m in json.loads(listing.stdout)["models"] if m.get("kind") == "judge"}
+    else:
+        out["errors"].append(f"listing: exit {listing.returncode}")
+except Exception as error:
+    out["errors"].append(f"listing: {error}")
+
+def decision_model(model):
+    if not isinstance(model, str):
+        return False
+    dated = re.fullmatch(r"(.+)-[0-9]{8}", model)
+    return model in models or (dated is not None and dated.group(1) in models)
+
+def swapped(state):
+    alternatives = state["alternatives"]
+    return {**state, "alternatives": {"A": alternatives["B"], "B": alternatives["A"]}}
+
 fits = {k: s for k, s in STATES.items() if len(json.dumps(s)) <= 60000}
-for shape in ("AB", "A"):
-    keys = [k for k, s in fits.items() if ("B" in s["alternatives"]) == (shape == "AB")]
-    if not keys:
+two = [k for k, s in fits.items() if "B" in s["alternatives"]]
+one = [k for k in fits if k not in two]
+answers = {k: [] for k in fits}
+RUNS = (("AB", {k: fits[k] for k in two}, False),
+        ("BA", {k: swapped(fits[k]) for k in two}, True),
+        ("A", {k: fits[k] for k in one}, False))
+for name, states, swap in RUNS:
+    if not states:
         continue
     crit = {"A": "Alternative A resolves the finding."}
-    if shape == "AB":
+    if name != "A":
         crit["B"] = "Alternative B resolves the finding."
     crit["unclear"] = UNCLEAR
+    b = None
     try:
-        b = judge_batch({k: fits[k] for k in keys}, {"pick": {"type": "choice", "instructions": INSTR, "criteria": crit}},
-                        intent="Second opinion on documentation decisions")
-        pending, idle = set(keys), 0
+        b = judge_batch(states, {"pick": {"type": "choice", "instructions": INSTR, "criteria": crit}},
+                        concurrency=4, intent="Second opinion on documentation decisions")
+        pending, idle = set(states), 0
         while pending and idle < 3:
             got = await b.drain(timeout=60)
             idle = 0 if got else idle + 1
             for key, item in got:
                 pending.discard(key)
-                if not getattr(item, "error", None):
-                    out["answers"][key] = item.answers["pick"]
-        out["model"] = b.status()["model"]
+                if item.error is not None:
+                    out["errors"].append(f"{name} {key}: {item.error}")
+                    continue
+                pick = item.answers["pick"]
+                choice, probabilities = pick["choice"], pick.get("probabilities") or {}
+                if swap:
+                    choice = SWAP.get(choice, choice)
+                    probabilities = {SWAP.get(label, label): p for label, p in probabilities.items()}
+                answers[key].append({"choice": choice, "p": probabilities.get(REC[key], 0.0), "model": item.model})
         if pending:
+            out["errors"].append(f"{name}: no answer for {len(pending)} state(s)")
             b.cancel()
-        b.close()
     except Exception as error:
-        out["errors"].append(f"{shape}: {error}")
+        out["errors"].append(f"{name}: {error}")
+    finally:
+        if b is not None:
+            try:
+                b.close()
+            except Exception as error:
+                out["errors"].append(f"{name} close: {error}")
+for key in STATES:
+    given = answers.get(key, [])
+    if len(given) < (2 if key in two else 1):
+        out["unanswered"].append(key)
+        continue
+    labels = {a["choice"] for a in given}
+    c2 = math.floor(100 * min(a["p"] for a in given))
+    out["findings"][key] = {
+        "agree": c2 >= T and all(decision_model(a["model"]) and a["choice"] == REC[key] for a in given),
+        "label": labels.pop() if len(labels) == 1 else "unclear",
+        "c2": c2,
+        "model": ", ".join(sorted({str(a["model"]) for a in given})),
+    }
 print(json.dumps(out))
 ```
 
-**Analyst route — Claude Code, and OMP findings the Jev route left unanswered.** Announce `<N> second opinions to run by a second analyst, in <B> batch(es) of at most 8`, then dispatch `code-review:decision-analyst` per finding, read-only, in batches of at most 8, with this payload: first line `Mode: confirm`, then `Validated location: <path:line>`, the finding block, and under `## Another analyst's analysis — check it, do not trust it` its `Target`, `Findings` and `Alternatives` verbatim — **nothing else from the first return**. It **agrees** when its `Recommendation` label equals the first analyst's and its `Confidence` `c2 ≥ T`; source `analyst`. A failed or unparseable confirm return → reason `second opinion unavailable`.
+**Analyst route — the only route when `G` is `analyst`, and the cascade's second step for every finding the decision-model route did not auto-accept.** Announce `<N> second opinions to run by a second analyst, in <B> batch(es) of at most 8`, then dispatch `code-review:decision-analyst` per finding, read-only, in batches of at most 8, with this payload: first line `Mode: confirm`, then `Validated location: <path:line>`, the finding block, and under `## Another analyst's analysis — check it, do not trust it` its `Target`, `Findings` and `Alternatives` verbatim — **nothing else from the first return**. It **agrees** when its `Recommendation` label equals the first analyst's and its `Confidence` `c2 ≥ T`; source `analyst`. A failed or unparseable confirm return → reason `second opinion unavailable`.
 
-A finding whose second opinion agrees is **auto-accepted** with `c1`, `source`, `c2`. Otherwise its reason is `second opinion: <source> <label|unclear|neither> at <c2>%` (or `second opinion unavailable`).
+A finding whose second opinion agrees is **auto-accepted** with `c1`, `source`, `c2` and, for the decision model, its answering `model`. Otherwise its reason is `cited evidence did not reproduce` (above), or comes from the last opinion that ran: `second opinion: <source> <label|unclear|neither> at <c2>%`, or `second opinion unavailable`.
 
 ---
 
@@ -263,7 +326,7 @@ What "render the block" means is fixed, so the reading cost of a decision is bou
 | **Always rendered and never held back** | the re-run raw output of a `Rejection candidate`'s citations, and the recorded/fresh output side by side where that re-run diverges — because the reject gate exists so that the user judges that evidence |
 - for a composite, its members — ID and title, in `Composed-of` order — under the `Target`, and a `Source` row for every component that carries one, marked feedback-origin, beside the composite's `Target`.
 
-With the policy on, also render the finding's `Auto-accept: no — <reason>` line and, where a second opinion ran, `Second opinion (<source>): <label|unclear|neither> at <c2>%`.
+With the policy on, also render the finding's `Auto-accept: no — <reason>` line and one `Second opinion (<source>): <label|unclear|neither> at <c2>%` line per second opinion that answered — the decision model's line ending ` via <model>`, as in `Second opinion (decision-model): B at 62% via openrouter/typesafe/jev-1.13-20260917`.
 
 **Why `Source` is in the always-rendered class.** The sweep is a per-finding human gate whose answer authorises a cited-evidence re-run and a fixer dispatch, and a feedback-origin finding's `Problem`, `Impact` and `Remediation` are a third party's unvalidated claims. Rendering the handle and the comment link beside `Target` is what lets the user weigh the proposal as one. `/fix-all`'s recorded no-provenance stance is about its **bulk auto checklist**, which already lists the handle in a column of its own; it does not reach this gate, and both entry points render this row because both run this sweep.
 
@@ -289,7 +352,9 @@ Each alternative is written as a **full, self-contained resolution sentence on e
 
 **Before the first question**, record every auto-accepted finding in report order. Print:
 
-`Auto-accepted <ID>: <label> — <resolution text> (analyst <c1>%, <source> <c2>%, threshold <T>%)`
+`Auto-accepted <ID>: <label> — <resolution text> (analyst <c1>%, <source> <c2>%[ via <model>], threshold <T>%)`
+
+`via <model>` names the answering model and appears only when `<source>` is `decision-model`.
 
 Then make the closed list of writes **exactly as for a user's A/B**: `**Decision:**` with provenance `auto@<c1>/<source>:<c2>`, `**Verification-plan:**` of the recommended alternative, `**Decision-pin:**`, and the corrected `**Location:**`. **No question and no approval call** is made for them; stages 3–4 dispatch, verify and grade them like any decision. The sweep then runs over the remaining findings.
 
@@ -643,7 +708,7 @@ Each decision is written to its source report **immediately, before dispatch**, 
 
 - `<label>` is exactly one of `A`, `B` or `other`, and **every written line carries one**, so the first ` — ` is always the grammar's delimiter.
 - `<resolution text>` is the same full, self-contained text stage 3 dispatches, and it is single-line — no embedded newline, on a `**Decision:**` line and on a `**Decision-retired:**` line alike.
-- The bracketed field carries the **bookkeeping** — the provenance marker and date, then one entry per dispatch attempt, entries separated by `; ` — and is **never dispatched**. `<who>` is `user` when the user decided in the sweep, or `auto@<c1>/<source>:<c2>` when stage 1.5 auto-accepted it: `<c1>` is the analyst confidence, `<source>` is `jev` or `analyst`, and `<c2>` is the second-opinion confidence, both integer percentages. The marker never contains `, `, `; ` or ` [`. `<outcome>` is exactly one of `failed`, `interrupted, unverified` or `dispatched, unverified`. On a revoked `**Decision-retired:**` line **only**, the bracketed field carries a final `revoked` after the attempt entries.
+- The bracketed field carries the **bookkeeping** — the provenance marker and date, then one entry per dispatch attempt, entries separated by `; ` — and is **never dispatched**. `<who>` is `user` when the user decided in the sweep, or `auto@<c1>/<source>:<c2>` when stage 1.5 auto-accepted it: `<c1>` is the analyst confidence, `<source>` is `decision-model` or `analyst`, and `<c2>` is the second-opinion confidence, both integer percentages. The marker never contains `, `, `; ` or ` [`. `<outcome>` is exactly one of `failed`, `interrupted, unverified` or `dispatched, unverified`. On a revoked `**Decision-retired:**` line **only**, the bracketed field carries a final `revoked` after the attempt entries.
 - A resumed run dispatches the text **between the first ` — ` and the final ` [`**, verbatim, as `User decision: <resolution>`; the bracketed field is never part of the payload, so an em dash inside the resolution text is harmless.
 
 ```markdown
@@ -652,7 +717,7 @@ Each decision is written to its source report **immediately, before dispatch**, 
 ```
 
 ```markdown
-**Decision:** A — delete the line citing scripts/old-tool.sh at docs/guide.md:3 [auto@94/jev:97, 2026-10-12]
+**Decision:** A — delete the line citing scripts/old-tool.sh at docs/guide.md:3 [auto@94/decision-model:97, 2026-10-12]
 ```
 
 **A**, **B** and **other…** write this line; A and B may be the user's choice or a stage 1.5 auto-accepted recommendation. `skip` writes nothing. A rejected finding carries the `**Status:** 🚫 Rejected` line alone and no `**Decision:**` line — for a rejection the status *is* the record.
@@ -819,7 +884,7 @@ That rule covers **every** user answer the decision stage acts on — the entry'
 
 The render is explicit: the call carries **four options, `[A] [B] [skip] [reject]`**, and `other…` is the tool's built-in free-form answer rather than a fifth option — the same four-option ceiling that sets the checklist's page capacity. Where the analyst could derive no second alternative and returned A alone, the call carries the three options `[A] [skip] [reject]`.
 
-**The orchestrator never supplies a decision on the user's behalf and never infers one from the analyst's recommendation — except under auto-accept, which the user opts into.** It applies a recommendation only when the user set and trusted `auto_accept_min_confidence` for this worktree (*Entry: the auto-accept policy*), only for a finding that passed every stage 1.5 eligibility test and whose second opinion agreed at or above the threshold, and it replays such a decision only while that still holds.
+**The orchestrator never supplies a decision on the user's behalf and never infers one from the analyst's recommendation — except under auto-accept, which the user opts into.** It applies a recommendation only when auto-accept is **on in this run** — `auto_accept_min_confidence` set in the user configuration file, or set in the repository's files and trusted for this worktree (*Entry: the auto-accept policy*) — only for a finding that passed every stage 1.5 eligibility test and whose second opinion agreed at or above the threshold, and it replays such a decision only while that still holds.
 
 If `AskUserQuestion` is unavailable or errors at any question of the decision stage other than the entry's trust question, the decision stage **aborts immediately**: no dispatch, and no further `**Decision:**` line. Decisions already written stay in the report and are replayed next run, and the abort reports how many findings were left undecided. The trust question's failure only leaves auto-accept off (*Entry: the auto-accept policy*). At stage 3.5 the same unavailability is **not an abort but a refusal to run**: the escalation call — which shows the exact command text and asks for approval to run it — then counts as a check that cannot be run, and the finding takes stage 4's fourth case.
 

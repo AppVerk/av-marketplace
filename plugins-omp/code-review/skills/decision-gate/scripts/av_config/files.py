@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from collections.abc import Collection
 from collections.abc import Mapping
 from dataclasses import asdict
 import os
@@ -22,11 +23,17 @@ from av_config.sources import ValueSources
 from av_config.sources import source_subset
 
 Diagnostic = dict[str, str]
+USER_CONFIG = "av/config.toml"
 
 
 def default_state_home() -> Path:
     """Use XDG's state root, falling back to the standard home directory location."""
     return Path(os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local/state"))
+
+
+def default_config_home() -> Path:
+    """Use XDG's config root, falling back to the standard home directory location."""
+    return Path(os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config"))
 
 
 def read_bytes(path: Path) -> bytes | None:
@@ -56,18 +63,27 @@ def atomic_write(path: Path, content: bytes, mode: int | None = None) -> None:
 
 
 class Configuration:
-    """Load the marketplace files; plugin presence belongs to the shared file."""
+    """Load repository settings and, when opted in, personal plugin policy keys."""
 
-    def __init__(self, repo: Path, *, plugin_prefix: str, config_text: str | None = None, gitignore_text: str | None = None) -> None:
+    def __init__(
+        self, repo: Path, *, plugin_prefix: str, config_text: str | None = None,
+        gitignore_text: str | None = None, user_table: str | None = None,
+        user_keys: Collection[str] = (), config_home: Path | None = None,
+    ) -> None:
         self.repo = repo.resolve()
         self.data: dict[str, object] = {}
         self._shared_tables: set[str] = set()
+        self._user_tables: set[str] = set()
         self.provenance: dict[str, str] = {}
         self.rules: dict[str, SourceRule] = {}
         self.errors: list[Diagnostic] = []
         self.warnings: list[Diagnostic] = []
         self.exists = False
+        self.user_exists = False
+        self.user_label = ""
         self.sources = ValueSources(self.repo, plugin_prefix=plugin_prefix, gitignore_text=gitignore_text)
+        if user_table is not None:
+            self._load_user(user_table, user_keys, config_home)
         for name in (".av/config.toml", ".av/local.toml"):
             if name == ".av/config.toml" and config_text is not None:
                 raw = config_text
@@ -104,6 +120,37 @@ class Configuration:
         if self.exists:
             self._validate_env()
 
+    def _load_user(self, table: str, keys: Collection[str], config_home: Path | None) -> None:
+        path = (config_home or default_config_home()) / USER_CONFIG
+        home = Path.home()
+        self.user_label = str(Path("~") / path.relative_to(home)) if path.is_relative_to(home) else str(path)
+        content = read_bytes(path)
+        if content is None:
+            return
+        self.user_exists = True
+        try:
+            raw = content.decode()
+        except UnicodeError:
+            self.errors.append({"file": self.user_label, "key": "document", "error": "invalid text encoding"})
+            return
+        try:
+            parsed = tomllib.loads(raw)
+        except tomllib.TOMLDecodeError:
+            self.errors.append({"file": self.user_label, "key": "document", "error": "invalid TOML"})
+            return
+        if type(parsed.get("version")) is not int or parsed.get("version") != 1:
+            self.errors.append({"file": self.user_label, "key": "version", "error": "expected schema version 1"})
+        for key, value in parsed.items():
+            if key != "version" and (key == "env" or not isinstance(value, dict)):
+                self.errors.append({"file": self.user_label, "key": key, "error": "not allowed in the user config"})
+        values = parsed.get(table)
+        if not isinstance(values, dict):
+            return
+        self._user_tables = {table}
+        for key in values.keys() - set(keys):
+            self.errors.append({"file": self.user_label, "key": f"{table}.{key}", "error": "not allowed in the user config"})
+        self._merge(self.data, {table: {key: value for key, value in values.items() if key in keys}}, self.user_label)
+
     def _merge(self, destination: dict[str, object], source: Mapping[str, object], filename: str, prefix: str = "") -> None:
         for key, item in source.items():
             path = f"{prefix}.{key}" if prefix else key
@@ -131,6 +178,10 @@ class Configuration:
                 return self.provenance[path]
             path = path.rpartition(".")[0]
         return ".av/config.toml"
+
+    def from_user(self, key: str) -> bool:
+        """Whether the effective value came from the opted-in user file."""
+        return self.user_exists and self.file_for(key) == self.user_label
 
     def error(self, key: str, message: str) -> None:
         self.errors.append({"file": self.file_for(key), "key": key, "error": message})
@@ -280,11 +331,11 @@ class Configuration:
                 self.source(entry["password"], f"{prefix}.password", secret=True, literal_allowed=isinstance(host, str) and is_loopback(host))
 
     def state(self, plugin: str) -> str:
-        if not self.exists:
+        if not self.exists and not self.user_exists:
             return "missing-file"
         if self.errors:
             return "invalid"
-        return "ok" if plugin in self._shared_tables else "missing-table"
+        return "ok" if plugin in self._shared_tables or plugin in self._user_tables else "missing-table"
 
     def env_sensitive_subset(self) -> dict[str, object]:
         env = self.data.get("env", {})
