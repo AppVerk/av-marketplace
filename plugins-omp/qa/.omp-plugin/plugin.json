@@ -1,5 +1,5 @@
 {
   "name": "qa",
   "description": "Automated QA testing plugin — /qa:run bootstraps project config with stores and users, reuses or generates a reviewed plan, and runs a bounded FE/BE test→fix→retest loop with batch fix approval by default. Testers register accounts; a configured cleanup recipe removes them at teardown. /qa:create-plan supports plan review before execution. Reports compatible with code-review.",
-  "version": "3.0.0"
+  "version": "3.0.1"
 }

@@ -254,7 +254,7 @@ Now that selection has ended with at least one issue selected, and **before Step
 
 Load `code-review:decision-gate` (Skill tool) and run it over every selected issue whose block contains `**Fix-policy:** needs-decision` — or any `**Fix-policy:**` value other than `auto` (an unparseable policy gets the same treatment, mirroring `/fix-all`'s fail-safe). If no selected issue matches, skip this step.
 
-**In this slot the skill runs stages 0–2** — the location pre-check, the analyst fan-out, and the decision sweep with its five outcomes — and it **returns the decided findings to Step 3 rather than dispatching them itself**. Step 3 dispatches them together with the selected `auto` findings in one sequential batch, decided first, **applying the whole of stage 3's dispatch contract** — the `**Dispatch:**` marker, the pin comparison and the dispatch-copy strip list. Stage 3.5's verification then runs over the decided findings only, and Step 4.1 / 4.1.5 runs once over that whole batch, so the gate performs no write of its own — though what that write-back records for a decided finding is graded by the skill's **stage 4**.
+**In this slot the skill runs stages 0–2** — the location pre-check, the analyst fan-out, and the decision sweep with its five outcomes — and it **returns the decided findings to Step 3 rather than dispatching them itself**. Step 3 dispatches them together with the selected `auto` findings in one sequential batch, decided first, **applying the whole of stage 3's dispatch contract** — the `**Dispatch:**` marker, the pin comparison with its documentation-path re-check for an `auto@…` decision, and the dispatch-copy strip list. Stage 3.5's verification then runs over the decided findings only, and Step 4.1 / 4.1.5 runs once over that whole batch, so the gate performs no write of its own — though what that write-back records for a decided finding is graded by the skill's **stage 4**.
 
 That skill is the single source of truth for the decision stage — how a missing location is asked for, how the analysts fan out, how each decision is elicited and recorded, and what it persists into the source report. Do not restate its rules here; two authorities on one gate is how they drift.
 
@@ -268,9 +268,9 @@ Selecting the issue in the checklist is not the decision — the issue was flagg
 
 ### Step 3.1: Sequential fix execution
 
-**The batch and its order.** Step 3 dispatches the findings the gate decided in Step 2.4 **and** the selected `auto` findings in **one sequential batch, decided first**. Every decision is collected before any `fix-auto` is dispatched: decide everything, then fix in bulk. The one documented exception is the `**Decision-pin:**` mismatch found immediately before dispatch, which `code-review:decision-gate` defines at stage 3 — that finding is set aside, the remaining dispatches of the batch complete, and the set-aside findings are re-analysed and re-swept as a second pass before their own dispatch, so no re-ask interrupts a batch in flight.
+**The batch and its order.** Step 3 dispatches the findings the gate decided in Step 2.4 **and** the selected `auto` findings in **one sequential batch, decided first**. Every decision is collected before any `fix-auto` is dispatched: decide everything, then fix in bulk. The documented exception covers two triggers defined by `code-review:decision-gate` at stage 3: an unattributable `**Decision-pin:**` mismatch, and an automatic decision revoked by the documentation-path re-check, both immediately before dispatch. In either case the finding is set aside, the remaining dispatches of the batch complete, and the set-aside findings are re-analysed and re-swept as a second pass before their own dispatch, so no re-ask interrupts a batch in flight.
 
-**A decided finding's dispatch follows the whole of stage 3.** The dispatch-copy rule is one clause of that stage, not the whole of it. `code-review:decision-gate`'s **stage 3** also owns the `**Dispatch:**` marker — written into the finding block in the source report **immediately before each fixer call**, on its own line directly beneath the `**Decision-pin:**` line, or beneath the `**Decision:**` line where no pin could be written — and the pin comparison made immediately before that call. Write the marker: it is what tells an interrupted run's successor *dispatched, outcome unknown* from *decided, never dispatched*, and without it a resumed run re-dispatches blind — a double apply on any fix that is not idempotent. All three clauses bind the **decided** partition only; the selected `auto` findings carry none of them. Do not restate the marker's grammar or the strip list here.
+**A decided finding's dispatch follows the whole of stage 3.** The dispatch-copy rule is one clause of that stage, not the whole of it. `code-review:decision-gate`'s **stage 3** also owns the `**Dispatch:**` marker — written into the finding block in the source report **immediately before each fixer call**, on its own line directly beneath the `**Decision-pin:**` line, or beneath the `**Decision:**` line where no pin could be written — as well as the pin comparison and the documentation-path re-check for an `auto@…` decision, both made immediately before that call. Write the marker: it is what tells an interrupted run's successor *dispatched, outcome unknown* from *decided, never dispatched*, and without it a resumed run re-dispatches blind — a double apply on any fix that is not idempotent. All four clauses bind the **decided** partition only; the documentation-path re-check applies to its `auto@…` decisions, and the selected `auto` findings carry none of them. Do not restate the marker's grammar or the strip list here.
 
 For each issue in that batch, **sequentially** (one at a time, wait for completion):
 
@@ -355,9 +355,9 @@ For a finding in the second group, the verification is:
 1. Read the issue's `source_file`.
 2. Locate the issue's `### [SEVERITY] Title` heading and read its block, down to the next `###`, `---` or EOF.
 3. Locate the block's **live `**Decision:**` line** — the decision this dispatch was made against, not a `**Decision-retired:**` line beside it that a superseded decision left behind. The one exception is a line this same run's retirement rewrote in place: retirement keys the line `**Decision-retired:**` with its attempt entries intact, so where the run retired this decision the rewritten line is the one to read. It is a single physical line either way, so its bracketed field is read whole and split on `; `.
-4. Confirm its **last bracketed entry** is the `attempt N: <outcome>` entry stage 4 appended for this dispatch, with the `N` and the `<outcome>` this run just wrote. Like the positional check above, this is a comparison against something this run wrote itself, so it is exact rather than a prefix match.
+4. Confirm its **last bracketed entry** is the `attempt N: <outcome>` entry stage 4 appended for this dispatch, with the `N` and the `<outcome>` this run just wrote. Where the line read is a `**Decision-retired:**` line whose last bracketed entry is `revoked`, the entry this run appended is the one **immediately before `revoked`**: confirm that entry is the `attempt N: <outcome>` this run wrote. Like the positional check above, this is a comparison against something this run wrote itself, so it is exact rather than a prefix match.
 
-The append has not landed if the bracketed field still ends with the entry it carried before this dispatch, or if the block carries no decision line of either key at all.
+The append has not landed if the bracketed field still ends with the entry it carried before this dispatch, if it ends with `revoked` and the preceding entry is not this run's attempt, or if the block carries no decision line of either key at all. Record `attempt-entry-missing` exactly as for any missing append.
 
 This is the one check whose absence is not merely cosmetic. The attempt entry is what advances the two-attempt retirement counter; a lost append freezes it, and a decision that fails every run then replays forever with the escape to `reject` unreachable behind it — precisely the failure retirement exists to prevent. A status line that fails to land costs an annotation; an attempt entry that fails to land costs the loop its exit.
 
@@ -421,12 +421,18 @@ Where `<reason>` is the value recorded in Step 4.1.5 (`edit-errored`, `status-li
 
 **Decision-stage summary.** Where Step 2.4 ran the gate over at least one finding, print the block below after Step 4.1 / 4.1.5, following the fix summary. The template above is closed — the `| # | Issue | Status |` rows, the counts, and the reports-updated list — and holds no slot for what the decision stage has to disclose.
 
-Its rows are the nine disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty; omit the block entirely where the gate did not run.
+Its rows are the eleven disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty; omit the block entirely where the gate did not run.
 
 ```markdown
 ## Decision Stage
 
 **Decided:** N | **Skipped:** N | **Rejected:** N
+
+**Auto-accepted — no question asked:**
+- [SEVERITY] ID: Title — <label> (analyst <c1>%, <source> <c2>%)
+
+**Auto-accepted decisions retired — asked instead:**
+- [SEVERITY] ID: Title
 
 **Failed — no target supplied:**
 - [SEVERITY] ID: Title

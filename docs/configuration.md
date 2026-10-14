@@ -1,6 +1,6 @@
 # Configuration
 
-Use `.av/config.toml` for shared environment settings and each plugin's settings. QA's first interactive run proposes the file from repository evidence. This page covers `[env]`; [QA configuration](plugins/qa/configuration.md) owns `[qa]` policy, users and cleanup.
+Use `.av/config.toml` for shared environment settings and each plugin's settings. QA's first interactive run proposes the file from repository evidence. This page covers `[env]`; [QA configuration](plugins/qa/configuration.md) owns `[qa]` policy, users and cleanup, and [Code Review configuration](plugins/code-review.md#configuration) owns `[code-review]`.
 
 ## Minimal file
 
@@ -16,18 +16,19 @@ Use the [QA quick-start file](plugins/qa.md#configuration). `version = 1` select
 
 ## Files
 
-All paths are relative to the project's repository root, not the installed plugin.
+All repository paths are relative to the project's repository root, not the installed plugin. The user file lives in your home directory and applies to every repository.
 
 | File | Commit it? | Purpose |
 |---|---|---|
 | `.av/config.toml` | Yes | Team-wide environment and plugin settings. |
 | `.av/local.toml` | No | Personal overrides using the same schema. Must be untracked and git-ignored. |
 | `.av/secrets.local.env` | No | Private dotenv values referenced through `file:` sources. Never loaded automatically. |
+| `${XDG_CONFIG_HOME:-~/.config}/av/config.toml` | Not in a repository | Your personal plugin policy for every repository: `version = 1` plus only the keys a plugin allows there. Never `[env]`. |
 
 <details>
 <summary>Override resolution</summary>
 
-Local settings replace shared keys; local arrays replace whole arrays. The shared file must exist and contain the consuming plugin's table. See [source restrictions](#secrets-and-values) for permissions by supplying file.
+The user file is read first, then `.av/config.toml`, then `.av/local.toml`; each later file replaces the earlier files' keys, and local arrays replace whole arrays. A plugin reads the user file only for the keys it allows there, and the user file alone enables such a plugin in a repository without `.av/`. A local override counts only when the shared file or the user file contains the consuming plugin's table. See [source restrictions](#secrets-and-values) for permissions by supplying file.
 
 </details>
 
@@ -169,7 +170,7 @@ Use a read-only SQL role or restricted Redis ACL for [QA State Checks](plugins/q
 
 ## Trust
 
-A trust pin records approval of settings that execute commands or expose private inputs. Each worktree needs separate approval.
+A trust pin records approval of settings that execute commands or expose private inputs. Each worktree needs separate approval. Values from your user file are never pinned: you wrote them yourself, and no repository can supply them.
 
 <details>
 <summary>Trust storage and pinned settings</summary>
@@ -183,6 +184,8 @@ QA pins these settings:
 - Non-loopback target origins.
 - The whole cleanup recipe and its SQL store table.
 - Explicitly configured `fix`, `mutations` and `start_services` values.
+
+Code Review pins the shared `[env]` subset above, an `auto_accept_min_confidence` threshold and an `auto_accept_gate = "decision-model"` set in the repository's files. Its `false` veto and the `analyst` gate only narrow auto-accept and are not pinned.
 
 </details>
 
@@ -230,5 +233,6 @@ These 3 shell variables are example inputs, not configuration sources. The engin
 |---|---|
 | `[env]` | Shared environment; [this page](#configuration). |
 | `[qa]` | [QA configuration](plugins/qa/configuration.md). |
+| `[code-review]` | [Code Review configuration](plugins/code-review.md#configuration): `auto_accept_min_confidence` and `auto_accept_gate`, both also allowed in the user file. |
 
 Register each new plugin's table here with its key reference. Keep plugin-specific policy and recipes out of `[env]`.
