@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(git:*), mcp__github, mcp__sequential_thinking, Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(python:*), Bash(node:*), TaskCreate, TaskUpdate, TaskList, Write, AskUserQuestion, Task, Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/docs-drift/scripts/docs_drift.sh *)
+allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(git:*), mcp__github, mcp__sequential_thinking, Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(python:*), Bash(node:*), TaskCreate, TaskUpdate, TaskList, Write, AskUserQuestion, Task, Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/docs-drift/scripts/docs_drift.sh *), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py *), Skill(code-review:fix-all), Skill(code-review:fix-report)
 description: Perform comprehensive analysis - security, performance, architecture, maintainability. Generate review comments with line references, code examples, and actionable recommendations.
 model: opus 
 argument-hint: [description]
@@ -173,7 +173,7 @@ Use TaskCreate for each of the following (in a single response, all 5 tasks):
 | 5 | Generate final report | Generating final report... |
 | 6 | Run verification (Cross-Verifier + Challenger) | Running verification... |
 | 7 | Save review to file | Saving review to file... |
-| 8 | Display post-review guidance | Displaying post-review guidance... |
+| 8 | Run post-review action | Running post-review action... |
 
 Note: All 8 tasks are always created.
 
@@ -584,17 +584,7 @@ After:
 
 **Task Update:** Mark task 7 as `in_progress` using TaskUpdate.
 
-After the review report has been displayed, ask whether to save it:
-
-Use AskUserQuestion with these parameters:
-
-- question: "Save this review to a file?"
-- options:
-  - label: "Yes", description: "Save review report to docs/reviews/"
-  - label: "No", description: "Skip saving"
-- multiSelect: false
-
-**If user selects "Yes":**
+After the review report has been displayed, save it without asking; every review ends with a saved report:
 
 1. Get current branch name:
 
@@ -602,67 +592,93 @@ Use AskUserQuestion with these parameters:
 git branch --show-current
 ```
 
-1. Slugify the branch name:
+2. Slugify the branch name:
    - Replace `/` with `-`
    - Replace spaces with `-`
    - Convert to lowercase
    - Example: `feature/user-login` → `feature-user-login`
 
-2. Build the file path: `docs/reviews/YYYY-MM-DD-<branch-slug>.md`
+3. Build the file path: `docs/reviews/YYYY-MM-DD-<branch-slug>.md`
    - Use today's date
    - Example: `docs/reviews/2026-02-19-feature-user-login.md`
 
-3. Check if the file already exists. If it does, append a numeric suffix:
+4. Check if the file already exists. If it does, append a numeric suffix:
    - `docs/reviews/2026-02-19-feature-user-login-2.md`
    - Increment until a non-existing filename is found
 
-4. Create the `docs/reviews/` directory if it doesn't exist:
+5. Create the `docs/reviews/` directory if it doesn't exist:
 
 ```bash
 mkdir -p docs/reviews
 ```
 
-1. Write the full review report (the same markdown content displayed to the user) to the file using the Write tool.
+6. Write the full review report (the same markdown content displayed to the user) to the file using the Write tool.
 
-2. Confirm to the user: "Review saved to `docs/reviews/2026-02-19-feature-user-login.md`"
+7. Confirm to the user: "Review saved to `docs/reviews/2026-02-19-feature-user-login.md`"
 
-**If user selects "No":** Proceed to Step 7.
+If any of these steps fails, print `Review not saved: <error>` and continue to Step 7 without a saved report.
 
 **Task Update:** Mark task 7 as `completed` using TaskUpdate.
 
 ---
 
-## Step 7: Post-Review Guidance
-
-**Skip this step if no issues were found during the review.**
+## Step 7: Post-review action
 
 **Task Update:** Mark task 8 as `in_progress` using TaskUpdate.
 
-After the review is complete (and optionally saved), display guidance based on context:
+`REPORT` is the path Step 6 saved. `N` is the number of issue blocks in the report: headings `### [<CRITICAL|HIGH|MEDIUM|LOW>] <ID>: <title>`, composites included.
 
-**If issues were found AND report was saved to a file:**
+1. **No saved report** (Step 6 printed `Review not saved:`). With `N` above 0, print:
 
-> **Found {N} issues.** To fix them:
->
-> `/fix-report <saved-report-path>` — fix multiple issues interactively
->
-> `/fix SEC-001` — fix a single issue by ID (uses latest saved report)
->
-> `/fix <paste issue block>` — fix a single issue by pasting
+   > **Found {N} issues.** The report was not saved, so fix single issues by pasting them:
+   >
+   > `/fix <paste issue block from above>`
 
-**If issues were found but report was NOT saved:**
+   With `N` = 0, print `Review complete. No issues found.` Then mark task 8 as `completed` and stop.
 
-> **Found {N} issues.** To fix individual issues, use:
->
-> `/fix <paste issue block from above>`
->
-> To use ID-based fixes or `/fix-report`, save the review first (re-run `/review` and choose to save).
+2. **No issues.** `N` = 0 → print `Review complete. No issues found.`, mark task 8 as `completed` and stop. Nothing is asked and nothing runs.
 
-**If no issues were found:**
+3. **Read `after_review`.** Run the engine's `config`:
+   - Claude Code: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py config`, exactly this form, without quotes around the script path, to match this command's permission pre-approval.
+   - OMP: run `realpath skill://code-review:decision-gate/scripts/auto_accept.py` with Bash, then `python3 '<resolved path>' config`. An OMP shell does not define `CLAUDE_PLUGIN_ROOT`.
 
-> Review complete. No issues found.
+   Read the JSON and the exit code together:
+   - Exit 0 → `ACTION` is `policy.after_review`: `ask`, `fix-all`, `fix-report` or `none`. A missing file, table or key reports `ask`.
+   - Exit 2 with `errors` → print `Post-review action: the configuration is invalid — <file> <key>: <error>[; …]; asking instead.` and set `ACTION` to `ask`.
+   - Any other non-zero exit, unparseable output or a missing interpreter → print `Post-review action: <error text, or the first output line>; asking instead.` and set `ACTION` to `ask`.
 
-**Task Update:** Mark task 8 as `completed` using TaskUpdate.
+   When `ACTION` came from the configuration and is not `ask`, print `Post-review action: <ACTION> (after_review in <provenance of code-review.after_review>)`.
+
+4. **Trust.** `ACTION` is `fix-all` and the engine's `trust` is `new` or `changed` → ask one AskUserQuestion:
+   - question: `Trust the code-review settings? With them, every saved review goes straight to /code-review:fix-all, which fixes its auto-fixable findings without asking first.` When `policy.auto_accept_min_confidence` is a number `T`, append ` They also fix a documentation finding without asking when the analyst and an independent second opinion agree at or above <T>% confidence.` Follow it with one line per `trust_subset` entry, `<key> = <value>`, masked as returned. The approval covers every one of those lines: the decision gate reads the same approval.
+   - options, in this order: `Trust and use it` — `Records approval for this worktree; asked again whenever these settings change.`; `Not now` — `Asks what to do with this review instead.`
+
+   `ACTION` stays `fix-all` only when the answer is exactly `Trust and use it` and the engine's `trust accept <trust_hash>` then exits 0 — `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py trust accept <trust_hash>` in Claude Code, `python3 '<resolved path>' trust accept <trust_hash>` in OMP. A failing `trust accept` prints `Post-review action: trust not recorded — <error>; asking instead.` Every other outcome — `Not now`, free text, a cancelled or missing answer, a question that cannot be asked or that errors — prints `Post-review action: settings not trusted; asking instead.` Both set `ACTION` to `ask`.
+
+5. **Ask.** `ACTION` is `ask` → ask one AskUserQuestion:
+   - question: `What next with the {N} findings in <REPORT>?`
+   - options, in this order: `Fix all` — `Run /code-review:fix-all on this report: every auto-fixable finding now, then an offer to resolve the needs-decision ones.`; `Choose from a checklist` — `Run /code-review:fix-report on this report and pick the findings to fix.`; `Nothing now` — `Keep the report and fix it later.`
+
+   `Fix all` → `ACTION` is `fix-all`; `Choose from a checklist` → `fix-report`; `Nothing now`, any other answer, or a question that cannot be asked (AskUserQuestion unavailable, as in a subagent or a print-mode run, or failing) → `none`. Never choose an answer yourself.
+
+6. **Act.** Mark task 8 as `completed`, then:
+   - `fix-all` → hand over the report with the args `--yes <REPORT>`; `--yes` answers fix-all's confirmation gate, because the configuration or the answer above already chose to fix. Claude Code: invoke the Skill tool with skill `code-review:fix-all` and args `--yes <REPORT>`, and carry it out completely. OMP: the plugin root is the path `realpath` resolved in step 3 without its trailing `/skills/decision-gate/scripts/auto_accept.py`; `read <plugin root>/commands/fix-all.md` and carry it out completely, as if it had been invoked with `--yes <REPORT>` in place of its `$ARGUMENTS`.
+   - `fix-report` → its checklist needs the user: when AskUserQuestion is not among your tools (a subagent, a print-mode run), act as for `none`. Otherwise hand over as for `fix-all`, with skill `code-review:fix-report`, file `<plugin root>/commands/fix-report.md` and args `<REPORT>`.
+   - `none` → print:
+
+     > **Found {N} issues** in `<REPORT>`. To fix them:
+     >
+     > `/fix-all <REPORT>` — fix every auto-fixable issue after one confirmation
+     >
+     > `/fix-report <REPORT>` — choose issues from a checklist
+     >
+     > `/fix SEC-001` — fix a single issue by ID (uses the latest saved report)
+     >
+     > `/fix <paste issue block>` — fix a single issue by pasting
+
+   In OMP, when step 3's `realpath` failed there is no plugin root: instead of handing over, print `Post-review action: cannot locate code-review's commands; run /code-review:<ACTION> <REPORT> yourself.`
+
+The handover runs in this command's turn. In Claude Code this command's `allowed-tools` stay granted for the whole turn, so they are prompt-free while the handed-over command runs, its decision stage included; that stage still asks before any check outside its execution boundary (`code-review:decision-gate`, *The grant registry*).
 
 ---
 
@@ -705,9 +721,9 @@ After the review is complete (and optionally saved), display guidance based on c
 
 ### Post-Review Actions
 
-- [ ] User asked whether to save review
-- [ ] Review saved to `docs/reviews/` (if requested)
-- [ ] Post-review guidance displayed (fix-report / fix commands)
+- [ ] Review saved to `docs/reviews/` without asking, or `Review not saved:` printed
+- [ ] Post-review action resolved from `[code-review] after_review` (default `ask`)
+- [ ] Saved report handed to `/code-review:fix-all --yes` or `/code-review:fix-report`, or the fix commands printed
 
 **If ANY security or quality checkbox is unchecked: STOP. Complete those steps first.**
 

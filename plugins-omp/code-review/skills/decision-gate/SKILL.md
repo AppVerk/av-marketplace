@@ -50,6 +50,8 @@ Run the engine's `config`: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/s
 
   `Trust the code-review settings? With them, a documentation finding is fixed without asking when the analyst and an independent second opinion agree at or above <T>% confidence.`
 
+  When `policy.after_review` is `fix-all`, append to the question: ` They also send every saved review straight to /code-review:fix-all, which fixes its auto-fixable findings without asking first.` The approval covers every `trust_subset` line, and `/code-review:review` reads the same approval.
+
   Follow it with one line per `trust_subset` entry, `<key> = <value>`, **masked as returned**. Offer these options, in this order:
 
   1. `Trust and use it` — `Records approval for this worktree; asked again whenever these settings change.`
@@ -521,9 +523,12 @@ A grant here is **not** a boundary permission and never licenses a check. It rec
 | `plugins/code-review/commands/fix-report.md` | runs-the-stage | Loads this skill in full. Step 2.4 runs stages 0–2 and hands the decided findings to Step 3; stage 3.5's verification then runs over those findings, under this boundary — see *Where the stages run* above, which is authoritative for the split. |
 | `plugins/code-review/skills/decision-gate/SKILL.md` | runs-the-stage | This file. Declares no `allowed-tools:`; the row keeps it that way. |
 | `plugins/code-review/commands/fix.md` | dispatch-only | Loads the `**Alternatives:**` render format, and follows stage 3's dispatch-copy rule when it builds a composite payload (`/fix COMP-NNN`). Runs no stage, so no check of its executes under this boundary; its `Bash(git:*)` wildcard stays outside the grant diff only while its kind is not `runs-the-stage`. |
+| `plugins/code-review/commands/review.md` | hands-over | Step 7 runs this skill's engine — `config`, and `trust accept` after its own trust question — to read `[code-review] after_review`, then hands the saved report to `/code-review:fix-all` or `/code-review:fix-report` in its own turn; Delivery's final review reaches the stage through this step too. Runs no stage itself. Its grants, `Bash(git:*)` and the other wildcards included, stay prompt-free during the handed-over stage in Claude Code. |
 | `plugins/qa/commands/run.md` | dispatch-only | Follows stage 3's dispatch-copy rule and strips `**Verification-plan:**`. Runs neither the sweep nor stage 3.5. |
 | `plugins/qa/skills/report-format/SKILL.md` | reference-only | Reproduces the finding-block fields this skill writes. Declares no `allowed-tools:` and executes nothing. |
 | `plugins/code-review/skills/docs-fact-registry/SKILL.md` | reference-only | Names the decision gate's auto-accept as the one path by which a dead-reference deletion is decided without the user. Declares no `allowed-tools:` and executes nothing. |
+
+A **`hands-over`** consumer loads a stage-running command in its own turn. Claude Code keeps a command's `allowed-tools` grants until the user's next message, so for a run started that way the prompt-free list is the union of both commands' grants, and the consumer's own are recorded here rather than diffed. Nothing changes for the stage: anything outside *The execution boundary* runs only with the sweep's approval, exactly as for `Bash(pytest:*)`; only the platform prompt behind that approval is missing for more commands.
 
 #### Grants — every `Bash(...)` on a runs-the-stage consumer
 
