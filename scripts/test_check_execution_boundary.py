@@ -400,6 +400,20 @@ class TestCheck(unittest.TestCase):
         )
         self.assertEqual(errors, [])
 
+    def test_hands_over_consumer_is_classified_without_a_grant_diff(self) -> None:
+        scope = _clean_scope() + (
+            ("plugins/code-review/commands/review.md", "hands-over", "hands over"),
+        )
+        errors, _ = self._check(
+            scope=scope,
+            consumers={
+                "plugins/code-review/commands/review.md": _command(
+                    "Read, Bash(git:*)"
+                )
+            },
+        )
+        self.assertEqual(errors, [])
+
     def test_over_wide_wildcard_is_an_error_whatever_its_class(self):
         # A registry row cannot make `git push` acceptable by calling the grant
         # something. The class is the author's claim; this test is the machine's.
