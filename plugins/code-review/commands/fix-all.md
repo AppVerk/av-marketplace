@@ -284,7 +284,7 @@ Compute:
 - `show_report_column` = true if `files` from Step 1.1 has >1 distinct path
 - `show_source_column` = true if at least one issue in the list has `source_handle` set, counting the bound components of every dispatchable composite, which the list itself holds as one issue
 
-Render to stdout (Markdown):
+Render it as visible reply text (Markdown), on every auto-batch run, `--yes` included:
 
 ~~~markdown
 ## Pre-flight: Fix All Issues
@@ -356,7 +356,7 @@ This is the one human gate on a grouping. A composite that passes it is fixed as
 
 ### Step 2.5: Confirmation gate
 
-**With `skip_confirmation`** (the `--yes` token), do not ask: print `Confirmation skipped (--yes): fixing all <total_count> issues.` and continue exactly as after the `Yes — fix all <total_count>` answer.
+**With `skip_confirmation`** (the `--yes` token), do not ask. `--yes` removes the question, never the summary: Step 2.4's pre-flight, its Composites block included, must already stand in your visible reply — print it now if it does not. Then print `Confirmation skipped (--yes): fixing all <total_count> issues.` as its own line. Only once both are visible, continue exactly as after the `Yes — fix all <total_count>` answer. On an unattended run that pre-flight is the only record of what the run set out to fix.
 
 Otherwise use AskUserQuestion with one question:
 
