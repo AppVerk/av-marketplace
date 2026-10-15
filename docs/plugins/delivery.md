@@ -84,7 +84,7 @@ Delivery runs its git commit commands with the AV_COMMIT_SKILL=1 prefix, so the 
 
 Every task is reviewed before its commit. Findings marked `critical` or `important` return to the same implementing agent for up to 3 fix rounds, with another review after each round. If blocking findings remain, choose `Accept and commit with open findings` or `Stop delivery`. Accepted open findings add the review trailer above; stopping leaves the delivery unfinished.
 
-After the last task, the plan's Verification and QA, Delivery runs `/code-review:review` over the delivered commits. When that review saves a report, Delivery commits it alone as `docs: add review of delivery <slug>` before offering `/code-review:fix-all`, unless your `.gitignore` excludes the report, in which case it stays uncommitted. Whatever fix-all changes, including the statuses it writes into the report, stays uncommitted for you to review and commit.
+After the last task, the plan's Verification and QA, Delivery runs `/code-review:review` over the delivered commits. The review always saves its report; Delivery commits it alone as `docs: add review of delivery <slug>`, unless your `.gitignore` excludes the report, in which case it stays uncommitted. Then the review's post-review action runs as `[code-review] after_review` sets it ([Code Review configuration](code-review.md#configuration)): by default it asks whether to run `/code-review:fix-all`, choose from `/code-review:fix-report`'s checklist, or stop. Whatever the fix commands change, including the statuses they write into the report, stays uncommitted for you to review and commit.
 
 ## QA
 

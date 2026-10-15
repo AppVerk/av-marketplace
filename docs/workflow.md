@@ -150,8 +150,7 @@ The report assigns each issue a unique ID (`SEC-XXX`, `PERF-XXX`, `ARCH-XXX`,
 through reports as a checklist with `/fix-report` (auto-merges review and QA
 reports), or fix everything except `needs-decision` issues with `/fix-all`.
 
-**Artifact:** review report in `docs/reviews/` — answer Yes at the save
-prompt; `/fix <ID>` and `/fix-report` resolve issues from the saved file.
+**Artifact:** review report in `docs/reviews/`, saved by every review; `/fix <ID>` and `/fix-report` resolve issues from it. What runs right after the review — `/fix-all`, `/fix-report`'s checklist, nothing, or a question (the default) — is set by `after_review` in [Code Review configuration](plugins/code-review.md#configuration).
 **Next stage consumes:** the working tree with every accepted fix applied —
 still uncommitted; `/commit` picks the changes up.
 

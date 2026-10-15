@@ -23,6 +23,8 @@ Run a comprehensive code review covering security, performance, architecture, an
 
 The review launches parallel analysis agents (security + code quality, and optionally documentation) and combines their findings into a unified report. Each issue gets a unique category-based ID (e.g., `SEC-001`, `PERF-002`, `ARCH-001`, `MAINT-003`, `DOC-001`) and includes severity level, file location, explanation, and remediation with code examples.
 
+**After the review.** The report is always saved to `docs/reviews/` (see [Save Review to File](#save-review-to-file)), then `after_review` picks what follows: by default, a question offering to fix everything with `/fix-all`, choose from `/fix-report`'s checklist, or stop (see [Configuration](#configuration)).
+
 **Scope.** `/review` reviews changes. A git range ending in `HEAD` in the description (`<rev>..HEAD` or `<rev>...HEAD`, as Delivery passes) sets the base; otherwise the base is the merge-base of `HEAD` and the default branch. Git resolves the literal `refs/remotes/origin/HEAD`, falling back to the fixed names `main` then `master` when that ref is unavailable; the symbolic ref's target name is never pasted into shell source. The changes are `git diff <base>` — commits since the base plus uncommitted edits — and untracked files. Every auditor, the cross-verifier and the challenger receive the base and the changed files; findings outside the changed files survive only when they name the changed line that causes them, and the rest are listed under "Out of scope (scope check)". With no base or no changes the review covers the whole repository, as before 2.2.0. The report starts with a `Review scope:` line.
 
 **Path safety.** Every dispatched agent receives the scope block's Shell safety rules. Changed-file names are untrusted data: scanners receive them directly from Git as NUL-delimited arguments, not as names pasted into shell commands. An individually interpolated shell path must pass the strict allow-list and be single-quoted with option protection; Git file operands also use literal pathspecs. Non-ASCII names, spaces and shell metacharacters do not remove a file from scope — those paths use NUL-delimited arguments, structured file-tool arguments or a repository-wide read-only diff.
@@ -90,6 +92,8 @@ The command:
 5. Fixes selected issues sequentially via the `fix-auto` agent
 6. Marks fixed issues with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file each issue came from (auto-merge may write to multiple files in one run)
 
+Where the checklist cannot be asked (a subagent or a print-mode run), nothing is selected and nothing is fixed.
+
 - `/fix-report` runs the same composition pass, asks the dissolve question before the checklist, shows a composite as one checklist item, and persists selected composites after selection, before the decision gate.
 
 The reports become living documents — fixed issues won't appear on subsequent `/fix-report` runs.
@@ -98,7 +102,7 @@ Issues flagged `**Fix-policy:** needs-decision` show a `[needs-decision: <drift-
 
 ### `/fix-all`
 
-Bulk-fix every unfixed `auto`-policy issue from one or more saved reports after a single yes/no confirmation, then offers to resolve the `**Fix-policy:** needs-decision` findings it skipped — one question per finding, with the code analysed for you, unless configured auto-accept resolves an eligible documentation finding without a question. Supports an optional minimum severity filter.
+Bulk-fix every unfixed `auto`-policy issue from one or more saved reports after a single yes/no confirmation (`--yes` skips it), then offers to resolve the `**Fix-policy:** needs-decision` findings it skipped — one question per finding, with the code analysed for you, unless configured auto-accept resolves an eligible documentation finding without a question. Supports an optional minimum severity filter.
 
 ```bash
 # Auto-merge: fix every unfixed issue (except needs-decision) in the newest review + newest QA report
@@ -109,6 +113,9 @@ Bulk-fix every unfixed `auto`-policy issue from one or more saved reports after 
 
 # Single file: fix every unfixed issue (except needs-decision) in this report
 /fix-all docs/reviews/2026-02-20-feature-login.md
+
+# Skip the confirmation question (what /review's post-review action passes)
+/fix-all --yes docs/reviews/2026-02-20-feature-login.md
 
 # Combined: HIGH+CRITICAL issues in a specific file (order is free)
 /fix-all CRITICAL docs/reviews/2026-02-20-feature-login.md
@@ -122,10 +129,10 @@ The command:
 4. Applies the optional severity floor (`HIGH` keeps HIGH+CRITICAL, `MEDIUM` keeps MEDIUM+HIGH+CRITICAL, etc.).
 5. Applies the Fix-policy filter — issues flagged `needs-decision` move to a skipped list; issues without the field are treated as `auto`. **If that leaves no `auto` issues at all** — the zero-auto path, where every unfixed finding needs a decision — steps 6–9 below are skipped entirely and the command goes straight to step 10.
 6. *(auto-batch path only)* Renders a **pre-flight summary** — full issue table sorted by severity, with per-severity counts, a Source column for feedback-origin issues, and the skipped `needs-decision` findings listed under "Requires user decision". The pre-flight shows each composite as one row, its components under a **Composites** block, and asks the dissolve question before the confirmation gate; accepted composites are persisted at Step 3.0, after the gate. On the zero-auto path the Composites block and the dissolve question run at the head of Step 5.2, before the decision offer; persistence runs after the `yes` to that offer, before the decision gate is loaded.
-7. *(auto-batch path only)* Asks one yes/no question: `Proceed with fixing all N issues sequentially?`
+7. *(auto-batch path only)* Asks one yes/no question: `Proceed with fixing all N issues sequentially?` With `--yes`, prints `Confirmation skipped (--yes): fixing all N issues.` instead of asking; `/review` passes `--yes` when its post-review action runs `/fix-all`.
 8. Sequentially invokes `fix-auto` on every queued issue, continuing through any individual failures.
 9. Marks each Fixed/Partially Fixed issue with `**Status:** ✅ Fixed (YYYY-MM-DD)` back in the file it came from, then displays a final summary table, which repeats the "Requires user decision" list.
-10. Offers to resolve the skipped `needs-decision` findings — a second yes/no question, then the [Decision Stage](#decision-stage) below runs the whole flow and writes its own results back. When configured, auto-accept resolves eligible documentation findings without a per-finding question. On the zero-auto path this step prints the "Requires user decision" list itself, since neither summary ran. Declining leaves those findings for a later run.
+10. Offers to resolve the skipped `needs-decision` findings — a second yes/no question, then the [Decision Stage](#decision-stage) below runs the whole flow and writes its own results back. When configured, auto-accept resolves eligible documentation findings without a per-finding question. On the zero-auto path this step prints the "Requires user decision" list itself, since neither summary ran. Declining, or being unable to ask the offer, leaves those findings for a later run.
 
 **When to use `/fix-all` vs `/fix-report`:**
 
@@ -348,13 +355,13 @@ Verification spawns 2 additional subagent instances (Cross-Verifier + Challenger
 
 ## Save Review to File
 
-After the review report is generated, you are asked whether to save it to a file. If you choose "Yes", the report is saved to `docs/reviews/YYYY-MM-DD-<branch-slug>.md`.
+Every review saves its report to `docs/reviews/YYYY-MM-DD-<branch-slug>.md` without a question. If the file cannot be written, the review prints `Review not saved: <error>` and only `/fix <paste issue block>` works for that review.
 
 The branch name is slugified (e.g., `feature/user-login` becomes `feature-user-login`). If a file with that name already exists, a numeric suffix is appended (`-2`, `-3`, etc.).
 
 ## Fixing Issues
 
-After the review, if issues were found and the report was saved, the review suggests running `/fix-report <path>` to fix issues from the saved report. For individual issues, use `/fix SEC-001` (by ID from the saved report) or `/fix <issue block>` (by pasting). To fix every unfixed issue (except `needs-decision`-flagged ones) in one pass, use `/fix-all` (optionally with a severity floor like `/fix-all HIGH`).
+After saving the report, the review runs the post-review action selected by `after_review` — by default asking whether to run `/fix-all` on the report, choose issues with `/fix-report`, or stop and print the fix commands (see [Configuration](#configuration)). For individual issues, use `/fix SEC-001` (by ID from the saved report) or `/fix <issue block>` (by pasting). To fix every unfixed issue (except `needs-decision`-flagged ones) in one pass, use `/fix-all` (optionally with a severity floor like `/fix-all HIGH`).
 
 `fix-auto` and `/fix` first reject a `Location` path that contains a single quote or a control character as `unsafe characters`, before constructing any shell command; paths with `$`, brackets, parentheses, `+`, spaces or non-ASCII letters are accepted and only ever used single-quoted. They also refuse a `Location` outside the repository — an absolute path, a `..` segment, a path that resolves outside `git rev-parse --show-toplevel` through a symlinked directory, or a symlinked file — with the containment test of the Decision Stage: `fix-auto` reports the issue as Failed without opening the file, `/fix` asks for a usable location inside the repository.
 
@@ -362,7 +369,7 @@ After the review, if issues were found and the report was saved, the review sugg
 
 **Recommended workflow (local review):**
 
-1. Run `/review` and save the report. Optionally run `/qa:run` (it reuses the branch's QA plan or generates one) — when both reports exist, `/fix-report` (no argument) auto-merges them into a single checklist.
+1. Run `/review`; it saves the report and asks for, or runs, the next step. Optionally run `/qa:run` (it reuses the branch's QA plan or generates one) — when both reports exist, `/fix-report` (no argument) auto-merges them into a single checklist.
 2. Fix using one of these methods:
    - `/fix-report` — auto-merge mode: fixes issues from the newest review report and the newest QA report in one pass
    - `/fix-all` — bulk-fix every unfixed `auto`-policy issue across the newest review + QA reports after one yes/no confirmation
@@ -469,11 +476,11 @@ scripts themselves are the canonical implementation.
 
 ## Configuration
 
-Code Review owns the `[code-review]` table in [`.av/config.toml`](../configuration.md), and its two keys may also be set in your user configuration file. The same opt-in policy applies to the shared decision gate used by `/fix-all` and `/fix-report`; it does not change a finding's `needs-decision` classification.
+Code Review owns the `[code-review]` table in [`.av/config.toml`](../configuration.md), and its three keys may also be set in your user configuration file. `after_review` chooses what `/code-review:review` does after saving its report, while the auto-accept keys apply to the shared decision gate used by `/fix-all` and `/fix-report`; they do not change a finding's `needs-decision` classification.
 
 Settings come from three files, later ones winning:
 
-1. **Your user configuration file**, `${XDG_CONFIG_HOME:-~/.config}/av/config.toml`, shown as `~/.config/av/config.toml`. It describes you rather than the repository: it needs `version = 1`, its `[code-review]` table may hold only the two keys below, `[env]` is never allowed there, and it works in a repository that has no `.av/` directory. Its values are **never trust-pinned**, so they apply in every repository and worktree. A repository whose `.av/config.toml` holds trust-pinned `[env]` settings (value sources, service commands, non-loopback targets) still asks the trust question once per worktree, because Code Review pins that shared subset too.
+1. **Your user configuration file**, `${XDG_CONFIG_HOME:-~/.config}/av/config.toml`, shown as `~/.config/av/config.toml`. It describes you rather than the repository: it needs `version = 1`, its `[code-review]` table may hold only the three keys below, `[env]` is never allowed there, and it works in a repository that has no `.av/` directory. Its values are **never trust-pinned**, so they apply in every repository and worktree. A repository whose `.av/config.toml` holds trust-pinned `[env]` settings (value sources, service commands, non-loopback targets) still asks the trust question once per worktree, because Code Review pins that shared subset too.
 2. **`.av/config.toml`**, the repository's shared file.
 3. **`.av/local.toml`**, your git-ignored local override.
 
@@ -481,6 +488,9 @@ Settings come from three files, later ones winning:
 |---|---|---|
 | `auto_accept_min_confidence` | Unset — every `needs-decision` finding is asked | Integer **70–100**, or `false`. Below 70, the analyst's rubric means a judgment call, which is never auto-accepted. An eligible `**Category:** Documentation` finding is fixed without a question when the analyst's `Confidence` and an independent second opinion agree on the alternative and both reach this threshold. `false` turns auto-accept off: a repository sets it in `.av/config.toml` to veto a user-file value, and `.av/local.toml` may override that veto. A number set in `.av/config.toml` or `.av/local.toml` is trust-pinned per worktree: the first run after setting or changing it asks you to trust the settings. |
 | `auto_accept_gate` | `"analyst"` | Where the second opinion comes from. `"analyst"` — a second analyst in confirm mode. `"decision-model"` — in OMP, the decision model on the `judge` role first, then a second analyst wherever it does not agree; Claude Code has no decision model, so it prints `Decision model unavailable here: second opinions come from a second analyst.` and uses the analyst. `"decision-model"` set in `.av/config.toml` or `.av/local.toml` is trust-pinned per worktree; `"analyst"` is not. |
+| `after_review` | `"ask"` | What `/code-review:review` does after saving its report, and Delivery after committing its final review. `"ask"` asks: `Fix all` (`/fix-all`), `Choose from a checklist` (`/fix-report`) or `Nothing now`. `"fix-all"` runs `/fix-all --yes <report>`: the pre-flight is printed and the auto-fixable findings are fixed without the confirmation question; the dissolve question and the needs-decision offer are still asked when they apply. `"fix-report"` opens `/fix-report`'s checklist on the report. `"none"` prints the fix commands. Nothing runs when the review found no issues. `"fix-all"` set in `.av/config.toml` or `.av/local.toml` is trust-pinned per worktree: the first review after setting it asks you to trust the settings, and any answer but `Trust and use it` falls back to the question. The other values are not pinned. An invalid value falls back to `"ask"` with a message. |
+
+One trust approval covers every pinned `[code-review]` setting, so both trust questions — the review's and the decision stage's — name auto-accept and `after_review = "fix-all"` whenever both are on. In Claude Code, a command's pre-approved tools last the whole turn, so while `/fix-all` or `/fix-report` runs after `/review` hands its report over, `/review`'s own pre-approvals stay active too; the decision stage still asks before any check outside its read-only boundary.
 
 All seven eligibility rules must pass; no confidence score overrides a failed rule:
 
@@ -526,9 +536,20 @@ auto_accept_min_confidence = false
 
 **90 is the suggested starting point: analysts' scores cluster high.** Scores below 70 never qualify; the rubric caps unrecorded intent or team preference, lowering a documented aspiration or promise to match code, and changes to code, configuration or tests at 69.
 
-A `.av/local.toml` override counts only when `.av/config.toml` or your user configuration file carries `[code-review]`. Trust is stored against this worktree's real path and covers the shared `[env]` sensitive subset, plus the threshold and a `"decision-model"` gate when they come from `.av/config.toml` or `.av/local.toml`; values from your user configuration file are never pinned. Choosing `Not now` at the trust question, or being unable to ask it, leaves auto-accept off for the run. A missing file, table or key keeps the default question-per-finding behavior; invalid configuration in any of the three files leaves auto-accept off with a message instead of stopping the decision stage. The engine needs **Python 3.11+**; if it is unavailable, auto-accept stays off with a message.
+To run `/fix-all` after saving a review with findings, set this in your user configuration file, `~/.config/av/config.toml`:
 
-For a `missing-file` or `missing-table` state, the engine reports `policy.auto_accept_min_confidence` as `null` and `policy.auto_accept_gate` as `"analyst"`, and excludes both keys from `trust_subset`, even if `.av/local.toml` supplies a value.
+```toml
+version = 1
+
+[code-review]
+after_review = "fix-all"
+```
+
+A repository that wants the question back sets `after_review = "ask"` in `.av/config.toml`.
+
+A `.av/local.toml` override counts only when `.av/config.toml` or your user configuration file carries `[code-review]`. Trust is stored against this worktree's real path and covers the shared `[env]` sensitive subset, plus the threshold, a `"decision-model"` gate and `after_review = "fix-all"` when they come from `.av/config.toml` or `.av/local.toml`; values from your user configuration file are never pinned. Choosing `Not now` at the trust question, or being unable to ask it, leaves auto-accept off for the run. A missing file, table or key keeps the default question-per-finding behavior; invalid configuration in any of the three files leaves auto-accept off with a message instead of stopping the decision stage. The engine needs **Python 3.11+**; if it is unavailable, auto-accept stays off with a message.
+
+For a `missing-file` or `missing-table` state, the engine reports `policy.auto_accept_min_confidence` as `null`, `policy.auto_accept_gate` as `"analyst"` and `policy.after_review` as `"ask"`, and excludes all three keys from `trust_subset`, even if `.av/local.toml` supplies a value.
 
 A recorded automatic decision is replayed only while auto-accept is on in this run — set in your user configuration file, or set in the repository and trusted here — and the threshold is at or below both recorded confidence scores. Otherwise it is retired with a final `revoked` entry and the finding is asked instead. Documentation paths are re-checked before every automatic dispatch, including replay, so a changed directory symlink can revoke a decision even when its content pin still matches. If a prior dispatch was interrupted, verification runs first whatever the policy: a pass records the outcome without dispatching again; a failure is recorded before the replay or revocation rule is applied.
 
@@ -539,9 +560,11 @@ Each auto-accepted finding is listed under **Auto-accepted** in the run summary,
 
 **`code-review` 2.3.0 adds opt-in automatic documentation decisions.** Every reader of a report that may carry `auto@…` provenance should run code-review **2.3.0 or newer in both harnesses**. Only 2.3.0 and newer re-check the policy, this worktree's trust and the documentation paths before replaying an automatic decision. An older reader replays a recorded `auto@…` decision exactly as it replays any recorded `**Decision:**` line, including a teammate's `user` decision or a hand-written one — it does not enforce the new auto-accept conditions.
 
-2.3.0 also reads your user configuration file, `~/.config/av/config.toml`, for the two `[code-review]` keys. A threshold set there applies in every repository you open, unless the repository sets `auto_accept_min_confidence = false`; it needs no trust question of its own, though a repository with trust-pinned `[env]` settings still asks once per worktree.
+2.3.0 also reads your user configuration file, `~/.config/av/config.toml`, for the three `[code-review]` keys. A threshold set there applies in every repository you open, unless the repository sets `auto_accept_min_confidence = false`; it needs no trust question of its own, though a repository with trust-pinned `[env]` settings still asks once per worktree.
 
 A live automatic decision stays unfinished in a report after an interrupted run and also after a failed or unverified attempt: stage 4's third and fourth cases write no status. It remains live until the fix lands or the decision is retired, so this reader-version guidance applies to all of those reports, not only runs stopped before dispatch.
+
+2.3.0 also saves every review report without asking and adds `after_review` (default `"ask"`). Update Delivery to 0.7.0 together with it: an older Delivery lets the review's post-review action run before Delivery commits the report — so the committed report can carry the statuses `/fix-all` wrote — and then asks its own `Run /code-review:fix-all …?` question.
 
 **`code-review` 2.1.0 changes how a pre-existing review report is dispatched, not how it is parsed.** Every new field (`**Composed-of:**`, `**Part-of:**`, `**Origin:**`, `**Category:** Composite`) is additive: the `### [SEVERITY]` block extraction, `fix-auto`'s field table, `extract-issue-ids.sh` and the `**Status:**` grammar all read an old report unchanged. Their dispatch does change: the fix-time composition pass may group an old review or feedback report's unfixed findings, persist `Composed-of`/`Part-of`/`Origin` markers into the file and dispatch a group as one `fix-auto` call. The dissolve question is the per-run veto, no write happens before the run's commitment point (the confirmation gate, or the `yes` to the decision offer on `/fix-all`'s zero-auto path), and the pass is fail-safe — an unavailable analyst means no grouping, never a blocked run. A reader older than 2.1.0 ignores the new fields and dispatches a `COMP` block like any finding, applying its Remediation without the component checks; pair versions when a report carries composites.
 
