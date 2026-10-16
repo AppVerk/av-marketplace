@@ -23,6 +23,8 @@ from av_config.errors import ConfigError
 from av_config.errors import InvalidConfig
 from qa_engine.config import Config
 from qa_engine.config import SECTIONS
+from qa_engine.desktop import ebitengine_vmhost_available
+from qa_engine.desktop import run_desktop
 from qa_engine.users import provision
 from qa_engine.users import record_account_cli
 from qa_engine.users import teardown
@@ -167,6 +169,13 @@ def parser() -> argparse.ArgumentParser:
     report_input.add_argument("--issues", type=Path)
     report_input.add_argument("--accounts", action="store_true")
     report.add_argument("--final", action="store_true")
+    desktop = repo_option(commands.add_parser("desktop"))
+    desktop_operations = desktop.add_subparsers(dest="operation", required=True)
+    desktop_run = run_option(desktop_operations.add_parser("run"))
+    desktop_run.set_defaults(handler=_execute_desktop_run)
+    desktop_run.add_argument("--dispatch", required=True)
+    desktop_run.add_argument("--target", required=True)
+    desktop_run.add_argument("--script", required=True, type=Path)
     run_option(commands.add_parser("summary")).set_defaults(handler=run_state, state_handler=_state_summary, close_iteration=True)
     return root
 
@@ -182,12 +191,14 @@ def repository(explicit: Path | None) -> Path:
     return Path(result.stdout.strip()).resolve()
 
 
-def tools() -> dict[str, object]:
+def tools(repo: Path) -> dict[str, object]:
     result: dict[str, object] = {name: shutil.which(name) is not None for name in ("curl", "jq", "psql", "mysql", "sqlite3")}
     result["redis_cli"] = shutil.which("redis-cli") is not None
     perl = shutil.which("perl")
     result["perl_json_pp"] = perl is not None and subprocess.run([perl, "-MJSON::PP", "-e", "1"], capture_output=True, check=False).returncode == 0
     result["httpie"] = shutil.which("http") is not None
+    result["go"] = shutil.which("go") is not None
+    result["ebitengine_vmhost"] = ebitengine_vmhost_available(repo)
     return result
 
 
@@ -326,7 +337,13 @@ def _execute_trust(repo: Path, args: argparse.Namespace) -> tuple[dict[str, obje
 
 
 def _execute_tools(repo: Path, args: argparse.Namespace) -> tuple[dict[str, object], int]:
-    return tools(), 0
+    return tools(repo), 0
+
+
+def _execute_desktop_run(repo: Path, args: argparse.Namespace) -> tuple[dict[str, object], int]:
+    # Outside run_state: the run lock is held only while run_desktop validates, never while the app runs.
+    path = args.script if args.script.is_absolute() else repo / args.script
+    return run_desktop(repo, args.run, args.dispatch, args.target, path), 0
 
 
 def execute(args: argparse.Namespace) -> tuple[CommandResult, int]:

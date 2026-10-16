@@ -879,7 +879,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("error", json.loads(result.stdout))
         tools = json.loads(self.cli("tools").stdout)
-        self.assertEqual(set(tools), {"curl", "jq", "perl_json_pp", "psql", "mysql", "sqlite3", "redis_cli", "httpie"})
+        self.assertEqual(set(tools), {"curl", "jq", "perl_json_pp", "psql", "mysql", "sqlite3", "redis_cli", "httpie", "go", "ebitengine_vmhost"})
         result = self.cli("no-such-command", "literal:do-not-echo")
         self.assertEqual(result.returncode, 2)
         self.assertNotIn("do-not-echo", result.stdout + result.stderr)
