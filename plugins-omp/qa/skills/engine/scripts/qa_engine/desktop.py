@@ -289,9 +289,11 @@ class _Children:
         """Run ``argv`` in its own session; ``None`` when it outlived ``timeout`` and was killed."""
         with log.open("wb") as output:
             log.chmod(0o600)
+            # Go trusts an inherited PWD naming the same directory, so a symlinked path (macOS /tmp) would
+            # not match the overlay's resolved repository path.
             self.current = subprocess.Popen(
-                argv, cwd=cwd, env=self.environment, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                start_new_session=True,
+                argv, cwd=cwd, env={**self.environment, "PWD": str(cwd)}, stdin=subprocess.DEVNULL, stdout=output,
+                stderr=subprocess.STDOUT, start_new_session=True,
             )
         try:
             return self.current.wait(timeout=timeout)

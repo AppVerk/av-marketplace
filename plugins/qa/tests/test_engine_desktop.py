@@ -58,6 +58,9 @@ args = sys.argv[1:]
 with open(os.path.join(state, "go.log"), "a") as log:
     log.write(json.dumps({{"argv": args, "cwd": os.getcwd()}}) + "\\n")
 guest = "-tags" in args
+if os.environ.get("PWD") != os.getcwd():
+    print("go: PWD does not name the build directory", file=sys.stderr)
+    sys.exit(1)
 mode_file = os.path.join(state, "guest-build" if guest else "host-build")
 mode = open(mode_file).read().strip() if os.path.exists(mode_file) else "ok"
 if mode == "fail":
