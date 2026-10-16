@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 2.4.0
+**Version:** 2.5.0
 
 ## Commands
 
@@ -578,6 +578,8 @@ Each auto-accepted finding is listed under **Auto-accepted** in the run summary,
 
 <a id="upgrade-notes"></a>
 ## Upgrade Notes
+
+**`code-review` 2.5.0 relays decision-stage questions and prints a per-finding run record.** In a session without its own ask tool, such as a subagent or a print-mode run, `/fix-all` no longer takes an orchestrator's message as your answer. It ends its turn with a `## Decision relay request RLY-…` for the dispatching session to ask you, and records the decisions answered that way as `[relayed, <date>]`. A reader on 2.4.0 replays a `relayed` decision like any recorded one. The Decision Stage summary now opens with the auto-accept line and one row per finding.
 
 **`code-review` 2.4.0 saves every review report without asking and adds `after_review`** (default `"ask"`), which your user configuration file may also set. Update Delivery to 0.8.0 together with it: an older Delivery lets the review's post-review action run before Delivery commits the report — so the committed report can carry the statuses `/fix-all` wrote — and then asks its own `Run /code-review:fix-all …?` question. Set `after_review` only where every reader runs 2.4.0 or newer: 2.3.0 rejects the key (`not allowed in the user config` in your user configuration file, `unknown key` in `.av/config.toml`), which invalidates the whole `[code-review]` table and turns auto-accept off.
 
