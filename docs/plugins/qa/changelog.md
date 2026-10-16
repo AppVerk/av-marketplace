@@ -2,6 +2,10 @@
 
 This page lists user-visible changes per release.
 
+## 3.1.0: background desktop testing for Ebitengine apps
+
+The optional DESKTOP plan section drives Ebitengine apps headless in the background through `exp/vmhost`, alongside existing FE and BE tests. Configure apps under `[qa.desktop.<name>]`; `desktop run` and the run's `desktop.sh` build and run the app, inject tick-based input and return PNG shots plus a masked app log. The `tools` probe adds `go` and `ebitengine_vmhost`, and `plan check` reports missing desktop configuration in `missing.apps`.
+
 ## 3.0.1: shared loader reads the user configuration file
 
 No change to `/qa:run`. The shared configuration loader QA ships for every configurable plugin can read policy keys from `${XDG_CONFIG_HOME:-~/.config}/av/config.toml` for a plugin that allows them; QA allows none, so it never reads that file. See [Files](../../configuration.md#files).

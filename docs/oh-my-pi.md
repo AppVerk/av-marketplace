@@ -33,7 +33,7 @@ Agents pick their model through model roles instead of a fixed model:
 |------|--------|
 | `code_review` | Code Review's auditors, Delivery's task reviewer |
 | `executor` | `code-review:fix-auto`, the developer agents, Delivery's implementer |
-| `tester` | QA's FE and BE testers |
+| `tester` | QA's FE, BE and desktop testers |
 | `challenger` | Code Review's challenger and cross-verifier |
 | `analyst` | Code Review's composition analyst, decision analyst and feedback analyzer |
 | `plan` | OMP plan mode, QA's test planner and config author |
