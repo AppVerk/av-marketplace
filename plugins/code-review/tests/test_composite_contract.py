@@ -194,6 +194,47 @@ class CompositeContract(unittest.TestCase):
         self.assertIn("**Composition:**", text)
         self.assertIn("Verification coverage", text)
 
+    def test_fix_all_skip_confirmation_snapshots_final_preflight(self) -> None:
+        # mutation: delete the preflight_snapshot rule in fix-all.md Step 2.5
+        gate = read(FIX_ALL).split("### Step 2.5: Confirmation gate", 1)[1].split("## Step 3:", 1)[0]
+        self.assertIn("After Step 2.4.5", gate)
+        self.assertIn("freeze `preflight_snapshot`", gate)
+        self.assertIn("all ordered issue-table rows", gate)
+        self.assertIn("Composites block", gate)
+        self.assertIn("do not rebuild it from the edited reports", gate)
+        self.assertNotIn("the only record", gate)
+
+    def test_fix_all_unattended_summary_opens_with_full_preflight(self) -> None:
+        # mutation: delete the Set out to fix prefix or its issue table from fix-all.md Step 4.2
+        text = read(FIX_ALL)
+        summary = text.split("### Step 4.2: Display fix summary", 1)[1].split("## Step 5:", 1)[0]
+        self.assertIn("With `skip_confirmation`", summary)
+        self.assertIn("`preflight_snapshot`", summary)
+        template = summary.split("```markdown\n", 1)[1].split("\n```", 1)[0]
+        self.assertTrue(template.startswith("## Fix Summary\n\n### Set out to fix\n"))
+        intent = template.split("### Results", 1)[0]
+        for field in (
+            "**Reports:**",
+            "**Severity floor:**",
+            "**Total to fix:**",
+            "**Requires user decision (skipped):**",
+            "**By severity:**",
+            "| CRITICAL | HIGH | MEDIUM | LOW |",
+            "| # | ID | Severity | Title | Location | Source | Report |",
+            "Composites block",
+            "Confirmation skipped (--yes): fixing all <total_count> issues.",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, intent)
+        self.assertIn("never collapse the table to a count or a list of IDs", summary)
+        self.assertIn("Without `skip_confirmation`, omit", summary)
+
+    def test_docs_locates_unattended_preflight_in_final_summary(self) -> None:
+        # mutation: restore "the pre-flight is printed" in the after_review configuration row
+        row = next(line for line in read(DOCS).splitlines() if line.startswith("| `after_review` |"))
+        self.assertIn('final summary opens with "Set out to fix"', row)
+        self.assertNotIn("the pre-flight is printed", row)
+
     # ---- Task 6: /fix-report ---------------------------------------------
 
     def test_fix_report_has_composition_steps(self):
@@ -433,6 +474,32 @@ class CompositeContract(unittest.TestCase):
                 expected_sha = {"base": base, "head": head, None: None}[expected]
                 self.assertEqual(resolved, expected_sha)
                 self.assertFalse((repo / "sec003-sentinel").exists())
+
+    def test_review_shell_examples_preserve_argv_without_omp_placeholders(self) -> None:
+        # mutation: restore "$@" in review.md's Shell safety suffix or remove the empty-batch guard
+        paths = ["plain.py", "with spaces.py", "zażółć.py", "-option.py", "line\nbreak.py", "$(exit 7).py"]
+        for path in (REVIEW, REVIEW.replace("plugins/", "plugins-omp/", 1)):
+            suffix = read(path).split("~~~text\nShell safety:", 1)[1].split("\n~~~", 1)[0]
+            examples = [line for line in suffix.splitlines() if line.startswith("git ")]
+            with self.subTest(path=path):
+                self.assertNotRegex(suffix, r"\$(?:@|ARGUMENTS|\d+)")
+                self.assertEqual(len(examples), 2)
+
+            for example in examples:
+                pipeline = example.split("|", 1)[1]
+                self.assertIn("exec semgrep scan --config=p/security-audit --", pipeline)
+                # Record argv instead of invoking a scanner; keep the published xargs and sh wrapper.
+                pipeline = pipeline.replace(
+                    "exec semgrep scan --config=p/security-audit --", 'printf "%s\\000"',
+                )
+                for batch in ([], paths):
+                    data = b"".join(name.encode("utf-8") + b"\0" for name in batch)
+                    with self.subTest(path=path, example=example, batch=batch):
+                        result = subprocess.run(
+                            ["sh", "-c", pipeline], input=data, capture_output=True, check=False,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stdout, data)
 
 
 if __name__ == "__main__":

@@ -153,7 +153,7 @@ Print the table `Task | Agent | Routing | Fix rounds | Result`, one row per task
 
 Mark `Final code review` in progress.
 
-- Invoke the Skill tool with skill `code-review:review` and these args, then carry out the review it loads completely:
+- Invoke the Skill tool with skill `code-review:review` and these args, then carry out the review it loads through its Step 6 (Save Review). Do not run its Step 7 (Post-review action) here: it runs in **7. Post-review action**, after the report is committed:
   ```
   Changes on branch <BRANCH> in <BASE>..HEAD (git diff <BASE>..HEAD), delivered from <PLAN_PATH>. Review only these changes.
   ```
@@ -162,9 +162,9 @@ Mark `Final code review` in progress.
 
 Mark `Final code review` completed.
 
-### 7. Fix offer
+### 7. Post-review action
 
-If the review saved a report, use AskUserQuestion: `Run /code-review:fix-all on <report path>?` with options `Yes` and `No`. On `Yes`, invoke the Skill tool with skill `code-review:fix-all` and args `<report path>`, and carry it out completely. Whatever it changes, including the statuses it writes into the report, stays uncommitted: end with `Review fixes are uncommitted; review them and commit.` Without a saved report, end the run.
+Carry out the review's Step 7 (Post-review action) now, with the report its Step 6 saved, or without one when it printed `Review not saved:`. That step decides from `[code-review] after_review` whether to ask, hand the report to `/code-review:fix-all` or `/code-review:fix-report`, or print the fix commands; never answer its questions yourself. When it hands the report to a fix command, carry that command out completely; whatever it changes, including the statuses it writes into the report, stays uncommitted: end with `Review fixes are uncommitted; review them and commit.` When no fix command ran, end the run after the review's Step 7.
 
 ## Task loop
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stdlib-only JSON interface for code-review's opt-in auto-accept policy."""
+"""Stdlib-only JSON interface for code-review's [code-review] policy: auto-accept and the after-review action."""
 from __future__ import annotations
 
 import argparse
@@ -33,7 +33,9 @@ TABLE = "code-review"
 AUTO_ACCEPT = "auto_accept_min_confidence"
 GATE = "auto_accept_gate"
 GATES = ("analyst", "decision-model")
-USER_KEYS = {AUTO_ACCEPT, GATE}
+AFTER_REVIEW = "after_review"
+ACTIONS = ("ask", "fix-all", "fix-report", "none")
+USER_KEYS = {AUTO_ACCEPT, GATE, AFTER_REVIEW}
 FLOOR = 70
 VALUE_SOURCE_KEYS = re.compile(
     r"env\.(?:secrets|values)\.[A-Za-z_][A-Za-z0-9_]*|env\.stores\.[A-Za-z_][A-Za-z0-9_]*\.password"
@@ -79,6 +81,8 @@ class AutoAcceptConfig:
                 self.trust_subset[f"{TABLE}.{AUTO_ACCEPT}"] = threshold
             if gate == "decision-model" and not self.shared.from_user(f"{TABLE}.{GATE}"):
                 self.trust_subset[f"{TABLE}.{GATE}"] = gate
+            if self.table.get(AFTER_REVIEW) == "fix-all" and not self.shared.from_user(f"{TABLE}.{AFTER_REVIEW}"):
+                self.trust_subset[f"{TABLE}.{AFTER_REVIEW}"] = "fix-all"
 
         self.trust_hash = canonical_hash(self.trust_subset)
         self.trust = self.store.status(self.trust_subset)
@@ -103,6 +107,9 @@ class AutoAcceptConfig:
         if GATE in table and table[GATE] not in GATES:
             self.shared.error(f"{TABLE}.{GATE}", 'expected "analyst" or "decision-model"')
 
+        if AFTER_REVIEW in table and table[AFTER_REVIEW] not in ACTIONS:
+            self.shared.error(f"{TABLE}.{AFTER_REVIEW}", 'expected "ask", "fix-all", "fix-report" or "none"')
+
     def report(self) -> dict[str, object]:
         """Return JSON-safe policy metadata without resolving value sources."""
 
@@ -121,6 +128,7 @@ class AutoAcceptConfig:
             report["policy"] = {
                 AUTO_ACCEPT: threshold if type(threshold) is int else None,
                 GATE: self.table.get(GATE, "analyst") if self.state == "ok" else "analyst",
+                AFTER_REVIEW: self.table.get(AFTER_REVIEW, "ask") if self.state == "ok" else "ask",
             }
 
         return report

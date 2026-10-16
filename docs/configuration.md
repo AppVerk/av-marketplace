@@ -185,7 +185,7 @@ QA pins these settings:
 - The whole cleanup recipe and its SQL store table.
 - Explicitly configured `fix`, `mutations` and `start_services` values.
 
-Code Review pins the shared `[env]` subset above, an `auto_accept_min_confidence` threshold and an `auto_accept_gate = "decision-model"` set in the repository's files. Its `false` veto and the `analyst` gate only narrow auto-accept and are not pinned.
+Code Review pins the shared `[env]` subset above, an `auto_accept_min_confidence` threshold, an `auto_accept_gate = "decision-model"` and an `after_review = "fix-all"` set in the repository's files. Its `false` veto, the `analyst` gate and the other `after_review` values widen nothing and are not pinned.
 
 </details>
 
@@ -233,6 +233,6 @@ These 3 shell variables are example inputs, not configuration sources. The engin
 |---|---|
 | `[env]` | Shared environment; [this page](#configuration). |
 | `[qa]` | [QA configuration](plugins/qa/configuration.md). |
-| `[code-review]` | [Code Review configuration](plugins/code-review.md#configuration): `auto_accept_min_confidence` and `auto_accept_gate`, both also allowed in the user file. |
+| `[code-review]` | [Code Review configuration](plugins/code-review.md#configuration): `auto_accept_min_confidence`, `auto_accept_gate` and `after_review`, all also allowed in the user file. |
 
 Register each new plugin's table here with its key reference. Keep plugin-specific policy and recipes out of `[env]`.
