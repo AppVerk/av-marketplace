@@ -25,8 +25,8 @@ Plan: <selected plan path, or none>
 
 Mode-specific input:
 
-- **create:** `Plan:` is the path `plan resolve` would select, if any. Read that plan before choosing target, user, value or store names. The file or `[qa]` table is missing; add a full `[qa]` configuration and only the `[env]` keys QA needs that are not already present.
-- **extend:** `Missing:` contains the `plan check` gaps (`users`, `values`, `targets`, `stores`, or cleanup-only `cleanup`) and their reasons. `targets` gaps name `ui`, `backend` or a scenario's explicit `Target:` name; ground that origin under exactly that name. Read the referenced plan and fill exactly those gaps, including missing user fields and cleanup/source dependencies. Keep existing names and policy.
+- **create:** `Plan:` is the path `plan resolve` would select, if any. Read that plan before choosing target, app, user, value or store names. The file or `[qa]` table is missing; add a full `[qa]` configuration and only the `[env]` keys QA needs that are not already present.
+- **extend:** `Missing:` contains the `plan check` gaps (`users`, `values`, `targets`, `apps`, `stores`, or cleanup-only `cleanup`) and their reasons. `targets` gaps name `ui`, `backend` or a scenario's explicit `Target:` name; ground that origin under exactly that name. `apps` gaps name `app` or a scenario's explicit DESKTOP `Target:` name; ground `[qa.desktop.<name>]` under exactly that name. Read the referenced plan and fill exactly those gaps, including missing user fields and cleanup/source dependencies. Keep existing names and policy.
 - **repair:** `Failure:` contains the engine's recipe error or failing health probes and affected keys. Read the existing definitions and their repository evidence; repair only the failing recipe, probe, source or service configuration and its dependencies. A failed probe alone does not prove a different port or path: do not guess from the error.
 
 A revision may also contain `Preview errors:` from `config preview`; correct only those errors within the original mode's scope. Re-read affected non-secret evidence if it changed. If the caller supplies the creation-time policy answers, use those answers without asking them again.
@@ -37,11 +37,11 @@ Read the committed `.av/config.toml` and the current ignore rules. Copy existing
 
 ### 1. Preserve the plan's names and requirements
 
-In `create`, keep every given plan target, user, value and store name; do not rename `other` to `user2`, replace an application target with a product name, or change plan tokens to fit a convenient recipe. A plan's names do not establish unknown origins or endpoints: find those in the repository through `env-config`.
+In `create`, keep every given plan target, app, user, value and store name; do not rename `other` to `user2`, replace an application target with a product name, or change plan tokens to fit a convenient recipe. A plan's names do not establish unknown origins, desktop main packages or endpoints: find environment evidence through `env-config` and desktop app evidence in section 3a.
 
 Read `## Users` and `$QA_NAME` / `${QA_NAME}` tokens anywhere in scenarios, including headers, payloads, preconditions and edges. User fields are `EMAIL`, `PASSWORD` and optional `ID`; `TAG` and `NEW_PASSWORD` are engine-issued. Tokens and cookies are obtained by the tester, never configured fields. Other tokens name `[env.values]` entries. Use the config's known names and the missing-key reasons to disambiguate. User names use `[a-z][a-z0-9_]*`; preserve them exactly and report an invalid or ambiguous name rather than rewriting the plan. Names `new`, `captured` and the `captured_` prefix are reserved. Avoid collisions after uppercasing, including a value named `<USER>_<FIELD>`; values also reserve `TAG`, `NEW_PASSWORD`, `CAPTURED_*` and credential suffixes.
 
-A scenario's `- **Target:** <name>` wins over its section origin (`ui` for FE, `backend` for BE; a single target of any name serves both). With several targets, an absent section name is a gap, not permission to use the other section's origin; the same origin may be declared as both `ui` and `backend`. A BE `**State Check:**` gap requires a named `[env.stores.<name>]` entry: names match `[A-Za-z_][A-Za-z0-9_]*` and are unique case-insensitively. Preserve the plan's store prefix and ground `kind = "sql"` with `engine = "postgres"|"mysql"|"sqlite"`, or `kind = "redis"`, and the required connection fields/defaults from `env-config`. An unprefixed check resolves only when exactly one store is configured. With no selected plan, derive only the environment, existing users and values supported by repository auth/development evidence; do not invent accounts for an unauthenticated app. Later `plan check` can request missing names.
+An FE/BE scenario's `- **Target:** <name>` wins over its section origin (`ui` for FE, `backend` for BE; a single target of any name serves both). With several targets, an absent section name is a gap, not permission to use the other section's origin; the same origin may be declared as both `ui` and `backend`. A DESKTOP Target instead names a `[qa.desktop.<name>]` app, defaulting to `defaults.DESKTOP` (`app` or the only app); it never names an `[env.targets]` origin. Preserve that app name and ground it in section 3a. A BE `**State Check:**` gap requires a named `[env.stores.<name>]` entry: names match `[A-Za-z_][A-Za-z0-9_]*` and are unique case-insensitively. Preserve the plan's store prefix and ground `kind = "sql"` with `engine = "postgres"|"mysql"|"sqlite"`, or `kind = "redis"`, and the required connection fields/defaults from `env-config`. An unprefixed check resolves only when exactly one store is configured. With no selected plan, derive only the environment, existing users and values supported by repository auth/development evidence; do not invent accounts for an unauthenticated app. Later `plan check` can request missing names.
 
 Postgres/MySQL and Redis stores must use an exact-loopback host as defined by `env-config`; the store schema has no TLS settings and rejects every non-loopback store host. Trust approval, personal overrides and inherited client TLS variables cannot authorize a remote/LAN store. If a required store has no grounded local endpoint, return `proposal: null` with the affected `env.stores.<name>.host` prerequisite; do not relabel a remote host as loopback.
 
@@ -60,7 +60,7 @@ Allowed policy values are `fix = "approve"|"auto"|"off"`, `mutations = "allow"|"
 
 For `create`, return exactly the three policy-choice questions below in one `questions` array, unless already answered. Make the affected keys and answer-to-key mapping explicit in each string so the caller can ask them together and update the transaction:
 
-1. **Data:** identify the proposed target names/origins and ask whether the data behind **all** of them is disposable. When every target is loopback and the user confirms it is disposable, recommend `qa.mutations = "allow"`. Otherwise keep `"deny"`. Never infer disposability merely from a loopback host. Do not propose `allow` by default for a non-loopback target.
+1. **Data:** identify the proposed target names/origins and ask whether the data behind **all** of them is disposable. When every target is loopback and the user confirms it is disposable, recommend `qa.mutations = "allow"`. Otherwise keep `"deny"`. Never infer disposability merely from a loopback host. Do not propose `allow` by default for a non-loopback target. With desktop apps and no targets, instead identify the app names and ask whether state the apps persist outside the repository is disposable; recommend `allow` only on confirmation, otherwise keep `deny`.
 2. **Fix handling:** ask which mode to use for `qa.fix`: `"approve"` (default, one batch approval per iteration), `"auto"` (apply eligible fixes without asking), or `"off"` (test/report only). With no usable ask capability, `approve` applies no fixes; do not silently choose `auto`.
 3. **Bring-up:** ask which mode to use for `qa.start_services`: `"ask"` (default, ask once before `up` + `prepare`; headless stops when needed) or `"auto"` (print scope and start/prepare configured services without asking). This is independent of fix handling.
 
@@ -71,6 +71,19 @@ For `create`, return exactly the three policy-choice questions below in one `que
 Inspect discovered auth middleware, role/state definitions, e2e fixtures and development/auth docs, including sections such as **Creating Test Users**. Do not run fixtures, seed commands or APIs; do not copy embedded test credentials.
 
 Propose `[qa.users.<name>]` only for a user the plan declares `existing`, or an exact `Missing: users` gap. A plain user signup can create is registered by the tester and has no config entry. Always use `email = "file:.av/secrets.local.env#QA_<U>_EMAIL"`, `password = "file:.av/secrets.local.env#QA_<U>_PASSWORD"` and optional `id = "file:.av/secrets.local.env#QA_<U>_ID"` when the plan needs the id; `<U>` is the uppercased user name. Include a required non-empty `description` grounded in the app's role/state contract. Never propose registration-style users, actual credentials or generated passwords in config.
+
+### 3a. Desktop apps
+
+In `create` with DESKTOP scenarios, or for `Missing: apps` gaps, propose `[qa.desktop.<name>]` under exactly the required name. Propose `driver = "ebitengine"` only when the root `go.mod` requires `github.com/hajimehoshi/ebiten/v2` at v2.10.5 or later and a main package calls `ebiten.RunGame`. Read that evidence; never run `go` or build the app.
+
+- `package` is that main package as `.` or `./<dir>`, relative to the repository root.
+- `args` holds only flags the documented run command (README, Makefile) always passes, never per-scenario values such as seeds. Omit it when no always-passed flags are documented.
+- `screen` appears only when the repository documents a needed size; otherwise use the driver's default.
+- A TOML comment above the table cites the `go.mod` line, the `ebiten.RunGame` line and the documented run-command line. Cite only evidence actually read.
+
+Without that evidence, return exactly `{"proposal": null, "questions": ["qa.desktop.<name>: <why no Ebitengine main package with exp/vmhost was found>"]}`. Do not invent a package, substitute an HTTP target or weaken the version requirement.
+
+Add `qa.desktop.<name>` to `allowed_keys` for each newly authorized app table. Preserve unrelated config bytes and existing app names; for a change to an existing app, authorize only the smallest affected leaf-key scopes, following the same transaction rules as targets, stores and users.
 
 ### 4. Cleanup recipe
 

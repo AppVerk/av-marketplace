@@ -1,5 +1,5 @@
 ---
-description: "Analyze code changes (PR, branch, commits) and generate a detailed QA test plan with FE and BE scenarios, edge cases, and tool detection; a reviewer agent checks the plan against the repository before it is handed over."
+description: "Analyze code changes (PR, branch, commits) and generate a detailed QA test plan with FE, BE and DESKTOP scenarios, edge cases, and tool detection; a reviewer agent checks the plan against the repository before it is handed over."
 argument-hint: "[change-source]"
 ---
 > **OMP edition — generated file, do not edit.** Source of truth: `plugins/qa/commands/create-plan.md`; regenerate with `python3 scripts/build_omp_edition.py`.
@@ -57,13 +57,13 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/engine/scripts/qa.py config
 
 In OMP use the absolute path returned by `realpath skill://qa:engine/scripts/qa.py` instead of `CLAUDE_PLUGIN_ROOT`.
 
-Keep the JSON object, including `state`, for `qa:plan-authoring`. Print any validation errors and warnings, but a recognized `missing-file`, `missing-table` or `invalid` state does not prevent authoring: the skill passes `Config: none`, and the planner writes `$QA_…` names and target names grounded in the repository. Without a valid config, `/qa:run`'s `plan check` identifies missing users, values, targets and stores for its config flow to fill; a missing cleanup recipe alone is a soft gap. Never bootstrap config here, execute sources, ask for trust or read secret values.
+Keep the JSON object, including `state`, for `qa:plan-authoring`. Print any validation errors and warnings, but a recognized `missing-file`, `missing-table` or `invalid` state does not prevent authoring: the skill passes `Config: none`, and the planner writes `$QA_…` names, target names and desktop app names grounded in the repository. Without a valid config, `/qa:run`'s `plan check` identifies missing users, values, targets, apps and stores for its config flow to fill; a missing cleanup recipe alone is a soft gap. Never bootstrap config here, execute sources, ask for trust or read secret values.
 
 An engine/version/I/O error without a recognized config state is not a missing config. Stop and display its error instead of dispatching the planner.
 
 ### Step 3: Author and Review Through the Shared Skill
 
-Load `qa:plan-authoring` with the user's argument verbatim (or `(empty)`), the `config` JSON and the three progress tasks. Follow its Steps 2-4: engine tool detection plus the browser probe, planner draft and at most three reviewer/revision rounds. It sends the same safe `Config:` projection of `targets`, `defaults`, `users`, `values` and `stores` to both agents in every round.
+Load `qa:plan-authoring` with the user's argument verbatim (or `(empty)`), the `config` JSON and the three progress tasks. Follow its Steps 2-4: engine tool detection plus the browser probe, planner draft and at most three reviewer/revision rounds. It sends the same safe `Config:` projection of `targets`, `desktop`, `defaults`, `users`, `values` and `stores` to both agents in every round.
 
 Consume its return contract: `plan`, `review` outcome and `open_findings`, plus optional nits and declined findings. On `{"error": ...}`, stop with `Test plan generation failed: <reason>`; do not propose running a nonexistent plan. Never duplicate the skill's detection, drafting or review logic in this command.
 

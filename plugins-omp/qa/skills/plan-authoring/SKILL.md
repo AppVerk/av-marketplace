@@ -19,10 +19,10 @@ Build one **Config block** for every planner dispatch (draft and revise) and eve
 
 ```text
 Config:
-{"targets": <config.targets>, "defaults": <config.defaults>, "users": <config.users>, "values": <config.values>, "stores": <config.stores>}
+{"targets": <config.targets>, "desktop": <config.desktop>, "defaults": <config.defaults>, "users": <config.users>, "values": <config.values>, "stores": <config.stores>}
 ```
 
-Render it as valid JSON, with the actual metadata in place of the angle-bracket descriptions. `users` maps configured names to descriptions, `values` contains names only, and `stores` maps names to kind/engine metadata only. Never pass resolved values, source outputs, tokens, passwords, cookies, `[env.secrets]`, cleanup recipes or the full config/trust subset to either agent. Reuse this exact block, unchanged, in every round so both agents plan and review against the same configuration.
+Render it as valid JSON, with the actual metadata in place of the angle-bracket descriptions. `desktop` maps app names to driver/package/args/screen metadata, `users` maps configured names to descriptions, `values` contains names only, and `stores` maps names to kind/engine metadata only. Never pass resolved values, source outputs, tokens, passwords, cookies, `[env.secrets]`, cleanup recipes or the full config/trust subset to either agent. Reuse this exact block, unchanged, in every round so both agents plan and review against the same configuration.
 
 When `config.state` is not `ok`, the entire block is:
 
@@ -31,7 +31,7 @@ Config:
 none
 ```
 
-Do not bootstrap, extend or repair config here. With `none`, the planner writes `$QA_…` names and target names grounded in repository evidence, never literal credentials or guesses at their values. `/qa:run` checks the plan and fills missing configuration through its own `plan check` flow. Plan authoring does not require config trust because it executes no config recipe or value source.
+Do not bootstrap, extend or repair config here. With `none`, the planner writes `$QA_…` names, target names and desktop app names grounded in repository evidence, never literal credentials or guesses at their values. `/qa:run` checks the plan and fills missing configuration through its own `plan check` flow. Plan authoring does not require config trust because it executes no config recipe or value source.
 
 ## Workflow
 
@@ -57,9 +57,9 @@ Run the installed engine's `tools` subcommand using the path resolved by `qa:eng
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/engine/scripts/qa.py tools
 ```
 
-In OMP substitute the absolute path returned by `realpath skill://qa:engine/scripts/qa.py`. Its JSON booleans cover `curl`, `httpie`, `jq`, `perl_json_pp`, `psql`, `sqlite3`, `mysql` and `redis_cli` (`redis-cli`); use these results instead of independent shell detection snippets. An engine failure is a generation error, not evidence that all tools are unavailable.
+In OMP substitute the absolute path returned by `realpath skill://qa:engine/scripts/qa.py`. Its JSON booleans cover `curl`, `httpie`, `jq`, `perl_json_pp`, `psql`, `sqlite3`, `mysql`, `redis_cli` (`redis-cli`), `go` and `ebitengine_vmhost`; use these results instead of independent shell detection snippets. An engine failure is a generation error, not evidence that all tools are unavailable.
 
-Write the results as a `Detected tools:` block: one `<tool>: available` or `<tool>: unavailable` line per tool above. The planner copies it into the plan's `## Detected Tools`.
+Write the results as a `Detected tools:` block: one `<tool>: available` or `<tool>: unavailable` line per tool above, including `go` and `ebitengine_vmhost`. The planner copies it into the plan's `## Detected Tools` and writes `- Desktop driver: ebitengine-vmhost available` only when both `go` and `ebitengine_vmhost` are true; otherwise it writes `- Desktop driver: ebitengine-vmhost unavailable`.
 
 **Task Update:** Mark task 1 as `completed`, task 2 as `in_progress`.
 

@@ -23,7 +23,7 @@ Both modes receive `Config:` with this JSON projection of the engine's `config` 
 
 ```text
 Config:
-{"targets": <config.targets>, "defaults": <config.defaults>, "users": <config.users>, "values": <config.values>, "stores": <config.stores>}
+{"targets": <config.targets>, "desktop": <config.desktop>, "defaults": <config.defaults>, "users": <config.users>, "values": <config.values>, "stores": <config.stores>}
 ```
 
 Otherwise the block is `Config:` followed by `none`. Users are names/descriptions, values are names only, and stores are kind/engine metadata; the block contains no resolved secrets, source outputs or recipes. Use the same block throughout draft and revision. Never execute a value source, read a secret's value or edit the config.
@@ -129,12 +129,13 @@ Classify each changed file by what it does, not only by its extension or directo
 |-------|------|
 | **FE** | Runs in or shapes what the browser shows: components, pages, client-side scripts and state, stylesheets, templates rendered into pages, UI strings, frontend build config. |
 | **BE** | Runs on the server or defines its contract: API handlers and routes, server actions and middleware, services, models, migrations, API schemas. |
+| **DESKTOP** | Runs in or shapes what a native desktop app shows: the main package a `qa.desktop` app builds (with no config: a main package calling `ebiten.RunGame` in a module requiring `github.com/hajimehoshi/ebiten/v2` v2.10.5 or later), and the logic, rendering, input bindings, UI strings and loaded assets it uses. |
 | **neither** | No application behaviour to test: documentation, CI, repository tooling, linters, container or infrastructure config. |
 
-FE files lead to FE scenarios and BE files to BE scenarios; `neither` files get no scenarios.
+FE files lead to FE scenarios, BE files to BE scenarios and DESKTOP files to DESKTOP scenarios; `neither` files get no scenarios.
 
 For each changed file, identify:
-- What component/endpoint/model was changed
+- What component/endpoint/model/screen/system was changed
 - What kind of change (new feature, modification, deletion, refactoring)
 - What behavior should be tested
 
@@ -151,6 +152,7 @@ Read related files to understand the full picture:
    - README files in affected directories
 5. **Check existing tests** — understand what's already tested and what's missing
 6. **Grounding precondition:** cite `(path:line)` only for a file actually read in this working tree. If the producer is not on disk (foreign PR, pasted diff), tag the assertion `(unverified — confirm at run time)` instead. When the source is on disk, read it; an unverified assertion on readable source is a defect. Verify framework defaults the change touches (auth statuses, rate-limit semantics, error-to-status mapping) against the installed dependency version in the tree, never from memory. Tests corroborate only what they actually assert, not adjacent response details.
+7. **For desktop code:** read the main package and its flags, the input bindings, the update/draw code producing the asserted state, the UI strings and the log calls.
 
 ### Step 4.5: Scan for blockers
 
@@ -166,14 +168,15 @@ Emit `## Blockers / Findings` after `## Changes Summary`, with `None found.` if 
 
 Read the dispatch's `Config:` block before writing scenarios:
 
-- **Targets:** use `targets` as the allowed origins and `defaults.FE` / `defaults.BE` for section-relative paths. Every absolute URL anywhere in a scenario, including expectations and edge cases, must be on a configured origin (scheme, lower-cased host, explicit or default port); request and page URLs may instead be paths. Add `- **Target:** <name>` whenever the section default does not apply. Never use an absolute URL on an unknown origin.
-- **Users:** declare `## Users` lines as `- <name>: existing|registered — <description>`. A plain user signup can create is `registered`; a role or state signup cannot produce is `existing` and must be in `users`, otherwise it becomes a `missing.users` concern. Cover owner, other user, anonymous actions and each required role, with at most 10 registered users per plan. Existing fields use `$QA_<U>_EMAIL|PASSWORD|ID`; registration preconditions use `qa+$QA_TAG-<user>@…` and `$QA_NEW_PASSWORD`, retaining the returned id and token/cookie. Never write `$QA_<U>_TOKEN` or cookie plan tokens: testers obtain them through grounded preconditions, not the engine.
+- **Targets:** for FE/BE, use `targets` as the allowed origins and `defaults.FE` / `defaults.BE` for section-relative paths. Every absolute URL anywhere in an FE/BE scenario, including expectations and edge cases, must be on a configured origin (scheme, lower-cased host, explicit or default port); request and page URLs may instead be paths. Add `- **Target:** <name>` whenever the section default does not apply. Never use an absolute URL on an unknown origin.
+- **Apps:** for DESKTOP, use `desktop` names and `defaults.DESKTOP` (`app` or the only app); add `- **Target:** <name>` when the section default does not apply. With `Config: none`, write `- **Target:** app` when the Ebitengine evidence from Step 3 exists; `plan check` then reports `missing.apps`. DESKTOP scenarios contain no absolute URLs or State Checks.
+- **Users:** declare `## Users` lines as `- <name>: existing|registered — <description>`. A plain user signup can create is `registered`; a role or state signup cannot produce is `existing` and must be in `users`, otherwise it becomes a `missing.users` concern. Cover owner, other user, anonymous actions and each required role, with at most 10 registered users per plan. Existing fields use `$QA_<U>_EMAIL|PASSWORD|ID`; registration preconditions use `qa+$QA_TAG-<user>@…` and `$QA_NEW_PASSWORD`, retaining the returned id and token/cookie. Never write `$QA_<U>_TOKEN` or cookie plan tokens: testers obtain them through grounded preconditions, not the engine. Registered users are FE/BE only; DESKTOP may use configured existing users' fields, values, `$QA_NEW_PASSWORD` and `$QA_TAG`, but `plan check` refuses registered users' fields there.
 - **Values:** use `$QA_<X>` / `${QA_<X>}` tokens for `values`, with names upper-cased. Never use `[env.secrets]` as a tester value or copy a literal from `.env`.
 - **Stores:** use `stores` kind/engine metadata for repeatable BE-only `- **State Check:** [<store>: ]<query> → <expected>` lines. Name the store whenever several exist; an unprefixed check resolves only to the single configured store. Retain a needed, repository-grounded store name when absent so `plan check` reports `missing.stores`.
 
-With `Config: none`, ground target, user, exposed value and store names in repository evidence: dev-server config, scripts, compose ports and README run instructions for targets; auth middleware, registration/login routes, test fixtures and docs for users and required fields; application settings for value names; SQL/Redis settings for State Checks. Write target names with relative paths and credentials/values as supported `$QA_NAME` tokens, never guessed origins or secret values.
+With `Config: none`, ground target, app, user, exposed value and store names in repository evidence: dev-server config, scripts, compose ports and README run instructions for targets; the Step 3 Ebitengine evidence for the desktop app named `app`; auth middleware, registration/login routes, test fixtures and docs for users and required fields; application settings for value names; SQL/Redis settings for State Checks. Write target names with relative paths and credentials/values as supported `$QA_NAME` tokens, never guessed origins or secret values.
 
-If a valid config lacks a user, value, target or store needed by the changed behavior, still write the repository-grounded name and its scenario. A missing target is always `- **Target:** <name>` with paths, never an absolute URL on an unknown origin. Do not substitute a different user or omit coverage to hide a config gap: `plan check` reports missing names/fields, and `/qa:run` fills the gaps before dispatch. With several targets, FE needs `ui` and BE needs `backend`; only a single target serves both without those names.
+If a valid config lacks a user, value, target, app or store needed by the changed behavior, still write the repository-grounded name and its scenario. A missing HTTP target is always `- **Target:** <name>` with paths, never an absolute URL on an unknown origin; a missing desktop app uses `- **Target:** <name>`. Do not substitute a different user or omit coverage to hide a config gap: `plan check` reports missing names/fields, and `/qa:run` fills the gaps before dispatch. With several HTTP targets, FE needs `ui` and BE needs `backend`; only a single HTTP target serves both without those names. DESKTOP selects only from `desktop`, never from HTTP targets.
 
 ### Step 5: Conditional skill
 
@@ -189,10 +192,10 @@ Skill(skill: "test-plan-format")
 
 Using the skill's format, generate the test plan:
 
-1. Use optional `## Setup` only for human notes such as a reversible blocker's prerequisite; omit it when unneeded. Do not fill it with targets, credential declarations, services or DB connections. Never write a literal token, DSN or credential value.
+1. Use optional `## Setup` only for human notes such as a reversible blocker's prerequisite; omit it when unneeded. Do not fill it with targets, desktop apps, credential declarations, services or DB connections. Never write a literal token, DSN or credential value.
 2. Fill in the **Source** section with the resolved diff source and the current checkout's `Branch:` and `Head:` from Step 2.
 3. Write the **Changes Summary** based on the analysis, then `## Blockers / Findings` from Step 4.5 (`None found.` if none), followed by the `## Users` matrix from Step 4.6.
-4. Fill in **Detected Tools** from the dispatch's `Detected tools:` block.
+4. Fill in **Detected Tools** from the dispatch's `Detected tools:` block. Write `- Desktop driver: ebitengine-vmhost available` only when both `go` and `ebitengine_vmhost` are true; otherwise write `- Desktop driver: ebitengine-vmhost unavailable`.
 5. Generate **FE Test Scenarios** (if FE changes detected):
    - One scenario per changed component/page/feature; include concrete steps using actual UI element names from the code and at least 2 relevant edge cases.
    - Write page URLs as paths or absolute URLs on a config target; add `- **Target:** <name>` where the section default does not apply. A missing target uses its name and paths, never an unknown absolute origin.
@@ -204,12 +207,17 @@ Using the skill's format, generate the test plan:
    - Write request URLs as paths or absolute URLs on a config target; add `- **Target:** <name>` where the section default does not apply. A missing target uses its name and paths, never an unknown absolute origin. Every absolute URL anywhere in the scenario, including `**Expected:**` and edge cases, must match a configured target origin: `plan check` reports any other as `off_target`, and `/qa:run` stops. Assert a response URL outside the targets by separate visible components (for example, scheme `http`, host `localhost:9000`, path prefix `/avatars/`), never as a literal `scheme://host…` string; masked components remain unassertable.
    - Credentials and exposed values in payloads, preconditions and edges use supported `$QA_NAME` or `${QA_NAME}` tokens. Registration/login preconditions retain the access token/cookie and id for later requests; never write `$QA_<U>_TOKEN` / cookie plan tokens. Create required data through the app's API/HTTP requests as the scenario's user in its own preconditions; create ownership-check resources as the other user. Never assume records already exist; a repository file may serve as an upload fixture, and `NEED_INFO kind=fixture` is only for data the app cannot create itself.
    - Every `**Expected:**` and edge-case expectation carries its own `(path:line)` or `(unverified — confirm at run time)` tag.
-7. Keep every step to browser actions / HTTP requests / DB queries against the app. Bring-up belongs to the config's `env.services`; a reversible blocker's human prerequisite goes in optional `## Setup` notes. Unobservable checks belong under `## Out of harness scope` with a one-clause harness reason and no FE/BE scenario heading. A code defect is a Blocker, not an out-of-scope check.
-8. For ≥2 independent boolean inputs, place the `state-combination-planning` 2^N table above the affected scenarios, with a scenario or a justified disposition for every row.
+7. Generate **DESKTOP Test Scenarios** (if DESKTOP changes detected):
+   - One scenario per changed observable behaviour, following the test-plan-format skill's DESKTOP rules and including at least 2 relevant edge cases.
+   - Use only the DESKTOP step vocabulary; every scenario and edge starts a fresh app and reaches its preconditions through the app's own input. Put per-scenario flags such as seeds in `**Args:**`, and name the configured app with `- **Target:** <name>` where the default does not apply.
+   - Every `**Expected:**` and edge-case expectation names the shot or app log line that shows it and cites its producing draw call, UI string or log call. Do not assert unpinned pixel colours or coordinates; for `Move`/`Click`, cite the Layout size in Preconditions and state game Layout coordinates for the tester to convert.
+   - Include `- **Writes:** yes|no` for files or settings the app persists outside the run. No State Check or absolute URL is allowed. Use configured existing users' fields, values, `$QA_NEW_PASSWORD` and `$QA_TAG` as tokens, never registered users.
+8. Keep every step to browser actions / HTTP requests / DB queries / the DESKTOP vocabulary against the configured app. Bring-up belongs to the config's `env.services`; a reversible blocker's human prerequisite goes in optional `## Setup` notes. Unobservable checks belong under `## Out of harness scope` with a one-clause harness reason and no FE/BE/DESKTOP scenario heading. A code defect is a Blocker, not an out-of-scope check.
+9. For ≥2 independent boolean inputs, place the `state-combination-planning` 2^N table above the affected scenarios, with a scenario or a justified disposition for every row.
 
 ### Step 6.5: Refute pass
 
-Re-read every auth/status/rate-limit/error-mapping assertion, every `(unverified — confirm at run time)` tag and each `## Out of harness scope` bullet with intent to disprove it. Is the cited line the actual producer? Does the installed framework version behave as asserted? Can browser/HTTP/DB observe this effect after all? Correct false citations, unjustified guesses and harness-scope mistakes **before** saving the plan.
+Re-read every auth/status/rate-limit/error-mapping assertion, every DESKTOP shot/log expectation, every `(unverified — confirm at run time)` tag and each `## Out of harness scope` bullet with intent to disprove it. Is the cited line the actual producer? Does the installed framework version behave as asserted? Can browser/HTTP/DB observe this effect after all? Can a DESKTOP shot or the app log observe this? Correct false citations, unjustified guesses and harness-scope mistakes **before** saving the plan.
 
 ### Step 7: Save Test Plan
 
@@ -232,7 +240,7 @@ Save the plan using the Write tool to:
 Return one JSON object and nothing else:
 
 ```json
-{"plan": "docs/testing/plans/<file>", "source": "<resolved diff source, e.g. PR #123 or git diff main...HEAD>", "changed_files": ["<path>", "..."], "fe_scenarios": 0, "be_scenarios": 0}
+{"plan": "docs/testing/plans/<file>", "source": "<resolved diff source, e.g. PR #123 or git diff main...HEAD>", "changed_files": ["<path>", "..."], "fe_scenarios": 0, "be_scenarios": 0, "desktop_scenarios": 0}
 ```
 
 If the diff source cannot be resolved or the plan cannot be written, return `{"error": "<reason>"}` instead.
@@ -241,7 +249,7 @@ If the diff source cannot be resolved or the plan cannot be written, return `{"e
 
 ## Revise workflow
 
-1. Read the plan at `Plan:`, the test-plan-format skill and the dispatch's `Config:` block. Apply Draft Step 4.6 when changing a target, user, store or exposed value reference; retain correctly named requirements even when config lacks them.
+1. Read the plan at `Plan:`, the test-plan-format skill and the dispatch's `Config:` block. Apply Draft Step 4.6 when changing a target, app, user, store or exposed value reference; retain correctly named requirements even when config lacks them.
 2. Check each finding against the repository before acting on it; a reviewer can be wrong. Read the producer it names, or the one the plan cites.
 3. Resolve every `blocker` and `concern` that holds by editing the plan in place, at the same path. Resolve a `nit` when the fix is correct and small; otherwise decline it.
 4. Decline a finding that does not hold, leaving that part of the plan unchanged. The reason must carry evidence, such as the producer's `(path:line)` or the test-plan-format rule the plan already follows.
