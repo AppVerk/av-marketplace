@@ -692,14 +692,20 @@ Collect `status_write_failures` exactly as Step 4.1.5 does. If the list is non-e
 
 ### Step 5.6: Decision-stage summary
 
-Print the block below after the write-and-verify pass. On the normal path it follows the Fix Summary Step 4.2 printed; on the zero-auto path it follows nothing but the list Step 5.2 printed.
+Print the block below after the write-and-verify pass. Print it also where Step 5.4's gate aborted, and wherever `code-review:decision-gate`'s *Relay mode* says to print the run record: before each relay request, and before Step 5.3 when relay mode ends the stage early. On the normal path it follows the Fix Summary Step 4.2 printed; on the zero-auto path it follows nothing but the list Step 5.2 printed.
 
-Its rows are the eleven disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty.
+It opens with the run record `code-review:decision-gate` keeps (*The run record*): the policy line, the relay line in relay mode, and one table row per finding the gate received, never omitted. The rows after the table are the eleven disclosures that skill **raises and does not print**. That skill is the single source of truth for both: what each value means, and which stage sets it, is stated there and is not restated here. This block only renders them. Omit any disclosure row whose list is empty.
 
 ```markdown
 ## Decision Stage
 
 **Decided:** N | **Skipped:** N | **Rejected:** N
+**Auto-accept:** <policy line>
+**Relayed through:** <Relay-ID>[, <Relay-ID>]        <-- relay mode only; omit the line otherwise
+
+| Finding | Decided by | Outcome | Auto-accept | Verification | Result |
+|---|---|---|---|---|---|
+| [SEVERITY] ID: Title | <decided by> | <outcome> | <auto-accept> | <verification> | <result> |
 
 **Auto-accepted — no question asked:**
 - [SEVERITY] ID: Title — <label> (analyst <c1>%, <source> <c2>%)

@@ -421,14 +421,20 @@ Re-run `/fix-report` to retry, or repair each finding block by hand — the `**S
 
 Where `<reason>` is the value recorded in Step 4.1.5 (`edit-errored`, `status-line-missing`, `status-line-wrong-text`, `attempt-entry-missing`, or `verification-line-missing`). For the three status-line reasons the code change itself already landed — only the report annotation is missing, which is why the re-run-or-manual-edit guidance is non-destructive. `attempt-entry-missing` can only reach this list from a finding the Step 2.4 gate decided, and there nothing landed to lose: the finding reappears next run by design, but with its retirement counter un-advanced, so the manual repair is what keeps that counter honest. `verification-line-missing` reaches this list from a finding the Step 2.4 gate decided too, and from either group of that decided partition; where the finding's `**Status:**` line did land, Step 1.3 filters it out of every later run, so the re-run retries nothing and the hand repair is the only one there is — until it is made, an advisory pass reads as a hard-verified one. Omit this block entirely if `status_write_failures` is empty.
 
-**Decision-stage summary.** Where Step 2.4 ran the gate over at least one finding, print the block below after Step 4.1 / 4.1.5, following the fix summary. The template above is closed — the `| # | Issue | Status |` rows, the counts, and the reports-updated list — and holds no slot for what the decision stage has to disclose.
+**Decision-stage summary.** Where Step 2.4 ran the gate over at least one finding, print the block below after Step 4.1 / 4.1.5, following the fix summary, including where the gate aborted. The template above is closed — the `| # | Issue | Status |` rows, the counts, and the reports-updated list — and holds no slot for what the decision stage has to disclose.
 
-Its rows are the eleven disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty; omit the block entirely where the gate did not run.
+It opens with the run record `code-review:decision-gate` keeps (*The run record*): the policy line, the relay line in relay mode, and one table row per finding the gate received, never omitted. The rows after the table are the eleven disclosures that skill **raises and does not print**. That skill is the single source of truth for both: what each value means, and which stage sets it, is stated there and is not restated here. This block only renders them. Omit any disclosure row whose list is empty; omit the block entirely where the gate did not run.
 
 ```markdown
 ## Decision Stage
 
 **Decided:** N | **Skipped:** N | **Rejected:** N
+**Auto-accept:** <policy line>
+**Relayed through:** <Relay-ID>[, <Relay-ID>]        <-- relay mode only; omit the line otherwise
+
+| Finding | Decided by | Outcome | Auto-accept | Verification | Result |
+|---|---|---|---|---|---|
+| [SEVERITY] ID: Title | <decided by> | <outcome> | <auto-accept> | <verification> | <result> |
 
 **Auto-accepted — no question asked:**
 - [SEVERITY] ID: Title — <label> (analyst <c1>%, <source> <c2>%)
