@@ -136,7 +136,7 @@ Mark `Final code review` done.
 
 ### 7. Post-review action
 
-Carry out the review's Step 7 (Post-review action) now, with the report its Step 6 saved, or without one when it printed `Review not saved:`. That step decides from `[code-review] after_review` whether to ask, hand the report to `/code-review:fix-all` or `/code-review:fix-report`, or print the fix commands; never answer its questions yourself. When it hands the report to a fix command, read that command's file as the review's Step 7 says for OMP and carry it out completely. Whatever the fix command changes, including the statuses it writes into the report, stays uncommitted: end with `Review fixes are uncommitted; review them and commit.`
+Carry out the review's Step 7 (Post-review action) now, with the report its Step 6 saved, or without one when it printed `Review not saved:`. That step decides from `[code-review] after_review` whether to ask, hand the report to `/code-review:fix-all` or `/code-review:fix-report`, or print the fix commands; never answer its questions yourself. When it hands the report to a fix command, read that command's file as the review's Step 7 says for OMP and carry it out completely; whatever it changes, including the statuses it writes into the report, stays uncommitted: end with `Review fixes are uncommitted; review them and commit.` When no fix command ran, end the run after the review's Step 7.
 
 ## Plugin roots
 

@@ -7,7 +7,7 @@ argument-hint: [--yes] [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
 
 # Fix All Issues From Report
 
-You are an expert code fixer that reads one or more saved code review reports, presents every unfixed issue as a pre-flight summary (issues flagged `needs-decision` are listed as skipped), asks for a single yes/no confirmation, and then fixes the whole batch sequentially via the `fix-auto` subagent. Once that batch is done, Step 5 offers to resolve the skipped `needs-decision` findings with you rather than leaving them to another command.
+You are an expert code fixer that reads one or more saved code review reports, builds a full pre-flight record (issues flagged `needs-decision` are listed as skipped), asks for a single yes/no confirmation unless `--yes` skips it, and then fixes the whole batch sequentially via the `fix-auto` subagent. With `--yes`, the record opens the final summary as **Set out to fix** rather than relying on a separate pre-dispatch message. Once that batch is done, Step 5 offers to resolve the skipped `needs-decision` findings with you rather than leaving them to another command.
 
 This command is the bulk counterpart to `/fix-report`. Where `/fix-report` paginates issues into a checklist and asks the user to pick which to fix, `/fix-all` fixes everything except `needs-decision`-flagged issues (optionally filtered by minimum severity) after one confirmation, then asks a second time whether to work through the `needs-decision` ones. Use it when you trust the report and want every auto-fixable issue addressed.
 
@@ -284,7 +284,7 @@ Compute:
 - `show_report_column` = true if `files` from Step 1.1 has >1 distinct path
 - `show_source_column` = true if at least one issue in the list has `source_handle` set, counting the bound components of every dispatchable composite, which the list itself holds as one issue
 
-Render it as visible reply text (Markdown), on every auto-batch run, `--yes` included:
+Without `skip_confirmation`, render it as visible reply text (Markdown) before the confirmation question. With `skip_confirmation`, the full record instead opens Step 4.2's final summary as **Set out to fix**; still render the Composites block here before any dissolve question, so that question shows the proposed changes:
 
 ~~~markdown
 ## Pre-flight: Fix All Issues
@@ -356,7 +356,11 @@ This is the one human gate on a grouping. A composite that passes it is fixed as
 
 ### Step 2.5: Confirmation gate
 
-**With `skip_confirmation`** (the `--yes` token), do not ask. `--yes` removes the question, never the summary: Step 2.4's pre-flight, its Composites block included, must already stand in your visible reply — print it now if it does not. Then print `Confirmation skipped (--yes): fixing all <total_count> issues.` as its own line. Only once both are visible, continue exactly as after the `Yes — fix all <total_count>` answer. On an unattended run that pre-flight is the only record of what the run set out to fix.
+**With `skip_confirmation`** (the `--yes` token), do not ask. After Step 2.4.5 has applied every dissolution, including its fail-closed path, freeze `preflight_snapshot`: the report names, severity floor, total and per-severity counts, skipped needs-decision count and IDs, all ordered issue-table rows with their Source/Report column visibility, and the Composites block with its bound components and composition-pass disclosures.
+
+Keep this snapshot unchanged through Steps 3–4: do not rebuild it from the edited reports or replace it if Step 3.0 falls back to individual dispatches after a marker-write failure. It records the intended batch at the gate; Step 4.2's Results and Composition blocks report what actually happened.
+
+Continue exactly as after the `Yes — fix all <total_count>` answer. Step 4.2 records `Confirmation skipped (--yes): fixing all <total_count> issues.` alongside the snapshot in the final summary; no separate pre-dispatch print is required.
 
 Otherwise use AskUserQuestion with one question:
 
@@ -509,8 +513,39 @@ This list is consumed by Step 4.2's "Status write failures" block — the same o
 
 ### Step 4.2: Display fix summary
 
+With `skip_confirmation`, open the final summary with **Set out to fix**, rendered from `preflight_snapshot`, before any results. Include the full pre-flight record in the template below even if every fixer failed or no report received a Status write. This is part of the final summary, not a separate progress message.
+
+Apply all Step 2.4 rendering rules to that prefix: retain every ordered issue row, the conditional Source/Report columns, severity counts, skipped-decision IDs and the Composites block with bound components and disclosures where applicable; never collapse the table to a count or a list of IDs. All values in the prefix, including the confirmation-skipped count, come from the snapshot, not from the outcomes.
+
+Without `skip_confirmation`, omit the entire **Set out to fix** section, its confirmation-skipped line and the **Results** subheading; keep the existing Fix Summary status table.
+
 ```markdown
 ## Fix Summary
+
+### Set out to fix
+
+**Reports:** <report_basenames>
+**Severity floor:** <severity_floor>            <-- omit this line if severity_floor is unset
+**Total to fix:** <total_count> issues
+**Requires user decision (skipped):** <needs_decision count> issues (<comma-separated IDs>)        <-- omit this line when zero
+
+**By severity:**
+| CRITICAL | HIGH | MEDIUM | LOW |
+|----------|------|--------|-----|
+|   <c>    | <c>  |  <c>   | <c> |        <-- each cell is the count or `—` if zero
+
+**Issues:**
+
+| # | ID | Severity | Title | Location | Source | Report |
+|---|----|----------|-------|----------|--------|--------|
+| 1 | SEC-001 | CRITICAL | <truncated title> | path:line | @handle or — | feature-auth.md |
+<all remaining rows from preflight_snapshot>
+
+<Composites block from preflight_snapshot, when applicable>
+
+Confirmation skipped (--yes): fixing all <total_count> issues.
+
+### Results
 
 | # | Issue | Status |
 |---|-------|--------|

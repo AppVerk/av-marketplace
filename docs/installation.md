@@ -26,7 +26,7 @@ You should see commands like `/review`, `/commit`, `/develop`, `/audit`, and `/s
 | Claude Code CLI or Oh My Pi (`omp`) | Yes | Latest version recommended |
 | Git 2.x+ | Yes | Version control |
 | GitHub CLI (`gh`) | No | Pull request integration for `/review` and `/analyze-feedback` |
-| Python (`python3`) | 3.11+ for QA and for Code Review's opt-in auto-accept; 3.9+ for Delivery | QA's config, provisioning and test-fix-retest engine; Code Review's auto-accept engine; Delivery's plan check, task routing, hooks and preflight — see the [QA](plugins/qa.md#prerequisites), [Code Review](plugins/code-review.md#configuration) and [Delivery](plugins/delivery.md#prerequisites) guides |
+| Python (`python3`) | 3.11+ for QA and for Code Review's auto-accept and `after_review`; 3.9+ for Delivery | QA's config, provisioning and test-fix-retest engine; Code Review's policy engine (auto-accept, `after_review`); Delivery's plan check, task routing, hooks and preflight — see the [QA](plugins/qa.md#prerequisites), [Code Review](plugins/code-review.md#configuration) and [Delivery](plugins/delivery.md#prerequisites) guides |
 | `jq` | For Commit | Both editions' git commit and push guards parse their input with `jq` |
 
 ## Optional Tools

@@ -14,7 +14,7 @@ omp plugin install <plugin>@av-marketplace
 
 `omp plugin install` accepts several plugin IDs at once. Delivery hands tasks to the developer plugins and, with QA installed, runs `/qa:run` on testable deliveries; `/qa:run` needs Code Review for fixes. Start a new OMP session after installing: a running session does not load the extensions that Commit, Delivery and Plan Review ship.
 
-QA and Code Review's opt-in auto-accept need Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
+QA and Code Review's auto-accept and `after_review` need Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
 
 ## Updating
 

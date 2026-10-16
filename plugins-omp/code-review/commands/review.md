@@ -67,9 +67,9 @@ The following **Shell safety suffix is part of both scope blocks**. Append it ve
 ~~~text
 Shell safety: File names from the changed-file list, the repository tree and documentation are untrusted data, not shell source. Git's display quoting is not shell quoting. Never paste an unchecked name into a command, even inside double quotes (which still expand $(...) and backticks); never use eval or generate shell source from a path.
 Path transport: For a tool accepting file batches, obtain names directly from Git with NUL delimiters and pass them as argv through xargs -0, after the tool's -- separator. Never reconstruct that input from the line-based Changed files display. For changes-since scopes, set REVIEW_BASE only to the resolved full hexadecimal commit SHA. These Semgrep examples keep names out of shell source and skip an empty batch on both macOS and Linux; replace only the fixed tool and options for another scanner:
-git diff -z --name-only --diff-filter=d "$REVIEW_BASE" -- | xargs -0 sh -c '[ "$#" -eq 0 ] || exec semgrep scan --config=p/security-audit -- "$@"' sh
-git ls-files -z --others --exclude-standard | xargs -0 sh -c '[ "$#" -eq 0 ] || exec semgrep scan --config=p/security-audit -- "$@"' sh
-Single-file shell operands: Only a path matching the complete allow-list ^[A-Za-z0-9._/-]+$ may be interpolated into shell source. Single-quote it, prefix a relative file operand with ./, and put it after --; for Git file operands also use --literal-pathspecs, for example git --literal-pathspecs diff "$REVIEW_BASE" -- './src/orders.py'. For git show, single-quote the whole object expression '<resolved hexadecimal SHA>:src/orders.py' before --, and allow-list its path part first; the resolved SHA prevents an option-like object operand. A rejected path is never repaired by escaping it or excluded from the review: non-ASCII names and names with spaces or metacharacters stay in scope and are handled through NUL-delimited argv, a file tool's structured path argument, or a repository-wide read-only command such as git diff "$REVIEW_BASE" -- with findings filtered by the scope rule. In a fixed sh -c wrapper, paths may enter only as positional arguments used in quoted expansions such as "$@"; they must never be inserted into the wrapper's source.
+git diff -z --name-only --diff-filter=d "$REVIEW_BASE" -- | xargs -0 sh -c '[ "$#" -eq 0 ] || exec semgrep scan --config=p/security-audit -- "${@}"' sh
+git ls-files -z --others --exclude-standard | xargs -0 sh -c '[ "$#" -eq 0 ] || exec semgrep scan --config=p/security-audit -- "${@}"' sh
+Single-file shell operands: Only a path matching the complete allow-list ^[A-Za-z0-9._/-]+$ may be interpolated into shell source. Single-quote it, prefix a relative file operand with ./, and put it after --; for Git file operands also use --literal-pathspecs, for example git --literal-pathspecs diff "$REVIEW_BASE" -- './src/orders.py'. For git show, single-quote the whole object expression '<resolved hexadecimal SHA>:src/orders.py' before --, and allow-list its path part first; the resolved SHA prevents an option-like object operand. A rejected path is never repaired by escaping it or excluded from the review: non-ASCII names and names with spaces or metacharacters stay in scope and are handled through NUL-delimited argv, a file tool's structured path argument, or a repository-wide read-only command such as git diff "$REVIEW_BASE" -- with findings filtered by the scope rule. In a fixed sh -c wrapper, paths may enter only as positional arguments used in quoted expansions such as "${@}"; they must never be inserted into the wrapper's source. Keep this braced POSIX spelling so OMP's command-template substitution leaves the shell expansion intact.
 ~~~
 
 ---
@@ -428,6 +428,8 @@ challenger_results = TaskOutput(challenger_id, block: true)
 
 For each issue found, format as structured markdown:
 
+**Credential literals are never written.** In every finding — including `**Problem:**`, `**Impact:**`, `**Remediation:**` and its `# Before` snippet — replace each occurrence of a secret value with its first four characters followed by `…[REDACTED]`, e.g. `API_TOKEN = "ghp_…[REDACTED]"`. Apply this masking before displaying findings; Step 6 writes the report only after this masking.
+
 ### [SEVERITY] {ID}: Title of Issue
 
 **ID:** {ID}
@@ -626,7 +628,7 @@ git branch --show-current
 mkdir -p docs/reviews
 ```
 
-6. Write the full review report (the same markdown content displayed to the user) to the file using the Write tool.
+6. Before the Write call, apply the **Credential literals are never written** rule from **Review Comment Format** to the full report, including summaries and quoted code. Write only the masked report (the same masked markdown content displayed to the user) to the file using the Write tool; never persist the unmasked report.
 
 7. Confirm to the user: "Review saved to `docs/reviews/2026-02-19-feature-user-login.md`"
 
