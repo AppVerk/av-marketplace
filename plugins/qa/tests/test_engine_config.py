@@ -290,6 +290,45 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(report["state"], "ok", report["errors"])
         self.assertEqual(report["policy"]["mutations"], "allow")
 
+    def test_desktop_apps_report_defaults_and_pin_trust(self) -> None:
+        self.put(BASE + '[qa.desktop.app]\ndriver = "ebitengine"\n')
+        cfg = self.config()
+        report = cfg.report()
+        self.assertEqual(report["state"], "ok", report["errors"])
+        self.assertEqual(report["desktop"], {"app": {"driver": "ebitengine", "package": ".", "args": [], "screen": [960, 540]}})
+        self.assertEqual(report["defaults"]["DESKTOP"], "app")
+        self.assertIn("qa.desktop", cfg.trust_subset)
+        self.put(BASE + '[qa.desktop.app]\ndriver = "ebitengine"\nargs = ["-debug"]\n')
+        self.assertNotEqual(self.config().trust_hash, cfg.trust_hash)
+        self.put(BASE + '[qa.desktop.game]\ndriver = "ebitengine"\npackage = "./cmd/game"\nscreen = [1280, 720]\n')
+        report = self.config().report()
+        self.assertEqual(report["defaults"]["DESKTOP"], "game")
+        self.assertEqual(report["desktop"]["game"]["package"], "./cmd/game")
+        self.put(BASE + '[qa.desktop.one]\ndriver = "ebitengine"\n[qa.desktop.two]\ndriver = "ebitengine"\n')
+        self.assertIsNone(self.config().report()["defaults"]["DESKTOP"])
+
+    def test_desktop_app_validation_errors_are_keyed_without_values(self) -> None:
+        app = '[qa.desktop.app]\ndriver = "ebitengine"\n'
+        cases = [
+            ('[qa.desktop.bad-name]\ndriver = "ebitengine"\n', "qa.desktop.bad-name", "invalid desktop app name"),
+            ('[qa.desktop.app]\npackage = "."\n', "qa.desktop.app.driver", "required desktop driver"),
+            ('[qa.desktop.app]\ndriver = "sensitive-driver"\n', "qa.desktop.app.driver", "unsupported desktop driver"),
+            *((app + f'package = "{package}"\n', "qa.desktop.app.package", "expected a relative package path such as ./cmd/game")
+              for package in ("../x", "/abs", "cmd/game", "./a/../b")),
+            *((app + f"args = {args}\n", "qa.desktop.app.args", "expected a list of strings")
+              for args in ('"-debug"', "[1]", json.dumps(["-v"] * 33), json.dumps(["x" * 257]), '["a\\u0000b"]')),
+            *((app + f"screen = {screen}\n", "qa.desktop.app.screen", "expected [width, height] between 64 and 4096")
+              for screen in ("960", "[960]", "[true, 540]", "[63, 540]", "[960, 4097]", "[960.0, 540]")),
+            (app + 'surprise = "sensitive"\n', "qa.desktop.app.surprise", "unknown key"),
+        ]
+        for text, key, message in cases:
+            with self.subTest(text=text):
+                self.put(BASE + text)
+                report = self.config().report()
+                self.assertEqual(report["state"], "invalid")
+                self.assertIn({"file": ".av/config.toml", "key": key, "error": message}, report["errors"])
+                self.assertNotIn("sensitive", json.dumps(report))
+
     def test_target_validation(self) -> None:
         for origin in ("ftp://localhost", "http://user:pass@localhost", "http://localhost/", "http://localhost?q=x", "http://localhost#x", "http://localhost:bad", "http://localhost:70000"):
             with self.subTest(origin=origin):

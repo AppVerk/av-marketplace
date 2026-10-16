@@ -8,7 +8,7 @@ from qa_engine.common import ISSUE_HEADING
 from qa_engine.common import report_blocks
 from qa_engine.common import report_field
 
-SCENARIO_REFERENCE = re.compile(r"\b(?:FE|BE)-\d{2,}\b")
+SCENARIO_REFERENCE = re.compile(r"\b(?:FE|BE|DESKTOP)-\d{2,}\b")
 EXPECTED_LINE = re.compile(r"^[ \t]*[-*][ \t]*(?:\*\*Expected:\*\*|Expected:)[ \t]*(.+)$", re.MULTILINE)
 LOCATION = re.compile(r"\S+:\d+(?:-\d+)?\Z")
 

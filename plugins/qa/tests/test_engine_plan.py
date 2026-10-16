@@ -45,6 +45,18 @@ SCENARIO = '''### BE-01: List CVs
 - **Edge cases:**
   - Invalid token: 401. (src/auth.py:401)
 '''
+DESKTOP = '''### DESKTOP-01: Console prints the seed
+- **Writes:** no
+- **Args:** `-seed 42`
+- **Steps:**
+  1. Wait 30 ticks
+  2. Press `Backquote`
+  3. Type `seed`
+  4. Press `Enter`, wait 5 ticks
+  5. Shot `console`
+- **Expected:** Shot `console` shows the seed. (pkg/game/console/console.go:65)
+'''
+APP = '[qa.desktop.app]\ndriver = "ebitengine"\n'
 
 
 class PlanTests(unittest.TestCase):
@@ -199,7 +211,7 @@ password = "literal:postgres"
 ''')
         result = check_plan(parse_plan(FIXTURE), config)
         self.assertTrue(result["ok"], result)
-        self.assertEqual(result["sections"], {"FE": ["FE-01"], "BE": ["BE-01", "BE-02"]})
+        self.assertEqual(result["sections"], {"FE": ["FE-01"], "BE": ["BE-01", "BE-02"], "DESKTOP": []})
         self.assertEqual(result["users"], [])
         self.assertEqual(result["registrations"], ["other", "user"])
         self.assertEqual(result["values"], ["SUPABASE_ANON_KEY"])
@@ -414,13 +426,13 @@ password = "literal:postgres"
             "### BE-01: List items\n- **Writes:** no\n- **Method:** GET /items\n- **Expected:** 200. (src/app.py:1)\n"
         ))
         cases = (
-            (("backend", "ui"), [], {"FE": "ui", "BE": "backend"}),
-            (("ui",), [], {"FE": "ui", "BE": "ui"}),
-            (("backend",), [], {"FE": "backend", "BE": "backend"}),
-            (("app",), [], {"FE": "app", "BE": "app"}),
-            (("app", "other"), ["backend", "ui"], {"FE": None, "BE": None}),
-            (("ui", "supabase"), ["backend"], {"FE": "ui", "BE": None}),
-            (("backend", "supabase"), ["ui"], {"FE": None, "BE": "backend"}),
+            (("backend", "ui"), [], {"FE": "ui", "BE": "backend", "DESKTOP": None}),
+            (("ui",), [], {"FE": "ui", "BE": "ui", "DESKTOP": None}),
+            (("backend",), [], {"FE": "backend", "BE": "backend", "DESKTOP": None}),
+            (("app",), [], {"FE": "app", "BE": "app", "DESKTOP": None}),
+            (("app", "other"), ["backend", "ui"], {"FE": None, "BE": None, "DESKTOP": None}),
+            (("ui", "supabase"), ["backend"], {"FE": "ui", "BE": None, "DESKTOP": None}),
+            (("backend", "supabase"), ["ui"], {"FE": None, "BE": "backend", "DESKTOP": None}),
         )
         for names, missing, defaults in cases:
             with self.subTest(targets=names):
@@ -430,6 +442,58 @@ password = "literal:postgres"
                 result = check_plan(plan, config)
                 self.assertEqual(result["missing"]["targets"], missing)
                 self.assertEqual(config.report()["defaults"], defaults)
+
+    def test_desktop_scenarios_parse_and_need_a_configured_app(self) -> None:
+        plan = parse_plan(self.plan(SCENARIO + DESKTOP))
+        self.assertEqual([(item.id, item.section) for item in plan.scenarios], [("BE-01", "BE"), ("DESKTOP-01", "DESKTOP")])
+        self.assertEqual(plan.sections, {"FE": [], "BE": ["BE-01"], "DESKTOP": ["DESKTOP-01"]})
+        result = self.check(DESKTOP)
+        self.assertEqual(result["missing"]["apps"], ["app"])
+        self.assertEqual(result["missing"]["targets"], [])
+        self.assertFalse(result["ok"])
+        result = self.check(DESKTOP.replace("- **Writes:** no", "- **Target:** tools\n- **Writes:** no"), APP)
+        self.assertEqual(result["missing"]["apps"], ["tools"])
+        self.assertFalse(result["ok"])
+        result = self.check(DESKTOP, APP)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["sections"]["DESKTOP"], ["DESKTOP-01"])
+        self.assertEqual(result["missing"]["apps"], [])
+
+    def test_desktop_state_checks_and_urls_are_refused(self) -> None:
+        result = self.check(DESKTOP + "- **State Check:** main: SELECT 1 → 1\n",
+                            APP + '[env.stores.main]\nkind="sql"\nengine="sqlite"\npath="qa.sqlite"\n')
+        self.assertEqual(result["plan_errors"], [{"scenario": "DESKTOP-01", "reason": "state checks are BE-only"}])
+        self.assertFalse(result["ok"])
+        for url in ("http://localhost:8000/items", "https://example.com/docs"):
+            with self.subTest(url=url):
+                result = self.check(DESKTOP + f"- **Preconditions:** Open {url}\n", APP)
+                self.assertEqual([(item["scenario"], item["reason"]) for item in result["off_target"]],
+                                 [("DESKTOP-01", "URLs are not allowed in DESKTOP scenarios")])
+                self.assertFalse(result["ok"])
+
+    def test_desktop_mutation_guard_follows_only_the_writes_line(self) -> None:
+        press_delete = DESKTOP.replace("  2. Press `Backquote`", "  2. Press `Delete`")
+        for writes, guarded in (("- **Writes:** no", []), ("- **Writes:** yes", ["DESKTOP-01"]), ("", ["DESKTOP-01"])):
+            with self.subTest(writes=writes):
+                body = press_delete.replace("- **Writes:** no\n", f"{writes}\n" if writes else "")
+                self.assertEqual(self.check(body, 'mutations = "deny"\n' + APP)["guarded"], guarded)
+
+    def test_desktop_tokens_allow_existing_users_values_and_engine_tokens_but_not_registrations(self) -> None:
+        users = "## Users\n- admin: existing — administrator\n- owner: registered — plain user\n## DESKTOP Test Scenarios\n"
+        extra = USERS + APP + '[env.values]\nsentinel = "literal:qa-sentinel"\n'
+        typed = DESKTOP + "- **Preconditions:** Type $QA_TAG, $QA_NEW_PASSWORD, $QA_ADMIN_EMAIL, ${QA_ADMIN_PASSWORD}, $QA_ADMIN_ID and $QA_SENTINEL\n"
+        result = self.check(users + typed, extra)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["users"], ["admin"])
+        self.assertEqual(result["values"], ["sentinel"])
+        result = self.check(users + DESKTOP + "- **Preconditions:** Type $QA_OWNER_EMAIL\n", extra)
+        self.assertEqual(result["plan_errors"], [
+            {"scenario": "DESKTOP-01", "reason": "registered users are FE/BE only; DESKTOP scenarios cannot use $QA_OWNER_EMAIL"}])
+        self.assertFalse(result["ok"])
+        frontend = "### FE-01: Sign up\n- **Writes:** no\n- **URL:** /signup\n- **Steps:** Fill $QA_OWNER_EMAIL\n- **Expected:** Account created. (src/ui.ts:1)\n"
+        result = self.check(users.replace("DESKTOP Test", "FE Test") + frontend, extra)
+        self.assertEqual(result["plan_errors"], [])
+        self.assertEqual(result["registrations"], ["owner"])
 
     def test_absolute_url_does_not_need_default_target(self) -> None:
         self.put('version=1\n[env.targets]\napp="http://localhost:8000"\nother="http://localhost:9000"\n[qa]\n', ".av/config.toml")

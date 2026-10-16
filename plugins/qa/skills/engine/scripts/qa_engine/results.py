@@ -183,7 +183,7 @@ def _outcome(item: object, section: str) -> JSON | None:
         return None
 
     return {
-        "status": item["status"], "observed_status": None if section == "FE" else observed, "crash": crash,
+        "status": item["status"], "observed_status": None if section in {"FE", "DESKTOP"} else observed, "crash": crash,
         "kind": kind, "missing": missing, "skip_reason": skip_reason, "refutation": refutation,
     }
 

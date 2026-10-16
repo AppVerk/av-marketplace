@@ -30,7 +30,15 @@ POLICY = {"fix": "approve", "mutations": "deny", "start_services": "ask"}
 FIX = ("approve", "auto", "off")
 MUTATIONS = ("allow", "deny")
 START_SERVICES = ("ask", "auto")
-SECTION_TARGETS = {"FE": "ui", "BE": "backend"}
+SECTIONS = ("FE", "BE", "DESKTOP")
+SECTION_TARGETS = {"FE": "ui", "BE": "backend", "DESKTOP": "app"}
+DESKTOP_DRIVERS = ("ebitengine",)
+DESKTOP_DEFAULT_SCREEN = (960, 540)
+DESKTOP_APP_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+DESKTOP_PACKAGE = re.compile(r"\.(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9_.-]+)*\Z")
+DESKTOP_MAX_ARGS = 32
+DESKTOP_MAX_ARG_LENGTH = 256
+DESKTOP_SCREEN_RANGE = (64, 4096)
 STORE_NAMES = {
     "postgres": ("PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "PGPASSWORD", "PGOPTIONS"),
     "mysql": ("MYSQL_HOST", "MYSQL_TCP_PORT", "MYSQL_USER", "MYSQL_DATABASE", "MYSQL_PWD"),
@@ -43,6 +51,14 @@ def mapping(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
 
 
+def desktop_app(entry: Mapping[str, object]) -> dict[str, object]:
+    """Return one ``[qa.desktop.<name>]`` app with its defaults filled in."""
+    return {
+        "driver": entry.get("driver"),
+        "package": entry.get("package", "."),
+        "args": entry.get("args", []),
+        "screen": entry.get("screen", list(DESKTOP_DEFAULT_SCREEN)),
+    }
 
 
 class Config:
@@ -72,6 +88,7 @@ class Config:
         self.services = mapping(self.env.get("services"))
         self.values = mapping(self.env.get("values"))
         self.stores = mapping(self.env.get("stores"))
+        self.desktop = {name: desktop_app(mapping(entry)) for name, entry in mapping(self.qa.get("desktop")).items()}
         if self.shared.exists and "qa" in self.data:
             self._validate()
         self.trust_subset = self._sensitive_subset() if not self.errors else {}
@@ -83,24 +100,52 @@ class Config:
         return self.shared.state("qa")
 
     def section_target(self, section: str) -> str | None:
-        """Use the section's reserved target name, or the only configured target."""
+        """Use the section's reserved name, or the only configured target (desktop app for DESKTOP)."""
+        candidates = self.desktop if section == "DESKTOP" else self.targets
         name = SECTION_TARGETS[section]
-        if name in self.targets:
+        if name in candidates:
             return name
-        if len(self.targets) == 1:
-            return next(iter(self.targets))
+        if len(candidates) == 1:
+            return next(iter(candidates))
         return None
 
     def _validate(self) -> None:
         validator = self.shared
         qa = validator.table(self.data["qa"], "qa")
-        validator.keys(qa, {"fix", "mutations", "start_services", "users", "cleanup"}, "qa")
+        validator.keys(qa, {"fix", "mutations", "start_services", "users", "cleanup", "desktop"}, "qa")
         for key, allowed in (("fix", FIX), ("mutations", MUTATIONS), ("start_services", START_SERVICES)):
             if key in qa and qa[key] not in allowed:
                 validator.error(f"qa.{key}", "unsupported policy value")
         self._validate_users()
+        self._validate_desktop()
         self._validate_cleanup()
         self._validate_names()
+
+    def _validate_desktop(self) -> None:
+        validator = self.shared
+        if "desktop" not in self.qa:
+            return
+        low, high = DESKTOP_SCREEN_RANGE
+        for name, value in validator.table(self.qa["desktop"], "qa.desktop").items():
+            prefix = f"qa.desktop.{name}"
+            if not DESKTOP_APP_NAME.fullmatch(name):
+                validator.error(prefix, "invalid desktop app name")
+            entry = validator.table(value, prefix)
+            validator.keys(entry, {"driver", "package", "args", "screen"}, prefix)
+            if "driver" not in entry:
+                validator.error(f"{prefix}.driver", "required desktop driver")
+            elif not isinstance(entry["driver"], str) or entry["driver"] not in DESKTOP_DRIVERS:
+                validator.error(f"{prefix}.driver", "unsupported desktop driver")
+            package = entry.get("package", ".")
+            if not isinstance(package, str) or not DESKTOP_PACKAGE.fullmatch(package):
+                validator.error(f"{prefix}.package", "expected a relative package path such as ./cmd/game")
+            args = entry.get("args", [])
+            if not isinstance(args, list) or len(args) > DESKTOP_MAX_ARGS or not all(
+                    isinstance(arg, str) and len(arg) <= DESKTOP_MAX_ARG_LENGTH and "\0" not in arg for arg in args):
+                validator.error(f"{prefix}.args", "expected a list of strings")
+            screen = entry.get("screen", list(DESKTOP_DEFAULT_SCREEN))
+            if not isinstance(screen, list) or len(screen) != 2 or not all(type(side) is int and low <= side <= high for side in screen):
+                validator.error(f"{prefix}.screen", "expected [width, height] between 64 and 4096")
 
     def _validate_users(self) -> None:
         validator = self.shared
@@ -152,6 +197,8 @@ class Config:
         subset.update(source_subset(self.qa, "qa"))
         if "cleanup" in self.qa:
             subset["qa.cleanup"] = self.qa["cleanup"]
+        if "desktop" in self.qa:
+            subset["qa.desktop"] = self.qa["desktop"]
         store = self.cleanup.get("store")
         if self.cleanup.get("kind") == "sql" and isinstance(store, str) and store in self.stores:
             subset[f"env.stores.{store}"] = self.stores[store]
@@ -168,7 +215,7 @@ class Config:
         exposed = [f"QA_{user.upper()}_{field}" for user in self.users for field in self.user_fields(user)]
         exposed.extend(f"QA_{name.upper()}" for name in self.values)
         exposed.append("QA_NEW_PASSWORD")
-        report.update({"targets": self.targets, "defaults": {"FE": self.section_target("FE"), "BE": self.section_target("BE")}, "policy": self.policy, "services": {"health": [], "up": None, "prepare": [], "down": None, **self.services}, "users": {name: mapping(entry).get("description") for name, entry in self.users.items()}, "values": sorted(self.values), "exposed": sorted(exposed), "stores": {name: {key: entry[key] for key in ("kind", "engine") if key in entry} for name, value in self.stores.items() if (entry := mapping(value))}})
+        report.update({"targets": self.targets, "desktop": self.desktop, "defaults": {section: self.section_target(section) for section in SECTIONS}, "policy": self.policy, "services": {"health": [], "up": None, "prepare": [], "down": None, **self.services}, "users": {name: mapping(entry).get("description") for name, entry in self.users.items()}, "values": sorted(self.values), "exposed": sorted(exposed), "stores": {name: {key: entry[key] for key in ("kind", "engine") if key in entry} for name, value in self.stores.items() if (entry := mapping(value))}})
         return report
 
     def accept(self, approved_hash: str) -> dict[str, object]:

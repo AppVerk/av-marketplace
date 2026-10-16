@@ -22,6 +22,7 @@ if sys.version_info < (3, 11):
 from av_config.errors import ConfigError
 from av_config.errors import InvalidConfig
 from qa_engine.config import Config
+from qa_engine.config import SECTIONS
 from qa_engine.users import provision
 from qa_engine.users import record_account_cli
 from qa_engine.users import teardown
@@ -124,7 +125,7 @@ def parser() -> argparse.ArgumentParser:
     dispatch_operations = dispatch.add_subparsers(dest="operation", required=True)
     tester = repo_option(dispatch_operations.add_parser("tester"))
     tester.set_defaults(state_handler=_state_dispatch_tester)
-    tester.add_argument("--section", required=True, choices=["FE", "BE"])
+    tester.add_argument("--section", required=True, choices=list(SECTIONS))
     tester.add_argument("--phase", required=True, choices=["baseline", "retry", "iteration", "final"])
     dispatch_fix_parser = repo_option(dispatch_operations.add_parser("fix"))
     dispatch_fix_parser.set_defaults(state_handler=_state_dispatch_fix)
