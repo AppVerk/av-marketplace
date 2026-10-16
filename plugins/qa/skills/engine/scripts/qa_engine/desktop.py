@@ -1,11 +1,47 @@
-"""Run DESKTOP scripts headless through the Ebitengine ``exp/vmhost`` host driver.
+"""Run DESKTOP scripts headless through the app's registered desktop driver plugin.
+
+Desktop driver contract 1. A driver plugin ships the skill
+``qa-desktop-driver-<driver>`` whose directory holds the manifest
+``qa-desktop-driver.json`` (exactly ``{"contract": 1, "driver", "version",
+"entry"}``; ``driver`` matches ``[a-z][a-z0-9-]{0,39}``, ``version``
+``[0-9A-Za-z.+-]{1,40}``, ``entry`` is a relative path to a Python 3.11+ stdlib
+script inside that directory), its guide ``SKILL.md`` and its code.
+``desktop register`` records a manifest from outside the repository for one
+run in ``<run-dir>/desktop/drivers.json``; an app whose driver is not
+registered gets ``tool-missing`` with detail ``desktop-driver:<driver>``.
+
+The engine runs ``[sys.executable, <entry>, <phase>, …]`` with cwd and ``PWD``
+set to the repository root, without ``QA_*`` and ``STORE_*`` variables, stdin
+``/dev/null`` and its own session; a timeout or interruption kills the phase's
+process group (SIGTERM, then SIGKILL after 5 s). Phases:
+
+- ``check --repo R`` (60 s): exit 0 and print one JSON object,
+  ``{"result": null}``, ``{"result": "tool-missing", "detail": …}`` or
+  ``{"result": "unsupported", "detail": …}``; anything else is ``host-failed``.
+- ``prepare --repo R --cache C`` (300 s): once per run and driver, under
+  ``C/.lock``; success writes ``C/.prepared``, failure is ``host-build-failed``.
+- ``build --repo R --cache C --package P --out G`` (300 s): builds the app at
+  ``G``; failure is ``build-failed``.
+- ``run --repo R --cache C --guest G --steps S --out A --width W --height H
+  --deadline N -- <args…>`` (120 s, ``N`` = 135): executes the steps and writes
+  ``A/result.json``, one PNG per shot and ``A/guest.raw.log``.
+  ``handshake-failed`` is retried once; a missing or schema-breaking
+  ``result.json`` is ``host-failed``.
+
+``result.json`` holds at least ``result`` (``completed``, ``guest-exited``,
+``handshake-failed``, ``host-failed``, ``invalid-script`` or ``timeout``),
+``detail`` (string or null), ``step`` (non-negative integer or null),
+``exit_code`` (integer or null), ``ticks`` (non-negative integer), ``tps``
+(integer of at least -1; -1 ties ticks to rendered frames), ``scale`` (positive
+number or null), ``screen`` (two positive integers) and ``shots`` (``{"name",
+"file": "<name>.png", "tick"}``, each file present). An intentional quit is
+reported only as ``guest-exited`` with ``exit_code`` 0 and detail
+``guest terminated itself``.
 
 ``run_desktop`` holds the run lock only to validate the config, trust, the
-dispatch and the app. Script expansion, both builds and the app run outside
-it. Every build and host process runs in its own process group with ``QA_*``
-and ``STORE_*`` variables removed, and is killed with its group on every exit
-path, interruptions included. The guest's raw output is masked into
-``guest.log`` and deleted before the call returns.
+dispatch, the app and its driver. Script expansion and every driver phase run
+outside it. The guest's raw output is masked into ``guest.log`` and deleted
+before the call returns.
 """
 from __future__ import annotations
 
@@ -15,6 +51,7 @@ from contextlib import contextmanager
 from contextlib import suppress
 import fcntl
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -22,6 +59,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 from types import FrameType
@@ -35,22 +73,25 @@ from qa_engine.common import read_object
 from qa_engine.common import write_json
 from qa_engine.config import Config
 from qa_engine.config import DESKTOP_APP_NAME
+from qa_engine.config import DESKTOP_DRIVER_NAME
 from qa_engine.config import DESKTOP_MAX_ARG_LENGTH
 from qa_engine.config import DESKTOP_MAX_ARGS
+from qa_engine.models import Run
 from qa_engine.models import StateStop
 from qa_engine.runs import check_drift
 from qa_engine.runs import open_run
 from qa_engine.secrets import SecretSet
 from qa_engine.services import require_trust
 
-HOST_DIR = ".av-qa-ebitengine-host"
-HOST_SOURCE = Path(__file__).resolve().parents[2] / "drivers" / "ebitengine" / "main.go"
+CONTRACT = 1
+CHECK_TIMEOUT = 60
 BUILD_TIMEOUT = 300
 HOST_TIMEOUT = 120
 HOST_DEADLINE_GRACE = 15
 KILL_GRACE = 5
-EBITENGINE_MODULE = "github.com/hajimehoshi/ebiten/v2"
-EBITENGINE_MINIMUM = (2, 10, 5)
+DRIVERS_FILE = "drivers.json"
+MANIFEST_KEYS = frozenset({"contract", "driver", "version", "entry"})
+DRIVER_VERSION = re.compile(r"[0-9A-Za-z.+-]{1,40}\Z")
 MAX_STEPS = 500
 MAX_TOTAL_TICKS = 36000
 MAX_WAIT_TICKS = 36000
@@ -67,10 +108,8 @@ ADVANCING = frozenset({"wait", "key", "type", "type_env", "click", "scroll"})
 SHOT_NAME = re.compile(r"[A-Za-z0-9_-]{1,40}\Z")
 KEY_NAME = re.compile(r"[A-Za-z][A-Za-z0-9]{0,31}\Z")
 ENV_NAME = re.compile(r"QA_[A-Z0-9_]+\Z")
-RESULTS = frozenset({
-    "completed", "guest-exited", "build-failed", "host-build-failed", "handshake-failed", "host-failed",
-    "invalid-script", "timeout", "tool-missing", "unsupported",
-})
+RUN_RESULTS = frozenset({"completed", "guest-exited", "handshake-failed", "host-failed", "invalid-script", "timeout"})
+CHECK_RESULTS = ("tool-missing", "unsupported")
 
 JSON = dict[str, Any]
 
@@ -119,7 +158,7 @@ def _validate_step(index: int, step: object, screen: tuple[int, int]) -> str:
     if action == "wait" and not _integer(value, 1, MAX_WAIT_TICKS):
         raise _script_error(index, f"wait: expected an integer from 1 to {MAX_WAIT_TICKS}")
     if action in {"key", "hold", "release"} and not (isinstance(value, str) and KEY_NAME.fullmatch(value)):
-        raise _script_error(index, f"{action}: expected an ebiten.Key name")
+        raise _script_error(index, f"{action}: expected a KeyboardEvent.code key name")
     if action == "key" and "ticks" in step and not _integer(step["ticks"], 1, MAX_KEY_TICKS):
         raise _script_error(index, f"ticks: expected an integer from 1 to {MAX_KEY_TICKS}")
     if action == "type" and not (isinstance(value, str) and 1 <= len(value) <= MAX_TYPE):
@@ -180,65 +219,10 @@ def validate_script(data: object, screen: tuple[int, int]) -> dict[str, object]:
     return {"args": list(args), "steps": steps}
 
 
-def _go_mod_entries(text: str) -> Iterator[tuple[str, list[str]]]:
-    """Yield ``(verb, fields)`` for every directive line, inside or outside ``verb (…)`` blocks."""
-    block: str | None = None
-    for raw in text.splitlines():
-        line = raw.split("//", 1)[0].strip()
-        if not line:
-            continue
-        if block is not None:
-            if line == ")":
-                block = None
-            else:
-                yield block, line.split()
-            continue
-        verb, *rest = line.split(None, 1)
-        if rest == ["("]:
-            block = verb
-        elif rest:
-            yield verb, rest[0].split()
-
-
-def ebitengine_requirement(repo: Path) -> str | None:
-    """``None`` when the root module may run under ``exp/vmhost``, else the ``unsupported`` detail.
-
-    Reads ``go.mod`` as text only: no ``go`` command, module cache or network.
-    """
-    try:
-        text = (repo / "go.mod").read_text()
-    except FileNotFoundError:
-        return "no go.mod at the repository root"
-    except (OSError, UnicodeError):
-        return "go.mod is not readable"
-    version: str | None = None
-    replaced = False
-    for verb, fields in _go_mod_entries(text):
-        if not fields or fields[0].strip('"') != EBITENGINE_MODULE:
-            continue
-        if verb == "replace":
-            replaced = True
-        elif verb == "require" and len(fields) >= 2:
-            version = fields[1]
-    if version is None:
-        return f"go.mod does not require {EBITENGINE_MODULE}"
-    if replaced:
-        return None
-    parsed = re.match(r"v(\d+)\.(\d+)\.(\d+)", version)
-    if parsed and tuple(int(part) for part in parsed.groups()) >= EBITENGINE_MINIMUM:
-        return None
-    minimum = ".".join(str(part) for part in EBITENGINE_MINIMUM)
-    return f"go.mod requires {EBITENGINE_MODULE} {version}; the QA desktop driver supports v{minimum} or later"
-
-
-def ebitengine_vmhost_available(repo: Path) -> bool:
-    return shutil.which("go") is not None and ebitengine_requirement(repo) is None
-
-
 def desktop_script(run_id: str, repo: Path) -> str:
     """The run helper ``desktop.sh <dispatch> <app> <script-file>``, bound to this run and repository."""
     engine = shlex.quote(str(Path(__file__).resolve().parents[1] / "qa.py"))
-    return f'''# Run one DESKTOP script through the engine's Ebitengine driver.
+    return f'''# Run one DESKTOP script through the engine and the app's registered desktop driver.
 [ "$#" -eq 3 ] || exit 2
 case "$1" in D[0-9][0-9][0-9]*) ;; *) exit 2 ;; esac
 case "$1" in *[!D0-9]*) exit 2 ;; esac
@@ -279,22 +263,34 @@ class _Interrupts:
 
 
 class _Children:
-    """The one build or host process group currently running, killed with its group on cleanup."""
+    """The one driver phase process group currently running, killed with its group on cleanup."""
 
     def __init__(self, environment: Mapping[str, str]) -> None:
         self.environment = dict(environment)
         self.current: subprocess.Popen[bytes] | None = None
 
-    def run(self, argv: list[str], cwd: Path, log: Path, timeout: float) -> int | None:
-        """Run ``argv`` in its own session; ``None`` when it outlived ``timeout`` and was killed."""
-        with log.open("wb") as output:
+    def run(self, argv: list[str], cwd: Path, log: Path, timeout: float, *, stdout: Path | None = None) -> int | None:
+        """Run ``argv`` in its own session; ``None`` when it outlived ``timeout`` and was killed.
+
+        Output goes to ``log``; with ``stdout``, standard output goes to that file and only stderr to ``log``.
+        """
+        # PWD names cwd: tools that trust an inherited PWD (go does) must not see the caller's directory or a
+        # symlinked spelling of the repository (macOS /tmp).
+        environment = {**self.environment, "PWD": str(cwd)}
+        with log.open("wb") as errors:
             log.chmod(0o600)
-            # Go trusts an inherited PWD naming the same directory, so a symlinked path (macOS /tmp) would
-            # not match the overlay's resolved repository path.
-            self.current = subprocess.Popen(
-                argv, cwd=cwd, env={**self.environment, "PWD": str(cwd)}, stdin=subprocess.DEVNULL, stdout=output,
-                stderr=subprocess.STDOUT, start_new_session=True,
-            )
+            if stdout is None:
+                self.current = subprocess.Popen(
+                    argv, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, stdout=errors, stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            else:
+                with stdout.open("wb") as output:
+                    stdout.chmod(0o600)
+                    self.current = subprocess.Popen(
+                        argv, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, stdout=output, stderr=errors,
+                        start_new_session=True,
+                    )
         try:
             return self.current.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -372,20 +368,111 @@ def _artifacts_directory(results: Path, target: str) -> Path:
         return directory
 
 
+def _count(value: object, low: int = 0) -> bool:
+    return type(value) is int and value >= low
+
+
+def _valid_shot(shot: object, artifacts: Path) -> bool:
+    if not isinstance(shot, dict):
+        return False
+    name = shot.get("name")
+    if not isinstance(name, str) or not SHOT_NAME.fullmatch(name):
+        return False
+    return shot.get("file") == f"{name}.png" and _count(shot.get("tick")) and (artifacts / f"{name}.png").is_file()
+
+
 def _host_result(artifacts: Path) -> JSON | None:
-    """The current attempt's ``result.json`` when it is well formed, else ``None``."""
+    """The current attempt's ``result.json`` when it matches contract 1's schema, else ``None``; never raises."""
     try:
         data = json.loads((artifacts / "result.json").read_text())
-    except (OSError, UnicodeError, ValueError):
+    except (OSError, UnicodeError, ValueError, RecursionError):
         return None
-    if not isinstance(data, dict) or data.get("result") not in RESULTS:
+    if not isinstance(data, dict):
         return None
-    shots = data.get("shots", [])
-    if not isinstance(shots, list) or not all(
-            isinstance(shot, dict) and isinstance(shot.get("name"), str) and SHOT_NAME.fullmatch(shot["name"])
-            and shot.get("file") == f"{shot['name']}.png" and type(shot.get("tick")) is int for shot in shots):
+    result = data.get("result")
+    if not isinstance(result, str) or result not in RUN_RESULTS:
         return None
-    return data
+    if not all(key in data for key in ("detail", "step", "exit_code", "ticks", "tps", "scale", "screen", "shots")):
+        return None
+    scale = data["scale"]
+    screen = data["screen"]
+    shots = data["shots"]
+    valid = (
+        (data["detail"] is None or isinstance(data["detail"], str))
+        and (data["step"] is None or _count(data["step"]))
+        and (data["exit_code"] is None or type(data["exit_code"]) is int)
+        and _count(data["ticks"]) and _count(data["tps"], -1)
+        and (scale is None or _positive_number(scale))
+        and isinstance(screen, list) and len(screen) == 2 and all(_count(item, 1) for item in screen)
+        and isinstance(shots, list) and all(_valid_shot(shot, artifacts) for shot in shots)
+    )
+    return data if valid else None
+
+
+def _positive_number(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value > 0
+    return isinstance(value, float) and math.isfinite(value) and value > 0
+
+
+def _check_result(path: Path) -> tuple[str | None, str | None] | None:
+    """``(result, detail)`` from a ``check`` phase's stdout when it follows the contract, else ``None``."""
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        return None
+    if not isinstance(data, dict) or "result" not in data or not set(data) <= {"result", "detail"}:
+        return None
+    result = data["result"]
+    if result is None:
+        return None, None
+    detail = data.get("detail")
+    if not isinstance(result, str) or result not in CHECK_RESULTS or not isinstance(detail, str):
+        return None
+    return result, detail
+
+
+def register_driver(run: Run, manifest: Path) -> dict[str, object]:
+    """Record a desktop driver manifest from outside the repository for this run."""
+    path = manifest.expanduser().resolve()
+    if path.is_relative_to(run.repo):
+        raise InvalidConfig("desktop driver manifest must be outside the repository")
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, UnicodeError, ValueError, RecursionError) as error:
+        raise InvalidConfig("desktop driver manifest is not a readable JSON object") from error
+    if not isinstance(data, dict):
+        raise InvalidConfig("desktop driver manifest is not a readable JSON object")
+    if set(data) != MANIFEST_KEYS:
+        raise InvalidConfig("desktop driver manifest needs exactly the keys contract, driver, version and entry")
+    contract = data["contract"]
+    if not (type(contract) is int and contract == CONTRACT):
+        raise InvalidConfig(f"desktop driver contract {contract!r} is not supported; this qa engine supports contract {CONTRACT}")
+    name = data["driver"]
+    if not isinstance(name, str) or not DESKTOP_DRIVER_NAME.fullmatch(name):
+        raise InvalidConfig("desktop driver manifest has an invalid driver name")
+    version = data["version"]
+    if not isinstance(version, str) or not DRIVER_VERSION.fullmatch(version):
+        raise InvalidConfig("desktop driver manifest has an invalid version")
+    entry = data["entry"]
+    base = path.parent
+    target: Path | None = None
+    if isinstance(entry, str) and entry and "\0" not in entry and not Path(entry).is_absolute() and ".." not in Path(entry).parts:
+        target = (base / entry).resolve()
+    if target is None or not target.is_relative_to(base) or not target.is_file():
+        raise InvalidConfig("desktop driver entry must be a relative path to a file inside the manifest directory")
+    directory = run.directory / "desktop"
+    directory.mkdir(mode=0o700, exist_ok=True)
+    registry = directory / DRIVERS_FILE
+    drivers = read_object(registry)
+    current = drivers.get(name)
+    if isinstance(current, dict) and current.get("manifest") != str(path):
+        raise StateStop(f"desktop driver {name} is already registered from another manifest")
+    drivers[name] = {"manifest": str(path), "entry": str(target), "version": version}
+    write_json(registry, drivers, 0o600)
+    return {"driver": name, "version": version, "contract": CONTRACT, "manifest": str(path)}
 
 
 def _clear_attempt(artifacts: Path) -> None:
@@ -399,7 +486,7 @@ def run_desktop(
     repo: Path, run_id: str, dispatch: str, target: str, script_path: Path, *,
     host_timeout: float = HOST_TIMEOUT, build_timeout: float = BUILD_TIMEOUT,
 ) -> dict[str, object]:
-    """Build the app's guest and the cached host, run the script and return the driver result."""
+    """Run the script through the app's registered driver: check, prepare once, build, then run."""
     started = time.monotonic()
     repo = repo.resolve()
     with open_run(repo, run_id) as run:
@@ -419,6 +506,8 @@ def run_desktop(
         tag = str(record["tag"])
         directory = run.directory
         secrets = SecretSet(directory, run.record["config"], config.data)
+        driver_name = str(app["driver"])
+        driver = read_object(directory / "desktop" / DRIVERS_FILE).get(driver_name)
 
     screen_value = app["screen"]
     assert isinstance(screen_value, list)
@@ -445,35 +534,44 @@ def run_desktop(
         output["duration_ms"] = int((time.monotonic() - started) * 1000)
         return output
 
-    if shutil.which("go") is None:
-        return finish("tool-missing", "go")
-    unsupported = ebitengine_requirement(repo)
-    if unsupported is not None:
-        return finish("unsupported", unsupported)
+    if not isinstance(driver, dict) or not isinstance(driver.get("entry"), str):
+        return finish("tool-missing", f"desktop-driver:{driver_name}")
 
     artifacts = _artifacts_directory(directory / "results" / dispatch, target)
     output["artifacts"] = str(artifacts)
     atomic_write(artifacts / "script.json", original, 0o600)
     steps_path = artifacts / "steps.json"
     write_json(steps_path, {"steps": steps}, 0o600)
+    cache = directory / "desktop" / driver_name
+    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+    entry = [sys.executable, str(driver["entry"])]
+    common = ["--repo", str(repo), "--cache", str(cache)]
 
     children = _Children(_child_environment())
     with _Interrupts() as interrupts:
         try:
-            host, failure = _host(repo, directory / "desktop", children, build_timeout, secrets)
-            if host is None:
+            check_output = artifacts / "check.json"
+            code = children.run([*entry, "check", "--repo", str(repo)], repo, artifacts / "check.log", CHECK_TIMEOUT, stdout=check_output)
+            verdict = _check_result(check_output) if code == 0 else None
+            if verdict is None:
+                return finish("host-failed", "desktop driver check failed")
+            if verdict[0] is not None:
+                return finish(verdict[0], verdict[1])
+            failure = _prepare(entry, common, repo, cache, children, build_timeout, secrets)
+            if failure is not None:
+                output["build_log"] = str(cache / "prepare.log")
                 return finish("host-build-failed", failure)
             guest = artifacts / "guest"
             build_log = artifacts / "build.log"
-            code = children.run(["go", "build", "-tags", "ebitenginevmguest", "-o", str(guest), str(app["package"])], repo, build_log, build_timeout)
+            code = children.run([*entry, "build", *common, "--package", str(app["package"]), "--out", str(guest)], repo, build_log, build_timeout)
+            output["build_log"] = str(build_log)
             if code != 0:
-                output["build_log"] = str(build_log)
                 reason = f"guest build timed out after {build_timeout:g}s" if code is None else _first_line(_read_log(build_log), secrets)
                 return finish("build-failed", reason or f"guest build exited {code}")
-            output["build_log"] = str(build_log)
             argv = [
-                str(host), "-guest", str(guest), "-script", str(steps_path), "-out", str(artifacts),
-                "-w", str(screen[0]), "-h", str(screen[1]), "-deadline", f"{host_timeout + HOST_DEADLINE_GRACE:g}s",
+                *entry, "run", *common, "--guest", str(guest), "--steps", str(steps_path), "--out", str(artifacts),
+                "--width", str(screen[0]), "--height", str(screen[1]),
+                "--deadline", str(math.ceil(host_timeout + HOST_DEADLINE_GRACE)),
                 "--", *[str(arg) for arg in app["args"]], *script["args"],
             ]
             result: JSON | None = None
@@ -483,22 +581,21 @@ def run_desktop(
                 code = children.run(argv, repo, artifacts / "host.log", host_timeout)
                 if code is None:
                     return finish("timeout", f"host did not finish within {host_timeout:g}s")
+                if not (artifacts / "result.json").exists():
+                    return finish("host-failed", f"host exited {code} without result.json")
                 result = _host_result(artifacts)
                 if result is None:
-                    return finish("host-failed", f"host exited {code} without result.json")
+                    return finish("host-failed", f"host exited {code} with an invalid result.json")
                 if result["result"] != "handshake-failed":
                     break
             assert result is not None
-            for key in ("step", "exit_code", "scale"):
-                output[key] = result.get(key)
-            output["ticks"] = result.get("ticks", 0)
-            output["tps"] = result.get("tps", 0)
+            for key in ("step", "exit_code", "scale", "ticks", "tps"):
+                output[key] = result[key]
             output["shots"] = [
                 {"name": shot["name"], "path": str(artifacts / shot["file"]), "tick": shot["tick"], "sensitive": shot["name"] in sensitive}
-                for shot in result.get("shots", [])
+                for shot in result["shots"]
             ]
-            detail = result.get("detail")
-            return finish(str(result["result"]), detail if isinstance(detail, str) else None)
+            return finish(str(result["result"]), result["detail"])
         finally:
             interrupts.hold()
             children.stop()
@@ -535,28 +632,22 @@ def _expand(steps: list[Any], tag: str, directory: Path) -> tuple[list[JSON], se
     return expanded, sensitive
 
 
-def _host(repo: Path, cache: Path, children: _Children, timeout: float, secrets: SecretSet) -> tuple[Path | None, str | None]:
-    """The run's cached host binary, built once under the build lock; ``(None, detail)`` on failure."""
-    host = cache / "host"
-    with _locked(cache / "build.lock"):
-        if host.is_file() and os.access(host, os.X_OK):
-            return host, None
-        if (repo / HOST_DIR).exists():
-            return None, f"reserved directory {HOST_DIR} exists"
-        overlay = cache / "overlay.json"
-        write_json(overlay, {"Replace": {str(repo / HOST_DIR / "main.go"): str(HOST_SOURCE)}}, 0o600)
-        building = cache / "host.partial"
-        building.unlink(missing_ok=True)
-        log = cache / "host-build.log"
-        code = children.run(["go", "build", "-overlay", str(overlay), "-o", str(building), f"./{HOST_DIR}"], repo, log, timeout)
+def _prepare(
+    entry: list[str], common: list[str], repo: Path, cache: Path, children: _Children, timeout: float, secrets: SecretSet,
+) -> str | None:
+    """Run the driver's ``prepare`` once per run under the cache lock; the failure detail, or ``None``."""
+    marker = cache / ".prepared"
+    log = cache / "prepare.log"
+    with _locked(cache / ".lock"):
+        if marker.is_file():
+            return None
+        code = children.run([*entry, "prepare", *common], repo, log, timeout)
         if code is None:
-            building.unlink(missing_ok=True)
-            return None, f"host build timed out after {timeout:g}s"
-        if code != 0 or not building.is_file():
-            building.unlink(missing_ok=True)
-            return None, _first_line(_read_log(log), secrets) or f"host build exited {code}"
-        os.replace(building, host)
-        return host, None
+            return f"driver prepare timed out after {timeout:g}s"
+        if code != 0:
+            return _first_line(_read_log(log), secrets) or f"driver prepare exited {code}"
+        atomic_write(marker, b"", 0o600)
+        return None
 
 
 def _mask_guest_output(artifacts: Path, secrets: SecretSet, output: JSON) -> None:
@@ -569,4 +660,8 @@ def _mask_guest_output(artifacts: Path, secrets: SecretSet, output: JSON) -> Non
         output["log"] = None
     finally:
         raw.unlink(missing_ok=True)
-        (artifacts / "guest").unlink(missing_ok=True)
+        guest = artifacts / "guest"
+        if guest.is_dir() and not guest.is_symlink():
+            shutil.rmtree(guest, ignore_errors=True)
+        else:
+            guest.unlink(missing_ok=True)

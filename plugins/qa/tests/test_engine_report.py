@@ -515,7 +515,7 @@ up = {json.dumps(command)}
         self.assertIn("**Result:** Fail", self.summary())
 
     def test_desktop_issue_renders_its_screenshot_and_counts_feature_coverage(self) -> None:
-        self.put(CONFIG + '[qa.desktop.app]\ndriver = "ebitengine"\n', ".av/config.toml")
+        self.put(CONFIG + '[qa.desktop.app]\ndriver = "fake"\n', ".av/config.toml")
         self.plan.write_text(PLAN + DESKTOP)
         self.start()
         self.ingest()

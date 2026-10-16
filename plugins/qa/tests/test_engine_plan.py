@@ -56,7 +56,7 @@ DESKTOP = '''### DESKTOP-01: Console prints the seed
   5. Shot `console`
 - **Expected:** Shot `console` shows the seed. (pkg/game/console/console.go:65)
 '''
-APP = '[qa.desktop.app]\ndriver = "ebitengine"\n'
+APP = '[qa.desktop.app]\ndriver = "fake"\n'
 
 
 class PlanTests(unittest.TestCase):

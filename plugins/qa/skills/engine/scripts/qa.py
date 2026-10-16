@@ -23,7 +23,7 @@ from av_config.errors import ConfigError
 from av_config.errors import InvalidConfig
 from qa_engine.config import Config
 from qa_engine.config import SECTIONS
-from qa_engine.desktop import ebitengine_vmhost_available
+from qa_engine.desktop import register_driver
 from qa_engine.desktop import run_desktop
 from qa_engine.users import provision
 from qa_engine.users import record_account_cli
@@ -176,6 +176,9 @@ def parser() -> argparse.ArgumentParser:
     desktop_run.add_argument("--dispatch", required=True)
     desktop_run.add_argument("--target", required=True)
     desktop_run.add_argument("--script", required=True, type=Path)
+    register = run_option(desktop_operations.add_parser("register"))
+    register.set_defaults(handler=run_state, state_handler=_state_desktop_register)
+    register.add_argument("--manifest", required=True, type=Path)
     run_option(commands.add_parser("summary")).set_defaults(handler=run_state, state_handler=_state_summary, close_iteration=True)
     return root
 
@@ -191,14 +194,12 @@ def repository(explicit: Path | None) -> Path:
     return Path(result.stdout.strip()).resolve()
 
 
-def tools(repo: Path) -> dict[str, object]:
+def tools() -> dict[str, object]:
     result: dict[str, object] = {name: shutil.which(name) is not None for name in ("curl", "jq", "psql", "mysql", "sqlite3")}
     result["redis_cli"] = shutil.which("redis-cli") is not None
     perl = shutil.which("perl")
     result["perl_json_pp"] = perl is not None and subprocess.run([perl, "-MJSON::PP", "-e", "1"], capture_output=True, check=False).returncode == 0
     result["httpie"] = shutil.which("http") is not None
-    result["go"] = shutil.which("go") is not None
-    result["ebitengine_vmhost"] = ebitengine_vmhost_available(repo)
     return result
 
 
@@ -290,6 +291,10 @@ def _state_stop(run: Run, args: argparse.Namespace) -> Mapping[str, object]:
     return stop_run(run, args.reason, args.detail)
 
 
+def _state_desktop_register(run: Run, args: argparse.Namespace) -> Mapping[str, object]:
+    return register_driver(run, args.manifest)
+
+
 def _execute_run_start(repo: Path, args: argparse.Namespace) -> tuple[Mapping[str, object], int]:
     path = args.plan if args.plan.is_absolute() else repo / args.plan
     baseline = args.baseline_file
@@ -337,7 +342,7 @@ def _execute_trust(repo: Path, args: argparse.Namespace) -> tuple[dict[str, obje
 
 
 def _execute_tools(repo: Path, args: argparse.Namespace) -> tuple[dict[str, object], int]:
-    return tools(repo), 0
+    return tools(), 0
 
 
 def _execute_desktop_run(repo: Path, args: argparse.Namespace) -> tuple[dict[str, object], int]:

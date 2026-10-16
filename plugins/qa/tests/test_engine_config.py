@@ -291,28 +291,33 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(report["policy"]["mutations"], "allow")
 
     def test_desktop_apps_report_defaults_and_pin_trust(self) -> None:
-        self.put(BASE + '[qa.desktop.app]\ndriver = "ebitengine"\n')
+        self.put(BASE + '[qa.desktop.app]\ndriver = "fake"\n')
         cfg = self.config()
         report = cfg.report()
         self.assertEqual(report["state"], "ok", report["errors"])
-        self.assertEqual(report["desktop"], {"app": {"driver": "ebitengine", "package": ".", "args": [], "screen": [960, 540]}})
+        self.assertEqual(report["desktop"], {"app": {"driver": "fake", "package": ".", "args": [], "screen": [960, 540]}})
         self.assertEqual(report["defaults"]["DESKTOP"], "app")
         self.assertIn("qa.desktop", cfg.trust_subset)
-        self.put(BASE + '[qa.desktop.app]\ndriver = "ebitengine"\nargs = ["-debug"]\n')
+        self.put(BASE + '[qa.desktop.app]\ndriver = "fake"\nargs = ["-debug"]\n')
         self.assertNotEqual(self.config().trust_hash, cfg.trust_hash)
-        self.put(BASE + '[qa.desktop.game]\ndriver = "ebitengine"\npackage = "./cmd/game"\nscreen = [1280, 720]\n')
+        self.put(BASE + '[qa.desktop.game]\ndriver = "fake"\npackage = "./cmd/game"\nscreen = [1280, 720]\n')
         report = self.config().report()
         self.assertEqual(report["defaults"]["DESKTOP"], "game")
         self.assertEqual(report["desktop"]["game"]["package"], "./cmd/game")
-        self.put(BASE + '[qa.desktop.one]\ndriver = "ebitengine"\n[qa.desktop.two]\ndriver = "ebitengine"\n')
+        self.put(BASE + '[qa.desktop.one]\ndriver = "fake"\n[qa.desktop.two]\ndriver = "fake"\n')
         self.assertIsNone(self.config().report()["defaults"]["DESKTOP"])
+        self.put(BASE + '[qa.desktop.app]\ndriver = "custom-driver"\n')
+        report = self.config().report()
+        self.assertEqual(report["state"], "ok", report["errors"])
+        self.assertEqual(report["desktop"]["app"]["driver"], "custom-driver")
 
     def test_desktop_app_validation_errors_are_keyed_without_values(self) -> None:
-        app = '[qa.desktop.app]\ndriver = "ebitengine"\n'
+        app = '[qa.desktop.app]\ndriver = "fake"\n'
         cases = [
-            ('[qa.desktop.bad-name]\ndriver = "ebitengine"\n', "qa.desktop.bad-name", "invalid desktop app name"),
+            ('[qa.desktop.bad-name]\ndriver = "fake"\n', "qa.desktop.bad-name", "invalid desktop app name"),
             ('[qa.desktop.app]\npackage = "."\n', "qa.desktop.app.driver", "required desktop driver"),
-            ('[qa.desktop.app]\ndriver = "sensitive-driver"\n', "qa.desktop.app.driver", "unsupported desktop driver"),
+            ('[qa.desktop.app]\ndriver = "sensitive driver"\n', "qa.desktop.app.driver", "expected a desktop driver name"),
+            ('[qa.desktop.app]\ndriver = 1\n', "qa.desktop.app.driver", "expected a desktop driver name"),
             *((app + f'package = "{package}"\n', "qa.desktop.app.package", "expected a relative package path such as ./cmd/game")
               for package in ("../x", "/abs", "cmd/game", "./a/../b")),
             *((app + f"args = {args}\n", "qa.desktop.app.args", "expected a list of strings")
@@ -879,7 +884,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("error", json.loads(result.stdout))
         tools = json.loads(self.cli("tools").stdout)
-        self.assertEqual(set(tools), {"curl", "jq", "perl_json_pp", "psql", "mysql", "sqlite3", "redis_cli", "httpie", "go", "ebitengine_vmhost"})
+        self.assertEqual(set(tools), {"curl", "jq", "perl_json_pp", "psql", "mysql", "sqlite3", "redis_cli", "httpie"})
         result = self.cli("no-such-command", "literal:do-not-echo")
         self.assertEqual(result.returncode, 2)
         self.assertNotIn("do-not-echo", result.stdout + result.stderr)

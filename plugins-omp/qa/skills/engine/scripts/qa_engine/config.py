@@ -32,7 +32,7 @@ MUTATIONS = ("allow", "deny")
 START_SERVICES = ("ask", "auto")
 SECTIONS = ("FE", "BE", "DESKTOP")
 SECTION_TARGETS = {"FE": "ui", "BE": "backend", "DESKTOP": "app"}
-DESKTOP_DRIVERS = ("ebitengine",)
+DESKTOP_DRIVER_NAME = re.compile(r"[a-z][a-z0-9-]{0,39}\Z")
 DESKTOP_DEFAULT_SCREEN = (960, 540)
 DESKTOP_APP_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 DESKTOP_PACKAGE = re.compile(r"\.(?:/(?!\.\.?(?:/|\Z))[A-Za-z0-9_.-]+)*\Z")
@@ -134,8 +134,8 @@ class Config:
             validator.keys(entry, {"driver", "package", "args", "screen"}, prefix)
             if "driver" not in entry:
                 validator.error(f"{prefix}.driver", "required desktop driver")
-            elif not isinstance(entry["driver"], str) or entry["driver"] not in DESKTOP_DRIVERS:
-                validator.error(f"{prefix}.driver", "unsupported desktop driver")
+            elif not isinstance(entry["driver"], str) or not DESKTOP_DRIVER_NAME.fullmatch(entry["driver"]):
+                validator.error(f"{prefix}.driver", "expected a desktop driver name")
             package = entry.get("package", ".")
             if not isinstance(package, str) or not DESKTOP_PACKAGE.fullmatch(package):
                 validator.error(f"{prefix}.package", "expected a relative package path such as ./cmd/game")

@@ -566,7 +566,7 @@ class StateTests(unittest.TestCase):
             self.assertTrue(all(verdict == "pass" for verdict in result["verdicts"].values()))
 
     def test_desktop_results_store_no_status_count_as_features_and_order_last(self) -> None:
-        self.put(BASE + '[qa.desktop.app]\ndriver = "ebitengine"\n', ".av/config.toml")
+        self.put(BASE + '[qa.desktop.app]\ndriver = "fake"\n', ".av/config.toml")
         self.plan.write_text(PLAN + DESKTOP)
         self.trust()
         run = self.start()
