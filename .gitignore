@@ -30,3 +30,5 @@ docs/reviews/
 
 # Serena MCP project config (per-developer)
 .serena/
+.av/local.toml
+.av/secrets.local.env
