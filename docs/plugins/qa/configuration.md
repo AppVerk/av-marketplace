@@ -51,11 +51,11 @@ See [QA safety](../qa.md#safety) for fix eligibility and authentication guards.
 
 ## Desktop apps
 
-`[qa.desktop.<name>]` configures an Ebitengine app. Names start with an ASCII letter or `_`, followed by ASCII letters, digits or `_`. A DESKTOP scenario's `**Target:**` selects that name; without one, QA uses `app` or the only configured app. With several apps and none named `app`, each scenario needs an explicit target. Missing names are reported in `missing.apps`.
+`[qa.desktop.<name>]` configures a desktop app that a desktop driver plugin builds and runs. Names start with an ASCII letter or `_`, followed by ASCII letters, digits or `_`. A DESKTOP scenario's `**Target:**` selects that name; without one, QA uses `app` or the only configured app. With several apps and none named `app`, each scenario needs an explicit target. Missing names are reported in `missing.apps`.
 
 | Key | Type | Default | Validation |
 |---|---|---|---|
-| `driver` | String | Required | Only `"ebitengine"`. Missing: `required desktop driver`; any other value: `unsupported desktop driver`. |
+| `driver` | String | Required | The driver name of an installed desktop driver plugin, such as `"ebitengine"` for qa-ebitengine: a lowercase ASCII letter followed by up to 39 lowercase letters, digits or `-`. Missing: `required desktop driver`; another type or form: `expected a desktop driver name`. A driver that is not installed is reported when its scenarios run, as `NEED_INFO kind=tool`. |
 | `package` | String | `"."` | `.` or a repository-relative package such as `./cmd/game`, without `..` segments. Invalid: `expected a relative package path such as ./cmd/game`. |
 | `args` | List of strings | `[]` | At most 32 items, each at most 256 characters without NUL. Invalid: `expected a list of strings`. |
 | `screen` | `[width, height]` | `[960, 540]` | Two integers, each from 64 to 4096; booleans are not integers. Invalid: `expected [width, height] between 64 and 4096`. |
@@ -69,7 +69,7 @@ args = ["-debug"]
 
 Configured `args` hold only flags the documented run command always passes; scenario-specific flags such as seeds belong in `**Args:**`. Set `screen` only when the repository documents a needed size. Each app's driver, package, args and screen are [trust-pinned](../../configuration.md#trust).
 
-The app runs from the repository root. Go on `PATH`, a root module requiring `github.com/hajimehoshi/ebiten/v2` v2.10.5 or later and a graphics session are required; see [Desktop apps](../qa.md#desktop-apps-ebitengine) for operation, examples and evidence paths. DESKTOP scenarios cannot use absolute URLs or State Checks. They may reference configured existing users, values, `$QA_NEW_PASSWORD` and `$QA_TAG` through `type_env` steps; registered users are FE/BE only.
+The app runs from the repository root. The driver's README lists its requirements; see [Desktop apps](../qa.md#desktop-apps) for operation, examples and evidence paths. DESKTOP scenarios cannot use absolute URLs or State Checks. They may reference configured existing users, values, `$QA_NEW_PASSWORD` and `$QA_TAG` through `type_env` steps; registered users are FE/BE only.
 
 ## Users
 

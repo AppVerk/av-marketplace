@@ -53,7 +53,7 @@ Defects in the code under test that obstruct how it must be tested. Mandatory �
 - Playwright MCP: <available/unavailable>
 - HTTP client: <curl/httpie/unavailable>
 - Store clients: <psql/sqlite3/mysql/redis-cli/unavailable>
-- Desktop driver: <ebitengine-vmhost available/unavailable>
+- Desktop drivers: <names or none>
 
 ## FE Test Scenarios
 
@@ -144,7 +144,7 @@ The BE tester sees only the output of `qa-redact`: it replaces values under sens
 - A declared `existing` user referenced by a token but not configured is `missing.users` with reason `user is not configured`; a requested id without a configured source has reason `id source is not configured`. A declared `registered` user needs no config, but cannot share a name with a configured user (`user <n> is configured; declare it existing`). A configured user used by a token must be declared under `## Users`; otherwise it is a plan error `user <n> is configured but not declared under ## Users`. Names `new`, `captured` and `captured_*` are reserved. Values cannot collide with exposed user fields, `TAG`, `NEW_PASSWORD` or `CAPTURED_*`, or use a reserved token/cookie suffix. `[env.secrets]` is never tester-visible.
 - A login/form credential or API key uses a supported user/value token; bearer tokens and cookies instead come from tester-owned preconditions. Never use the project's own variable name (`API_KEY`), a literal credential or an ungrounded placeholder. A deliberately invalid input in a negative edge case is not a credential. Never copy secret values into the plan.
 - Every absolute URL anywhere in an FE or BE scenario, including `**Expected:**` and edge cases, must match an `[env.targets]` origin exactly (scheme, lower-cased host, explicit or default port). `plan check` reports any other origin as `off_target`, and `/qa:run` stops. Request and page URLs may instead be relative paths, using `defaults.FE` / `defaults.BE` (`ui` / `backend`, or the only target of any name), unless the scenario has `- **Target:** <name>`. With multiple targets a missing section name is a gap; never use the other section's origin. A precondition on another configured origin writes an absolute URL on that origin; there is no per-step target syntax. Userinfo is always refused, and redirects are never followed automatically.
-- A DESKTOP `- **Target:** <name>` names a `[qa.desktop.<name>]` app, defaulting to `defaults.DESKTOP` (`app` or the only app). A missing app is `missing.apps`. State Checks and absolute URLs are not allowed anywhere in DESKTOP scenarios.
+- A DESKTOP `- **Target:** <name>` names a `[qa.desktop.<name>]` app, defaulting to `defaults.DESKTOP` (`app` or the only app); the app's `driver` names a desktop driver plugin. A missing app is `missing.apps`. State Checks and absolute URLs are not allowed anywhere in DESKTOP scenarios.
 - DESKTOP scenarios may use configured existing users' fields, values, `$QA_NEW_PASSWORD` and `$QA_TAG`. Registered users (signup flows) are FE/BE only; `plan check` refuses registered users' fields in DESKTOP scenarios.
 - An FE or BE scenario using any user field token, `$QA_TAG` or `$QA_NEW_PASSWORD` must resolve every touched origin — explicit Target or section origin plus every absolute URL — to loopback or HTTPS. Otherwise `plan check` reports `credentials over cleartext origin <origin>`. Testers refuse every credential-bearing request or form submission on non-loopback HTTP with `SKIP — cleartext origin refused: <origin>`.
 - When config is absent or lacks a needed user, value, target, app or store, retain the repository-grounded name. Write a missing target as `- **Target:** <name>` with relative paths, never an absolute URL on an unknown origin; write a missing desktop app as `- **Target:** <name>`. `plan check` reports the missing names so `/qa:run` can fill the config gaps; do not replace them with literal credentials or omit the scenario. `missing.cleanup` is a soft gap when registered users exist without a cleanup recipe; it does not make `plan check.ok` false.
@@ -170,7 +170,9 @@ Use this vocabulary for DESKTOP steps:
 
 Every scenario and every edge starts a fresh app. Reach preconditions through the app's own input within that run; never depend on state from another scenario or edge. `**Args:**` holds per-scenario flags such as seeds.
 
-Every `**Expected:**` and edge-case expectation names the shot or app log line that shows it and cites the producing draw call, UI string or log call. Do not assert pixel colours or coordinates unless a source pins them. `Move` and `Click` coordinates are the game's Layout coordinates as the source draws them; the scenario's Preconditions state the Layout size with its citation, and the tester converts to outside-screen pixels. Ticks count at the app's TPS (60 by default).
+`<Key>` is a W3C `KeyboardEvent.code` value (`KeyA`, `Digit1`, `ArrowUp`, `Enter`, `Backquote`).
+
+Every `**Expected:**` and edge-case expectation names the shot or app log line that shows it and cites the producing draw call, UI string or log call. Do not assert pixel colours or coordinates unless a source pins them. `Move` and `Click` coordinates are the app's own drawing coordinates as the source draws them; the scenario's Preconditions state the app's logical size with its citation, and the tester converts them to window pixels with the app's driver guide. Ticks count at the app's tick rate, as its driver guide describes.
 
 ## Harness scope
 
@@ -226,6 +228,7 @@ For EVERY scenario, consider and include relevant edge cases from:
 - If changes are **FE-only**: omit the `## BE Test Scenarios` section entirely
 - If changes are **BE-only**: omit the `## FE Test Scenarios` section entirely
 - If no changed file is **DESKTOP**: omit the `## DESKTOP Test Scenarios` section entirely
+- If no desktop driver is installed (`Desktop drivers: none`) and no `[qa.desktop.<name>]` app is configured: write no DESKTOP scenarios; list the changed desktop behaviour under `## Out of harness scope` with the reason `no QA desktop driver installed`
 - If the app has no browser or HTTP surface: omit the `## FE Test Scenarios` and `## BE Test Scenarios` sections
 - If a tool is **unavailable**: note it in `## Detected Tools`; the tester reports `NEED_INFO kind=tool` at run time rather than labeling scenarios as skipped
 - `## Setup` and `## Out of harness scope` are optional; `## Blockers / Findings` is mandatory for generated plans (`None found.` if none). Consumers ignore its absence in a hand-written plan

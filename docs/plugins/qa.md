@@ -1,6 +1,6 @@
 # QA plugin
 
-`/qa:run` tests a change and reports observed failures with `QA-NNN` issue IDs. It can fix eligible issues and retest within fixed limits. Frontend tests use the browser; backend tests use APIs and configured stores; DESKTOP tests drive Ebitengine apps headless in the background.
+`/qa:run` tests a change and reports observed failures with `QA-NNN` issue IDs. It can fix eligible issues and retest within fixed limits. Frontend tests use the browser; backend tests use APIs and configured stores; DESKTOP tests drive desktop apps headless in the background through installable driver plugins.
 
 **Version:** 3.1.0
 
@@ -175,15 +175,13 @@ Plans create needed application data through preconditions instead of assuming s
 
 </details>
 
-## Desktop apps (Ebitengine)
+## Desktop apps
 
-DESKTOP scenarios build the app's unmodified main package with `-tags ebitenginevmguest` and run it as the guest of a hidden `exp/vmhost` host. The tester injects keys, text and mouse input by ticks, then reads PNG frames and the app log. No window takes focus, no OS input is sent and no desktop screen is captured; macOS Accessibility and Screen Recording permissions are not needed.
+QA ships no desktop driver. The available driver is `qa-ebitengine` ([mszenfeld/qa-ebitengine](https://github.com/mszenfeld/qa-ebitengine), Ebitengine v2.10.5 or later). Install it with `/plugin install qa-ebitengine@av-marketplace` in Claude Code or `omp plugin install qa-ebitengine@av-marketplace` in OMP; its README lists its requirements.
 
-Requirements:
+A driver builds and runs the app headless in the background. The tester injects keys, text and mouse input by ticks, then reads PNG frames and the app log. No window takes focus, no OS input is sent and no screen is captured.
 
-- Go on `PATH`.
-- A Go module at the repository root requiring `github.com/hajimehoshi/ebiten/v2` v2.10.5 or later.
-- A graphics session: a normal macOS login, or X11/EGL on Linux.
+`/qa:run` detects installed drivers, passes them to planning and configuration, and registers them for each run. An app whose driver is not installed gets `NEED_INFO kind=tool` with `Missing: desktop-driver:<driver>`. Keys are W3C `KeyboardEvent.code` values such as `KeyA`, `Digit1`, `Enter` and `Backquote`.
 
 The app runs with the repository root as its working directory. Add an app to the existing configuration:
 
@@ -220,7 +218,7 @@ Every scenario and edge starts a fresh app. Expectations name a shot or app log 
 
 The engine's `desktop run` command, invoked by `<run-dir>/desktop.sh`, writes shots and the masked `guest.log` under `<run-dir>/results/<dispatch>/desktop/<NNN>-<app>/`. Raw guest output is deleted. A Fail's evidence shot is copied to `docs/testing/reports/screenshots/<ID>-fail.png` unless marked `sensitive`; sensitive shots are never copied, although viewing them can expose injected credentials in the session transcript. Run artifacts are temporary, so review needed evidence before teardown.
 
-This release supports Ebitengine only. `exp/vmhost` is experimental: a later Ebitengine release can break the host build, reported as `NEED_INFO kind=tool`, not an application failure. There are no audio assertions. Ticks are exact, but code that reads the wall clock sees real time between ticks.
+The driver's README lists its limits. A driver failure is reported as `NEED_INFO kind=tool`, not as an application failure.
 
 ## Safety
 
@@ -373,7 +371,7 @@ See [Code Review](code-review.md) for routing and decisions. [Delivery](delivery
 | Repository | Git repository with a HEAD. |
 | Backend requests | `curl` for credentials; HTTPie only for credential-free requests. `jq`, standard shell tools and Perl with `JSON::PP` for capture/sanitization. |
 | Frontend browser | Playwright MCP in Claude Code; built-in browser in OMP. |
-| DESKTOP apps | Go on `PATH`, a root Go module requiring Ebitengine v2.10.5 or later and a graphics session; see [Desktop apps](#desktop-apps-ebitengine). |
+| DESKTOP apps | An installed desktop driver plugin such as qa-ebitengine, and the tools its README lists; see [Desktop apps](#desktop-apps). |
 | Application | Running services or evidenced health/startup commands. |
 | State Checks | Configured store and matching `psql`, `mysql`, `sqlite3` or `redis-cli`. Redis checks need `redis-cli` with `--json`; configured password authentication also needs `4.0.11+`. |
 | Fixes | Code Review; test/report-only runs need no fixer. |

@@ -2,9 +2,9 @@
 
 This page lists user-visible changes per release.
 
-## 3.1.0: background desktop testing for Ebitengine apps
+## 3.1.0: background desktop testing through driver plugins
 
-The optional DESKTOP plan section drives Ebitengine apps headless in the background through `exp/vmhost`, alongside existing FE and BE tests. Configure apps under `[qa.desktop.<name>]`; `desktop run` and the run's `desktop.sh` build and run the app, inject tick-based input and return PNG shots plus a masked app log. The `tools` probe adds `go` and `ebitengine_vmhost`, and `plan check` reports missing desktop configuration in `missing.apps`.
+The optional DESKTOP plan section tests desktop apps headless in the background through installable desktop driver plugins, alongside existing FE and BE tests. QA ships no driver; this marketplace lists `qa-ebitengine` for Ebitengine games. Configure apps under `[qa.desktop.<name>]` with a driver name. `/qa:run` detects installed drivers and registers them for the run; `desktop run` and the run's `desktop.sh` build and run the app through its driver, inject tick-based input and return PNG shots plus a masked app log. An app whose driver is not installed reports `NEED_INFO kind=tool`, and `plan check` reports missing desktop configuration in `missing.apps`.
 
 ## 3.0.1: shared loader reads the user configuration file
 

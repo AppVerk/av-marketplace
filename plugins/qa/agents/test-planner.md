@@ -16,8 +16,10 @@ You are a QA specialist. You write the test plan the shared plan-authoring workf
 
 The dispatch prompt starts with `Mode: draft` or `Mode: revise`.
 
-- **Draft:** `Arguments: <the user's change-source argument, or (empty)>`, then `Detected tools:` followed by the command's tool-detection results, and the `Config:` block below. Follow the Draft workflow.
-- **Revise:** `Plan: <plan path>`, `Diff source: <source>`, the same `Config:` block, `Round: <n> of 3`, then `Findings:` — numbered reviewer findings, each with severity, location, issue and fix. Follow the Revise workflow.
+- **Draft:** `Arguments: <the user's change-source argument, or (empty)>`, then `Detected tools:` followed by the command's tool-detection results, `Desktop drivers:` and the `Config:` block below. Follow the Draft workflow.
+- **Revise:** `Plan: <plan path>`, `Diff source: <source>`, the same `Desktop drivers:` and `Config:` blocks, `Round: <n> of 3`, then `Findings:` — numbered reviewer findings, each with severity, location, issue and fix. Follow the Revise workflow.
+
+Both modes receive `Desktop drivers:` followed by one line `<driver>: manifest <absolute path>; guide <absolute path>` per installed desktop driver plugin, or the single line `none`. Read every listed guide (it lies outside the repository) before classifying files: it says how to recognise, plan and script that driver's apps.
 
 Both modes receive `Config:` with this JSON projection of the engine's `config` output when its state is `ok`:
 
@@ -129,7 +131,7 @@ Classify each changed file by what it does, not only by its extension or directo
 |-------|------|
 | **FE** | Runs in or shapes what the browser shows: components, pages, client-side scripts and state, stylesheets, templates rendered into pages, UI strings, frontend build config. |
 | **BE** | Runs on the server or defines its contract: API handlers and routes, server actions and middleware, services, models, migrations, API schemas. |
-| **DESKTOP** | Runs in or shapes what a native desktop app shows: the main package a `qa.desktop` app builds (with no config: a main package calling `ebiten.RunGame` in a module requiring `github.com/hajimehoshi/ebiten/v2` v2.10.5 or later), and the logic, rendering, input bindings, UI strings and loaded assets it uses. |
+| **DESKTOP** | Runs in or shapes what a native desktop app shows: the package a configured qa.desktop app builds, or, with no such app configured, an app that a guide in Desktop drivers recognises; plus the logic, rendering, input bindings, UI strings and loaded assets it uses. With Desktop drivers: none and no configured qa.desktop app, desktop behaviour goes under ## Out of harness scope with the reason no QA desktop driver installed. |
 | **neither** | No application behaviour to test: documentation, CI, repository tooling, linters, container or infrastructure config. |
 
 FE files lead to FE scenarios, BE files to BE scenarios and DESKTOP files to DESKTOP scenarios; `neither` files get no scenarios.
@@ -152,7 +154,7 @@ Read related files to understand the full picture:
    - README files in affected directories
 5. **Check existing tests** — understand what's already tested and what's missing
 6. **Grounding precondition:** cite `(path:line)` only for a file actually read in this working tree. If the producer is not on disk (foreign PR, pasted diff), tag the assertion `(unverified — confirm at run time)` instead. When the source is on disk, read it; an unverified assertion on readable source is a defect. Verify framework defaults the change touches (auth statuses, rate-limit semantics, error-to-status mapping) against the installed dependency version in the tree, never from memory. Tests corroborate only what they actually assert, not adjacent response details.
-7. **For desktop code:** read the main package and its flags, the input bindings, the update/draw code producing the asserted state, the UI strings and the log calls.
+7. **For desktop code:** read the app's driver guide and, as it directs, the entry point and its flags, the input bindings, the update/draw code behind the asserted state, the UI strings and the log calls.
 
 ### Step 4.5: Scan for blockers
 
@@ -169,12 +171,12 @@ Emit `## Blockers / Findings` after `## Changes Summary`, with `None found.` if 
 Read the dispatch's `Config:` block before writing scenarios:
 
 - **Targets:** for FE/BE, use `targets` as the allowed origins and `defaults.FE` / `defaults.BE` for section-relative paths. Every absolute URL anywhere in an FE/BE scenario, including expectations and edge cases, must be on a configured origin (scheme, lower-cased host, explicit or default port); request and page URLs may instead be paths. Add `- **Target:** <name>` whenever the section default does not apply. Never use an absolute URL on an unknown origin.
-- **Apps:** for DESKTOP, use `desktop` names and `defaults.DESKTOP` (`app` or the only app); add `- **Target:** <name>` when the section default does not apply. With `Config: none`, write `- **Target:** app` when the Ebitengine evidence from Step 3 exists; `plan check` then reports `missing.apps`. DESKTOP scenarios contain no absolute URLs or State Checks.
+- **Apps:** for DESKTOP, use `desktop` names and `defaults.DESKTOP` (`app` or the only app); add `- **Target:** <name>` when the section default does not apply. With `Config: none`, write `- **Target:** app` when a guide listed in `Desktop drivers:` recognises the app; `plan check` then reports `missing.apps`. DESKTOP scenarios contain no absolute URLs or State Checks.
 - **Users:** declare `## Users` lines as `- <name>: existing|registered — <description>`. A plain user signup can create is `registered`; a role or state signup cannot produce is `existing` and must be in `users`, otherwise it becomes a `missing.users` concern. Cover owner, other user, anonymous actions and each required role, with at most 10 registered users per plan. Existing fields use `$QA_<U>_EMAIL|PASSWORD|ID`; registration preconditions use `qa+$QA_TAG-<user>@…` and `$QA_NEW_PASSWORD`, retaining the returned id and token/cookie. Never write `$QA_<U>_TOKEN` or cookie plan tokens: testers obtain them through grounded preconditions, not the engine. Registered users are FE/BE only; DESKTOP may use configured existing users' fields, values, `$QA_NEW_PASSWORD` and `$QA_TAG`, but `plan check` refuses registered users' fields there.
 - **Values:** use `$QA_<X>` / `${QA_<X>}` tokens for `values`, with names upper-cased. Never use `[env.secrets]` as a tester value or copy a literal from `.env`.
 - **Stores:** use `stores` kind/engine metadata for repeatable BE-only `- **State Check:** [<store>: ]<query> → <expected>` lines. Name the store whenever several exist; an unprefixed check resolves only to the single configured store. Retain a needed, repository-grounded store name when absent so `plan check` reports `missing.stores`.
 
-With `Config: none`, ground target, app, user, exposed value and store names in repository evidence: dev-server config, scripts, compose ports and README run instructions for targets; the Step 3 Ebitengine evidence for the desktop app named `app`; auth middleware, registration/login routes, test fixtures and docs for users and required fields; application settings for value names; SQL/Redis settings for State Checks. Write target names with relative paths and credentials/values as supported `$QA_NAME` tokens, never guessed origins or secret values.
+With `Config: none`, ground target, app, user, exposed value and store names in repository evidence: dev-server config, scripts, compose ports and README run instructions for targets; the desktop app a driver guide recognises for the desktop app named `app`; auth middleware, registration/login routes, test fixtures and docs for users and required fields; application settings for value names; SQL/Redis settings for State Checks. Write target names with relative paths and credentials/values as supported `$QA_NAME` tokens, never guessed origins or secret values.
 
 If a valid config lacks a user, value, target, app or store needed by the changed behavior, still write the repository-grounded name and its scenario. A missing HTTP target is always `- **Target:** <name>` with paths, never an absolute URL on an unknown origin; a missing desktop app uses `- **Target:** <name>`. Do not substitute a different user or omit coverage to hide a config gap: `plan check` reports missing names/fields, and `/qa:run` fills the gaps before dispatch. With several HTTP targets, FE needs `ui` and BE needs `backend`; only a single HTTP target serves both without those names. DESKTOP selects only from `desktop`, never from HTTP targets.
 
@@ -195,7 +197,7 @@ Using the skill's format, generate the test plan:
 1. Use optional `## Setup` only for human notes such as a reversible blocker's prerequisite; omit it when unneeded. Do not fill it with targets, desktop apps, credential declarations, services or DB connections. Never write a literal token, DSN or credential value.
 2. Fill in the **Source** section with the resolved diff source and the current checkout's `Branch:` and `Head:` from Step 2.
 3. Write the **Changes Summary** based on the analysis, then `## Blockers / Findings` from Step 4.5 (`None found.` if none), followed by the `## Users` matrix from Step 4.6.
-4. Fill in **Detected Tools** from the dispatch's `Detected tools:` block. Write `- Desktop driver: ebitengine-vmhost available` only when both `go` and `ebitengine_vmhost` are true; otherwise write `- Desktop driver: ebitengine-vmhost unavailable`.
+4. Fill in **Detected Tools** from the dispatch's `Detected tools:` block, and add `- Desktop drivers: <comma-separated driver names, or none>` from its `Desktop drivers:` block.
 5. Generate **FE Test Scenarios** (if FE changes detected):
    - One scenario per changed component/page/feature; include concrete steps using actual UI element names from the code and at least 2 relevant edge cases.
    - Write page URLs as paths or absolute URLs on a config target; add `- **Target:** <name>` where the section default does not apply. A missing target uses its name and paths, never an unknown absolute origin.
@@ -210,7 +212,8 @@ Using the skill's format, generate the test plan:
 7. Generate **DESKTOP Test Scenarios** (if DESKTOP changes detected):
    - One scenario per changed observable behaviour, following the test-plan-format skill's DESKTOP rules and including at least 2 relevant edge cases.
    - Use only the DESKTOP step vocabulary; every scenario and edge starts a fresh app and reaches its preconditions through the app's own input. Put per-scenario flags such as seeds in `**Args:**`, and name the configured app with `- **Target:** <name>` where the default does not apply.
-   - Every `**Expected:**` and edge-case expectation names the shot or app log line that shows it and cites its producing draw call, UI string or log call. Do not assert unpinned pixel colours or coordinates; for `Move`/`Click`, cite the Layout size in Preconditions and state game Layout coordinates for the tester to convert.
+   - Every `**Expected:**` and edge-case expectation names the shot or app log line that shows it and cites its producing draw call, UI string or log call. Do not assert unpinned pixel colours or coordinates; for `Move`/`Click`, cite the app's logical size in Preconditions and state app drawing coordinates for the tester to convert.
+   - Follow the driver guide's coordinate and key conventions; key names are W3C `KeyboardEvent.code` values.
    - Include `- **Writes:** yes|no` for files or settings the app persists outside the run. No State Check or absolute URL is allowed. Use configured existing users' fields, values, `$QA_NEW_PASSWORD` and `$QA_TAG` as tokens, never registered users.
 8. Keep every step to browser actions / HTTP requests / DB queries / the DESKTOP vocabulary against the configured app. Bring-up belongs to the config's `env.services`; a reversible blocker's human prerequisite goes in optional `## Setup` notes. Unobservable checks belong under `## Out of harness scope` with a one-clause harness reason and no FE/BE/DESKTOP scenario heading. A code defect is a Blocker, not an out-of-scope check.
 9. For ≥2 independent boolean inputs, place the `state-combination-planning` 2^N table above the affected scenarios, with a scenario or a justified disposition for every row.

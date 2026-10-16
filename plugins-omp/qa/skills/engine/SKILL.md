@@ -47,14 +47,14 @@ The shapes below name object fields; `[]` means an array, `{}` a map, `?` an opt
 | `trust accept <hash>` | `{trusted: hash}`. Exit 1 if the current trust subset hashes differently. |
 | `config preview <proposal>` | `{ok, errors[], diff, gitignore_add[]?, trust_subset, trust_hash, snapshot}`. Writes nothing. |
 | `config apply <proposal> --snapshot S --approved-hash H` | `{applied}`. Uses the preview's snapshot and approved hash. |
-| `tools` | `{curl, jq, perl_json_pp, psql, mysql, sqlite3, redis_cli, httpie, go, ebitengine_vmhost}`; every field is a boolean (`redis_cli` checks `redis-cli`). `go` checks the Go toolchain on PATH; `ebitengine_vmhost` requires Go and an eligible root go.mod, not a successful host build or display probe. Browser availability requires a separate browser probe. |
+| `tools` | `{curl, jq, perl_json_pp, psql, mysql, sqlite3, redis_cli, httpie}`; every field is a boolean (`redis_cli` checks `redis-cli`). Browser availability requires a separate browser probe. |
 
 - `gitignore_add` is present only when `ok` is true.
 - When `ok` is true, `diff` is a unified-diff string of the masked, parsed config and any `.gitignore` additions; config comments are enforced by the section guard, not shown in the diff. Otherwise, `diff` is `[]`.
 
 `state` is `missing-file`, `missing-table`, `invalid` or `ok`. `trust` is `not-required`, `new`, `trusted` or `changed`; only `trusted`/`not-required` permits `run start`. `provenance` identifies `.av/config.toml` or `.av/local.toml` for effective keys. `users` contains descriptions, `stores` contains kind/engine only, and `values` / `exposed` contain names only. `exposed` lists sorted `QA_<U>_EMAIL`, `QA_<U>_PASSWORD`, configured `QA_<U>_ID`, `QA_<X>` for every value and `QA_NEW_PASSWORD`. Show `trust_subset` for the one trust question, not the raw config or a source's output.
 
-`desktop` maps `[qa.desktop.<name>]` apps to `{driver, package, args[], screen[width, height]}`; currently the only driver is `ebitengine`. `defaults.DESKTOP` is `app` when that name exists, otherwise the only configured desktop app, or `null` when no unambiguous default exists. HTTP `targets` never supply a desktop default.
+`desktop` maps `[qa.desktop.<name>]` apps to `{driver, package, args[], screen[width, height]}`; `driver` names a desktop driver plugin (see [Desktop drivers](#desktop-drivers)). `defaults.DESKTOP` is `app` when that name exists, otherwise the only configured desktop app, or `null` when no unambiguous default exists. HTTP `targets` never supply a desktop default.
 
 `<proposal>` is a path to a JSON transaction:
 
@@ -116,15 +116,56 @@ Teardown validates persisted email/ID safety, dispatch tags and attempt counters
 
 Teardown shares one lazily opened runtime across attempted records: successful source resolutions are cached for that call, and engine logs are flushed once on exit. Keep failures isolated per record and save each outcome before the next attempt, preserving deletions, attempt counters and manual-cleanup transitions across interruptions.
 
+### Desktop drivers
+
+qa ships no desktop driver. A driver plugin provides a skill named `qa-desktop-driver-<driver>` (Claude Code lists it as `<plugin>:qa-desktop-driver-<driver>`, OMP without the prefix); the skill directory holds the manifest `qa-desktop-driver.json`, the guide `SKILL.md` (the skill itself) and the driver's code.
+
+**The Desktop drivers procedure.** Run it once per invocation and reuse the block it produces:
+
+1. List every available skill whose name, after an optional `<plugin>:` prefix, starts with `qa-desktop-driver-`.
+2. Load each one: in Claude Code with the Skill tool and the listed name; in OMP with `read skill://<name exactly as listed>`, never adding a `qa:` prefix.
+3. Take its `Driver manifest:` and `Driver guide:` paths. In OMP, where `${CLAUDE_SKILL_DIR}` stays literal, take them from `realpath skill://<name>/qa-desktop-driver.json` and `realpath skill://<name>/SKILL.md`.
+4. Produce this block, one line per driver, or the single line `none` after `Desktop drivers:` when no skill matched:
+
+```text
+Desktop drivers:
+<driver>: manifest <absolute path>; guide <absolute path>
+```
+
+**Registration.** `desktop register --run ID --manifest <path>` records the driver for that run in `<run-dir>/desktop/drivers.json` (0600) and returns `{driver, version, contract, manifest}`. Registering the same manifest again exits 0. Exit 2 with `{"error": …}` for an invalid manifest: inside the repository, unreadable or not a JSON object, keys other than exactly `contract`, `driver`, `version`, `entry`, an unsupported contract, an invalid driver name or version, or an `entry` outside the manifest directory. Exit 1 with `{"error": "desktop driver <name> is already registered from another manifest"}` when the same driver name was registered from another path. Register every driver from the block after `users provision`, and again after every `run start`.
+
+An app whose driver is not registered for the run gets `tool-missing` with detail `desktop-driver:<driver>`.
+
+**Contract 1 for driver authors.**
+
+- Manifest: `{"contract": 1, "driver": "<name>", "version": "<version>", "entry": "<relative path>"}`, exactly these keys. `driver` matches `[a-z][a-z0-9-]{0,39}`; `version` matches `[0-9A-Za-z.+-]{1,40}`; `entry` is a relative path, without `..`, to a Python 3.11+ stdlib script inside the manifest's directory.
+- The engine runs `[sys.executable, <entry>, <phase>, …]` for each phase, with cwd = the resolved repository root, the engine's environment minus every `QA_*` and `STORE_*` variable plus `PWD=<repository root>`, stdin `/dev/null`, in its own session. On a timeout or interruption it kills the phase's whole process group: SIGTERM, then SIGKILL after 5 s.
+
+|Phase|Arguments|Contract|Engine result on failure|
+|---|---|---|---|
+|`check`|`--repo R`|exit 0; stdout is exactly one JSON object: `{"result": null}` (supported), `{"result": "tool-missing", "detail": "<missing tool id>"}` or `{"result": "unsupported", "detail": "<one line>"}`; timeout 60 s|`tool-missing` / `unsupported` with the driver's detail; any other output, a non-zero exit or the timeout gives `host-failed`, detail `desktop driver check failed`|
+|`prepare`|`--repo R --cache C`|one-time per run and driver setup; exit 0 = ready; runs under the lock `C/.lock`, and the engine writes `C/.prepared` after success, so it never runs twice in a run; timeout 300 s|`host-build-failed`, detail = first non-comment line of `C/prepare.log`, `driver prepare exited <code>` or `driver prepare timed out after <n>s`|
+|`build`|`--repo R --cache C --package P --out G`|builds the app under test at `G`; exit 0 = built; timeout 300 s|`build-failed`, detail = first line of `build.log`, `guest build exited <code>` or `guest build timed out after <n>s`|
+|`run`|`--repo R --cache C --guest G --steps S --out A --width W --height H --deadline N -- <args…>`|executes `S` against `G`; writes `A/result.json`, one PNG per shot and `A/guest.raw.log` (the app's stdout and stderr); stops the app and itself after `N` seconds; timeout 120 s, `N` = 135|`timeout` (`host did not finish within <n>s`); no `result.json` gives `host-failed`, detail `host exited <code> without result.json`; a `result.json` that breaks the schema gives `host-failed`, detail `host exited <code> with an invalid result.json`; `handshake-failed` is retried once|
+
+- `result.json` is one JSON object with at least these keys (others are ignored; integers never include booleans): `result` (one of `completed`, `guest-exited`, `handshake-failed`, `host-failed`, `invalid-script`, `timeout`); `detail` (string or null); `step` (non-negative integer or null); `exit_code` (integer or null); `ticks` (non-negative integer); `tps` (integer of at least -1; -1 means the app ties ticks to rendered frames); `scale` (positive number or null); `screen` (two positive integers); `shots` (list of `{"name", "file": "<name>.png", "tick"}`, each file a regular file in `A`).
+- Run results, exactly one of:
+  - `completed`: every step ran and the app did not fail; the driver then stopped it. An exit with code 0 after the last step also counts.
+  - `guest-exited` with `exit_code` 0 and detail exactly `guest terminated itself`: the app ended itself through its toolkit's normal quit path while the steps ran. This is the only form of an intentional quit.
+  - any other `guest-exited`: the app crashed, exited non-zero, ended with an error or exited before the driver connected; `detail` says which (for example `guest exited 3 before connecting`) and `exit_code` is set when known. Never use the detail `guest terminated itself` for these.
+  - `handshake-failed`: the app started but the driver could not connect (retried once); `host-failed`: the driver itself failed; `invalid-script`: the driver rejected the step named by `step`; `timeout`: the driver's own deadline or no-progress limit ended the run.
+- Script semantics and key codes are those of `desktop-testing`; the driver validates key codes and returns `invalid-script` naming the step. `type_env` never reaches the driver: the engine resolves it in `steps.json`.
+
 ### Desktop runs
 
-The `desktop` command group drives a configured Ebitengine app through `exp/vmhost`. Load `desktop-testing` for the JSON script vocabulary and driver-result-to-verdict mapping; the engine validates scripts but does not judge images.
+The `desktop` command group drives a configured desktop app through its registered desktop driver plugin (see [Desktop drivers](#desktop-drivers)). Load `desktop-testing` for the JSON script vocabulary and driver-result-to-verdict mapping; the engine validates scripts but does not judge images.
 
 | Subcommand | JSON output |
 |---|---|
+| `desktop register --run ID --manifest <path>` | `{driver, version, contract, manifest}`; registers the manifest's driver for this run. |
 | `desktop run --run ID --dispatch D --target <app> --script <file>` | `{result, detail, step, exit_code, ticks, tps, scale, screen[], shots[{name, path, tick, sensitive}], log, build_log, artifacts, attempts, duration_ms}`. Inspect `result`; exit 0 is not an application verdict. |
 
-`--run`, `--dispatch`, `--target` and `--script` are required. `--target` names an entry in `config.desktop`, not an HTTP target. Relative script paths resolve against the repository root. The engine uses that root as the working directory for builds and the app. Configured `args` precede the script's optional `args`; both are passed as argv without a shell.
+`--run`, `--dispatch`, `--target` and `--script` are required. `--target` names an entry in `config.desktop`, not an HTTP target. Relative script paths resolve against the repository root. The engine uses that root as the working directory for every driver phase. Configured `args` precede the script's optional `args`; both are passed as argv without a shell.
 
 `users provision` also writes `<run-dir>/desktop.sh` (0600), alongside `capture.sh`, even with zero users. Invoke it with exactly three arguments:
 
@@ -134,25 +175,29 @@ sh '<run-dir>/desktop.sh' <dispatch> <app> <script-file>
 
 The helper validates the dispatch and app names and exits 2 for malformed names or the wrong argument count. Otherwise it execs `desktop run` with this run and repository already bound; it does not build or drive the app itself.
 
-`desktop run` stdout (one JSON object): `result` (`completed`, `guest-exited`, `build-failed`, `host-build-failed`, `handshake-failed`, `host-failed`, `invalid-script`, `timeout`, `tool-missing`, `unsupported`), `detail` (one sanitized line or null), `step` (0-based index of the step where the run stopped, or null when it stopped before the first step or after the last), `exit_code` (guest exit code or null), `ticks`, `tps`, `scale`, `screen` ([w, h]), `shots` ([{`name`, `path` absolute, `tick`, `sensitive` boolean}]), `log` (absolute path of the masked guest log, or null), `build_log` (absolute path or null), `artifacts` (absolute directory, or null for `tool-missing` and `unsupported`), `attempts` (host runs: 1 or 2, or 0 when the host never ran), `duration_ms`. Exit 0 for every `result`; exit 2 with `{"error": "script: …"}` for a structurally invalid script; exit 1 with `{"error": …}` for an unknown run, dispatch or app, a non-DESKTOP dispatch, missing trust, config drift or an interruption (`desktop run interrupted`).
+`desktop run` stdout (one JSON object): `result` (`completed`, `guest-exited`, `build-failed`, `host-build-failed`, `handshake-failed`, `host-failed`, `invalid-script`, `timeout`, `tool-missing`, `unsupported`), `detail` (one sanitized line or null), `step` (0-based index of the step where the run stopped, or null when it stopped before the first step or after the last), `exit_code` (guest exit code or null), `ticks`, `tps` (ticks per second the app requests; -1 means ticks follow rendered frames), `scale`, `screen` ([w, h]), `shots` ([{`name`, `path` absolute, `tick`, `sensitive` boolean}]), `log` (absolute path of the masked guest log, or null), `build_log` (absolute path or null), `artifacts` (absolute directory, or null when the app's driver is not registered), `attempts` (host runs, 0 to 2: 0 when the run phase never ran, 2 after a `handshake-failed` retry), `duration_ms`. Exit 0 for every `result`; exit 2 with `{"error": "script: …"}` for a structurally invalid script; exit 1 with `{"error": …}` for an unknown run, dispatch or app, a non-DESKTOP dispatch, missing trust, config drift or an interruption (`desktop run interrupted`).
 
-Validation holds the run lock only long enough to check the run-bound config, trust, an uningested DESKTOP tester dispatch and the configured app. Script validation, builds and execution happen outside that lock. Each call starts a fresh guest. Go must be on PATH and the repository-root go.mod must require `github.com/hajimehoshi/ebiten/v2` v2.10.5 or later (a module replacement is left to the trusted build); eligibility reads go.mod without touching the module cache or network. A graphics session is still needed by the hidden host.
+Validation holds the run lock only long enough to check the run-bound config, trust, an uningested DESKTOP tester dispatch, the configured app and the registered drivers. Script validation and the driver phases happen outside that lock. Each call starts a fresh guest. An app whose driver is not registered for the run returns `tool-missing` with detail `desktop-driver:<driver>` before any phase runs.
 
 Artifacts are private to each call:
 
 ```text
 <run-dir>/
   desktop/
-    build.lock
-    overlay.json
-    host
-    host-build.log
+    drivers.json
+    <driver>/
+      .lock
+      .prepared
+      prepare.log
+      <driver-owned files>
   results/<dispatch>/
     scripts/<ID>.json
     scripts/<ID>-edge<n>.json
     desktop/<NNN>-<app>/
       script.json
       steps.json
+      check.json
+      check.log
       build.log
       host.log
       guest.log
@@ -161,7 +206,7 @@ Artifacts are private to each call:
 
 The artifacts directory is mode 0700; private `steps.json` and masked `guest.log` are mode 0600. `script.json` preserves the tester's input, while `steps.json` holds the host's steps with `type_env` resolved privately. `QA_TAG` is taken from the dispatch tag, never secrets.json; every other `type_env` name must be a non-empty exposed name in that channel. Every shot after such a non-`QA_TAG` step is marked `sensitive`. Read the expected shots to judge them, but never copy sensitive ones into the repository: they may show injected credentials.
 
-The host is built through a Go overlay as the virtual package `./.av-qa-ebitengine-host`, cached once per run under its own build lock and reused across calls. A real `.av-qa-ebitengine-host` directory is refused with `host-build-failed`; no driver file is written into the project. The guest is rebuilt for every call with `-tags ebitenginevmguest`. Host build and guest build each have a 300 s timeout; host execution has a 120 s wall-clock timeout. The host also has an orphan deadline 15 s beyond that execution timeout. All build/host subprocesses run in their own process groups, without inherited `QA_*` or `STORE_*` variables.
+Phase order per call: `check`, then `prepare` once per run and driver (under `<run-dir>/desktop/<driver>/.lock`; `.prepared` marks success, so it never runs twice in a run), then `build`, then `run`. Timeouts: check 60 s, prepare 300 s, build 300 s, run 120 s; the driver gets `--deadline` 15 s beyond the run timeout (135 s) to stop the app and itself. Every phase runs in its own process group (session), with stdin `/dev/null`, cwd and `PWD` set to the repository root, and the engine's environment minus every `QA_*` and `STORE_*` variable.
 
 Only `handshake-failed` is retried once, yielding `attempts: 2`; guest exits, including startup failures, are never retried by the engine. Before that retry, the engine deletes the previous attempt's result, raw log and PNGs. Builds, timeouts, host failures and SIGINT/SIGTERM all use exception-safe process-group cleanup. On every exit, guest output is masked into `guest.log` using the run's secret set, then `guest.raw.log` and the guest binary are deleted; even a masking failure still deletes the raw log. An interruption exits 1 with `{"error": "desktop run interrupted"}` after cleanup. The returned `log` and `shots[].path` are authoritative absolute paths; never read raw guest output or treat driver infrastructure errors as app failures.
 

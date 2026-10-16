@@ -63,7 +63,7 @@ An engine/version/I/O error without a recognized config state is not a missing c
 
 ### Step 3: Author and Review Through the Shared Skill
 
-Load `qa:plan-authoring` with the user's argument verbatim (or `(empty)`), the `config` JSON and the three progress tasks. Follow its Steps 2-4: engine tool detection plus the browser probe, planner draft and at most three reviewer/revision rounds. It sends the same safe `Config:` projection of `targets`, `desktop`, `defaults`, `users`, `values` and `stores` to both agents in every round.
+Load `qa:plan-authoring` with the user's argument verbatim (or `(empty)`), the `config` JSON and the three progress tasks. Follow its Steps 2-4: engine tool detection, desktop driver detection and the browser probe, planner draft and at most three reviewer/revision rounds. It sends the same safe `Config:` projection of `targets`, `desktop`, `defaults`, `users`, `values` and `stores` to both agents in every round.
 
 Consume its return contract: `plan`, `review` outcome and `open_findings`, plus optional nits and declined findings. On `{"error": ...}`, stop with `Test plan generation failed: <reason>`; do not propose running a nonexistent plan. Never duplicate the skill's detection, drafting or review logic in this command.
 

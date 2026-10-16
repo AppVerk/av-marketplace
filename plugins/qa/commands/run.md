@@ -63,7 +63,7 @@ On `trust = new` or `changed`, show the complete masked `trust_subset` and ask o
 Run `plan resolve` with the original positional argument as one quoted operand (omit the operand when empty).
 
 - `reuse`: keep the returned path.
-- `generate`: load `qa:plan-authoring` with the returned source and safe `config` metadata. Follow its shared draft/review workflow; do not ask for permission to generate, write an inline plan or duplicate its tool probes. Use its returned path without re-globbing. Mark it **generated in this invocation** and pass `--generated` at Step 5, including start retries and repair restarts. Show `Generated plan: <path> — N FE, M BE, K DESKTOP` using the saved plan's scenario headings.
+- `generate`: load `qa:plan-authoring` with the returned source and safe `config` metadata, plus the `Desktop drivers:` block when this invocation already ran the Desktop drivers procedure. Follow its shared draft/review workflow; do not ask for permission to generate, write an inline plan or duplicate its tool probes. Use its returned path without re-globbing, and keep the `Desktop drivers:` block it produced for the rest of the invocation. Mark it **generated in this invocation** and pass `--generated` at Step 5, including start retries and repair restarts. Show `Generated plan: <path> — N FE, M BE, K DESKTOP` using the saved plan's scenario headings.
 - `stale`: list `changed_files`; interactive → ask once: **Regenerate** (default) / **Use existing plan**. Headless → regenerate through the same skill and mark it generated as above. A failed regeneration never falls back to the stale plan; choosing the existing plan does not set the generated marker.
 
 Show the authoring skill's review outcome, reason and unresolved findings. An open `blocker` → interactive: **Run anyway** / **Stop and fix the plan with /qa:create-plan**; headless or a declined gate → stop and list it. Print open concerns and continue; an unreviewed plan is never described as approved.
@@ -117,6 +117,8 @@ Still down, no usable bring-up, or a lifecycle recipe error → interactive: **C
 Always run `users provision --run <run>`, even when the plan references zero users: it creates the private tester channel and the run's `QA_NEW_PASSWORD`. Print configured user names only, not passwords, tokens or cookies. Keep only its channel paths and names for dispatch; do not read engine-private state, `secrets.env`, `secrets.json` or source outputs.
 
 A required missing `file:.av/secrets.local.env#NAME` value names the keys to fill and stops; never ask the user to paste secrets, edit `.envrc`, export new harness credentials or restart the harness. Other provisioning errors stop with the engine diagnostic. Testers perform login and registration themselves; there is no engine login repair.
+
+When the plan has DESKTOP scenarios, run qa:engine's Desktop drivers procedure if it has not run yet in this invocation. Then run `desktop register --run <run> --manifest <manifest>` for each driver listed in the `Desktop drivers:` block and print `Desktop driver <driver> <version> registered`. On an error, print it and continue: the affected scenarios come back `NEED_INFO`. Every `run start`, including a repair restart, passes through this step again, so each new run registers its drivers.
 
 ### Step 8: Baseline
 
@@ -216,7 +218,7 @@ Use the engine's accumulated eligible paths, safely quoted with `--`, for the pl
 
 ## Tester dispatch — one template for every phase
 
-Before executing an existing plan's baseline, use engine `tools` plus the browser probe `browser_navigate(url: "about:blank")` for FE (OMP: the preamble's browser mapping). `tools.go` and `tools.ebitengine_vmhost` report the desktop driver: the Go toolchain and this repository's Ebitengine eligibility. Tool gaps do not invent PASSes: testers return `NEED_INFO kind=tool`; a missing store client skips only its State Check, not runnable HTTP assertions.
+Before executing an existing plan's baseline, use engine `tools` plus the browser probe `browser_navigate(url: "about:blank")` for FE (OMP: the preamble's browser mapping). DESKTOP availability comes from the registered drivers. Tool gaps do not invent PASSes: testers return `NEED_INFO kind=tool`; a missing store client skips only its State Check, not runnable HTTP assertions.
 
 For each present section, **one engine call at a time**:
 
@@ -249,11 +251,11 @@ For DESKTOP, omit `Secrets file:` and `Stores:` and replace the `Targets:` block
 
 ```text
 Apps:
-<name> = driver <driver>, package <package>, args <space-joined args or none>, screen <W>x<H>
+<name> = driver <driver> (guide <path> | not installed), package <package>, args <args or none>, screen <W>x<H>
 default for this section: <config.defaults.DESKTOP>
 ```
 
-Include one line per app from `config.desktop`; the resulting DESKTOP input is `Plan`, `Dispatch`, `Run dir`, `Secrets JSON`, `Redact names file`, `Tag`, `Apps` with its default, `Guarded`, then `DESKTOP Test Scenarios`, in that order.
+Include one line per app from `config.desktop`; take `guide <path>` from the app driver's line in the `Desktop drivers:` block, or write `not installed` when the block does not list that driver. The resulting DESKTOP input is `Plan`, `Dispatch`, `Run dir`, `Secrets JSON`, `Redact names file`, `Tag`, `Apps` with its default, `Guarded`, then `DESKTOP Test Scenarios`, in that order.
 
 Targets, apps and defaults come from checked config; Stores uses the dispatch's `stores[]` and config's kind/engine metadata; Guarded uses the engine's section assignment, not a model-invented exemption. Keep all section blocks and edges in plan order. Do not dispatch an absent section or expose `[env.secrets]`, recipe sources or literal credentials. Every HTTP request/State Check call uses the channel loader; the OMP FE tester uses its private JSON channel, not inherited harness environment. DESKTOP scripts keep `$QA_…` names as `type_env` steps, including `QA_TAG`, for the engine to resolve privately.
 
@@ -277,7 +279,7 @@ Use `mkdir -p docs/testing/reports` if the directory is absent, then `report --r
 
 Interactive only. This is the generic `qa:env-config` detection/write contract plus the QA layer implemented by the read-only `qa:config-author`; do not establish another environment detector.
 
-1. Dispatch `qa:config-author` with `Mode: create|extend|repair`, safe `config` metadata including provenance, and the selected `Plan:` or `none`. `extend` adds `Missing:` with exactly the plan-check gaps; `repair` adds `Failure:` with the engine error/failing probes and affected keys. It may read only repository evidence with Read/Grep/Glob: **never execute a candidate command, probe a recipe or read a secret value**. Each proposed target/command/recipe must cite its repository source in a TOML comment. The return is `{proposal, questions[]}`.
+1. Before every `qa:config-author` dispatch, in `create`, `extend` and `repair` mode alike (including Step 1's create-mode bootstrap, which can run before Step 2), run qa:engine's Desktop drivers procedure if it has not run yet in this invocation. Dispatch `qa:config-author` with `Mode: create|extend|repair`, safe `config` metadata including provenance, the selected `Plan:` or `none`, and the `Desktop drivers:` block. `extend` adds `Missing:` with exactly the plan-check gaps; `repair` adds `Failure:` with the engine error/failing probes and affected keys. It may read only repository evidence with Read/Grep/Glob: **never execute a candidate command, probe a recipe or read a secret value**. Each proposed target/command/recipe must cite its repository source in a TOML comment. The return is `{proposal, questions[]}`.
 2. `proposal: null`, inaccessible evidence or an intended key supplied by `.av/local.toml` → stop and name the blocker/local key, **except for Step 3's cleanup-only soft-gap extension**, which retains the valid config and continues with its exact no-cleanup message. A shared edit cannot override a local key. Never read/edit personal config or widen the proposal to evade provenance. In `create` only, ask the three returned policy questions **in one ask call**: disposable data → `qa.mutations` (`allow` only when every target is loopback and the user confirms the data is disposable, else `deny`), fix handling → `qa.fix` (`approve|auto|off`), and bring-up → `qa.start_services` (`ask|auto`), then apply the answers to the transaction. Do not reopen policy during extend/repair.
 3. Save the proposal transaction with Write to a temporary JSON file, not directly to `.av/config.toml` or `.gitignore`. It contains full `config_text`, only necessary `gitignore_add` entries for `.av/local.toml` / `.av/secrets.local.env`, and minimal `allowed_keys`. Preserve all unrelated keys/tables/comments byte-for-byte. Run `config preview <proposal-file>`.
 4. Preview errors → **one** further author round with those errors, the original scope and already answered policy choices; save and preview the revised proposal. Remaining errors → stop, except a cleanup-only extension follows Step 3's soft-gap continuation. Otherwise show the complete `diff` for **both `.av/config.toml` and `.gitignore`**, including every ignore addition, **and** masked resulting `trust_subset`, including existing shared commands, and ask once to **Apply and trust** / **Decline**. Decline or an undeliverable question → no shared write; stop with Step 1's configuration guidance, except a cleanup-only extension retains the valid config and continues as in Step 3. A proposal is not consent to run its commands.
@@ -304,7 +306,7 @@ There is no per-fix/step mode. Every failing assertion is a fix candidate. The e
 ### Safety Guards (Apply in All Modes)
 
 - **Origins and trust:** config targets are exact HTTP(S) origins; userinfo/off-target URLs are refused, and redirects are never followed automatically. Non-loopback targets and executable/value-source config are hash-pinned outside the repository. Changed trust requires the complete-subset gate, never a host flag or a plan-authored override.
-- **Desktop apps:** each [qa.desktop.<name>] is trust-pinned. A desktop run builds the configured Go package with -tags ebitenginevmguest and runs it headless as an exp/vmhost guest, passing the configured and scripted args as argv without a shell; it sends no OS input and captures no screen.
+- **Desktop apps:** each [qa.desktop.<name>] is trust-pinned. A desktop run executes the app's driver plugin, registered for this run from outside the repository, which builds and runs the configured package headless; configured and scripted args are passed as argv without a shell; no OS input is sent and no screen is captured.
 - **Mutation policy:** `qa.mutations = "deny"` guards every scenario whose `- **Writes:**` line is `yes`, missing or invalid, and every FE/BE scenario the syntactic scan sees writing; registration counts as a write. DESKTOP is guarded by Writes only, covering files or settings persisted outside the run. `allow` guards nothing and is meant only for disposable data. Guarded scenarios are SKIP, not fixed.
 - **Working tree:** the dirty-tree gate follows `qa.fix` (approve asks, auto proceeds with the recorded baseline, off skips); recovery excludes pre-existing dirty files and discloses overlap; changes remain uncommitted and unstaged.
 - **Plan-suspect guards (per issue):** a BE main flow expecting 2xx that gets 401/403 is a FAIL flagged `auth`, never auto-fixed. `candidates` excludes these failures and unverified assertions in `auto`, while `approve` surfaces their flags for human review. A grounded sibling failure remains independently eligible. Rejected, location-less, incomplete or ambiguously mapped issues never dispatch.
@@ -326,7 +328,7 @@ There is no per-fix/step mode. Every failing assertion is a fix candidate. The e
 - 2xx-shaped gating, tenant-shaped 404s and FE gating remain undetected by auth-status classification. A dispatch outliving token lifetime can turn expiry into an `auth`-flagged FAIL.
 - Drift checks run at engine calls; an already dispatched tester finishes against old config before the run stops.
 - Locks coordinate identical configured target origins and store endpoint keys; an undeclared store, or one backend reached through different host aliases, is not coordinated.
-- `exp/vmhost` is experimental, so a new Ebitengine release can break the host build (`NEED_INFO kind=tool`).
+- A desktop driver is installed plugin code that builds and runs the branch's app with your user rights; a driver can rely on an experimental toolkit API (qa-ebitengine uses Ebitengine's exp/vmhost), so a toolkit release can break it (NEED_INFO kind=tool).
 - Desktop ticks are exact, but code reading the wall clock sees real time between ticks.
 - A desktop run executes the branch's own code, as `env.services` does.
 - Reading a shot marked `sensitive` puts any injected credential it shows into the session transcript, as FE form fills do, although such shots never enter the repository.

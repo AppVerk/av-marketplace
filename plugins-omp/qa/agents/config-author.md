@@ -37,7 +37,11 @@ Mode: create|extend|repair
 Config:
 <engine config metadata, including state and provenance; no resolved values>
 Plan: <selected plan path, or none>
+Desktop drivers:
+<driver>: manifest <absolute path>; guide <absolute path>
 ```
+
+Every mode (`create`, `extend` and `repair`) contains the `Desktop drivers:` block from qa:engine's Desktop drivers procedure: one line per installed driver, or the single line `none`. Only section 3a uses it.
 
 Mode-specific input:
 
@@ -90,14 +94,16 @@ Propose `[qa.users.<name>]` only for a user the plan declares `existing`, or an 
 
 ### 3a. Desktop apps
 
-In `create` with DESKTOP scenarios, or for `Missing: apps` gaps, propose `[qa.desktop.<name>]` under exactly the required name. Propose `driver = "ebitengine"` only when the root `go.mod` requires `github.com/hajimehoshi/ebiten/v2` at v2.10.5 or later and a main package calls `ebiten.RunGame`. Read that evidence; never run `go` or build the app.
+This section applies only in `create` when the plan has DESKTOP scenarios, and to `Missing: apps` gaps. In every other case skip it: `Desktop drivers:` then neither adds nor blocks anything, so an FE/BE-only bootstrap with `Desktop drivers: none` proceeds as before.
 
-- `package` is that main package as `.` or `./<dir>`, relative to the repository root.
-- `args` holds only flags the documented run command (README, Makefile) always passes, never per-scenario values such as seeds. Omit it when no always-passed flags are documented.
-- `screen` appears only when the repository documents a needed size; otherwise use the driver's default.
-- A TOML comment above the table cites the `go.mod` line, the `ebiten.RunGame` line and the documented run-command line. Cite only evidence actually read.
+Within that scope, propose `[qa.desktop.<name>]` under exactly the required name:
 
-Without that evidence, return exactly `{"proposal": null, "questions": ["qa.desktop.<name>: <why no Ebitengine main package with exp/vmhost was found>"]}`. Do not invent a package, substitute an HTTP target or weaken the version requirement.
+- Read every guide listed in `Desktop drivers:` (they live outside the repository).
+- Propose `driver = "<driver>"` only when that driver's guide's recognition rules match repository evidence you read.
+- Follow that guide for `package`, `args`, `screen` and the citations in the TOML comment above the table. Cite only evidence actually read.
+- Never run the driver, its toolchain or a build of the app.
+
+Without a matching installed driver (including `Desktop drivers: none`), return exactly `{"proposal": null, "questions": ["qa.desktop.<name>: no installed QA desktop driver recognises this app"]}`. Do not invent a package or driver, or substitute an HTTP target.
 
 Add `qa.desktop.<name>` to `allowed_keys` for each newly authorized app table. Preserve unrelated config bytes and existing app names; for a change to an existing app, authorize only the smallest affected leaf-key scopes, following the same transaction rules as targets, stores and users.
 

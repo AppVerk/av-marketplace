@@ -14,6 +14,7 @@ The caller supplies:
 - `Arguments:` — the change source verbatim, or `(empty)`. For `/qa:run`, use the source returned by `plan resolve` rather than a selected plan path.
 - The JSON object from `qa.py config`, including its `state`. Load `qa:engine` for installed-script resolution and CLI handling.
 - The three progress tasks (detect tools, draft, review), if the harness supports them. In the steps below, tasks 1-3 mean those subjects; `/qa:run` can map them to its own progress tasks. A subagent with no progress tool skips task updates, not the work.
+- Optionally, a `Desktop drivers:` block the caller already produced with qa:engine's Desktop drivers procedure.
 
 Build one **Config block** for every planner dispatch (draft and revise) and every reviewer dispatch. When `config.state` is `ok`, use exactly this projection of the engine's returned metadata:
 
@@ -57,9 +58,11 @@ Run the installed engine's `tools` subcommand using the path resolved by `qa:eng
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/engine/scripts/qa.py tools
 ```
 
-In OMP substitute the absolute path returned by `realpath skill://qa:engine/scripts/qa.py`. Its JSON booleans cover `curl`, `httpie`, `jq`, `perl_json_pp`, `psql`, `sqlite3`, `mysql`, `redis_cli` (`redis-cli`), `go` and `ebitengine_vmhost`; use these results instead of independent shell detection snippets. An engine failure is a generation error, not evidence that all tools are unavailable.
+In OMP substitute the absolute path returned by `realpath skill://qa:engine/scripts/qa.py`. Its JSON booleans cover `curl`, `httpie`, `jq`, `perl_json_pp`, `psql`, `sqlite3`, `mysql` and `redis_cli` (`redis-cli`); use these results instead of independent shell detection snippets. An engine failure is a generation error, not evidence that all tools are unavailable.
 
-Write the results as a `Detected tools:` block: one `<tool>: available` or `<tool>: unavailable` line per tool above, including `go` and `ebitengine_vmhost`. The planner copies it into the plan's `## Detected Tools` and writes `- Desktop driver: ebitengine-vmhost available` only when both `go` and `ebitengine_vmhost` are true; otherwise it writes `- Desktop driver: ebitengine-vmhost unavailable`.
+Write the results as a `Detected tools:` block: one `<tool>: available` or `<tool>: unavailable` line per tool above. The planner copies it into the plan's `## Detected Tools`.
+
+**Desktop drivers:** run qa:engine's Desktop drivers procedure, or reuse the `Desktop drivers:` block the caller supplied. Pass that block right after `Detected tools:` in the Step 3 draft dispatch and, unchanged, in every revise and reviewer dispatch of Step 4. The planner writes `- Desktop drivers: <comma-separated driver names, or none>` into `## Detected Tools`. Return the block to the caller with the plan.
 
 **Task Update:** Mark task 1 as `completed`, task 2 as `in_progress`.
 
@@ -74,6 +77,8 @@ Task(
 Arguments: <$ARGUMENTS verbatim, or (empty)>
 Detected tools:
 <the Step 2 block>
+Desktop drivers:
+<the Desktop drivers block's lines, without repeating its Desktop drivers: label>
 Config:
 <the Config block from Input, without repeating its Config: label>"
 )
@@ -102,6 +107,8 @@ Run at most 3 review rounds. In round `n`:
    Diff source: <source>
    Changed files:
    <changed_files, one path per line>
+   Desktop drivers:
+   <the Desktop drivers block's lines, without repeating its Desktop drivers: label>
    Config:
    <the Config block from Input, without repeating its Config: label>
    Round: <n> of 3
@@ -123,6 +130,8 @@ Run at most 3 review rounds. In round `n`:
      prompt: "Mode: revise
    Plan: <plan>
    Diff source: <source>
+   Desktop drivers:
+   <the Desktop drivers block's lines, without repeating its Desktop drivers: label>
    Config:
    <the Config block from Input, without repeating its Config: label>
    Round: <n> of 3
@@ -142,6 +151,7 @@ Return one JSON object to the caller; do not propose `/qa:run` from this skill. 
 ```json
 {
   "plan": "<saved plan path>",
+  "desktop_drivers": "<the Desktop drivers block, verbatim>",
   "review": {"outcome": "approved|open|unreviewed", "round": 1, "reason": null},
   "open_findings": [{"severity": "blocker|concern", "location": "<section or path>", "issue": "<finding>", "fix": "<requested fix>"}],
   "nits": [{"severity": "nit", "location": "<section or path>", "issue": "<finding>", "fix": "<optional fix>"}],

@@ -56,7 +56,7 @@
     {
       "name": "qa",
       "source": "./plugins/qa",
-      "description": "Automated QA testing plugin — /qa:run bootstraps project config with stores and users, reuses or generates a reviewed plan, and runs a bounded FE/BE test→fix→retest loop with batch fix approval by default. Testers register accounts; a configured cleanup recipe removes them at teardown. /qa:create-plan supports plan review before execution. Reports compatible with code-review. DESKTOP scenarios drive Ebitengine apps headless in the background through exp/vmhost.",
+      "description": "Automated QA testing plugin — /qa:run bootstraps project config with stores and users, reuses or generates a reviewed plan, and runs a bounded FE/BE test→fix→retest loop with batch fix approval by default. Testers register accounts; a configured cleanup recipe removes them at teardown. /qa:create-plan supports plan review before execution. Reports compatible with code-review. DESKTOP scenarios test desktop apps headless in the background through installable driver plugins such as qa-ebitengine.",
       "version": "3.1.0",
       "category": "testing"
     },
