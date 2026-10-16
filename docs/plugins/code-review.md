@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 2.3.0
+**Version:** 2.4.0
 
 ## Commands
 
@@ -562,13 +562,13 @@ Each auto-accepted finding is listed under **Auto-accepted** in the run summary,
 <a id="upgrade-notes"></a>
 ## Upgrade Notes
 
+**`code-review` 2.4.0 saves every review report without asking and adds `after_review`** (default `"ask"`), which your user configuration file may also set. Update Delivery to 0.8.0 together with it: an older Delivery lets the review's post-review action run before Delivery commits the report — so the committed report can carry the statuses `/fix-all` wrote — and then asks its own `Run /code-review:fix-all …?` question. Set `after_review` only where every reader runs 2.4.0 or newer: 2.3.0 rejects the key (`not allowed in the user config` in your user configuration file, `unknown key` in `.av/config.toml`), which invalidates the whole `[code-review]` table and turns auto-accept off.
+
 **`code-review` 2.3.0 adds opt-in automatic documentation decisions.** Every reader of a report that may carry `auto@…` provenance should run code-review **2.3.0 or newer in both harnesses**. Only 2.3.0 and newer re-check the policy, this worktree's trust and the documentation paths before replaying an automatic decision. An older reader replays a recorded `auto@…` decision exactly as it replays any recorded `**Decision:**` line, including a teammate's `user` decision or a hand-written one — it does not enforce the new auto-accept conditions.
 
-2.3.0 also reads your user configuration file, `~/.config/av/config.toml`, for the three `[code-review]` keys. A threshold set there applies in every repository you open, unless the repository sets `auto_accept_min_confidence = false`; it needs no trust question of its own, though a repository with trust-pinned `[env]` settings still asks once per worktree.
+2.3.0 also reads your user configuration file, `~/.config/av/config.toml`, for the two `[code-review]` auto-accept keys. A threshold set there applies in every repository you open, unless the repository sets `auto_accept_min_confidence = false`; it needs no trust question of its own, though a repository with trust-pinned `[env]` settings still asks once per worktree.
 
 A live automatic decision stays unfinished in a report after an interrupted run and also after a failed or unverified attempt: stage 4's third and fourth cases write no status. It remains live until the fix lands or the decision is retired, so this reader-version guidance applies to all of those reports, not only runs stopped before dispatch.
-
-2.3.0 also saves every review report without asking and adds `after_review` (default `"ask"`). Update Delivery to 0.7.0 together with it: an older Delivery lets the review's post-review action run before Delivery commits the report — so the committed report can carry the statuses `/fix-all` wrote — and then asks its own `Run /code-review:fix-all …?` question.
 
 **`code-review` 2.1.0 changes how a pre-existing review report is dispatched, not how it is parsed.** Every new field (`**Composed-of:**`, `**Part-of:**`, `**Origin:**`, `**Category:** Composite`) is additive: the `### [SEVERITY]` block extraction, `fix-auto`'s field table, `extract-issue-ids.sh` and the `**Status:**` grammar all read an old report unchanged. Their dispatch does change: the fix-time composition pass may group an old review or feedback report's unfixed findings, persist `Composed-of`/`Part-of`/`Origin` markers into the file and dispatch a group as one `fix-auto` call. The dissolve question is the per-run veto, no write happens before the run's commitment point (the confirmation gate, or the `yes` to the decision offer on `/fix-all`'s zero-auto path), and the pass is fail-safe — an unavailable analyst means no grouping, never a blocked run. A reader older than 2.1.0 ignores the new fields and dispatches a `COMP` block like any finding, applying its Remediation without the component checks; pair versions when a report carries composites.
 
