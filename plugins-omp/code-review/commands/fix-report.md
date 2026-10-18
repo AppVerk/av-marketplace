@@ -423,7 +423,7 @@ Where `<reason>` is the value recorded in Step 4.1.5 (`edit-errored`, `status-li
 
 **Decision-stage summary.** Where Step 2.4 ran the gate over at least one finding, print the block below after Step 4.1 / 4.1.5, following the fix summary, including where the gate aborted. The template above is closed — the `| # | Issue | Status |` rows, the counts, and the reports-updated list — and holds no slot for what the decision stage has to disclose.
 
-It opens with the run record `code-review:decision-gate` keeps (*The run record*): the policy line, the relay line in relay mode, and one table row per finding the gate received, never omitted. The rows after the table are the eleven disclosures that skill **raises and does not print**. That skill is the single source of truth for both: what each value means, and which stage sets it, is stated there and is not restated here. This block only renders them. Omit any disclosure row whose list is empty; omit the block entirely where the gate did not run.
+It opens with the run record `code-review:decision-gate` keeps (*The run record*): the policy line, the relay line in relay mode, and one table row per finding the gate received, never omitted. Before you print it the first time, read *The run record* in full: every cell takes one of the values that section lists for its field, verbatim and in its own column. The rows after the table are the eleven disclosures that skill **raises and does not print**. That skill is the single source of truth for both: what each value means, and which stage sets it, is stated there and is not restated here. This block only renders them. Omit any disclosure row whose list is empty; omit the block entirely where the gate did not run.
 
 ```markdown
 ## Decision Stage

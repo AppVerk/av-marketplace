@@ -702,7 +702,7 @@ Stage 4's graded case — not the fixer's verdict — decides the composite's st
 
 ## The run record — one row per finding
 
-Keep this record as the stages run, for every finding the gate received, and hand it to the command's summary block. The block prints it **whatever happened**: after a completed sweep, after an abort, and wherever *Relay mode* says to print it. Rows follow report order, and none is omitted. The record is how a reader of the summary tells apart a decision made here, a decision made through a relay request, an automatic one, and one replayed from an earlier run.
+Keep this record as the stages run, for every finding the gate received, and hand it to the command's summary block. The block prints it **whatever happened**: after a completed sweep, after an abort, and wherever *Relay mode* says to print it. Rows follow report order, and none is omitted. The record is how a reader of the summary tells apart a decision made here, a decision made through a relay request, an automatic one, and one replayed from an earlier run. Every field takes one of the values listed for it below, verbatim and in its own column; nothing else is a value.
 
 **The policy line** reports *Entry: the auto-accept policy*. It reads either `on — threshold <T>%, second opinion: <route>`, with `<route>` as in the entry's `Auto-accept on:` print, or `off — <reason>`, where `<reason>` is exactly one of:
 - `not configured` — a missing file or table, or a null threshold;
@@ -721,7 +721,7 @@ Keep this record as the stages run, for every finding the gate received, and han
 | Finding | `[SEVERITY] ID: Title`, the title cut to 60 characters plus `…` |
 | Decided by | `you` — the answer came from this session's own `AskUserQuestion`; `you (relayed)` — from a relay request's reply; `auto` — stage 1.5 auto-accepted the finding; `recorded (<who>)` — a live decision replayed from an earlier run, `<who>` copied from its bracketed field; `—` — no decision this run, always the case when Outcome is `open — …` or `failed — no target` |
 | Outcome | `A`, `B`, `other`, `skip` or `reject`; `failed — no target` for stage 0's declined target; `open — <why>`, with `<why>` exactly one of `awaiting <Relay-ID>`, `offer declined`, `no relayed answer`, `typed answer — decide it in an interactive run`, `proposal changed while waiting`, `report changed while waiting`, `no snapshot — decide it in an interactive run`, `analysis no longer held`, `relay unavailable`, `stage aborted`, `set aside before dispatch` |
-| Auto-accept | `yes — analyst <c1>%, <source> <c2>%[ via <model>]`; `no — <reason>`, the stage 1.5 reason verbatim; `off` in every row while the policy line says off; otherwise `—` where stage 1.5 never saw the finding: a replay, a stalled finding, a declined target, or a stage that ended before stage 1.5 |
+| Auto-accept | while the policy line says off: `off`, in every row, whatever else happened to the finding. While it says on: `yes — analyst <c1>%, <source> <c2>%[ via <model>]`; `no — <reason>`, the stage 1.5 reason verbatim; or `—` where stage 1.5 never saw the finding: a replay, a stalled finding, a declined target, or a stage that ended before stage 1.5 |
 | Verification | the value of the `**Verification:**` line this run wrote (`hard`, `advisory` or `unavailable`), whether after a dispatch or after re-verifying an interrupted decision without one; for `reject`, `evidence re-run` when a supported candidate backed it and `unverified` otherwise; `—` when this run wrote no `**Verification:**` line for the finding and checked no rejection evidence |
 | Result | the `**Status:**` this run wrote (`✅ Fixed`, `⚠️ Partially Fixed`, `🚫 Rejected`); otherwise the attempt entry it appended (`attempt <N>: <outcome>`); otherwise `—` |
 
@@ -1022,7 +1022,7 @@ On the reply, after the report snapshot comparison, handle each remaining findin
 
 Stages 3 to 4 then run as usual, with one difference: there is **no second pass**. A finding set aside at stage 3 keeps its supersession rewrite and stays open for the next run.
 
-**The run record in relay mode.** Print the command's summary block over the run record so far (*The run record*) immediately before every request block, with each finding that is still waiting shown as `—` | `open — awaiting <Relay-ID>`. Wherever relay mode ends the stage early, print it before `/fix-all` Step 5.3's line: rows read `open — offer declined` after a declined offer, `open — no relayed answer` after an unanswered one, and `open — relay unavailable` after a failed Relay-ID.
+**The run record in relay mode.** Read *The run record* in full before the first print. Print the command's summary block over the run record so far (*The run record*) immediately before every request block, with each finding that is still waiting shown as `—` | `open — awaiting <Relay-ID>`. Wherever relay mode ends the stage early, print it before `/fix-all` Step 5.3's line: rows read `open — offer declined` after a declined offer, `open — no relayed answer` after an unanswered one, and `open — relay unavailable` after a failed Relay-ID.
 
 **The request block.** End the turn with exactly this block and nothing after it:
 
