@@ -208,7 +208,7 @@ The engine writes `**Status:** ✅ Fixed` exactly once only for a whole-scenario
 
 ### Step 12: Teardown, summary and recovery
 
-On any stop/error/abort after start, first call `run stop --run <run> --reason <reason> [--detail <safe-diagnostic>]` with the reason mapping above, then use `issues` and **Issue prose and report** to flush current observations and history without `--final`; preserved existing Status lines stay, but no new ones are written. `run stop` closes any dangling iteration, including a stop after a fix dispatch: touched files, overlap, attempts and warnings reach the report. Then, on **every** started-run exit, in order:
+On any stop/error/abort after start, first call `run stop --run <run> --reason <reason> [--detail <safe-diagnostic>]` with the reason mapping above, then use `issues` and **Issue prose and report** to flush current observations and history without `--final`; preserved existing Status lines stay, but no new ones are written. `run stop` closes any dangling iteration, including a stop after a fix dispatch: touched files, overlap, attempts and warnings reach the report. Then, on **every** started-run exit, in order, starting each call only after the previous one has returned (never batch them in parallel: `run end` deletes the private directory that `summary` reads):
 
 1. `users teardown --run <run>` — print `deleted`, `left` and `manual` emails; cleanup failures are visible, never silently ignored.
 2. `report --run <run> --accounts` — update only the Accounts summary line, never verdicts or Status.
@@ -283,7 +283,7 @@ Call `issues --run <run>` on every reporting pass. For its newly assigned `assig
 [{"qa": "<engine-assigned QA-ID>", "title": "<issue>", "severity": "HIGH", "location": "<path:line>", "actual": "<sanitized observation>", "impact": "<effect>", "remediation": "<source fix guidance>"}]
 ```
 
-Optional fields: `severity_reason`, `response`, `screenshot`. Use the blocker's cited source Location when present; an unknown location remains `unknown:0` and is not fixable by guesswork. Never include headers, tokens, cookies, DSNs or raw response bodies. The engine copies each Expected grounding tag and tester Refutation itself.
+Optional fields: `severity_reason`, `response`, `screenshot`. When the tester's result for the failing scenario or edge has a `**Screenshot:**` path, set `screenshot` to that path verbatim; omit it only when the tester reported none or a suppression line. Use the blocker's cited source Location when present; an unknown location remains `unknown:0` and is not fixable by guesswork. Never include headers, tokens, cookies, DSNs or raw response bodies. The engine copies each Expected grounding tag and tester Refutation itself.
 
 Respect `severity_floor`: status ≥ 500 or `crash` is CRITICAL; otherwise an unverified assertion is LOW. Other CRITICALs require `severity_reason = security-bypass|data-loss` and evidence in `actual`; all remaining severities follow `qa:report-format`. Never lower a mechanical floor or promote an unverified guess. New keys only; `[]` is valid when there are none. The engine preserves earlier issue prose and decision fields from the report.
 
