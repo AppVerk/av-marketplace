@@ -2,6 +2,10 @@
 
 This page lists user-visible changes per release.
 
+## 3.1.0: background desktop testing through driver plugins
+
+The optional DESKTOP plan section tests desktop apps headless in the background through installable desktop driver plugins, alongside existing FE and BE tests. QA ships no driver; this marketplace lists `qa-ebitengine` for Ebitengine games. Configure apps under `[qa.desktop.<name>]` with a driver name. `/qa:run` detects installed drivers and registers them for the run; `desktop run` and the run's `desktop.sh` build and run the app through its driver, inject tick-based input and return PNG shots plus a masked app log. An app whose driver is not installed reports `NEED_INFO kind=tool`, and `plan check` reports missing desktop configuration in `missing.apps`.
+
 ## 3.0.1: shared loader reads the user configuration file
 
 No change to `/qa:run`. The shared configuration loader QA ships for every configurable plugin can read policy keys from `${XDG_CONFIG_HOME:-~/.config}/av/config.toml` for a plugin that allows them; QA allows none, so it never reads that file. See [Files](../../configuration.md#files).

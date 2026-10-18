@@ -55,9 +55,9 @@ Every test report MUST follow this structure. `## Setup gaps` is conditional: in
 **Remediation:**
 <best-effort suggestion in natural language; no code block required>
 
-**Scenario:** <FE-XX or BE-XX>
+**Scenario:** <FE-XX, BE-XX or DESKTOP-XX>
 **Response:** `<response body or error>` (BE only)
-**Screenshot:** <path to screenshot, or `none (debug page; capture suppressed)` / `none (page could not be checked; capture suppressed)`> (FE only)
+**Screenshot:** <path to screenshot, or `none (debug page; capture suppressed)` / `none (page could not be checked; capture suppressed)` / `none (frame may show injected credentials; capture suppressed)`> (FE and DESKTOP only)
 
 ### [SEVERITY] QA-002: <issue title>
 ...
@@ -136,9 +136,9 @@ Optional fields:
 
 QA-specific extras (kept for testing context; ignored by the code-review parser):
 
-- **`**Scenario:**`** — `FE-XX` or `BE-XX` reference
+- **`**Scenario:**`** — `FE-XX`, `BE-XX` or `DESKTOP-XX` reference
 - **`**Response:**`** — response body or error message (BE only)
-- **`**Screenshot:**`** — screenshot path (FE only), or `none (debug page; capture suppressed)` / `none (page could not be checked; capture suppressed)` when the FE tester did not capture one for safety. Never substitute a pre-existing artifact.
+- **`**Screenshot:**`** — screenshot path (FE and DESKTOP only), or `none (debug page; capture suppressed)` / `none (page could not be checked; capture suppressed)` when the FE tester did not capture one for safety, or `none (frame may show injected credentials; capture suppressed)` when a DESKTOP shot is marked `sensitive`. Never substitute a pre-existing artifact or copy a sensitive shot into the repository.
 
 ---
 
@@ -321,6 +321,6 @@ Before saving the report, verify:
 - [ ] Every QA-NNN issue has the required fields: `ID`, `Location`, `Category: Testing`, `Problem` (with Expected/Actual bullets), `Remediation`
 - [ ] NEED_INFO main flows and edges appear in Detailed Results and `## Setup gaps`, never as issues
 - [ ] No secret value anywhere in the report or under `docs/testing/reports/responses/` or `docs/testing/reports/screenshots/`; no debug-page snapshot text is quoted or saved in the report
-- [ ] Screenshots referenced in issues were captured after the FE debug-page check and exist on disk; a suppressed screenshot is recorded as `none`, never linked to an older file
+- [ ] Screenshots referenced in issues exist on disk and follow the tester's safety rules: FE capture passed the debug-page check; DESKTOP evidence was copied from this failure's non-sensitive shot. A suppressed screenshot is recorded as `none`, never linked to an older file
 - [ ] No placeholder text (TBD, TODO)
 - [ ] If a Loop History section is present, it contains no `### [SEVERITY]` headings and no `---` separators

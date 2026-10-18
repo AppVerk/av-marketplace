@@ -42,6 +42,12 @@ PLAN = '''# Test Plan: Items
 - **Method:** GET /health
 - **Expected:** 200 healthy. (src/app.py:1)
 '''
+DESKTOP = '''## DESKTOP Test Scenarios
+### DESKTOP-01: Console prints the seed
+- **Writes:** no
+- **Steps:** Wait 30 ticks, press `Backquote`, type `seed`, press `Enter`, shot `console`
+- **Expected:** Shot `console` shows the seed. (src/app.py:1)
+'''
 TRACE = "re-verified: yes; env: n/a; scope: in; harness: ok"
 Json = dict[str, Any]
 
@@ -507,6 +513,26 @@ up = {json.dumps(command)}
         self.assertNotIn("### [", text.split("## Loop History", 1)[1])
         self.assertNotIn("---", text.split("## Loop History", 1)[1])
         self.assertIn("**Result:** Fail", self.summary())
+
+    def test_desktop_issue_renders_its_screenshot_and_counts_feature_coverage(self) -> None:
+        self.put(CONFIG + '[qa.desktop.app]\ndriver = "fake"\n', ".av/config.toml")
+        self.plan.write_text(PLAN + DESKTOP)
+        self.start()
+        self.ingest()
+        dispatch = self.cli("dispatch", "--run", self.run["run"], "tester", "--section", "DESKTOP", "--phase", "baseline")
+        rows = [{"id": "DESKTOP-01", **outcome("FAIL", 200), "edges": []}]
+        result = self.put("```json qa-results\n" + json.dumps({"section": "DESKTOP", "scenarios": rows}) + "\n```\n", "result.md")
+        self.cli("ingest", "--run", self.run["run"], "--dispatch", dispatch["dispatch"], str(result))
+        assigned = self.cli("issues", "--run", self.run["run"])["assign"]
+        self.assertEqual([(row["key"], row["observed_status"]) for row in assigned], [("DESKTOP-01", None)])
+        screenshot = "docs/testing/reports/screenshots/DESKTOP-01-fail.png"
+        self.render([issue("QA-001", screenshot=screenshot, response="must not render")])
+        text = self.text()
+        self.assertIn(f"**Scenario:** DESKTOP-01\n**Screenshot:** {screenshot}", text)
+        self.assertNotIn("**Response:**", text)
+        self.assertIn("- Expected: Shot `console` shows the seed. (src/app.py:1)", text)
+        self.change_state(current={"FE-01": "pass", "BE-01": "pass", "BE-02": "pass", "DESKTOP-01": "pass"})
+        self.assertIn("Exercised: 3 feature · 1 sanity · 0 enforcement", self.summary())
 
     def test_severity_constraints_and_unassigned_entries(self) -> None:
         cases = [(PLAN, outcome("FAIL", 500), "HIGH", None, False),

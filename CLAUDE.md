@@ -42,6 +42,16 @@ A new plugin is registered in `.claude-plugin/marketplace.json` with `name`,
 and the generated `.omp-plugin/marketplace.json`, so a plugin that gains or
 loses an OMP edition updates its row.
 
+A plugin kept in its own repository is registered in
+`.claude-plugin/marketplace.json` with the source `{"source": "github", "repo":
+"<owner>/<repo>", "ref": "v<version>", "sha": "<40-character commit SHA>"}`,
+gets a README row whose ID cell is its name, and is listed in
+`omp/remote-plugins.json`, which puts it in the generated
+`.omp-plugin/marketplace.json`. `scripts/check_plugin_versions.py` checks the
+pin and the row's version. A release moves `version`, `ref`, `sha` and the
+README row together; the plugin's code, docs and other version sources live in
+its own repository.
+
 ## Plugin configuration
 
 Configurable plugins read settings only from `.av/config.toml`,

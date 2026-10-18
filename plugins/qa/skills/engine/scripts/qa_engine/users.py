@@ -22,6 +22,7 @@ from qa_engine.common import write_json
 from qa_engine.config import Config
 from qa_engine.config import STORE_NAMES
 from qa_engine.config import mapping
+from qa_engine.desktop import desktop_script
 from qa_engine.plan import check_plan
 from qa_engine.plan import run_plan
 from qa_engine.plan import user_token
@@ -81,6 +82,7 @@ def write_channel(run: Run, values: Mapping[str, str]) -> None:
     atomic_write(directory / "redact-names", ("".join(f"{name}\n" for name in sorted(names))).encode(), 0o600)
     atomic_write(directory / "load.sh", loader_script(directory).encode(), 0o600)
     atomic_write(directory / "capture.sh", capture_script(directory, run.run_id, run.repo).encode(), 0o600)
+    atomic_write(directory / "desktop.sh", desktop_script(run.run_id, run.repo).encode(), 0o600)
 
 
 def loader_script(directory: Path) -> str:

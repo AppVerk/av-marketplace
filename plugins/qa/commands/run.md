@@ -63,23 +63,23 @@ On `trust = new` or `changed`, show the complete masked `trust_subset` and ask o
 Run `plan resolve` with the original positional argument as one quoted operand (omit the operand when empty).
 
 - `reuse`: keep the returned path.
-- `generate`: load `qa:plan-authoring` with the returned source and safe `config` metadata. Follow its shared draft/review workflow; do not ask for permission to generate, write an inline plan or duplicate its tool probes. Use its returned path without re-globbing. Mark it **generated in this invocation** and pass `--generated` at Step 5, including start retries and repair restarts. Show `Generated plan: <path> — N FE, M BE` using the saved plan's scenario headings.
+- `generate`: load `qa:plan-authoring` with the returned source and safe `config` metadata, plus the `Desktop drivers:` block when this invocation already ran the Desktop drivers procedure. Follow its shared draft/review workflow; do not ask for permission to generate, write an inline plan or duplicate its tool probes. Use its returned path without re-globbing, and keep the `Desktop drivers:` block it produced for the rest of the invocation. Mark it **generated in this invocation** and pass `--generated` at Step 5, including start retries and repair restarts. Show `Generated plan: <path> — N FE, M BE, K DESKTOP` using the saved plan's scenario headings.
 - `stale`: list `changed_files`; interactive → ask once: **Regenerate** (default) / **Use existing plan**. Headless → regenerate through the same skill and mark it generated as above. A failed regeneration never falls back to the stale plan; choosing the existing plan does not set the generated marker.
 
 Show the authoring skill's review outcome, reason and unresolved findings. An open `blocker` → interactive: **Run anyway** / **Stop and fix the plan with /qa:create-plan**; headless or a declined gate → stop and list it. Print open concerns and continue; an unreviewed plan is never described as approved.
 
-Read the selected plan. If it has zero FE and zero BE scenarios **and was just generated in Step 2**, stop gracefully before starting a run:
+Read the selected plan. If it has zero FE, zero BE and zero DESKTOP scenarios **and was just generated in Step 2**, stop gracefully before starting a run:
 
-> Generated plan has no executable FE or BE scenarios — nothing to test (e.g. a backend-only change fully covered by the unit/integration suite). Relying on that suite; not launching testers.
+> Generated plan has no executable FE or BE scenarios and no DESKTOP scenario — nothing to test (e.g. a backend-only change fully covered by the unit/integration suite). Relying on that suite; not launching testers.
 
-A reused/existing plan with zero scenarios instead stops with `Error: plan <path> has no executable FE or BE scenarios.` Name the selected plan; do not reuse the generated-plan success message.
+A reused/existing plan with zero scenarios instead stops with `Error: plan <path> has no executable FE, BE or DESKTOP scenarios.` Name the selected plan; do not reuse the generated-plan success message.
 
 ### Step 3: Check the plan against config
 
 Run `plan check <plan>`.
 
 - Non-empty `plan_errors` or `off_target`: stop and list every scenario/reason or scenario/origin diagnostic; never widen targets silently or turn a plan error into a config extension.
-- Missing users, values, targets or stores: interactive → **Config bootstrap** in `extend` mode for exactly the returned gaps and their dependencies, then re-read `config`, handle its trust as in Step 1, and re-check the same plan **once**. Headless, a blocked extension or remaining required gaps → stop, naming the missing config keys. A required-gap extension never blocks on cleanup; `missing.cleanup` is handled only by the separate cleanup-only round.
+- Missing users, values, targets, apps or stores: interactive → **Config bootstrap** in `extend` mode for exactly the returned gaps and their dependencies, then re-read `config`, handle its trust as in Step 1, and re-check the same plan **once**. Headless, a blocked extension or remaining required gaps → stop, naming the missing config keys. A required-gap extension never blocks on cleanup; `missing.cleanup` is handled only by the separate cleanup-only round.
 - `missing.cleanup` alone is a soft gap: interactive → one cleanup-only `extend` round with `Missing: cleanup`, including at most the bootstrap's single preview-error retry. If the author returns `proposal: null`, preview errors remain after that retry, the approval gate is declined/unavailable, or the invocation is headless, retain the existing valid config, print `No cleanup recipe: registered accounts will remain in the application.` and continue. Never stop for this gap alone; required gaps or an invalid config still stop. After an applied cleanup proposal, re-read config/trust and re-check the plan.
 - Preserve the returned sections, user/value requirements, registrations, `guarded` and `state_checks` for dispatch. Credentials are derived from plan `$QA_…` tokens by the engine, not environment-presence snippets.
 
@@ -118,9 +118,11 @@ Always run `users provision --run <run>`, even when the plan references zero use
 
 A required missing `file:.av/secrets.local.env#NAME` value names the keys to fill and stops; never ask the user to paste secrets, edit `.envrc`, export new harness credentials or restart the harness. Other provisioning errors stop with the engine diagnostic. Testers perform login and registration themselves; there is no engine login repair.
 
+When the plan has DESKTOP scenarios, run qa:engine's Desktop drivers procedure if it has not run yet in this invocation. Then run `desktop register --run <run> --manifest <manifest>` for each driver listed in the `Desktop drivers:` block, and after each success write the line `Desktop driver <driver> <version> registered`, verbatim, in your visible reply to the user (not only in your reasoning). On an error, show it the same way and continue: the affected scenarios come back `NEED_INFO`. Every `run start`, including a repair restart, passes through this step again, so each new run registers its drivers.
+
 ### Step 8: Baseline
 
-Use **Tester dispatch** below for each present section with `--phase baseline`. Engine calls are sequential; FE/BE tester agents may then run in parallel. Save complete answers under `<dir>/results/` and `ingest` each with its own dispatch ID.
+Use **Tester dispatch** below for each present FE/BE/DESKTOP section with `--phase baseline`. Engine calls are sequential; `qa:fe-tester`, `qa:be-tester` and `qa:desktop-tester` agents may then run in parallel. Save complete answers under `<dir>/results/` and `ingest` each with its own dispatch ID.
 
 Print all remaining `need_info` service/tool/fixture gaps grouped by kind, names only, with scenario/edge IDs. Interactive → ask once: **Re-run affected sections** / **Continue** / **Abort**. Retry uses each affected **whole section** once with `--phase retry`, fresh engine dispatches and the same template; ingest again and do not re-ask if gaps remain. Headless → continue with the gaps visible. An abort still flushes the partial report and tears down.
 
@@ -140,9 +142,9 @@ Otherwise loop on `iteration open --run <run>`:
 - `final`: Step 11, unless the reason is zero failures and no fix iteration ran (Step 9's direct teardown).
 - `iterate`: use the returned iteration number; run `candidates --run <run>`. Print every dropped QA ID with its reason; never override a guard or manufacture an eligible candidate.
 
-For `approve`, show one batch gate per iteration: candidate ID, severity, scenario, title, every `flags[]` value (including `auth` and `unverified`), configured target origins, remaining budgets and **all prior `fix done` anti-hardcoding warnings**. Use one `AskUserQuestion`: **Approve & continue** / **Skip to final run** / **Abort**. Skip → Step 11; abort → `run stop --run <run> --reason user-abort`, partial-report flush and Step 12; an undeliverable gate → `run stop --run <run> --reason other --detail 'fix approval unavailable'`, no fix, Step 12. An empty fix-set needs no approval: go to final verification rather than opening an unbounded empty loop. On Skip/empty-set the engine closes the dangling iteration in `report --final`; on a stop it closes it in `run stop`, with `summary` as a final safety net. No manual history/sidecar patch is needed.
+For `approve`, show one batch gate per iteration: candidate ID, severity, scenario, title, every `flags[]` value (including `auth` and `unverified`), configured target origins and desktop apps, remaining budgets and **all prior `fix done` anti-hardcoding warnings**. Use one `AskUserQuestion`: **Approve & continue** / **Skip to final run** / **Abort**. Skip → Step 11; abort → `run stop --run <run> --reason user-abort`, partial-report flush and Step 12; an undeliverable gate → `run stop --run <run> --reason other --detail 'fix approval unavailable'`, no fix, Step 12. An empty fix-set needs no approval: go to final verification rather than opening an unbounded empty loop. On Skip/empty-set the engine closes the dangling iteration in `report --final`; on a stop it closes it in `run stop`, with `summary` as a final safety net. No manual history/sidecar patch is needed.
 
-For `auto`, print a non-silent scope banner with candidates, dropped guards, targets and budgets, then proceed. Interrupting the session is an abort, not success.
+For `auto`, print a non-silent scope banner with candidates, dropped guards, targets/apps and budgets, then proceed. Interrupting the session is an abort, not success.
 
 For each candidate **sequentially**, call `dispatch --run <run> fix --qa <QA-ID>` before launching `code-review:fix-auto`. Read its issue block from the engine-rendered report and apply this rule:
 
@@ -180,11 +182,11 @@ INJECTED CONSTRAINTS FOR THIS FIX:
 
 Collect **Fixed**, **Partially Fixed**, or **Failed**; map them to `fixed`, `partial`, or `failed` for `fix done --run <run> --dispatch <fix-dispatch> --result <result>`. A failed dispatch/unusable fixer answer is `failed`, never a guessed success. The engine computes and records anti-hardcoding warnings; show them at the next approval gate and in the final summary. They are best-effort, non-blocking human-review flags, not proof of a real fix.
 
-Re-run the whole FE/BE sections affected by the candidate scenarios with `--phase iteration`, using fresh **Tester dispatch** calls, then ingest. The fixer's verdict is advisory: **only the independent tester re-run is authoritative**. Call `issues` and render new issue prose/report entries, then `iteration close --run <run>` exactly once. It owns progress, regressions, history, touched files and overlap: `final` → Step 11; `continue` → next `iteration open`. Never increment budgets, compare verdict maps or append history rows yourself.
+Re-run the whole FE/BE/DESKTOP sections affected by the candidate scenarios with `--phase iteration`, using fresh **Tester dispatch** calls; prepare engine dispatches sequentially, allow the three section testers to run in parallel, then ingest. The fixer's verdict is advisory: **only the independent tester re-run is authoritative**. Call `issues` and render new issue prose/report entries, then `iteration close --run <run>` exactly once. It owns progress, regressions, history, touched files and overlap: `final` → Step 11; `continue` → next `iteration open`. Never increment budgets, compare verdict maps or append history rows yourself.
 
 ### Step 11: Authoritative final run
 
-After entering Step 10's iteration path, re-run **all present sections**, not merely those fixed, with `--phase final` through **Tester dispatch**. This pass is counted but is not blocked by exhausted fix budgets. Do not run it after a zero-failure baseline, `off`, headless `approve`, a user abort or a hard stop.
+After entering Step 10's iteration path, re-run **all present FE/BE/DESKTOP sections**, not merely those fixed, with `--phase final` through **Tester dispatch**. Prepare engine dispatches sequentially; the three section testers may then run in parallel. This pass is counted but is not blocked by exhausted fix budgets. Do not run it after a zero-failure baseline, `off`, headless `approve`, a user abort or a hard stop.
 
 Ingest every section; call `issues` and write prose for any assertion first failing here, regressions included. Only then call `report --run <run> --final --issues <issues-file>`.
 
@@ -192,7 +194,7 @@ The engine writes `**Status:** ✅ Fixed` exactly once only for a whole-scenario
 
 ### Step 12: Teardown, summary and recovery
 
-On any stop/error/abort after start, first call `run stop --run <run> --reason <reason> [--detail <safe-diagnostic>]` with the reason mapping above, then use `issues` and **Issue prose and report** to flush current observations and history without `--final`; preserved existing Status lines stay, but no new ones are written. `run stop` closes any dangling iteration, including a stop after a fix dispatch: touched files, overlap, attempts and warnings reach the report. Then, on **every** started-run exit, in order:
+On any stop/error/abort after start, first call `run stop --run <run> --reason <reason> [--detail <safe-diagnostic>]` with the reason mapping above, then use `issues` and **Issue prose and report** to flush current observations and history without `--final`; preserved existing Status lines stay, but no new ones are written. `run stop` closes any dangling iteration, including a stop after a fix dispatch: touched files, overlap, attempts and warnings reach the report. Then, on **every** started-run exit, in order, starting each call only after the previous one has returned (never batch them in parallel: `run end` deletes the private directory that `summary` reads):
 
 1. `users teardown --run <run>` — print `deleted`, `left` and `manual` emails; cleanup failures are visible, never silently ignored.
 2. `report --run <run> --accounts` — update only the Accounts summary line, never verdicts or Status.
@@ -216,15 +218,15 @@ Use the engine's accumulated eligible paths, safely quoted with `--`, for the pl
 
 ## Tester dispatch — one template for every phase
 
-Before executing an existing plan's baseline, use engine `tools` plus the browser probe `browser_navigate(url: "about:blank")` for FE (OMP: the preamble's browser mapping). Tool gaps do not invent PASSes: testers return `NEED_INFO kind=tool`; a missing store client skips only its State Check, not runnable HTTP assertions.
+Before executing an existing plan's baseline, use engine `tools` plus the browser probe `browser_navigate(url: "about:blank")` for FE (OMP: the preamble's browser mapping). DESKTOP availability comes from the registered drivers. Tool gaps do not invent PASSes: testers return `NEED_INFO kind=tool`; a missing store client skips only its State Check, not runnable HTTP assertions.
 
 For each present section, **one engine call at a time**:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/engine/scripts/qa.py dispatch --run <run> tester --section <FE|BE> --phase <baseline|retry|iteration|final>
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/engine/scripts/qa.py dispatch --run <run> tester --section <FE|BE|DESKTOP> --phase <baseline|retry|iteration|final>
 ```
 
-A dispatch no longer logs anyone in: testers log in and register accounts themselves. The engine records the assignment, issues its tag and creates private capture files before the tester starts. A failure stops before launching that tester: call `run stop --run <run> --reason <reason>` (`config-drift`, `plan-changed` or `other` as applicable) before Step 12. After preparing both assignments sequentially, launch `qa:fe-tester` / `qa:be-tester` in parallel with `Task(..., run_in_background: true)` when both are present. Use this exact template for each:
+A dispatch no longer logs anyone in: FE/BE testers log in and register accounts themselves; DESKTOP testers register no accounts. The engine records the assignment, issues its tag and creates private capture files before the tester starts. A failure stops before launching that tester: call `run stop --run <run> --reason <reason>` (`config-drift`, `plan-changed` or `other` as applicable) before Step 12. After preparing all present section assignments sequentially, launch `qa:fe-tester` / `qa:be-tester` / `qa:desktop-tester` in parallel with `Task(..., run_in_background: true)`. Use this template for each, applying the DESKTOP substitutions below:
 
 ```text
 Plan: <plan path>
@@ -239,13 +241,23 @@ Targets:
 Stores: <name> (<kind>), one per entry from the dispatch's stores[], or none
 Guarded: <scenario IDs marked mutation-guard, or none>
 
-<FE|BE> Test Scenarios:
+<FE|BE|DESKTOP> Test Scenarios:
 <all scenario blocks of the section, in plan order>
 
 End with the qa-results JSON block. Never print a secret value.
 ```
 
-Targets/defaults come from checked config; Stores uses the dispatch's `stores[]` and config's kind/engine metadata; Guarded uses the engine's section assignment, not a model-invented exemption. Keep all section blocks and edges in plan order. Do not dispatch an absent section or expose `[env.secrets]`, recipe sources or literal credentials. Every request/State Check call uses the channel loader; the OMP FE tester uses its private JSON channel, not inherited harness environment.
+For DESKTOP, omit `Secrets file:` and `Stores:` and replace the `Targets:` block with:
+
+```text
+Apps:
+<name> = driver <driver> (guide <path> | not installed), package <package>, args <args or none>, screen <W>x<H>
+default for this section: <config.defaults.DESKTOP>
+```
+
+Include one line per app from `config.desktop`; take `guide <path>` from the app driver's line in the `Desktop drivers:` block, or write `not installed` when the block does not list that driver. The resulting DESKTOP input is `Plan`, `Dispatch`, `Run dir`, `Secrets JSON`, `Redact names file`, `Tag`, `Apps` with its default, `Guarded`, then `DESKTOP Test Scenarios`, in that order.
+
+Targets, apps and defaults come from checked config; Stores uses the dispatch's `stores[]` and config's kind/engine metadata; Guarded uses the engine's section assignment, not a model-invented exemption. Keep all section blocks and edges in plan order. Do not dispatch an absent section or expose `[env.secrets]`, recipe sources or literal credentials. Every HTTP request/State Check call uses the channel loader; the OMP FE tester uses its private JSON channel, not inherited harness environment. DESKTOP scripts keep `$QA_…` names as `type_env` steps, including `QA_TAG`, for the engine to resolve privately.
 
 Collect each answer with `TaskOutput`, save it verbatim to `<dir>/results/<dispatch-id>.md` using Write, then `ingest --run <run> --dispatch <dispatch-id> <result-file>`. A missing, malformed, duplicate or incomplete `qa-results` block means engine-reported `cannot-confirm`, never a retained PASS; do not repair or fabricate the result block.
 
@@ -257,7 +269,7 @@ Call `issues --run <run>` on every reporting pass. For its newly assigned `assig
 [{"qa": "<engine-assigned QA-ID>", "title": "<issue>", "severity": "HIGH", "location": "<path:line>", "actual": "<sanitized observation>", "impact": "<effect>", "remediation": "<source fix guidance>"}]
 ```
 
-Optional fields: `severity_reason`, `response`, `screenshot`. Use the blocker's cited source Location when present; an unknown location remains `unknown:0` and is not fixable by guesswork. Never include headers, tokens, cookies, DSNs or raw response bodies. The engine copies each Expected grounding tag and tester Refutation itself.
+Optional fields: `severity_reason`, `response`, `screenshot`. When the tester's result for the failing scenario or edge has a `**Screenshot:**` path, set `screenshot` to that path verbatim; omit it only when the tester reported none or a suppression line. Use the blocker's cited source Location when present; an unknown location remains `unknown:0` and is not fixable by guesswork. Never include headers, tokens, cookies, DSNs or raw response bodies. The engine copies each Expected grounding tag and tester Refutation itself.
 
 Respect `severity_floor`: status ≥ 500 or `crash` is CRITICAL; otherwise an unverified assertion is LOW. Other CRITICALs require `severity_reason = security-bypass|data-loss` and evidence in `actual`; all remaining severities follow `qa:report-format`. Never lower a mechanical floor or promote an unverified guess. New keys only; `[]` is valid when there are none. The engine preserves earlier issue prose and decision fields from the report.
 
@@ -267,7 +279,7 @@ Use `mkdir -p docs/testing/reports` if the directory is absent, then `report --r
 
 Interactive only. This is the generic `qa:env-config` detection/write contract plus the QA layer implemented by the read-only `qa:config-author`; do not establish another environment detector.
 
-1. Dispatch `qa:config-author` with `Mode: create|extend|repair`, safe `config` metadata including provenance, and the selected `Plan:` or `none`. `extend` adds `Missing:` with exactly the plan-check gaps; `repair` adds `Failure:` with the engine error/failing probes and affected keys. It may read only repository evidence with Read/Grep/Glob: **never execute a candidate command, probe a recipe or read a secret value**. Each proposed target/command/recipe must cite its repository source in a TOML comment. The return is `{proposal, questions[]}`.
+1. Before every `qa:config-author` dispatch, in `create`, `extend` and `repair` mode alike (including Step 1's create-mode bootstrap, which can run before Step 2), run qa:engine's Desktop drivers procedure if it has not run yet in this invocation. Dispatch `qa:config-author` with `Mode: create|extend|repair`, safe `config` metadata including provenance, the selected `Plan:` or `none`, and the `Desktop drivers:` block. `extend` adds `Missing:` with exactly the plan-check gaps; `repair` adds `Failure:` with the engine error/failing probes and affected keys. It may read only repository evidence with Read/Grep/Glob: **never execute a candidate command, probe a recipe or read a secret value**. Each proposed target/command/recipe must cite its repository source in a TOML comment. The return is `{proposal, questions[]}`.
 2. `proposal: null`, inaccessible evidence or an intended key supplied by `.av/local.toml` → stop and name the blocker/local key, **except for Step 3's cleanup-only soft-gap extension**, which retains the valid config and continues with its exact no-cleanup message. A shared edit cannot override a local key. Never read/edit personal config or widen the proposal to evade provenance. In `create` only, ask the three returned policy questions **in one ask call**: disposable data → `qa.mutations` (`allow` only when every target is loopback and the user confirms the data is disposable, else `deny`), fix handling → `qa.fix` (`approve|auto|off`), and bring-up → `qa.start_services` (`ask|auto`), then apply the answers to the transaction. Do not reopen policy during extend/repair.
 3. Save the proposal transaction with Write to a temporary JSON file, not directly to `.av/config.toml` or `.gitignore`. It contains full `config_text`, only necessary `gitignore_add` entries for `.av/local.toml` / `.av/secrets.local.env`, and minimal `allowed_keys`. Preserve all unrelated keys/tables/comments byte-for-byte. Run `config preview <proposal-file>`.
 4. Preview errors → **one** further author round with those errors, the original scope and already answered policy choices; save and preview the revised proposal. Remaining errors → stop, except a cleanup-only extension follows Step 3's soft-gap continuation. Otherwise show the complete `diff` for **both `.av/config.toml` and `.gitignore`**, including every ignore addition, **and** masked resulting `trust_subset`, including existing shared commands, and ask once to **Apply and trust** / **Decline**. Decline or an undeliverable question → no shared write; stop with Step 1's configuration guidance, except a cleanup-only extension retains the valid config and continues as in Step 3. A proposal is not consent to run its commands.
@@ -294,7 +306,8 @@ There is no per-fix/step mode. Every failing assertion is a fix candidate. The e
 ### Safety Guards (Apply in All Modes)
 
 - **Origins and trust:** config targets are exact HTTP(S) origins; userinfo/off-target URLs are refused, and redirects are never followed automatically. Non-loopback targets and executable/value-source config are hash-pinned outside the repository. Changed trust requires the complete-subset gate, never a host flag or a plan-authored override.
-- **Mutation policy:** `qa.mutations = "deny"` guards every scenario whose `- **Writes:**` line is `yes`, missing or invalid, and every scenario the syntactic scan sees writing; registration counts as a write. `allow` guards nothing and is meant only for disposable data. Guarded scenarios are SKIP, not fixed.
+- **Desktop apps:** each [qa.desktop.<name>] is trust-pinned. A desktop run executes the app's driver plugin, registered for this run from outside the repository, which builds and runs the configured package headless; configured and scripted args are passed as argv without a shell; no OS input is sent and no screen is captured.
+- **Mutation policy:** `qa.mutations = "deny"` guards every scenario whose `- **Writes:**` line is `yes`, missing or invalid, and every FE/BE scenario the syntactic scan sees writing; registration counts as a write. DESKTOP is guarded by Writes only, covering files or settings persisted outside the run. `allow` guards nothing and is meant only for disposable data. Guarded scenarios are SKIP, not fixed.
 - **Working tree:** the dirty-tree gate follows `qa.fix` (approve asks, auto proceeds with the recorded baseline, off skips); recovery excludes pre-existing dirty files and discloses overlap; changes remain uncommitted and unstaged.
 - **Plan-suspect guards (per issue):** a BE main flow expecting 2xx that gets 401/403 is a FAIL flagged `auth`, never auto-fixed. `candidates` excludes these failures and unverified assertions in `auto`, while `approve` surfaces their flags for human review. A grounded sibling failure remains independently eligible. Rejected, location-less, incomplete or ambiguously mapped issues never dispatch.
 - **Verifier authority:** only fresh tester results govern verdicts; fixer self-reports and anti-hardcoding warnings are advisory. Only the final all-assertions PASS writes Fixed. Coverage says **Exercised**, not Verified, and shallow/partial coverage is disclosed without turning green red.
@@ -302,7 +315,7 @@ There is no per-fix/step mode. Every failing assertion is a fix candidate. The e
 
 ### Residual risks
 
-- Mutation classification is syntactic and best-effort; GET-with-side-effects, GraphQL mutations without an explicit verb and FE UI actions may still write. Disposability matters even under a restrictive policy.
+- Mutation classification is syntactic and best-effort; GET-with-side-effects, GraphQL mutations without an explicit verb and FE UI actions may still write. DESKTOP relies on its declared Writes and can persist files or settings outside the run. Disposability matters even under a restrictive policy.
 - **Verifier-gaming residual:** a capable fixer seeing deterministic scenarios can make them pass without a real fix. The engine's payload-literal warning is only a heuristic; default batch approval mitigates, not eliminates, this risk.
 - Session-auth stacks needing a CSRF round trip depend on tester preconditions that preserve that flow.
 - Signup rate limits, CAPTCHAs or mandatory email confirmation without a local mail catcher can block tester registration; the tester reports the missing prerequisite rather than bypassing it.
@@ -315,3 +328,7 @@ There is no per-fix/step mode. Every failing assertion is a fix candidate. The e
 - 2xx-shaped gating, tenant-shaped 404s and FE gating remain undetected by auth-status classification. A dispatch outliving token lifetime can turn expiry into an `auth`-flagged FAIL.
 - Drift checks run at engine calls; an already dispatched tester finishes against old config before the run stops.
 - Locks coordinate identical configured target origins and store endpoint keys; an undeclared store, or one backend reached through different host aliases, is not coordinated.
+- A desktop driver is installed plugin code that builds and runs the branch's app with your user rights; a driver can rely on an experimental toolkit API (qa-ebitengine uses Ebitengine's exp/vmhost), so a toolkit release can break it (NEED_INFO kind=tool).
+- Desktop ticks are exact, but code reading the wall clock sees real time between ticks.
+- A desktop run executes the branch's own code, as `env.services` does.
+- Reading a shot marked `sensitive` puts any injected credential it shows into the session transcript, as FE form fills do, although such shots never enter the repository.

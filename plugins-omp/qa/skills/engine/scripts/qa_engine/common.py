@@ -28,7 +28,7 @@ LOOP_HISTORY = re.compile(r"^##[ \t]+Loop History[ \t]*$(.*?)(?=^##[ \t]|\Z)", r
 REPORT_FIELD = re.compile(r"^(?:[-*][ \t]*)?\*\*(?P<name>[\w-]+):\*\*[ \t]*(?P<value>[^\n]*)$", re.MULTILINE)
 METADATA_FIELDS = frozenset({"Status", "Location", "Decision", "Decision-retired", "Verification-plan", "Decision-pin", "Dispatch", "Verification"})
 SEVERITIES = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
-ASSERTION_KEY = re.compile(r"((?:FE|BE)-\d{2,})(?: \(edge ([1-9]\d*)\))?\Z")
+ASSERTION_KEY = re.compile(r"((?:FE|BE|DESKTOP)-\d{2,})(?: \(edge ([1-9]\d*)\))?\Z")
 
 
 def report_blocks(text: str) -> dict[str, str]:

@@ -46,6 +46,14 @@ PLAN = '''# Test Plan
 - **Method:** GET /health
 - **Expected:** 200 healthy. (src/app.py:1)
 '''
+DESKTOP = '''## DESKTOP Test Scenarios
+### DESKTOP-01: Console prints the seed
+- **Writes:** no
+- **Steps:** Wait 30 ticks, press `Backquote`, type `seed`, press `Enter`, shot `console`
+- **Expected:** Shot `console` shows the seed. (src/app.py:1)
+- **Edge cases:**
+  - Empty command: shot `empty` shows the prompt. (src/app.py:2)
+'''
 
 
 def outcome(status: str = "PASS", observed: int | None = 200, **extra: object) -> dict[str, object]:
@@ -556,6 +564,28 @@ class StateTests(unittest.TestCase):
             dispatch = self.dispatch(run, section)
             result = self.ingest(run, dispatch, raw=(RESULTS / file).read_text())
             self.assertTrue(all(verdict == "pass" for verdict in result["verdicts"].values()))
+
+    def test_desktop_results_store_no_status_count_as_features_and_order_last(self) -> None:
+        self.put(BASE + '[qa.desktop.app]\ndriver = "fake"\n', ".av/config.toml")
+        self.plan.write_text(PLAN + DESKTOP)
+        self.trust()
+        run = self.start()
+        desktop = self.dispatch(run, "DESKTOP")
+        self.assertEqual(desktop["scenarios"], ["DESKTOP-01"])
+        rows = [{"id": "DESKTOP-01", **outcome("FAIL", 200), "edges": [{"n": 1, **outcome(observed=200)}]}]
+        result = self.ingest(run, desktop, raw="```json qa-results\n" + json.dumps({"section": "DESKTOP", "scenarios": rows}) + "\n```\n")
+        self.assertEqual(result["verdicts"], {"DESKTOP-01": "fail"})
+        state = self.sidecar(run)
+        self.assertIsNone(state["assertions"]["DESKTOP-01"]["observed_status"])
+        self.assertIsNone(state["assertions"]["DESKTOP-01 (edge 1)"]["observed_status"])
+        self.assertEqual(state["scenario_kind"]["DESKTOP-01"], "feature")
+        self.ingest(run, self.dispatch(run), outcome("FAIL", 500))
+        frontend = self.dispatch(run, "FE")
+        self.ingest(run, frontend, raw="```json qa-results\n" + json.dumps({"section": "FE", "scenarios": [
+            {"id": "FE-01", **outcome("FAIL", None), "edges": []}]}) + "\n```\n")
+        self.assertEqual(self.cli("iteration", "open", "--run", run["run"])["decision"], "iterate")
+        self.cli("iteration", "close", "--run", run["run"])
+        self.assertEqual(self.sidecar(run)["iterations"][0]["failing_in"], ["FE-01", "BE-01", "DESKTOP-01"])
 
 
 if __name__ == "__main__":

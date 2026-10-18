@@ -15,7 +15,7 @@ description: Test plan structure, naming conventions, edge case generation rules
 
 ## Plan Structure
 
-Every test plan MUST follow this structure; omit optional sections and `**Blocked-by:**` lines where they do not apply. Targets, configured existing users, exposed values, stores and service bring-up come from the project config. The plan declares users and tester-owned registration/login preconditions. Replace the illustrative target names, paths, expected results and citation tags with grounded project-specific details:
+Every test plan MUST follow this structure; omit optional sections and `**Blocked-by:**` lines where they do not apply. Targets, desktop apps, configured existing users, exposed values, stores and service bring-up come from the project config. The plan declares users and tester-owned registration/login preconditions. Replace the illustrative target names, paths, expected results and citation tags with grounded project-specific details:
 
 ~~~markdown
 # Test Plan: <title>
@@ -53,6 +53,7 @@ Defects in the code under test that obstruct how it must be tested. Mandatory �
 - Playwright MCP: <available/unavailable>
 - HTTP client: <curl/httpie/unavailable>
 - Store clients: <psql/sqlite3/mysql/redis-cli/unavailable>
+- Desktop drivers: <names or none>
 
 ## FE Test Scenarios
 
@@ -88,8 +89,27 @@ Defects in the code under test that obstruct how it must be tested. Mandatory �
   - <edge case with expected status and response> (path:line)
   - <second edge case with expected status and response> (path:line)
 
+## DESKTOP Test Scenarios
+
+### DESKTOP-01: <scenario name>
+- **Area:** <screen/system>
+- **Target:** app
+- **Writes:** no
+- **Args:** `-seed 42`
+- **Preconditions:** <state reached through the app's own input within this run, or "none">
+- **Steps:**
+  1. Wait 30 ticks
+  2. Press `Backquote`
+  3. Type `seed`
+  4. Press `Enter`, wait 5 ticks
+  5. Shot `console`
+- **Expected:** Shot `console` shows <what is drawn> (path:line)
+- **Edge cases:**
+  - <variation>: shot `<name>` shows <result> (path:line)
+  - <variation>: the app log contains <line> (path:line)
+
 ## Out of harness scope
-- <check the browser/HTTP/DB harness cannot observe> — <one-clause harness reason>
+- <check the browser/HTTP/DB or desktop frame/log harness cannot observe> — <one-clause harness reason>
 ~~~
 
 ---
@@ -98,6 +118,7 @@ Defects in the code under test that obstruct how it must be tested. Mandatory �
 
 - FE scenarios: `FE-01`, `FE-02`, ... `FE-NN` (zero-padded two digits)
 - BE scenarios: `BE-01`, `BE-02`, ... `BE-NN` (zero-padded two digits)
+- DESKTOP scenarios: `DESKTOP-01`, `DESKTOP-02`, ... `DESKTOP-NN` (zero-padded two digits)
 - Numbering is sequential within each section, starting from 01
 
 ---
@@ -122,17 +143,40 @@ The BE tester sees only the output of `qa-redact`: it replaces values under sens
 - `$QA_NAME` / `${QA_NAME}` tokens are scanned anywhere in a scenario: steps, headers, payloads, preconditions and edges. Resolution order is: (1) engine-issued `TAG` and `NEW_PASSWORD`; (2) any name ending in `_TOKEN`, `_COOKIE` or `_COOKIE_<N>` is a plan error, because testers obtain tokens/cookies themselves; (3) `EMAIL|PASSWORD|ID` fields of the longest user-name prefix among plan declarations and configured users; (4) an `[env.values]` name; (5) an undeclared name ending in `_EMAIL|PASSWORD|ID` is a plan error; (6) any other name is `missing.values`. Never write `$QA_<U>_TOKEN` or cookie tokens in a plan; say to retain the token/cookie from a grounded registration/login precondition and use it in later requests.
 - A declared `existing` user referenced by a token but not configured is `missing.users` with reason `user is not configured`; a requested id without a configured source has reason `id source is not configured`. A declared `registered` user needs no config, but cannot share a name with a configured user (`user <n> is configured; declare it existing`). A configured user used by a token must be declared under `## Users`; otherwise it is a plan error `user <n> is configured but not declared under ## Users`. Names `new`, `captured` and `captured_*` are reserved. Values cannot collide with exposed user fields, `TAG`, `NEW_PASSWORD` or `CAPTURED_*`, or use a reserved token/cookie suffix. `[env.secrets]` is never tester-visible.
 - A login/form credential or API key uses a supported user/value token; bearer tokens and cookies instead come from tester-owned preconditions. Never use the project's own variable name (`API_KEY`), a literal credential or an ungrounded placeholder. A deliberately invalid input in a negative edge case is not a credential. Never copy secret values into the plan.
-- Every absolute URL anywhere in a scenario, including `**Expected:**` and edge cases, must match an `[env.targets]` origin exactly (scheme, lower-cased host, explicit or default port). `plan check` reports any other origin as `off_target`, and `/qa:run` stops. Request and page URLs may instead be relative paths, using `defaults.FE` / `defaults.BE` (`ui` / `backend`, or the only target of any name), unless the scenario has `- **Target:** <name>`. With multiple targets a missing section name is a gap; never use the other section's origin. A precondition on another configured origin writes an absolute URL on that origin; there is no per-step target syntax. Userinfo is always refused, and redirects are never followed automatically.
-- A scenario using any user field token, `$QA_TAG` or `$QA_NEW_PASSWORD` must resolve every touched origin — explicit Target or section origin plus every absolute URL — to loopback or HTTPS. Otherwise `plan check` reports `credentials over cleartext origin <origin>`. Testers refuse every credential-bearing request or form submission on non-loopback HTTP with `SKIP — cleartext origin refused: <origin>`.
-- When config is absent or lacks a needed user, value, target or store, retain the repository-grounded name. Write a missing target as `- **Target:** <name>` with relative paths, never an absolute URL on an unknown origin. `plan check` reports the missing names so `/qa:run` can fill the config gaps; do not replace them with literal credentials or omit the scenario. `missing.cleanup` is a soft gap when registered users exist without a cleanup recipe; it does not make `plan check.ok` false.
+- Every absolute URL anywhere in an FE or BE scenario, including `**Expected:**` and edge cases, must match an `[env.targets]` origin exactly (scheme, lower-cased host, explicit or default port). `plan check` reports any other origin as `off_target`, and `/qa:run` stops. Request and page URLs may instead be relative paths, using `defaults.FE` / `defaults.BE` (`ui` / `backend`, or the only target of any name), unless the scenario has `- **Target:** <name>`. With multiple targets a missing section name is a gap; never use the other section's origin. A precondition on another configured origin writes an absolute URL on that origin; there is no per-step target syntax. Userinfo is always refused, and redirects are never followed automatically.
+- A DESKTOP `- **Target:** <name>` names a `[qa.desktop.<name>]` app, defaulting to `defaults.DESKTOP` (`app` or the only app); the app's `driver` names a desktop driver plugin. A missing app is `missing.apps`. State Checks and absolute URLs are not allowed anywhere in DESKTOP scenarios.
+- DESKTOP scenarios may use configured existing users' fields, values, `$QA_NEW_PASSWORD` and `$QA_TAG`. Registered users (signup flows) are FE/BE only; `plan check` refuses registered users' fields in DESKTOP scenarios.
+- An FE or BE scenario using any user field token, `$QA_TAG` or `$QA_NEW_PASSWORD` must resolve every touched origin — explicit Target or section origin plus every absolute URL — to loopback or HTTPS. Otherwise `plan check` reports `credentials over cleartext origin <origin>`. Testers refuse every credential-bearing request or form submission on non-loopback HTTP with `SKIP — cleartext origin refused: <origin>`.
+- When config is absent or lacks a needed user, value, target, app or store, retain the repository-grounded name. Write a missing target as `- **Target:** <name>` with relative paths, never an absolute URL on an unknown origin; write a missing desktop app as `- **Target:** <name>`. `plan check` reports the missing names so `/qa:run` can fill the config gaps; do not replace them with literal credentials or omit the scenario. `missing.cleanup` is a soft gap when registered users exist without a cleanup recipe; it does not make `plan check.ok` false.
 - Data a scenario needs (a CV, an order, an uploaded file record) is created by that scenario's own preconditions as its user, never assumed to exist. FE preconditions create data through browser (UI) actions only; API/HTTP preconditions belong to BE scenarios. Set up another user's resource through that user for ownership checks. A repository file may be an upload fixture. `NEED_INFO kind=fixture` is reserved for data the app cannot create itself. Precondition writes, including registration, count toward the mutation policy even when the main request expects rejection.
-- Every FE and BE scenario has `- **Writes:** yes|no`, covering preconditions, main flow and edges. Under `qa.mutations = "deny"`, `yes`, a missing/invalid line or any syntactically detected write guards the whole scenario. `no` never overrides detected writes; `allow` guards nothing.
+- Every FE, BE and DESKTOP scenario has `- **Writes:** yes|no`, covering preconditions, main flow and edges. For DESKTOP, this covers files or settings the app persists outside the run. Under `qa.mutations = "deny"`, `yes` or a missing/invalid line guards the whole scenario; syntactically detected FE/BE writes also guard it, and `no` never overrides those detected writes. DESKTOP is guarded only by `Writes`; `allow` guards nothing.
 - `- **State Check:** [<store>: ]<query> → <expected>` is repeatable and BE-only. Store prefixes may be backticked and must match a configured `[env.stores.<name>]`; an unknown prefix is `missing.stores`. Without a prefix, exactly one configured store is required, otherwise it is a plan error `state check must name its store`. Always name the store when several exist. The engine resolves checks in line order and exposes namespaced `STORE_<NAME_UPPER>_<CLIENT>` variables through the private channel; `qa_load_store='<name>' qa_load_require='<required native names>' . '<run-dir>/load.sh' || exit 1` exports client aliases. These are store-client inputs, not plan tokens. Never put passwords or DSNs in process argv.
 - Write SQL State Checks against only the columns asserted; never put `SELECT *` in a plan. Row checks project just the needed columns to JSON and pass through the installed `qa-redact.pl` before inspection or reporting. Redis State Checks use only the be-testing skill's read-command allowlist.
 
+## DESKTOP steps
+
+Use this vocabulary for DESKTOP steps:
+
+- `Wait N ticks`
+- ``Press `<Key>` [for N ticks]``
+- ``Hold `<Key>` `` / ``Release `<Key>` ``
+- ``Type `<text>` ``
+- `Type $QA_NAME`
+- `Move to x,y`
+- `Click x,y [right|middle]`
+- `Scroll dx,dy`
+- ``Shot `<name>` ``
+- `**Args:**` holds app arguments.
+
+Every scenario and every edge starts a fresh app. Reach preconditions through the app's own input within that run; never depend on state from another scenario or edge. `**Args:**` holds per-scenario flags such as seeds.
+
+`<Key>` is a W3C `KeyboardEvent.code` value (`KeyA`, `Digit1`, `ArrowUp`, `Enter`, `Backquote`).
+
+Every `**Expected:**` and edge-case expectation names the shot or app log line that shows it and cites the producing draw call, UI string or log call. Do not assert pixel colours or coordinates unless a source pins them. `Move` and `Click` coordinates are the app's own drawing coordinates as the source draws them; the scenario's Preconditions state the app's logical size with its citation, and the tester converts them to window pixels with the app's driver guide. Ticks count at the app's tick rate, as its driver guide describes.
+
 ## Harness scope
 
-Scenario steps, including data preconditions, must stay within their section's harness against the already-running app: FE flows and preconditions use browser (UI) actions only; BE flows use HTTP requests / DB queries, with API/HTTP requests for data preconditions. Do not include `docker`, `make`, `npm`, migrations, file edits or infrastructure inspection as scenario steps. Bring-up belongs to the config's `env.services`, which `/qa:run` handles before dispatch; a reversible blocker's human prerequisite belongs in optional `## Setup` notes. List unobservable checks under optional `## Out of harness scope` as bullets with a one-clause harness reason (never scenario headings). A code defect that prevents a contract-correct result is a Blocker, not an out-of-scope check. If a tester nevertheless encounters an out-of-scope step, the scenario is `SKIP` with reason `out of harness scope: <step>`.
+Scenario steps, including data preconditions, must stay within their section's harness: FE flows and preconditions use browser (UI) actions only; BE flows use HTTP requests / DB queries, with API/HTTP requests for data preconditions, against the already-running app. DESKTOP flows use only the DESKTOP vocabulary above against the configured app, starting a fresh app for every scenario and edge. Do not include `docker`, `make`, `npm`, migrations, file edits or infrastructure inspection as scenario steps. Bring-up belongs to the config's `env.services`, which `/qa:run` handles before dispatch; a reversible blocker's human prerequisite belongs in optional `## Setup` notes. List unobservable checks under optional `## Out of harness scope` as bullets with a one-clause harness reason (never scenario headings). A code defect that prevents a contract-correct result is a Blocker, not an out-of-scope check. If a tester nevertheless encounters an out-of-scope step, the scenario is `SKIP` with reason `out of harness scope: <step>`.
 
 ---
 
@@ -170,12 +214,22 @@ For EVERY scenario, consider and include relevant edge cases from:
 - User not logged in
 - Browser back/forward during operation
 
+### DESKTOP-specific
+- Input during a transition or playback
+- A key pressed twice or held
+- Empty or overlong text input
+- A boundary state reached through the app's own input or debug commands
+- Another seed or argument value
+
 ---
 
 ## Section Omission Rules
 
 - If changes are **FE-only**: omit the `## BE Test Scenarios` section entirely
 - If changes are **BE-only**: omit the `## FE Test Scenarios` section entirely
+- If no changed file is **DESKTOP**: omit the `## DESKTOP Test Scenarios` section entirely
+- If no desktop driver is installed (`Desktop drivers: none`) and no `[qa.desktop.<name>]` app is configured: write no DESKTOP scenarios; list the changed desktop behaviour under `## Out of harness scope` with the reason `no QA desktop driver installed`
+- If the app has no browser or HTTP surface: omit the `## FE Test Scenarios` and `## BE Test Scenarios` sections
 - If a tool is **unavailable**: note it in `## Detected Tools`; the tester reports `NEED_INFO kind=tool` at run time rather than labeling scenarios as skipped
 - `## Setup` and `## Out of harness scope` are optional; `## Blockers / Findings` is mandatory for generated plans (`None found.` if none). Consumers ignore its absence in a hand-written plan
 
@@ -188,20 +242,23 @@ Before saving the plan, verify:
 - [ ] Every scenario has at least 2 edge cases
 - [ ] Every BE scenario has an expected status code
 - [ ] Every FE scenario has concrete steps (not "test the form")
+- [ ] DESKTOP steps use the DESKTOP vocabulary, and every scenario and edge starts a fresh app
+- [ ] Every DESKTOP expectation names a shot or app log line and cites its producer
+- [ ] No DESKTOP scenario contains a State Check or an absolute URL
 - [ ] State Checks are repeatable, BE-only, use real table/column names or supported Redis read commands, and name a configured store (mandatory with several stores)
 - [ ] API paths match actual routes from the codebase
 - [ ] No placeholder text (TBD, TODO, fill in later)
 - [ ] `## Source` records the current checkout `Branch:` and `Head:`
-- [ ] `## Setup`, if present, holds only optional human notes; targets, values, stores and bring-up are config-owned
+- [ ] `## Setup`, if present, holds only optional human notes; targets, apps, values, stores and bring-up are config-owned
 - [ ] Credentials and exposed values use supported `$QA_NAME` / `${QA_NAME}` tokens; tokens/cookies are retained by the tester from preconditions, never `$QA_<U>_TOKEN` / cookie plan tokens or literal secrets
-- [ ] Every absolute URL anywhere in a scenario, including Expected and edge cases, is on a config target origin; off-target response URLs are asserted by separate components, not literal URLs. Request/page paths have `- **Target:** <name>` where the section default does not apply
-- [ ] Missing config names remain explicit; a missing target is named with relative paths, not an absolute URL on an unknown origin
-- [ ] Each scenario creates its required data as its user through browser (UI) actions for FE or API/HTTP requests for BE; only data the app cannot create requires an external fixture
+- [ ] Every absolute URL anywhere in an FE or BE scenario, including Expected and edge cases, is on a config target origin; off-target response URLs are asserted by separate components, not literal URLs. Request/page paths have `- **Target:** <name>` where the section default does not apply
+- [ ] Missing config names remain explicit; a missing target is named with relative paths, not an absolute URL on an unknown origin, and a missing desktop app is named by `- **Target:** <name>`
+- [ ] Each scenario creates its required data as its user through browser (UI) actions for FE, API/HTTP requests for BE or the app's own input for DESKTOP; only data the app cannot create requires an external fixture
 - [ ] `## Users` declares each referenced user as existing or registered, covering owner, other user, anonymous actions and each role; at most 10 users are registered
-- [ ] Every FE and BE scenario has `- **Writes:** yes|no` consistent with all executable actions, including registration and edges
-- [ ] Every credential-bearing scenario touches only loopback or HTTPS origins
+- [ ] Every FE, BE and DESKTOP scenario has `- **Writes:** yes|no` consistent with all executable actions, including registration and edges; DESKTOP includes files or settings persisted outside the run
+- [ ] Every credential-bearing FE or BE scenario touches only loopback or HTTPS origins; DESKTOP uses only configured existing users, values and engine-issued tokens, never registered users
 - [ ] Every `**Expected:**` and edge-case expectation has a grounded `(path:line)` or `(unverified — confirm at run time)` tag
 - [ ] BE expectations and edge cases assert only visible data after `qa-redact`: scheme/host/port/path may be observable for URL-only keys, but masked userinfo/query/fragment, one-time links and any masked path component are not
 - [ ] `## Blockers / Findings` is present (or reads `None found.`)
-- [ ] No scenario step is outside the browser / HTTP / DB harness scope
+- [ ] No scenario step is outside the browser / HTTP / DB / DESKTOP harness scope
 - [ ] For ≥2 independent boolean inputs, a `state-combination-planning` 2^N table appears above affected scenarios with a disposition for every row

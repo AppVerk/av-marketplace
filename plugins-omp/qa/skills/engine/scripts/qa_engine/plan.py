@@ -20,13 +20,14 @@ from av_config.origins import parse_origin
 from qa_engine.config import Config
 from qa_engine.config import CREDENTIAL_SUFFIX
 from qa_engine.config import SECTION_TARGETS
+from qa_engine.config import SECTIONS
 from qa_engine.files import display_path
 from qa_engine.common import origin_display
 from qa_engine.git import git_command
 from qa_engine.models import Run
 from qa_engine.models import StateStop
 
-SCENARIO = re.compile(r"^###[ \t]+((FE|BE)-\d{2,})(?=[ \t:]|$)[ \t]*:?[ \t]*(.*)$", re.MULTILINE)
+SCENARIO = re.compile(r"^###[ \t]+((FE|BE|DESKTOP)-\d{2,})(?=[ \t:]|$)[ \t]*:?[ \t]*(.*)$", re.MULTILINE)
 BLOCK_BOUNDARY = re.compile(r"^#{1,3}[ \t]+.*$|^[ \t]*(?P<fence>`{3,}|~{3,})(?P<info>.*)$", re.MULTILINE)
 FIELD = re.compile(r"^(?:-[ \t]*)?\*\*([^*\n]+?):\*\*[ \t]*(.*)$", re.MULTILINE)
 TOKEN = re.compile(r"\$\{(QA_[A-Z0-9_]+)\}|\$(QA_[A-Z0-9_]+)(?![A-Za-z0-9_])")
@@ -104,7 +105,7 @@ class Plan:
 
     @property
     def sections(self) -> dict[str, list[str]]:
-        return {section: [scenario.id for scenario in self.scenarios if scenario.section == section] for section in ("FE", "BE")}
+        return {section: [scenario.id for scenario in self.scenarios if scenario.section == section] for section in SECTIONS}
 
 
 def run_plan(run: Run, *, strict: bool = True) -> Plan:
@@ -301,6 +302,9 @@ def user_token(token: str, users: Iterable[str]) -> tuple[str, str] | None:
 
 
 def _mutates(scenario: Scenario) -> bool:
+    if scenario.section == "DESKTOP":
+        # Desktop steps are key and mouse input; only the Writes line guards them.
+        return False
     if scenario.section == "FE":
         return bool(WRITE_ACTION.search(scenario.actions))
     return bool(WRITE_ACTION.search(scenario.actions) or WRITE_STEP.search(scenario.other_steps)
@@ -340,6 +344,9 @@ def _token_requirements(plan: Plan, config: Config) -> tuple[set[str], set[str],
                     reason = "user is not configured" if user not in config.users else "id source is not configured" if field == "ID" and field not in config.user_fields(user) else None
                     if reason:
                         user_gaps[token] = {"name": user, "token": token, "reason": reason}
+                elif scenario.section == "DESKTOP":
+                    # Registration and its tester-owned values have no desktop channel.
+                    reasons.add(f"registered users are FE/BE only; DESKTOP scenarios cannot use ${token}")
             elif name in value_names:
                 values.add(value_names[name])
             elif unknown := USER_TOKEN.fullmatch(name):
@@ -356,8 +363,11 @@ def _cleartext_errors(plan: Plan, config: Config) -> list[dict[str, str]]:
     for scenario in plan.scenarios:
         if not any(token[3:] in ENGINE_TOKENS or user_token(token, known) for token in scenario.tokens):
             continue
-        target = scenario.target or config.section_target(scenario.section)
-        urls = ([config.targets[target]] if target in config.targets else []) + scenario.urls
+        if scenario.section == "DESKTOP":
+            urls = scenario.urls
+        else:
+            target = scenario.target or config.section_target(scenario.section)
+            urls = ([config.targets[target]] if target in config.targets else []) + scenario.urls
         refused: set[str] = set()
         for url in urls:
             try:
@@ -372,6 +382,8 @@ def _cleartext_errors(plan: Plan, config: Config) -> list[dict[str, str]]:
 
 
 def _missing_target(scenario: Scenario, config: Config) -> str | None:
+    if scenario.section == "DESKTOP":
+        return None
     if scenario.target:
         return scenario.target if scenario.target not in config.targets else None
     # An absolute-only scenario already names its origin; relative
@@ -382,9 +394,21 @@ def _missing_target(scenario: Scenario, config: Config) -> str | None:
     return None if config.section_target(scenario.section) else SECTION_TARGETS[scenario.section]
 
 
+def _missing_app(scenario: Scenario, config: Config) -> str | None:
+    """Name the ``qa.desktop`` app a DESKTOP scenario needs but the config lacks."""
+    if scenario.section != "DESKTOP":
+        return None
+    if scenario.target:
+        return scenario.target if scenario.target not in config.desktop else None
+    return None if config.section_target("DESKTOP") else SECTION_TARGETS["DESKTOP"]
+
+
 def _off_target(scenario: Scenario, origins: set[Origin]) -> list[dict[str, object]]:
     refused: list[dict[str, object]] = []
     for url in scenario.urls:
+        if scenario.section == "DESKTOP":
+            refused.append({"scenario": scenario.id, "origin": origin_display(url), "reason": "URLs are not allowed in DESKTOP scenarios"})
+            continue
         try:
             allowed = parse_origin(url) in origins
             reason = "origin is not a configured target"
@@ -407,6 +431,7 @@ def check_plan(plan: Plan, config: Config) -> dict[str, object]:
     users, registrations, values, user_gaps, missing_values, plan_errors = _token_requirements(plan, config)
     plan_errors.extend(_cleartext_errors(plan, config))
     missing_targets: set[str] = set()
+    missing_apps: set[str] = set()
     state_checks: dict[str, list[str]] = {}
     missing_stores: set[str] = set()
     off_target: list[dict[str, object]] = []
@@ -415,10 +440,13 @@ def check_plan(plan: Plan, config: Config) -> dict[str, object]:
         target = _missing_target(scenario, config)
         if target is not None:
             missing_targets.add(target)
+        app = _missing_app(scenario, config)
+        if app is not None:
+            missing_apps.add(app)
         off_target.extend(_off_target(scenario, origins))
         if scenario.state_checks:
             state_checks[scenario.id] = []
-            if scenario.section == "FE":
+            if scenario.section != "BE":
                 plan_errors.append({"scenario": scenario.id, "reason": "state checks are BE-only"})
             for check in scenario.state_checks:
                 store = check.store
@@ -437,7 +465,7 @@ def check_plan(plan: Plan, config: Config) -> dict[str, object]:
     missing = {
         "users": [user_gaps[token] for token in sorted(user_gaps)],
         "values": sorted(missing_values), "targets": sorted(missing_targets),
-        "stores": sorted(missing_stores),
+        "apps": sorted(missing_apps), "stores": sorted(missing_stores),
         "cleanup": bool(registrations) and config.cleanup_recipe is None,
     }
     return {

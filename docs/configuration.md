@@ -181,6 +181,7 @@ QA pins these settings:
 
 - Every value source, including configured user fields and store passwords.
 - Shared service settings.
+- Every `[qa.desktop.<name>]` app: driver, package, args and screen.
 - Non-loopback target origins.
 - The whole cleanup recipe and its SQL store table.
 - Explicitly configured `fix`, `mutations` and `start_services` values.

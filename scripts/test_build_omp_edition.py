@@ -795,5 +795,53 @@ class TestNative(unittest.TestCase):
             self.assertTrue((root / "out/native/agents/worker.md").is_file())
 
 
+class TestRemote(unittest.TestCase):
+    REMOTE = {"name": "remote", "source": {"source": "github", "repo": "owner/remote", "ref": "v0.1.0", "sha": "a" * 40},
+              "description": "Remote plugin", "version": "0.1.0", "category": "testing", "homepage": "https://example.com"}
+
+    def source(self, root: Path, remote: object) -> Path:
+        source = root / "source"
+        fixture(source)
+        catalog = json.loads((source / ".claude-plugin/marketplace.json").read_text())
+        catalog["plugins"].append(self.REMOTE)
+        put_json(source / ".claude-plugin/marketplace.json", catalog)
+        put_json(source / "omp/remote-plugins.json", remote)
+        return source
+
+    def test_listed_remote_plugin_keeps_its_catalog_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build(root / "output", self.source(root, ["remote"]))
+            catalog = json.loads((root / "output/.omp-plugin/marketplace.json").read_text())
+            self.assertEqual(catalog["plugins"], [
+                {"name": "remote", "source": self.REMOTE["source"], "description": "Remote plugin", "version": "0.1.0", "category": "testing"},
+                {**ENTRY, "source": "./sample"},
+            ])
+            self.assertFalse((root / "output/plugins-omp/remote").exists())
+
+    def test_unlisted_remote_plugin_stays_out_of_the_omp_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = self.source(root, [])
+            (source / "omp/remote-plugins.json").unlink()
+            build(root / "output", source)
+            catalog = json.loads((root / "output/.omp-plugin/marketplace.json").read_text())
+            self.assertEqual([entry["name"] for entry in catalog["plugins"]], ["sample"])
+
+    def test_remote_list_guards(self) -> None:
+        cases = {
+            "not a list": ({"remote": True}, "expected a JSON array of plugin names"),
+            "not names": ([1], "expected a JSON array of plugin names"),
+            "missing name": (["absent"], "'absent' is not in the Claude catalog"),
+            "local source": (["sample"], "'sample' has a local source; only remote plugins belong here"),
+            "listed twice": (["remote", "remote"], "'remote' already has an OMP edition in this repository"),
+        }
+        for label, (remote, error) in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                with self.assertRaisesRegex(BuildError, re.escape(error)):
+                    build(root / "output", self.source(root, remote))
+
+
 if __name__ == "__main__":
     unittest.main()

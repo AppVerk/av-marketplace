@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from qa_engine.common import ASSERTION_KEY
+from qa_engine.config import SECTIONS
 FAILING = frozenset({"FAIL"})
 
 
@@ -21,8 +22,10 @@ def _forget(entries: dict[str, Any], sid: str) -> None:
 
 def _ordered(ids: Iterable[str]) -> list[str]:
     def order(sid: str) -> tuple[int, int, str]:
-        match = re.fullmatch(r"(FE|BE)-(\d+)", sid)
-        return (0 if sid.startswith("FE") else 1, int(match.group(2)) if match else 0, sid)
+        match = re.fullmatch(r"(FE|BE|DESKTOP)-(\d+)", sid)
+        if not match:
+            return (len(SECTIONS), 0, sid)
+        return (SECTIONS.index(match.group(1)), int(match.group(2)), sid)
     return sorted(set(ids), key=order)
 
 
