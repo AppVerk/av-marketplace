@@ -132,7 +132,7 @@ Always run `users provision --run <run>`, even when the plan references zero use
 
 A required missing `file:.av/secrets.local.env#NAME` value names the keys to fill and stops; never ask the user to paste secrets, edit `.envrc`, export new harness credentials or restart the harness. Other provisioning errors stop with the engine diagnostic. Testers perform login and registration themselves; there is no engine login repair.
 
-When the plan has DESKTOP scenarios, run qa:engine's Desktop drivers procedure if it has not run yet in this invocation. Then run `desktop register --run <run> --manifest <manifest>` for each driver listed in the `Desktop drivers:` block and print `Desktop driver <driver> <version> registered`. On an error, print it and continue: the affected scenarios come back `NEED_INFO`. Every `run start`, including a repair restart, passes through this step again, so each new run registers its drivers.
+When the plan has DESKTOP scenarios, run qa:engine's Desktop drivers procedure if it has not run yet in this invocation. Then run `desktop register --run <run> --manifest <manifest>` for each driver listed in the `Desktop drivers:` block, and after each success write the line `Desktop driver <driver> <version> registered`, verbatim, in your visible reply to the user (not only in your reasoning). On an error, show it the same way and continue: the affected scenarios come back `NEED_INFO`. Every `run start`, including a repair restart, passes through this step again, so each new run registers its drivers.
 
 ### Step 8: Baseline
 
