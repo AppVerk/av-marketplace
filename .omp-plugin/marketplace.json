@@ -70,7 +70,7 @@
         "source": "github",
         "repo": "mszenfeld/qa-ebitengine",
         "ref": "v0.1.0",
-        "sha": "efb07d2e75806012db8e62d1dd2934242fad0231"
+        "sha": "af222e2885a672e79cd762ee4c3b8ccba3569f4e"
       },
       "description": "Ebitengine desktop driver for the qa plugin: /qa:run tests Ebitengine (v2.10.5 or later) games headless in the background through exp/vmhost. Requires qa 3.1.0 or later.",
       "version": "0.1.0",
