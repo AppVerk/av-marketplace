@@ -635,7 +635,7 @@ Then ask, with AskUserQuestion, one question. `N` is the length of `needs_decisi
 question: "Resolve <N> findings requiring your decision now? <N> findings to analyse, in <B> batch(es) of at most 8."
 options:
   - label: "Yes — resolve <N>"
-    description: "One question per finding auto-accept does not resolve — more where a location must be supplied, an out-of-boundary check approved or the auto-accept settings trusted. Then each decision is fixed and verified."
+    description: "One question per finding auto-accept does not resolve — more where a location must be supplied, an out-of-boundary check approved or, in an interactive run, the auto-accept settings trusted. Then each decision is fixed and verified."
   - label: "No — leave them"
     description: "Stop here. They stay unresolved and return on the next run."
 ```
