@@ -1,0 +1,47 @@
+<!-- Rendered to docs/assets/cross-model-checks.png by: bun docs/assets/src/render.ts cross-model-checks -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="render-size" content="1200x740">
+  <title>Who checks whom</title>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    .pairs { display: grid; grid-template-columns: 1fr 150px 1fr; grid-template-rows: 24px repeat(3, 112px); row-gap: 18px; }
+    .head { margin: 0; align-self: end; font: 600 14px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+    .verb { position: relative; z-index: 1; align-self: center; justify-self: center; padding: 2px 8px; background: var(--bg); font: 600 14px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <svg class="wires" aria-hidden="true"></svg>
+    <header>
+      <p class="kicker">Oh My Pi · model roles</p>
+      <h1>Who checks whom</h1>
+      <p class="sub">Agents ask for a role, not a model. With the recommended role mapping, the work and its check come from different model families.</p>
+    </header>
+    <div class="pairs">
+      <p class="head">The work</p><span></span><p class="head">Checked by</p>
+      <div class="box anth" id="w-1"><div class="top"><b>Plans</b><span class="chip anth">Anthropic</span></div><small><code>plan</code> role: plan mode, QA's test planner</small></div>
+      <span class="verb">checks</span>
+      <div class="box oai" id="c-1"><div class="top"><b><code>advisor</code></b><span class="chip oai">OpenAI</span></div><small>Plan Review, QA's test-plan reviewer, the test planner's Advisor</small></div>
+      <div class="box oai" id="w-2"><div class="top"><b>Code</b><span class="chip oai">OpenAI</span></div><small><code>executor</code> role: developer agents, Delivery's implementer, fix-auto</small></div>
+      <span class="verb">checks</span>
+      <div class="box anth" id="c-2"><div class="top"><b><code>code_review</code></b><span class="chip anth">Anthropic</span></div><small>Delivery's task reviewer, Code Review's auditors</small></div>
+      <div class="box anth" id="w-3"><div class="top"><b>Review findings</b><span class="chip anth">Anthropic</span></div><small><code>code_review</code> role: Code Review's auditors</small></div>
+      <span class="verb">checks</span>
+      <div class="box oai" id="c-3"><div class="top"><b><code>challenger</code></b><span class="chip oai">OpenAI</span></div><small>Code Review's challenger and cross-verifier</small></div>
+    </div>
+    <p class="foot">Families follow the recommended role mapping in <code>docs/oh-my-pi.md</code>; an unmapped role falls back to other models. In Claude Code, the agents in this picture run on <code>opus</code>.</p>
+  </main>
+  <script src="wires.js"></script>
+  <script>
+    drawWires([
+      { from: "c-1", to: "w-1", fromSide: "left", toSide: "right" },
+      { from: "c-2", to: "w-2", fromSide: "left", toSide: "right" },
+      { from: "c-3", to: "w-3", fromSide: "left", toSide: "right" },
+    ]);
+  </script>
+</body>
+</html>
