@@ -24,10 +24,10 @@ node_modules
 # superpowers SDD scratch (ledger, briefs, review packages)
 .superpowers/
 
-# Delivery plans, QA test plans and code-review reports (local working artifacts, never committed)
+# Delivery plans, code-review reports and QA plans/reports (local working artifacts, never committed)
 docs/plans/
-docs/testing/plans/
 docs/reviews/
+docs/testing/
 
 # Serena MCP project config (per-developer)
 .serena/

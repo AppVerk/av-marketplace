@@ -23,4 +23,5 @@
 - [ ] Delivery tests pass: `python3 omp/native/delivery/tests/test_route_task.py`, `python3 plugins/delivery/tests/test_delivery_hook.py` and `bun test tests/delivery.test.ts` in `omp/native/delivery/` (if `omp/native/delivery/` or `plugins/delivery/` changed)
 - [ ] Plan review tests pass: `bun test tests/plan-review.test.ts` in `omp/native/plan-review/` (if `omp/native/plan-review/` changed)
 - [ ] Claude hooks tests pass: `bun test` in `omp/claude-hooks/` (if `omp/claude-hooks/` or the hooks or scripts of a plugin with an OMP edition changed)
+- [ ] Extension load check passes: `python3 scripts/test_check_omp_extensions.py` and `python3 scripts/check_omp_extensions.py <compiled omp binary>` (if an OMP extension in `omp/native/<name>/extensions/`, `omp/claude-hooks/claude-hooks.ts` or `scripts/check_omp_extensions.py` changed; see docs/contributing.md for the download)
 - [ ] No unrelated changes included

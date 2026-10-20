@@ -128,6 +128,13 @@ OMP extension declares it in its own `package.json` (`omp.extensions`); its
 name and version must equal `.omp-plugin/plugin.json`, and the build fails
 otherwise.
 
+An OMP extension imports from `@oh-my-pi/*` only the code modules those
+packages export. The compiled `omp` binary serves extensions a registry of
+them, so an extension importing anything else, such as a prompt `.md`
+`with { type: "text" }`, fails to load there while `bun test` against the
+npm package passes. `scripts/check_omp_extensions.py` loads every extension
+of `plugins-omp/` in the compiled binary; the `OMP Edition` workflow runs it.
+
 A native plugin may also have a Claude Code edition: a plugin in
 `plugins/<name>/` and the Claude catalog, with no overlay (Delivery). The
 two editions share one README row, so their versions move together in all

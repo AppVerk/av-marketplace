@@ -36,6 +36,9 @@ jobs:
       - name: Test OMP_TOOLS checker
         run: python3 scripts/test_check_omp_tools.py
 
+      - name: Test OMP extension load checker
+        run: python3 scripts/test_check_omp_extensions.py
+
       - name: Test delivery router
         run: python3 omp/native/delivery/tests/test_route_task.py
 
@@ -67,3 +70,12 @@ jobs:
       - name: Test plan review against OMP
         run: bun test tests/plan-review.test.ts
         working-directory: omp/native/plan-review
+
+      - name: Download the compiled OMP binary
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/omp" https://github.com/can1357/oh-my-pi/releases/latest/download/omp-linux-x64
+          chmod +x "$RUNNER_TEMP/omp"
+          "$RUNNER_TEMP/omp" --version
+
+      - name: Check OMP extensions load in the compiled binary
+        run: python3 scripts/check_omp_extensions.py "$RUNNER_TEMP/omp"
