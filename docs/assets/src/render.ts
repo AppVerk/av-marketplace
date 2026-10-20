@@ -13,9 +13,12 @@
  * when a bundled font does not load, a .card or .box overflows, its text uses a glyph outside the
  * bundled Latin subset, or its wires were not drawn.
  */
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve, sep } from "node:path";
+import { Readable, Writable } from "node:stream";
 
 const SRC = import.meta.dir;
 const OUT = resolve(process.env.RENDER_OUT ?? join(SRC, ".."));
@@ -34,10 +37,8 @@ const CHECK = `(async () => {
     return !(c === 9 || c === 10 || (c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff) || (c >= 0x2000 && c <= 0x206f));
   }))];
   if (bad.length) errors.push("glyphs outside the bundled font subset: " + bad.map((ch) => "U+" + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")).join(", "));
-  if (document.querySelector("svg.wires")) {
-    if (document.body.dataset.wireError) errors.push("wire error: " + document.body.dataset.wireError);
-    else if (!document.body.dataset.wires) errors.push("wires not drawn");
-  }
+  if (document.body.dataset.wireError) errors.push("wire error: " + document.body.dataset.wireError);
+  else if (document.querySelector("svg.wires") && !document.body.dataset.wires) errors.push("wires not drawn");
   return errors;
 })()`;
 
@@ -77,44 +78,70 @@ interface PendingEvent {
   sessionId: string;
   resolve: () => void;
   reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
 }
 
 class Cdp {
   private nextId = 0;
   private commands = new Map<number, PendingCommand>();
   private events: PendingEvent[] = [];
+  private closed = false;
 
-  constructor(private socket: WebSocket) {
-    socket.addEventListener("message", (event: MessageEvent): void => {
-      const message: CdpMessage = JSON.parse(event.data);
-      if (message.id !== undefined) {
-        const pending = this.commands.get(message.id);
-        if (!pending) return;
-        clearTimeout(pending.timeout);
-        this.commands.delete(message.id);
-        if (message.error) pending.reject(new Error(`CDP ${pending.method}: ${message.error.message}`));
-        else pending.resolve(message.result ?? {});
-      } else {
-        this.events = this.events.filter((pending: PendingEvent): boolean => {
-          if (pending.event !== message.method || pending.sessionId !== message.sessionId) return true;
-          pending.resolve();
-          return false;
-        });
+  constructor(private toChrome: Writable, fromChrome: Readable) {
+    let input = "";
+    fromChrome.setEncoding("utf8");
+    fromChrome.on("data", (chunk: string): void => {
+      input += chunk;
+      let start = 0;
+      for (let end = input.indexOf("\0"); end !== -1; end = input.indexOf("\0", start)) {
+        const message: CdpMessage = JSON.parse(input.slice(start, end));
+        this.receive(message);
+        start = end + 1;
       }
+      input = input.slice(start);
     });
-    socket.addEventListener("close", (): void => {
-      for (const pending of this.commands.values()) {
+    fromChrome.once("end", (): void => this.close(new Error("connection closed")));
+    fromChrome.once("close", (): void => this.close(new Error("connection closed")));
+    toChrome.once("close", (): void => this.close(new Error("connection closed")));
+    fromChrome.on("error", (error: Error): void => this.close(error));
+    toChrome.on("error", (error: Error): void => this.close(error));
+  }
+
+  private receive(message: CdpMessage): void {
+    if (message.id !== undefined) {
+      const pending = this.commands.get(message.id);
+      if (!pending) return;
+      clearTimeout(pending.timeout);
+      this.commands.delete(message.id);
+      if (message.error) pending.reject(new Error(`CDP ${pending.method}: ${message.error.message}`));
+      else pending.resolve(message.result ?? {});
+    } else {
+      this.events = this.events.filter((pending: PendingEvent): boolean => {
+        if (pending.event !== message.method || pending.sessionId !== message.sessionId) return true;
         clearTimeout(pending.timeout);
-        pending.reject(new Error(`CDP ${pending.method}: connection closed`));
-      }
-      this.commands.clear();
-      for (const pending of this.events) pending.reject(new Error(`CDP ${pending.event}: connection closed`));
-      this.events = [];
-    });
+        pending.resolve();
+        return false;
+      });
+    }
+  }
+
+  close(error: Error): void {
+    if (this.closed) return;
+    this.closed = true;
+    for (const pending of this.commands.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error(`CDP ${pending.method}: ${error.message}`));
+    }
+    this.commands.clear();
+    for (const pending of this.events) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error(`CDP ${pending.event}: ${error.message}`));
+    }
+    this.events = [];
   }
 
   send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<CdpResult> {
-    if (this.socket.readyState !== WebSocket.OPEN)
+    if (this.closed || this.toChrome.destroyed || this.toChrome.writableEnded)
       return Promise.reject(new Error(`CDP ${method}: connection closed`));
     const { promise, resolve, reject } = Promise.withResolvers<CdpResult>();
     const id = ++this.nextId;
@@ -123,13 +150,19 @@ class Cdp {
       reject(new Error(`CDP ${method} timed out`));
     }, 30_000);
     this.commands.set(id, { method, resolve, reject, timeout });
-    this.socket.send(JSON.stringify({ id, method, params, sessionId }));
+    this.toChrome.write(JSON.stringify({ id, method, params, sessionId }) + "\0");
     return promise;
   }
 
   once(event: string, sessionId: string): Promise<void> {
+    if (this.closed) return Promise.reject(new Error(`CDP ${event}: connection closed`));
     const { promise, resolve, reject } = Promise.withResolvers<void>();
-    this.events.push({ event, sessionId, resolve, reject });
+    const timeout = setTimeout((): void => {
+      this.events = this.events.filter((pending: PendingEvent): boolean => pending !== entry);
+      reject(new Error(`CDP ${event} timed out`));
+    }, 30_000);
+    const entry: PendingEvent = { event, sessionId, resolve, reject, timeout };
+    this.events.push(entry);
     return promise;
   }
 }
@@ -137,42 +170,6 @@ class Cdp {
 function displayPath(path: string): string {
   const local = relative(process.cwd(), path);
   return local.startsWith("..") ? path : local;
-}
-
-function devToolsUrl(stderr: ReadableStream<Uint8Array>): Promise<string> {
-  const { promise, resolve, reject } = Promise.withResolvers<string>();
-  const timeout = setTimeout((): void => reject(new Error("Chrome did not start within 20 s")), 20_000);
-  void (async (): Promise<void> => {
-    const decoder = new TextDecoder();
-    let output = "";
-    let found = false;
-    // Keep draining after startup so Chrome cannot block on a full stderr pipe.
-    for await (const chunk of stderr) {
-      if (found) continue;
-      output += decoder.decode(chunk, { stream: true });
-      const url = /DevTools listening on (ws:\/\/\S+)/.exec(output)?.[1];
-      if (url) {
-        found = true;
-        clearTimeout(timeout);
-        resolve(url);
-      }
-    }
-    if (!found) throw new Error("Chrome did not start within 20 s");
-  })().catch((error: unknown): void => {
-    clearTimeout(timeout);
-    reject(error);
-  });
-  return promise;
-}
-
-async function connect(url: string): Promise<Cdp> {
-  const socket = new WebSocket(url);
-  const client = new Cdp(socket);
-  const { promise, resolve, reject } = Promise.withResolvers<void>();
-  socket.addEventListener("open", (): void => resolve(), { once: true });
-  socket.addEventListener("error", (): void => reject(new Error("Could not connect to Chrome DevTools")), { once: true });
-  await promise;
-  return client;
 }
 
 async function main(): Promise<number> {
@@ -205,7 +202,15 @@ async function main(): Promise<number> {
       continue;
     }
     const scale = /<meta name="render-scale" content="(\d+)">/.exec(html)?.[1] ?? "2";
-    diagrams.push({ name, width: Number(size[1]), height: Number(size[2]), scale: Number(scale) });
+    const width = Number(size[1]);
+    const height = Number(size[2]);
+    const scaleN = Number(scale);
+    if (!width || !height || !scaleN) {
+      console.error(`${name}.html: render-size and render-scale must be positive`);
+      failed = true;
+      continue;
+    }
+    diagrams.push({ name, width, height, scale: scaleN });
   }
   if (failed) return 1;
 
@@ -224,7 +229,8 @@ async function main(): Promise<number> {
     },
   });
   let profile: string | null = null;
-  let chromeProcess: Bun.Subprocess<"ignore", "ignore", "pipe"> | null = null;
+  let chromeProcess: ChildProcess | null = null;
+  let chromeExited: Promise<void> | null = null;
   let cdp: Cdp | null = null;
   try {
     const chrome = process.env.CHROME ?? [
@@ -234,12 +240,23 @@ async function main(): Promise<number> {
     ].find((path: string | null): boolean => path !== null && existsSync(path));
     if (!chrome) throw new Error("Chrome not found; set CHROME to a Chrome or Chromium binary");
     profile = mkdtempSync(join(tmpdir(), "av-render-"));
-    chromeProcess = Bun.spawn([
-      chrome, "--headless", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
+    const child = spawn(chrome, [
+      "--headless", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
       "--no-default-browser-check", "--disable-extensions", "--font-render-hinting=none",
-      "--force-color-profile=srgb", "--remote-debugging-port=0", "--user-data-dir=" + profile, "about:blank",
-    ], { stdout: "ignore", stderr: "pipe" });
-    cdp = await connect(await devToolsUrl(chromeProcess.stderr));
+      "--force-color-profile=srgb", "--remote-debugging-pipe", "--user-data-dir=" + profile, "about:blank",
+    ], { stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"] });
+    chromeProcess = child;
+    chromeExited = new Promise<void>((resolve): void => {
+      child.once("close", (): void => resolve());
+    });
+    child.once("error", (error: Error): void => cdp?.close(error));
+    child.once("exit", (): void => cdp?.close(new Error("Chrome exited")));
+    // Chrome reads CDP from fd 3 and writes NUL-delimited replies to fd 4; no TCP listener.
+    const toChrome = child.stdio[3];
+    const fromChrome = child.stdio[4];
+    if (!(toChrome instanceof Writable) || !(fromChrome instanceof Readable))
+      throw new Error("Chrome debugging pipes unavailable");
+    cdp = new Cdp(toChrome, fromChrome);
     const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
     if (!targetId) throw new Error("Chrome did not create a page target");
     const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
@@ -282,8 +299,8 @@ async function main(): Promise<number> {
   } finally {
     if (cdp) await cdp.send("Browser.close").catch((): void => {});
     if (chromeProcess) {
-      if (chromeProcess.exitCode === null) chromeProcess.kill();
-      await chromeProcess.exited;
+      if (chromeProcess.exitCode === null && chromeProcess.signalCode === null) chromeProcess.kill();
+      await chromeExited;
     }
     server.stop(true);
     if (profile) rmSync(profile, { recursive: true, force: true });

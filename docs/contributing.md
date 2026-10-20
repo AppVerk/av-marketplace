@@ -22,6 +22,30 @@ There are many ways to contribute:
 5. Commit using [Conventional Commits](https://www.conventionalcommits.org/) format (e.g., `feat(plugin-name): add X`, `fix(plugin-name): resolve Y`)
 6. Push to your fork and [open a Pull Request](https://github.com/AppVerk/av-marketplace/compare)
 
+## README Diagrams
+
+The diagram sources and bundled fonts live in `docs/assets/src/`. Regenerate the
+PNGs with `bun docs/assets/src/render.ts`, or pass diagram names to render only
+those pages. This needs Bun and Chrome or Chromium; set `CHROME` if the binary
+is not found automatically. Set `RENDER_OUT` to write the PNGs outside `docs/assets/`.
+
+Each page declares `<meta name="render-size" content="WxH">` and may set
+`<meta name="render-scale" content="N">` (default `2`). Width, height and scale
+must be positive integers. Zero values fail validation before Chrome starts,
+and the renderer exits with an error without writing any PNGs for that run.
+
+The renderer uses a temporary browser profile and controls Chrome through private
+CDP pipes, not a TCP DevTools endpoint. A loopback HTTP server serves the diagram
+sources and fonts while it runs.
+Chrome's stderr is forwarded to the terminal, including startup failures such as
+missing shared libraries.
+CDP commands and event waits time out after 30 seconds. A page that never finishes
+loading fails with a timeout error instead of preventing browser cleanup.
+
+Pages that call `drawWires` must include an `<svg class="wires">` inside `.card`.
+The renderer rejects a missing wire layer or a wire drawing error instead of
+writing a diagram without its arrows.
+
 ## Plugin Architecture
 
 Each plugin is a directory under `plugins/` (or `external_plugins/` for third-party MCP servers) with the following structure:

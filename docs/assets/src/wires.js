@@ -39,7 +39,11 @@
   window.drawWires = function (specs) {
     document.fonts.ready.then(() => {
       const card = document.querySelector(".card");
-      const svg = card.querySelector("svg.wires");
+      const svg = card && card.querySelector("svg.wires");
+      if (!svg) {
+        document.body.dataset.wireError = "drawWires needs a .card containing svg.wires";
+        return;
+      }
       const origin = card.getBoundingClientRect();
       svg.setAttribute("viewBox", `0 0 ${origin.width} ${origin.height}`);
       const defs = document.createElementNS(NS, "defs");
