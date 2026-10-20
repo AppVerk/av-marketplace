@@ -36,7 +36,9 @@ def load_error(binary: Path, extension: Path, timeout: int = TIMEOUT) -> str | N
             result = subprocess.run(
                 [str(binary), "--mode", "rpc", "--no-session", "--trusted-extension", str(extension)],
                 cwd=tmp,
-                env={"HOME": tmp, "PATH": os.environ.get("PATH", "")},
+                # Without a model omp exits 1 before serving RPC, and a fresh HOME holds no
+                # credentials. A placeholder key gives it one; stdin is closed, so nothing is sent.
+                env={"HOME": tmp, "PATH": os.environ.get("PATH", ""), "ANTHROPIC_API_KEY": "check-omp-extensions"},
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
