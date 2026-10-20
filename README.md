@@ -45,7 +45,7 @@ The [Recommended Workflow](docs/workflow.md) walks through every stage and the a
 
 ## Installation
 
-Add the marketplace, then install the plugins you need. [Available Plugins](#available-plugins) lists their IDs and which tool supports each one. For the whole harness, install Delivery, Code Review, QA, Commit and the developer plugin for your stack; in Oh My Pi, add Plan Review.
+Add the marketplace, then install the plugins you need. [Available Plugins](#available-plugins) lists their IDs and which tool supports each one. For the whole harness, install Delivery, Code Review, QA, Commit and the developer plugin for your stack; in Claude Code, add Superutils for spec review (it builds on [superpowers](docs/workflow.md#prerequisites)); in Oh My Pi, add Plan Review.
 
 ### Claude Code
 
