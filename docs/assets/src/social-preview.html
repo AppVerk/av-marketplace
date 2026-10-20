@@ -1,0 +1,50 @@
+<!-- Rendered to docs/assets/social-preview.png by: bun docs/assets/src/render.ts social-preview; upload it in Settings > Social preview -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="render-size" content="1280x640">
+  <meta name="render-scale" content="1">
+  <title>av-marketplace</title>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    .card.flat .kicker { font-size: 18px; }
+    .card.flat h1 { font-size: 76px; letter-spacing: -0.02em; }
+    .card.flat .sub { margin-top: 16px; font-size: 30px; color: var(--fg); max-width: none; }
+    .pipeline { display: flex; gap: 56px; margin-top: 64px; }
+    .pill { position: relative; z-index: 1; padding: 14px 28px; border: 2px solid var(--accent); border-radius: 999px; background: var(--accent-bg); font-size: 26px; font-weight: 600; }
+    .bottom { position: absolute; left: 80px; right: 80px; bottom: 56px; display: flex; align-items: center; gap: 12px; }
+    .mit { margin-left: auto; font: 400 18px/1.2 var(--mono); color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main class="card flat">
+    <svg class="wires" aria-hidden="true"></svg>
+    <p class="kicker">AppVerk · open source</p>
+    <h1>av-marketplace</h1>
+    <p class="sub">One AI development harness for Claude Code and Oh My Pi</p>
+    <div class="pipeline">
+      <span class="pill" id="p-1">Plan</span>
+      <span class="pill" id="p-2">Deliver</span>
+      <span class="pill" id="p-3">Test</span>
+      <span class="pill" id="p-4">Review</span>
+      <span class="pill" id="p-5">Commit</span>
+    </div>
+    <div class="bottom">
+      <span class="chip">Python</span>
+      <span class="chip">TypeScript + React</span>
+      <span class="chip">PHP</span>
+      <span class="mit">MIT license</span>
+    </div>
+  </main>
+  <script src="wires.js"></script>
+  <script>
+    drawWires([
+      { from: "p-1", to: "p-2" },
+      { from: "p-2", to: "p-3" },
+      { from: "p-3", to: "p-4" },
+      { from: "p-4", to: "p-5" },
+    ]);
+  </script>
+</body>
+</html>
