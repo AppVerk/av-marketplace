@@ -1,0 +1,467 @@
+#!/usr/bin/env bash
+# check_refs.sh - checks that paths named in the docs exist in the repo.
+#
+# Extracts [text](path) links and backtick fragments that look like a path
+# (file extension or trailing "/") from markdown files.
+# A path exists when it exists relative to the repo root, relative to the document
+# directory, or as a suffix of a repo path (docs often write paths from the source directory).
+#
+# Output:
+#   MISSING     path with a directory, or a link, that does not exist (certain drift),
+#   UNRESOLVED  bare file name without a directory that was not found (to review),
+#   EXTERNAL    path outside the repo (../other-repo/...) or on a line about another repo
+#               (other/backend/sibling repo, "innym repozytorium", a repo name with - or _;
+#               words inside paths and link texts do not count, nor this repo's own name);
+#               one that exists next to root is not reported,
+#   WORKSPACE   reference to a working file (--workspace, default .ai/workspace);
+#               docs should not link plans and reports.
+# A backtick token looks like a path when it has a known extension, ends with "/"
+# or names a dotfile after a directory (config/.toolrc).
+# Skips placeholders (YYYY, <x>, [x], {x}, $VAR, ${VAR}, Foo), package names from manifests,
+# paths ignored by git (installed dependencies, build output) and paths that the docs
+# themselves call missing: a negation word (Polish or English) in the same sentence
+# (up to ". ", "! ", "? " or ";") and at most 5 words before or after the path.
+# Other paths on that line are still checked.
+# The repo index includes *.xcresult bundles without their contents (hundreds of thousands of files).
+# Skips documents excluded by --exclude GLOB (repeatable) or by the overlay section
+# "## Excluded docs paths" (Polish alias "## Wykluczone sciezki docs", with or without
+# diacritics) in the overlay file given with --overlay FILE, lines "- `glob`" (e.g. docs about
+# other repositories). Glob syntax like git pathspec :(glob), relative to --root: "*" and
+# "?" do not cross "/", "**" does; a glob without "*" or "?" also excludes everything
+# under it (e.g. `.ai/external_services/`). Excluded documents still count as existing paths.
+# The summary line ends with EXCLUDED <documents>.
+# Known false paths: the overlay section "## Known false paths" (Polish alias "## Znane
+# falszywe sciezki", with or without diacritics), lines "- `entry`":
+#   `<doc>.md:<line>`   no path on that docs line is reported (doc relative to --root),
+#   `<path or glob>`    that referenced path is never reported (as written in the docs or
+#                       relative to the document; glob syntax as in the exclusions).
+# Matched findings are counted as KNOWN <n> at the end of the summary line.
+# KNOWN_STALE <entry> (a hint, no effect on the exit code): a <doc>:<line> entry whose
+# checked line has no reported path, or a path entry that now exists in the repo.
+#
+# Usage:
+#   check_refs.sh <file.md|dir> [...] [--root DIR] [--workspace DIR] [--overlay FILE] [--exclude GLOB]... [--strict]
+# Exit code: 0 no MISSING, 1 MISSING found, 2 usage error. UNRESOLVED, EXTERNAL
+#   and WORKSPACE do not change the code. --strict (for gates) makes the same contract
+#   explicit: code 1 only with MISSING.
+# Requires: bash 3.2+, git, awk, find; jq optional (package names).
+
+set -uo pipefail
+
+root="."
+workspace=".ai/workspace"
+paths=""
+excludes=""
+overlay=""
+DOCS_OVERLAY=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --root) root="${2:-}"; shift ;;
+    --workspace) workspace="${2:-}"; shift ;;
+    --overlay) [ -n "${2:-}" ] || { echo "USAGE --overlay needs a file"; exit 2; }; overlay="$2"; shift ;;
+    --exclude) [ -n "${2:-}" ] || { echo "USAGE --exclude needs a glob"; exit 2; }; excludes="$excludes$2"$'\n'; shift ;;
+    --strict) ;;
+    -h|--help) awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;
+    *) paths="$paths$1"$'\n' ;;
+  esac
+  shift
+done
+[ -n "$paths" ] || { echo "USAGE check_refs.sh <file.md|dir> [...] [--root DIR] [--exclude GLOB]"; exit 2; }
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo "USAGE root directory not found"; exit 2; }
+physical_root="$(cd "$root" && pwd -P)"
+if [ -n "$overlay" ]; then
+  case "$overlay" in
+    /*) DOCS_OVERLAY="$overlay" ;;
+    *) if [ -f "$root/$overlay" ]; then DOCS_OVERLAY="$root/$overlay"; else DOCS_OVERLAY="$PWD/$overlay"; fi ;;
+  esac
+  [ -f "$DOCS_OVERLAY" ] || { echo "USAGE overlay not found: $overlay"; exit 2; }
+fi
+
+# shellcheck source=docs_lib.sh
+. "$(cd "$(dirname "$0")" && pwd)/docs_lib.sh"
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+docs_exclude_globs "$root" "$excludes" >"$tmp/excludes"
+docs_known_paths "$root" >"$tmp/known"
+: >"$tmp/known_used"
+
+# MARK: repo path index
+# A nested repository (a directory with its own .git, e.g. a worktree under .claude/worktrees/)
+# is not part of this repo: its files must not resolve a path that this repo has lost.
+
+PRUNE=( -name node_modules -o -name vendor -o -name Pods -o -name DerivedData
+  -o -name build -o -name dist -o -name .angular -o -name coverage -o -name __pycache__ -o -name .venv )
+root_glob="$(printf '%s' "$root" | sed 's/[][*?\\]/\\&/g')"
+NESTED=( -path "$root_glob/.claude/worktrees" )
+while IFS= read -r g; do
+  NESTED+=( -o -path "$(printf '%s' "${g%/.git}" | sed 's/[][*?\\]/\\&/g')" )
+done < <(find "$root" \( "${PRUNE[@]}" \) -prune -o -mindepth 2 -name .git -print 2>/dev/null)
+find "$root" \( -name .git -o "${PRUNE[@]}" -o "${NESTED[@]}" \) -prune \
+  -o -name '*.xcresult' -prune -print -o -print 2>/dev/null | while IFS= read -r entry; do
+  [ "$entry" = "$root" ] || printf '%s\n' "${entry#"$root"/}"
+done >"$tmp/index"
+
+
+# MARK: package names
+
+: >"$tmp/packages"
+if command -v jq >/dev/null 2>&1; then
+  for manifest in "$root/package.json" "$root"/*/package.json; do
+    [ -f "$manifest" ] && docs_repo_path "$physical_root" "$manifest" && jq -r '(.dependencies // {}), (.devDependencies // {}), (.peerDependencies // {}) | keys[]' "$manifest" 2>/dev/null >>"$tmp/packages"
+  done
+  [ -f "$root/composer.json" ] && docs_repo_path "$physical_root" "$root/composer.json" && jq -r '(.require // {}), (."require-dev" // {}) | keys[]' "$root/composer.json" 2>/dev/null >>"$tmp/packages"
+fi
+
+# MARK: document list (relative to root)
+
+: >"$tmp/docs"
+printf '%s' "$paths" | while IFS= read -r p; do
+  [ -n "$p" ] || continue
+  case "$p" in
+    /*) abs="$p" ;;
+    *) if [ -e "$root/$p" ]; then abs="$root/$p"; else abs="$(pwd)/$p"; fi ;;
+  esac
+  [ ! -L "${abs%/}" ] || continue
+  case "$abs" in "$root"|"$root"/*) docs_repo_path "$physical_root" "$abs" || continue ;; esac
+  if [ -d "$abs" ]; then
+    find "$abs" \( -path '*/workspace' -o -path '*/sessions' \) -prune \
+      -o -type f -name '*.md' -not -path '*/workspace/*' -not -path '*/sessions/*' -print 2>/dev/null
+  elif [ -f "$abs" ]; then
+    case "$abs" in *.md) printf '%s\n' "$abs" ;; esac
+  else
+    printf 'WARNING file or directory not found: %s\n' "$p" >&2
+  fi
+done | while IFS= read -r f; do
+  d="$(cd "$(dirname "$f")" && pwd)"
+  f="$d/$(basename "$f")"
+  printf '%s\n' "${f#"$root"/}"
+done | sort -u | docs_exclude "$root" "$tmp/excludes" "$tmp/excluded" >"$tmp/docs"
+excluded="$(cat "$tmp/excluded" 2>/dev/null)"
+
+# MARK: extraction and check
+
+if [ ! -s "$tmp/docs" ]; then
+  echo "CHECKED 0 MISSING 0 UNRESOLVED 0 EXTERNAL 0 WORKSPACE 0 EXCLUDED ${excluded:-0} KNOWN 0"
+  exit 0
+fi
+
+(
+  cd "$root" || exit 2
+  IFS=$'\n'
+  set -f
+  self_name="$(basename "$root" | tr '[:upper:]' '[:lower:]')"
+  # shellcheck disable=SC2046
+  LC_ALL=C awk -v index_file="$tmp/index" -v pkg_file="$tmp/packages" -v ws="${workspace%/}" -v self="$self_name" '
+    function normalize(p,    n, parts, out, i, k) {
+      n = split(p, parts, "/"); k = 0
+      for (i = 1; i <= n; i++) {
+        if (parts[i] == "" || parts[i] == ".") continue
+        if (parts[i] == "..") { if (k > 0) k--; continue }
+        out[++k] = parts[i]
+      }
+      p = ""
+      for (i = 1; i <= k; i++) p = (p == "" ? out[i] : p "/" out[i])
+      return p
+    }
+    function strip(t) {
+      sub(/#.*$/, "", t)
+      sub(/:[0-9]+(-[0-9]+)?$/, "", t)
+      while (t ~ /[\/:.]$/) t = substr(t, 1, length(t) - 1)
+      while (substr(t, 1, 2) == "./") t = substr(t, 3)
+      while (t ~ /^(\.\.\.|…)\//) sub(/^[^\/]*\//, "", t)
+      return t
+    }
+    function placeholder(t) {
+      return (t ~ /YYYY|MM-DD|\[[^]]*\]|\{[^}]*\}|<[^>]*>|[$][A-Za-z_{]|RUN_ID/ || t ~ /\.\.\.([^\/]|$)/ ||
+              t ~ /(^|[^A-Za-z])(foo|xxx)([^A-Za-z]|$)/ || t ~ /(^|[^A-Za-z])Foo([A-Z_.\/-]|$)/)
+    }
+    function looks_like_path(t,    s) {
+      if (t ~ /[ \t]/ || t ~ /^[-$<{@~\/]/ || index(t, "://") > 0) return 0
+      if (t ~ /[(){}=;,|"<>]/ || index(t, "\047") > 0) return 0
+      if (t ~ /^\./ && index(t, "/") == 0) return 0
+      if (t ~ /^(feature|bugfix|hotfix|release|task|origin|refs)\//) return 0
+      if (placeholder(t)) return 0
+      s = t; sub(/:[0-9]+(-[0-9]+)?$/, "", s)
+      if (s !~ /\.(swift|php|ts|tsx|js|jsx|mjs|cjs|vue|svelte|json|md|yml|yaml|xml|twig|html|scss|css|py|rb|sh|plist|strings|xib|storyboard|xcconfig|toml|lock|kt|kts|gradle|properties|java|go|sql)$/ && s !~ /\/$/ &&
+          s !~ /\/\.[A-Za-z0-9][A-Za-z0-9_.-]*$/) return 0
+      if (s ~ /^[A-Z0-9_]+\/[A-Z0-9_]+$/) return 0
+      return 1
+    }
+    function glob_re(g,    r) {
+      r = g
+      gsub(/\./, "\\.", r); gsub(/\*\*\//, "@@", r); gsub(/\*/, ".*", r); gsub(/\?/, ".", r); gsub(/@@/, "(.*/)?", r)
+      return "(^|/)" r "$"
+    }
+    function exists(tok, docdir,    t, re, p) {
+      t = strip(tok)
+      if (t == "") return 1
+      if (t ~ /[*?[]/) {
+        re = glob_re(t)
+        for (p in full) if (p ~ re) return 1
+        return 0
+      }
+      if (t in full) return 1
+      if (normalize(docdir "/" t) in full) return 1
+      return (t in suffix)
+    }
+    function report(tok, kind,    ign, rel2, cls) {
+      checked++
+      if (exists(tok, docdir)) return
+      ign = tok; sub(/#.*$/, "", ign); sub(/:[0-9]+(-[0-9]+)?$/, "", ign); while (substr(ign, 1, 2) == "./") ign = substr(ign, 3)
+      rel2 = normalize(docdir "/" strip(tok))
+      cls = kind
+      # A document outside the repo (absolute docdir): a path relative to it has no place in
+      # the repo. rel2 would be the doc directory without its leading "/" (tmp/x/src/a.ts)
+      # and match .gitignore entries by accident; "../" from there leaves the repo.
+      if (substr(docdir, 1, 1) == "/") {
+        rel2 = ""
+        if (substr(strip(tok), 1, 3) == "../") cls = "external"
+      }
+      if (substr(strip(tok), 1, 3) == "../" && escapes(docdir, strip(tok))) cls = "external"
+      else if (row_other || about_other_repo(line, a, b, strip(tok))) cls = "external"
+      printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, cls, strip(tok), ign, rel2
+    }
+    function escapes(dir, t,    n, parts, i, depth) {
+      depth = (dir == "" ? 0 : split(dir, parts, "/"))
+      n = split(t, parts, "/")
+      for (i = 1; i <= n; i++) {
+        if (parts[i] == "..") { depth--; if (depth < 0) return 1 }
+        else if (parts[i] != "." && parts[i] != "") depth++
+      }
+      return 0
+    }
+    # mask_spans: the line with backtick contents and link targets replaced by "x",
+    # so punctuation inside paths does not end a sentence.
+    function mask_spans(l,    m, rest, off, a, b) {
+      m = l; rest = l; off = 0
+      while (match(rest, /`[^`]+`/)) {
+        a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+      }
+      rest = m; off = 0
+      while (match(rest, /\]\([^)]*\)/)) {
+        a = off + RSTART + 1; b = off + RSTART + RLENGTH - 1
+        m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+      }
+      return m
+    }
+    function fill(n,    f) { f = ""; while (n-- > 0) f = f "x"; return f }
+    # about_other_repo: the sentence with the path (span pa..pb of the line) says the path
+    # lives in another repository. The words are read outside paths (backtick spans with "/"
+    # or ".", link targets and link texts with "/" or "." are blanked; other link texts stay,
+    # so "[my-backend](url) repository" names a repo), and "repository" needs a qualifier:
+    # - always: other/another/separate/sibling/different repo, "innym repozytorium", or a repo
+    #   name with "-" or "_" (billing-service repository) other than the name of this repo;
+    # - a component word (backend, api, web, ...) only after a preposition ("in the backend
+    #   repository", "w repozytorium backendu") or as a label ("Backend repository:"), because
+    #   "The admin repository `src/Repository/AdminRepository.php`" names a class;
+    # - a weak word (admin, client, "klienta", "admina") in those forms only when the top
+    #   directory of the path does not exist here: "W repozytorium klienta `src/X.php`" with
+    #   a `src/` in this repo is a Doctrine repository, so a deleted file there is MISSING.
+    # A table with a repo column (Repo, Repository, Repozytorium) also names the repo of each
+    # row, when its value looks like a repo: a slug with "-", "_" or "/", a URL, or a component
+    # word (backend, api, ...). A class name in a Doctrine "Repository" column (OrderRepository),
+    # an empty cell, -, this, ten or the name of this repo keeps the row in this repo.
+    function about_other_repo(l, pa, pb, tok,    m, rest, off, a, b, t, i, left, right, top) {
+      m = l; rest = l; off = 0
+      while (match(rest, /`[^`]+`/)) {
+        a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        t = substr(rest, RSTART + 1, RLENGTH - 2)
+        if (t ~ /[\/.]/) m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+      }
+      rest = m; off = 0
+      while (match(rest, /\[[^]]*\]\([^)]*\)/)) {
+        a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        t = substr(rest, RSTART + 1, RLENGTH - 1); sub(/\].*$/, "", t)
+        if (t ~ /[\/.]/ || t == "") m = substr(m, 1, a) fill(b - a - 1) substr(m, b)
+        else m = substr(m, 1, a - 1) fill(b - a - length(t)) " " t substr(m, b + 1)
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+      }
+      m = tolower(m)
+      left = substr(m, 1, pa - 1); right = substr(m, pb + 1)
+      while (match(left, /[.!?]([ \t]|$)|;/)) left = substr(left, RSTART + RLENGTH)
+      if (match(right, /[.!?]([ \t]|$)|;/)) right = substr(right, 1, RSTART - 1)
+      m = left " " right
+      if (self != "") while ((i = index(m, self)) > 0) m = substr(m, 1, i - 1) "this" substr(m, i + length(self))
+      if (m ~ other_repo) return 1
+      if (m !~ weak_repo) return 0
+      # a weak word: the path stays in this repo when its top directory exists here
+      top = tok; while (substr(top, 1, 2) == "./") top = substr(top, 3)
+      if (index(top, "/") == 0) return 1
+      top = substr(top, 1, index(top, "/") - 1)
+      return !(top in topdir)
+    }
+    # negated(a, b): a negation word in the same sentence as the span a..b of the line,
+    # at most near_words words away (the words of the negation phrase included).
+    function negated(a, b,    left, right, cut, n, w, i, win) {
+      left = substr(masked, 1, a - 1); right = substr(masked, b + 1)
+      while (match(left, /[.!?]([ \t]|$)|;/)) left = substr(left, RSTART + RLENGTH)
+      if (match(right, /[.!?]([ \t]|$)|;/)) right = substr(right, 1, RSTART - 1)
+      n = split(left, w, /[ \t]+/); win = ""
+      for (i = n; i >= 1 && i > n - near_words - 1; i--) win = w[i] " " win
+      n = split(right, w, /[ \t]+/)
+      win = win " |"
+      for (i = 1; i <= n && i <= near_words + 1; i++) win = win " " w[i]
+      return (tolower(win) ~ neg)
+    }
+    BEGIN {
+      near_words = 5
+      while ((getline line < index_file) > 0) {
+        full[line] = 1
+        if (index(line, "/") > 0) topdir[substr(line, 1, index(line, "/") - 1)] = 1
+        n = split(line, parts, "/"); s = ""
+        for (i = n; i >= 1; i--) { s = (s == "" ? parts[i] : parts[i] "/" s); suffix[s] = 1 }
+      }
+      while ((getline line < pkg_file) > 0) pkg[line] = 1
+      # neg and other_repo match docs in Polish and English: repos keep their own language.
+      neg = "(^|[^A-Za-z])(brak|nie istnieje|nie ma|nigdy|never|usuni(e|ę)t[a-z]*|usun(a|ą)(c|ć)|relokow[a-z]*|przeniesion[a-z]*|dawn(y|a|e|iej)|nie w|not in|removed|deleted|moved|formerly|previously|no longer|does not exist|missing)([^A-Za-z]|$)"
+      repo_word = "(repo|repos|repository|repositories|repozytori[a-z]*)"
+      repo_name = "[a-z0-9]+[-_][a-z0-9_-]*[a-z0-9]"
+      # Strong component words name a repo of their own (the backend repository); weak ones
+      # (admin, client) are as often a Doctrine repository class, so with them the path decides:
+      # a top directory that exists in this repo keeps the path here (see weak_repo below).
+      component = "(backend|frontend|mobile|api|web|server|shared)"
+      component_pl = "(backendu?|frontendu?|mobile|api|web|serwer[a-z]*)"
+      weak = "(admin|client)"
+      weak_pl = "(admina?|klient[a-z]*)"
+      prep = "(in|into|from|to|of|see|w|we|z|ze|do)[ \t]+(the[ \t]+|our[ \t]+|a[ \t]+)?"
+      other_repo = "(^|[^a-z])((other|another|separate|sibling|different)[ -]+" repo_word \
+        "|" prep component "[ -]+" repo_word \
+        "|" component "[ -]+" repo_word "[ \t]*:" \
+        "|(inn(e|y|ym|ego|ych|ymi)|osobn[a-z]*|s(ą|a)siedni[a-z]*|drugi[a-z]*) +" repo_word \
+        "|" prep repo_word " +" component_pl \
+        "|" repo_word " +" component_pl "[ \t]*:" \
+        "|" repo_name "`?[ -]+" repo_word \
+        "|" repo_word " +`?" repo_name ")([^a-z0-9_-]|$)"
+      weak_repo = "(^|[^a-z])(" prep weak "[ -]+" repo_word \
+        "|" weak "[ -]+" repo_word "[ \t]*:" \
+        "|" prep repo_word " +" weak_pl \
+        "|" repo_word " +" weak_pl "[ \t]*:" ")([^a-z0-9_-]|$)"
+    }
+    FNR == 1 { in_code = 0; in_table = 0; header_pending = 0; repo_col = 0; row_other = 0; docdir = FILENAME; sub(/\/?[^\/]*$/, "", docdir) }
+    /^[ \t]*```/ { in_code = !in_code; next }
+    in_code { next }
+    function negated_ws(tok) {
+      if (index(tok, ws "/") == 1) { checked++; printf "%s:%d\t%s\t%s\t%s\t%s\t%s\n", FILENAME, FNR, tok, "tick", tok, tok, tok }
+    }
+    # repo_column HEADER - index of the cell named Repo/Repository/Repozytorium, 0 when none
+    function repo_column(h,    n, c, i, x) {
+      n = split(h, c, "|")
+      for (i = 1; i <= n; i++) { x = tolower(c[i]); gsub(/^[ \t`*]+|[ \t`*:]+$/, "", x); if (x ~ /^(repo|repos|repository|repositories|repozytori[a-z]*)$/) return i }
+      return 0
+    }
+    # other_repo_cell LINE COL - the table cell names a repo other than this one: a slug with
+    # "-", "_" or "/", a URL or a component word; a class name (OrderRepository) is not a repo
+    function other_repo_cell(l, k,    n, c, x) {
+      n = split(l, c, "|"); if (k > n) return 0
+      x = tolower(c[k]); sub(/^[ \t]*\[/, "", x); sub(/\]\([^)]*\)/, "", x); gsub(/^[ \t`*]+|[ \t`*]+$/, "", x)
+      if (x == "" || x ~ /^(-|this|this repo|ten|to|n\/a|\.)$/) return 0
+      if (self != "" && x == self) return 0
+      if (x ~ /^https?:\/\// || x ~ /^[a-z0-9._\/-]*[-_\/][a-z0-9._\/-]*$/) return 1
+      if (x ~ ("^" component "$") || x ~ ("^" component_pl "$")) return 1
+      return 0
+    }
+    {
+      line = $0
+      if (line ~ /^[ \t]*\|/) {
+        if (!in_table) { in_table = 1; table_header = line; header_pending = 1; repo_col = 0; row_other = 0 }
+        else if (header_pending) { header_pending = 0; if (line ~ /^[ \t|:-]+$/) repo_col = repo_column(table_header) }
+        else row_other = (repo_col > 0 && other_repo_cell(line, repo_col))
+      } else { in_table = 0; header_pending = 0; repo_col = 0; row_other = 0 }
+      has_neg = (tolower(line) ~ neg)
+      if (has_neg) masked = mask_spans(line)
+      rest = line; off = 0
+      while (match(rest, /\]\([^) \t]+\)/)) {
+        tok = substr(rest, RSTART + 2, RLENGTH - 3); a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+        if (has_neg && negated(a, b)) { negated_ws(tok); continue }
+        if (tok ~ /^(https?:|mailto:|tel:|#)/ || placeholder(tok)) continue
+        report(tok, "link")
+      }
+      rest = line; off = 0
+      while (match(rest, /`[^`]+`/)) {
+        tok = substr(rest, RSTART + 1, RLENGTH - 2); a = off + RSTART; b = off + RSTART + RLENGTH - 1
+        off += RSTART + RLENGTH - 1; rest = substr(rest, RSTART + RLENGTH)
+        if (has_neg && negated(a, b)) { if (tok !~ /[ \t]/) negated_ws(tok); continue }
+        gsub(/^[ \t]+|[ \t]+$/, "", tok)
+        if (length(tok) < 2 || length(tok) > 200 || !looks_like_path(tok) || (tok in pkg)) continue
+        if (tok ~ /^[^\/]+\/$/ && !(substr(tok, 1, length(tok) - 1) in full)) continue
+        report(tok, "tick")
+      }
+    }
+    END { printf "#CHECKED\t%d\n", checked }
+  ' $(cat "$tmp/docs")
+) >"$tmp/candidates"
+
+checked="$(awk -F'\t' '$1 == "#CHECKED" { print $2 }' "$tmp/candidates")"
+known=0
+known_hit() {
+  local entry
+  [ -s "$tmp/known" ] || return 1
+  entry="$(docs_known_match "$tmp/known" "$@")" || return 1
+  printf '%s\n' "$entry" >>"$tmp/known_used"
+  known=$((known + 1))
+}
+missing=0
+unresolved=0
+external=0
+in_workspace=0
+ws="${workspace%/}"
+while IFS=$'\t' read -r where tok kind stripped ign rel2; do
+  [ "$where" = "#CHECKED" ] && continue
+  [ -n "$where" ] || continue
+  case "$stripped/" in
+    "$ws"/*)
+      if printf '%s' "$stripped" | grep -qE '\.[A-Za-z0-9]+$'; then
+        in_workspace=$((in_workspace + 1)); printf 'WORKSPACE %s %s\n' "$where" "$tok"
+      fi
+      continue ;;
+  esac
+  if [ "${stripped#*/}" != "$stripped" ]; then
+    case "$rel2/" in
+      "$ws"/*)
+        if printf '%s' "$stripped" | grep -qE '\.[A-Za-z0-9]+$'; then
+          in_workspace=$((in_workspace + 1)); printf 'WORKSPACE %s %s\n' "$where" "$tok"
+        fi
+        continue ;;
+    esac
+  fi
+  if [ "${stripped#*/}" = "$stripped" ] && [ -f "$root/.gitignore" ] &&
+     grep -vE '^[[:space:]]*(#|!)' "$root/.gitignore" | grep -qE "(^|/)$(printf '%s' "$stripped" | sed 's/[.[\*^$]/\\&/g')/?$"; then
+    continue
+  fi
+  if git -C "$root" check-ignore -q --no-index -- "$ign" 2>/dev/null ||
+     { [ -n "$rel2" ] && git -C "$root" check-ignore -q --no-index -- "$rel2" 2>/dev/null; }; then
+    continue
+  fi
+  if [ "$kind" != "external" ] && [ "${stripped#../}" != "$stripped" ] && [ "${rel2#*/}" != "$rel2" ]; then
+    [ -e "$root/${rel2%%/*}" ] || kind="external"
+  fi
+  if [ "$kind" = "external" ]; then
+    sib="${stripped#../}"
+    while [ "${sib#../}" != "$sib" ]; do sib="${sib#../}"; done
+    [ -e "$(dirname "$root")/$sib" ] && continue
+    [ -n "$rel2" ] && [ -e "$(dirname "$root")/$rel2" ] && continue
+    known_hit "$where" "$stripped" "$rel2" && continue
+    external=$((external + 1))
+    printf 'EXTERNAL %s %s\n' "$where" "$tok"
+    continue
+  fi
+  known_hit "$where" "$stripped" "$rel2" && continue
+  bare="$(printf '%s' "$stripped" | grep -c /)"
+  if [ "$kind" = "tick" ] && [ "$bare" -eq 0 ]; then
+    unresolved=$((unresolved + 1))
+    printf 'UNRESOLVED %s %s\n' "$where" "$tok"
+  else
+    missing=$((missing + 1))
+    printf 'MISSING %s %s\n' "$where" "$tok"
+  fi
+done <"$tmp/candidates"
+
+[ -s "$tmp/known" ] && docs_known_stale "$tmp/known" "$tmp/known_used" "$tmp/docs" "$tmp/index" 1
+printf 'CHECKED %s MISSING %d UNRESOLVED %d EXTERNAL %d WORKSPACE %d EXCLUDED %d KNOWN %d\n' "${checked:-0}" "$missing" "$unresolved" "$external" "$in_workspace" "${excluded:-0}" "$known"
+[ "$missing" -eq 0 ]

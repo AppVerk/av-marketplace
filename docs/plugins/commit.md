@@ -2,7 +2,7 @@
 
 Generate meaningful, well-formatted commit messages following the Conventional Commits specification.
 
-**Version:** 1.4.0
+**Version:** 1.4.1
 
 ## Commands
 
@@ -77,6 +77,8 @@ The hook blocks direct `git commit` commands so commits go through the `/commit`
 
 - `git commit --amend` — the `/commit` skill doesn't support amending
 - Commands from the `/commit` skill itself (identified by `AV_COMMIT_SKILL=1` prefix)
+
+In Claude Code `/commit` pre-approves `AV_COMMIT_SKILL=1 git commit` and `AV_COMMIT_SKILL=1 git add`, so its marked commands run without a permission prompt in the default permission mode.
 
 ### `git push` policy
 

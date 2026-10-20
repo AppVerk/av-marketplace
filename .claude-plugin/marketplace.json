@@ -8,14 +8,14 @@
       "name": "code-review",
       "source": "./plugins/code-review",
       "description": "Perform comprehensive code review for security, performance, and architecture. Save reviews to file, fix issues via /fix-report (paginated) or /fix-all (bulk, then offers to resolve needs-decision findings, optional severity floor). Persist PR review feedback via /analyze-feedback. Optional verification phase for cross-analysis and adversarial review. Composite findings group symptoms with one cause and are fixed as one unit.",
-      "version": "2.1.1",
+      "version": "2.2.0",
       "category": "development"
     },
     {
       "name": "commit",
       "source": "./plugins/commit",
       "description": "Generate meaningful commit messages and block force-push while guarding pushes to protected branches",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "category": "development"
     },
     {
@@ -64,7 +64,7 @@
       "name": "delivery",
       "source": "./plugins/delivery",
       "description": "Delivers implementation plans task by task: picking subagent-driven execution for a Superpowers plan, or approving a plan in plan mode, sends each task to the developer agent that owns it, where it is reviewed and committed; then the plan's verification, QA when the change is testable, and a full code review run.",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "category": "development"
     },
     {

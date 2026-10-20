@@ -2,7 +2,7 @@
 
 Security, architecture, and code quality analysis for your codebase.
 
-**Version:** 2.1.1
+**Version:** 2.2.0
 
 ## Commands
 
@@ -22,6 +22,10 @@ Run a comprehensive code review covering security, performance, architecture, an
 ```
 
 The review launches parallel analysis agents (security + code quality, and optionally documentation) and combines their findings into a unified report. Each issue gets a unique category-based ID (e.g., `SEC-001`, `PERF-002`, `ARCH-001`, `MAINT-003`, `DOC-001`) and includes severity level, file location, explanation, and remediation with code examples.
+
+**Scope.** `/review` reviews changes. A git range ending in `HEAD` in the description (`<rev>..HEAD` or `<rev>...HEAD`, as Delivery passes) sets the base; otherwise the base is the merge-base of `HEAD` and the default branch. Git resolves the literal `refs/remotes/origin/HEAD`, falling back to the fixed names `main` then `master` when that ref is unavailable; the symbolic ref's target name is never pasted into shell source. The changes are `git diff <base>` — commits since the base plus uncommitted edits — and untracked files. Every auditor, the cross-verifier and the challenger receive the base and the changed files; findings outside the changed files survive only when they name the changed line that causes them, and the rest are listed under "Out of scope (scope check)". With no base or no changes the review covers the whole repository, as before 2.2.0. The report starts with a `Review scope:` line.
+
+**Path safety.** Every dispatched agent receives the scope block's Shell safety rules. Changed-file names are untrusted data: scanners receive them directly from Git as NUL-delimited arguments, not as names pasted into shell commands. An individually interpolated shell path must pass the strict allow-list and be single-quoted with option protection; Git file operands also use literal pathspecs. Non-ASCII names, spaces and shell metacharacters do not remove a file from scope — those paths use NUL-delimited arguments, structured file-tool arguments or a repository-wide read-only diff.
 
 <a id="category-prefix-mapping"></a>
 **Issue ID categories:**
@@ -210,7 +214,7 @@ Reports sourced from `/review` directly do not include a `Source:` field and car
 
 ### The flow
 
-1. **Location pre-check.** A finding whose `**Location:**` field isn't a usable `path:line` is asked for one first, in batches of up to 4 questions. A declined target is reported Failed and left for the next run rather than dispatched.
+1. **Location pre-check.** A finding whose `**Location:**` field isn't a usable `path:line` is asked for one first, in batches of up to 4 questions. Before constructing any shell command, check the extracted path as data: a single quote or a control character is rejected as `unsafe characters`, never escaped or interpolated into a shell guard. Every other character is accepted — `$`, brackets, parentheses, `+`, spaces and non-ASCII letters, as in `src/routes/users/$userId.tsx` or `app/[id]/page.tsx` — because path operands are always single-quoted and prefixed with `./`, and the shell expands nothing inside single quotes. Containment also requires a relative path with no `..` segment, its containing directory resolved physically inside the physical repository root, and no symbolic link as its final component — even a link pointing inside the repository fails. The file must also exist. A declined target is reported Failed and left for the next run rather than dispatched.
 2. **Analysis fan-out.** The read-only `decision-analyst` agent runs once per finding, in parallel, in batches of at most 8 — announced before anything is dispatched (e.g. "13 findings to analyse, in 2 batches of at most 8"). Each analyst reads the code the finding actually points at and returns a rendered fix proposal. It never edits.
 3. **The sweep.** One finding at a time, you're shown the target, the recommendation and its reason, the risk, and both alternatives in full, then asked for one of five outcomes: `[A] [B] [skip] [reject]`, plus the tool's built-in `other…` free-form answer. `A`/`B` dispatch the chosen alternative; `other…` lets you write your own resolution, which is restated as a full self-contained fix and confirmed before dispatch; `skip` leaves the finding for the next run with nothing written; `reject` writes a terminal `🚫 Rejected` status (below) and is offered only where the reason is grounded in evidence or your own stated reason.
 4. **The batch.** Every decision is collected before any fix is dispatched — decide everything, then fix in bulk. Decided findings are then dispatched to `fix-auto` sequentially, and the orchestrator itself — not `fix-auto`'s own verdict — runs the persisted verification plan for each, logging raw output before writing the status back to the source report.
@@ -295,7 +299,7 @@ Several findings often share one cause: five "missing validation in endpoint X" 
 
 Each component carries `**Part-of:** COMP-001` after its `**ID:**` line. `**Composed-of:**` is the source of truth for membership (two to twelve IDs from the same report, on one physical line); `Part-of` is a derived back-reference. A composite's severity is never below its components' maximum (the fix commands raise a hand-edited block's effective severity to that maximum for the run without rewriting it); composites never nest; a component belongs to at most one open composite. `**Fix-policy:** needs-decision` is inherited when any component carries a non-`auto` policy.
 
-**Where composites come from.** `/review` renders the cross-verifier's composite findings as `COMP` blocks — only where one change resolves every basis, bases kept disjoint, `COMP` IDs assigned last so `Composed-of` carries final IDs. `/fix-all` and `/fix-report` additionally run a **composition pass** (Step 1.6) before their pre-flight: a read-only `composition-analyst` agent reads the unfixed, ungrouped findings of each review report and proposes groups that share one cause and one fix, with a citation per member and a self-falsification battery; the command re-validates every proposal (membership, size, disjointness, a usable and contained `Location`) and assigns the next `COMP-NNN`. A composite whose `Composed-of` names an ID with no block in the report is malformed: the pass sets it aside, lists it as `malformed-composite`, fixes its present components individually, and leaves it open until repaired or dissolved. QA reports are never grouped, and `/qa:run` is untouched.
+**Where composites come from.** `/review` renders the cross-verifier's composite findings as `COMP` blocks — only where one change resolves every basis, bases kept disjoint, `COMP` IDs assigned last so `Composed-of` carries final IDs. Only rendered composite blocks consume bases; a proposal kept as a plain bullet leaves them available to later proposals. `/fix-all` and `/fix-report` additionally run a **composition pass** (Step 1.6) before their pre-flight: a read-only `composition-analyst` agent reads the unfixed, ungrouped findings of each review report and proposes groups that share one cause and one fix, with a citation per member and a self-falsification battery; the command re-validates every proposal (membership, size, disjointness, a usable and contained `Location`) and assigns the next `COMP-NNN`. A composite whose `Composed-of` names an ID with no block in the report is malformed: the pass sets it aside, lists it as `malformed-composite`, fixes its present components individually, and leaves it open until repaired or dissolved. QA reports are never grouped, and `/qa:run` is untouched.
 
 **The dissolve question — the one human gate on a grouping.** Before the confirmation gate (`/fix-all`) or before the checklist (`/fix-report`), one multi-select question lists every composite the run holds, proposed and persisted alike, four per page, with its Problem and Remediation on screen: dissolve a proposal and its components are fixed individually and nothing is written; dissolve a persisted composite and its block gets `🚫 Rejected (date) — dissolved into components`, releasing its components. If the question cannot be asked, every composite is dissolved for the run — silence is never read as consent. Accepted composites are persisted into the report (`Origin: fix-time`, `Part-of` on each component) only after the run has committed to dispatching, so an aborted run writes nothing.
 
@@ -346,6 +350,10 @@ The branch name is slugified (e.g., `feature/user-login` becomes `feature-user-l
 ## Fixing Issues
 
 After the review, if issues were found and the report was saved, the review suggests running `/fix-report <path>` to fix issues from the saved report. For individual issues, use `/fix SEC-001` (by ID from the saved report) or `/fix <issue block>` (by pasting). To fix every unfixed issue (except `needs-decision`-flagged ones) in one pass, use `/fix-all` (optionally with a severity floor like `/fix-all HIGH`).
+
+`fix-auto` and `/fix` first reject a `Location` path that contains a single quote or a control character as `unsafe characters`, before constructing any shell command; paths with `$`, brackets, parentheses, `+`, spaces or non-ASCII letters are accepted and only ever used single-quoted. They also refuse a `Location` outside the repository — an absolute path, a `..` segment, a path that resolves outside `git rev-parse --show-toplevel` through a symlinked directory, or a symlinked file — with the containment test of the Decision Stage: `fix-auto` reports the issue as Failed without opening the file, `/fix` asks for a usable location inside the repository.
+
+`/fix` completes the containment test for the initial location and every replacement reply before any read. Validation uses only root/parent directory resolution and metadata checks (`pwd -P`, `test -L` / `[ -L` and `test -e`); it never reads or prints the candidate file's content, even in a chained command. Only a target that passes every check is read in Phase 2.
 
 **Recommended workflow (local review):**
 
@@ -407,6 +415,20 @@ Authoring-time doctrine for a reporting agent's closing contract: closed verdict
 **Skill:** `docs-fact-registry`
 
 Declarative docs↔code drift checking: a claim → source-of-truth → policy registry with three-way classification (mechanical → auto-fixable; decision and dead references → escalated as `needs-decision`). Preloaded by documentation-auditor; its `Fix-policy` field drives `/fix-all`'s default skip.
+
+### Docs Drift
+
+**Skill:** `docs-drift`
+
+Before `documentation-auditor` starts, `/review` runs `docs_drift.sh --base <base>`: three deterministic checkers — paths and links, backticked names, `file:line` citations — run on the docs at the base and in the working tree, and only references that broke within the scope are passed on, as candidates the auditor verifies and classifies with the Docs Fact Registry.
+
+Scanned: `docs/`, `doc/`, `documentation/` and the root `*.md` files; skipped: `docs/plans/`, `docs/reviews/`, `docs/testing/`, `docs/superpowers/` and `CHANGELOG.md`. Head includes uncommitted edits and untracked docs, excluding gitignored docs. The base is read from a temporary shared clone; the repository is not modified.
+
+Symlinked document files and directory inputs are skipped. Cited files, package manifests and UTF-16 string files are read only when the final component is not a symlink and their physical containing directory stays inside the tree root; skipped citations expose neither contents nor line counts.
+
+Runs only when docs were detected and the scope has a base; a failure never stops the review. Requires bash 3.2+, git, awk and find. Preloaded by `documentation-auditor`, which reads the diff with read-only git commands. Ported from av-dev's `av-docs-sync` checkers.
+
+The checkers can also run directly with `--overlay FILE` to supply a manual list of known false paths, known false names and excluded docs. `/review` passes no overlay.
 
 ## Helper Scripts
 
