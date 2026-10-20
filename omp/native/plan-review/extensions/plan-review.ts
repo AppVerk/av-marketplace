@@ -4,20 +4,25 @@
  * - Plan mode: appends the review procedure to the system prompt.
  * - `write xd://plan_review` with `{"title": "<slug>"}`: runs a headless `omp -p` on the `advisor` model role
  *   with read-only tools over the plan file, and returns its findings to the agent.
+ * - While the reviewer runs, the tool reports its round and elapsed time every PROGRESS_INTERVAL_MS.
  * - `write xd://propose`: blocked until a review approved the current plan text, the review could not run for
- *   that text, or MAX_ROUNDS reviews of the plan file were used.
+ *   that text, its run was aborted with OMP's user-interrupt reason (Esc, leaving plan mode, an RPC or ACP
+ *   cancel, or an extension's ctx.abort()), or MAX_ROUNDS reviewer runs of the plan file were used;
+ *   a run that fails or times out counts as one of them.
  */
 import { createHash } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { ExecResult } from "@oh-my-pi/pi-coding-agent/exec/exec";
 import { resolveApprovedPlan } from "@oh-my-pi/pi-coding-agent/plan-mode/approved-plan";
 import { listPlanFiles, readPlanFile } from "@oh-my-pi/pi-coding-agent/plan-mode/plan-files";
+import { USER_INTERRUPT_LABEL } from "@oh-my-pi/pi-coding-agent/session/messages";
 import { parseXdUrl } from "@oh-my-pi/pi-tui/tools/xd-url";
 
 export const MAX_ROUNDS = 3;
 /** Plan path OMP's plan mode starts with when none was chosen. */
 const DEFAULT_PLAN_URL = "local://PLAN.md";
 const REVIEW_TIMEOUT_MS = 15 * 60_000;
+const PROGRESS_INTERVAL_MS = 15_000;
 const REVIEWER_ARGS = [
 	"-p",
 	"--no-session",
@@ -37,11 +42,11 @@ type Severity = "blocker" | "concern" | "nit";
 const SEVERITIES: Record<Severity, true> = { blocker: true, concern: true, nit: true };
 
 type Finding = { severity: Severity; location: string; issue: string; fix: string };
-type Review = { hash: string; outcome: "approve" | "revise" | "unavailable"; rounds: number };
+type Review = { hash: string; outcome: "approve" | "revise" | "unavailable" | "skipped"; rounds: number };
 
 const PLAN_REVIEW_PROMPT = `# Plan review
 
-This session has the plan-review plugin: a reviewer model checks every plan before it goes to approval. When the plan file is ready, write \`{"title": "<slug>"}\` to xd://plan_review, using the slug you will write to xd://propose. Resolve every blocker and concern it reports in the plan file, or state in the plan why a finding does not apply, then run the review again. xd://propose is blocked until a review approves the current plan text or ${MAX_ROUNDS} review rounds are used.`;
+This session has the plan-review plugin: a reviewer model checks every plan before it goes to approval. When the plan file is ready, write \`{"title": "<slug>"}\` to xd://plan_review, using the slug you will write to xd://propose. Resolve every blocker and concern it reports in the plan file, or state in the plan why a finding does not apply, then run the review again. xd://propose is blocked until a review approves the current plan text or ${MAX_ROUNDS} review rounds are used. If the user cancels a running review (Esc), do not review that unchanged plan text again unless the user asks: write the slug to xd://propose when the user wants the plan proposed, and that text goes to approval unreviewed. After any edit to the plan, review it again as usual.`;
 
 const REVIEWER_PROMPT = `You review an implementation plan before a human approves it. The plan is quoted below; the repository is the current directory.
 
@@ -154,9 +159,19 @@ function textResult(text: string, details: Record<string, unknown>) {
 	return { content: [{ type: "text" as const, text }], details };
 }
 
+/** Elapsed time as m:ss for the progress line. */
+function formatElapsed(ms: number): string {
+	const seconds = Math.floor(ms / 1000);
+	return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export default function planReviewExtension(pi: ExtensionAPI): void {
-	/** Latest review per plan file path, for the current process. */
+	/** Latest review per plan file path, for the current session: `local://` plan files belong to one session. */
 	const reviews = new Map<string, Review>();
+	// `/new`, `/resume`, a fork and a session reload keep this extension loaded; their plan files need fresh reviews.
+	pi.on("session_switch", () => {
+		reviews.clear();
+	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!planModeChange(ctx)) return undefined;
@@ -180,20 +195,41 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 			const rounds = reviews.get(plan.url)?.rounds ?? 0;
 			if (rounds >= MAX_ROUNDS) {
 				return textResult(
-					`All ${MAX_ROUNDS} plan review rounds for ${plan.url} are used. Write "${plan.slug}" to xd://propose; the user decides on the open findings.`,
+					`All ${MAX_ROUNDS} plan review rounds for ${plan.url} are used. Write "${plan.slug}" to xd://propose; the user decides on the plan without another review.`,
 					{ url: plan.url, rounds },
 				);
 			}
+			const round = rounds + 1;
 			const unavailable = (reason: string) => {
-				reviews.set(plan.url, { hash, outcome: "unavailable", rounds });
-				ctx.ui.notify(`Plan review could not run; the plan goes to approval unreviewed.\n${reason}`, "warning");
-				return textResult(`Plan review could not run; write "${plan.slug}" to xd://propose, the plan goes to approval unreviewed.\n${reason}`, {
-					url: plan.url,
-					outcome: "unavailable",
-				});
+				reviews.set(plan.url, { hash, outcome: "unavailable", rounds: round });
+				ctx.ui.notify(`Plan review could not run (round ${round} of ${MAX_ROUNDS}); the plan goes to approval unreviewed.\n${reason}`, "warning");
+				return textResult(
+					`Plan review could not run (round ${round} of ${MAX_ROUNDS}); write "${plan.slug}" to xd://propose, the plan goes to approval unreviewed.\n${reason}`,
+					{ url: plan.url, round, outcome: "unavailable" },
+				);
 			};
+			const skipped = () => {
+				reviews.set(plan.url, { hash, outcome: "skipped", rounds });
+				ctx.ui.notify(
+					`Plan review skipped: the current text of ${plan.url} goes to approval unreviewed. Any edit to the plan needs a new review.`,
+					"warning",
+				);
+				return new Error(
+					`Plan review cancelled by the user. If the user asks to propose the plan, write "${plan.slug}" to xd://propose; its current text goes to approval unreviewed.`,
+				);
+			};
+			const cancelled = () => (signal?.reason === USER_INTERRUPT_LABEL ? skipped() : new Error("Plan review cancelled."));
 
-			onUpdate?.(textResult(`Reviewing ${plan.url} with the advisor model role…`, { url: plan.url }));
+			const started = Date.now();
+			const progress = () =>
+				onUpdate?.(
+					textResult(
+						`Plan review round ${round}/${MAX_ROUNDS}: ${formatElapsed(Date.now() - started)} elapsed (stops at ${REVIEW_TIMEOUT_MS / 60_000}:00). Esc skips it.\nReviewing ${plan.url} with the advisor model role.`,
+						{ url: plan.url, round },
+					),
+				);
+			progress();
+			const heartbeat = setInterval(progress, PROGRESS_INTERVAL_MS);
 
 			let result: ExecResult;
 			try {
@@ -203,10 +239,12 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 					timeout: REVIEW_TIMEOUT_MS,
 				});
 			} catch (error) {
-				if (signal?.aborted) throw new Error("Plan review cancelled.");
+				if (signal?.aborted) throw cancelled();
 				return unavailable(`${String(error)}.`);
+			} finally {
+				clearInterval(heartbeat);
 			}
-			if (signal?.aborted) throw new Error("Plan review cancelled.");
+			if (signal?.aborted) throw cancelled();
 			if (result.killed) return unavailable(`the reviewer did not finish within ${REVIEW_TIMEOUT_MS / 60_000} minutes.`);
 			if (result.code !== 0) return unavailable(`the reviewer exited with code ${result.code}: ${result.stderr.trim().slice(-500)}`);
 			const answer = reviewerAnswer(result.stdout);
@@ -215,7 +253,6 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 			const findings = parseFindings(text);
 			if (!findings) return unavailable(`${reviewer}'s answer is not the expected JSON: ${text.trim().slice(0, 500)}`);
 
-			const round = rounds + 1;
 			const outcome = findings.some(finding => finding.severity !== "nit") ? "revise" : "approve";
 			reviews.set(plan.url, { hash, outcome, rounds: round });
 			const lines = [
@@ -254,7 +291,7 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 		if (review?.hash === hash && review.outcome !== "revise") return undefined;
 		if (review && review.rounds >= MAX_ROUNDS) {
 			ctx.ui.notify(
-				`Plan review: all ${MAX_ROUNDS} rounds are used and the plan has no approving review. Check the last review's findings before approving.`,
+				`Plan review: all ${MAX_ROUNDS} rounds are used and the current plan text has no approving review; it goes to approval without another review.`,
 				"warning",
 			);
 			return undefined;
