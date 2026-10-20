@@ -12,7 +12,7 @@ omp plugin marketplace add AppVerk/av-marketplace
 omp plugin install <plugin>@av-marketplace
 ```
 
-`omp plugin install` accepts several plugin IDs at once. Delivery hands tasks to the developer plugins and, with QA installed, runs `/qa:run` on testable deliveries; `/qa:run` needs Code Review for fixes. Start a new OMP session after installing: a running session does not load the extensions that Commit, Delivery and Plan Review ship.
+`omp plugin install` accepts several plugin IDs at once. Delivery hands tasks to the developer plugins and, with QA installed, runs `/qa:run` on testable deliveries; `/qa:run` needs Code Review for fixes. Quit OMP and run `omp` again after installing, disabling or uninstalling a plugin: the extensions that Commit, Delivery and Plan Review ship load when the `omp` process starts, and `/new` or `/reload-plugins` does not reload them.
 
 QA and Code Review's auto-accept and `after_review` need Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
 
