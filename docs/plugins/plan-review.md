@@ -29,7 +29,7 @@ A review round takes minutes: about 7 minutes (median) in our sessions with `ope
 
 Every reviewer run of a plan file is a round, including a run that cannot finish. After 3 rounds of one plan file, `xd://propose` lets the plan through with a warning, and you decide on the open findings in the approval dialog, so one plan waits at most 3 × 15 minutes for reviews. If a review cannot run (no `omp` on `PATH`, a reviewer error, an answer that is not the expected JSON, or 15 minutes without an answer), the plugin warns and lets that plan text through unreviewed.
 
-To skip a running review, press Esc. The plugin warns that the plan goes to approval unreviewed; ask the agent to propose it. A skipped review does not use a round, and any edit to the plan after it needs a review again.
+To skip a running review, press Esc. These other interrupts of the running turn skip it the same way: Enter on an empty prompt while messages are queued, leaving plan mode with `/plan`, a collab guest's interrupt, an RPC `abort` or ACP cancel, and another extension's abort. The plugin warns that the plan goes to approval unreviewed; ask the agent to propose it. A skipped review does not use a round, and any edit to the plan after it needs a review again.
 
 Review state lives in the OMP process: after a restart or `/resume`, the next proposal needs a fresh review.
 

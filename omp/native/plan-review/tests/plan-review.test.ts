@@ -196,7 +196,7 @@ test("a reviewer run that fails, times out or answers badly uses one of the roun
 	expect(notifications.at(-1)?.message).toContain(`all ${MAX_ROUNDS} rounds are used`);
 });
 
-test("a review the user cancels with Esc lets that plan text through until the plan changes", async () => {
+test("an abort with the user-interrupt reason lets that plan text through until the plan changes", async () => {
 	const controller = new AbortController();
 	duringReview = () => controller.abort(USER_INTERRUPT_LABEL);
 	await expect(tool.execute("call", { title: "feature" }, controller.signal, undefined, ctx)).rejects.toThrow(
@@ -212,7 +212,7 @@ test("a review the user cancels with Esc lets that plan text through until the p
 	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved`);
 });
 
-test("an internal abort of a running review keeps the plan blocked", async () => {
+test("an abort without the user-interrupt reason keeps the plan blocked", async () => {
 	const controller = new AbortController();
 	duringReview = () => controller.abort();
 	await expect(tool.execute("call", { title: "feature" }, controller.signal, undefined, ctx)).rejects.toThrow(
@@ -233,4 +233,21 @@ test("after the last round the plan goes to approval with a warning and no furth
 
 	expect(await propose()).toBeUndefined();
 	expect(notifications.at(-1)).toEqual(expect.objectContaining({ level: "warning" }));
+});
+
+test("a session switch clears used rounds and reviews, so the next plan is reviewed again", async () => {
+	for (let round = 1; round <= MAX_ROUNDS; round++) {
+		writeFileSync(planPath, `# Feature plan\n\nRevision ${round}.\n`);
+		answers.push({ text: CONCERN });
+		expect(await review()).toContain(`round ${round} of ${MAX_ROUNDS}: changes requested`);
+	}
+
+	const hook = hooks.get("session_switch");
+	if (!hook) throw new Error("Missing session_switch hook");
+	await hook({}, ctx);
+
+	expect(await propose()).toEqual(expect.objectContaining({ block: true }));
+	answers.push({ text: NIT_ONLY });
+	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved`);
+	expect(reviewerCalls).toBe(MAX_ROUNDS + 1);
 });

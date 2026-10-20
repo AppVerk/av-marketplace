@@ -6,7 +6,8 @@
  *   with read-only tools over the plan file, and returns its findings to the agent.
  * - While the reviewer runs, the tool reports its round and elapsed time every PROGRESS_INTERVAL_MS.
  * - `write xd://propose`: blocked until a review approved the current plan text, the review could not run for
- *   that text, the user cancelled its review (Esc), or MAX_ROUNDS reviewer runs of the plan file were used;
+ *   that text, its run was aborted with OMP's user-interrupt reason (Esc, leaving plan mode, an RPC or ACP
+ *   cancel, or an extension's ctx.abort()), or MAX_ROUNDS reviewer runs of the plan file were used;
  *   a run that fails or times out counts as one of them.
  */
 import { createHash } from "node:crypto";
@@ -165,8 +166,12 @@ function formatElapsed(ms: number): string {
 }
 
 export default function planReviewExtension(pi: ExtensionAPI): void {
-	/** Latest review per plan file path, for the current process. */
+	/** Latest review per plan file path, for the current session: `local://` plan files belong to one session. */
 	const reviews = new Map<string, Review>();
+	// `/new`, `/resume`, a fork and a session reload keep this extension loaded; their plan files need fresh reviews.
+	pi.on("session_switch", () => {
+		reviews.clear();
+	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!planModeChange(ctx)) return undefined;
@@ -286,7 +291,7 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 		if (review?.hash === hash && review.outcome !== "revise") return undefined;
 		if (review && review.rounds >= MAX_ROUNDS) {
 			ctx.ui.notify(
-				`Plan review: all ${MAX_ROUNDS} rounds are used and the plan has no approving review. Check the last review's findings before approving.`,
+				`Plan review: all ${MAX_ROUNDS} rounds are used and the current plan text has no approving review; it goes to approval without another review.`,
 				"warning",
 			);
 			return undefined;
