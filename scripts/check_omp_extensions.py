@@ -3,7 +3,8 @@
 
 Usage: check_omp_extensions.py <omp binary> [<edition dir>]
 Default edition: plugins-omp/ under the repository root.
-Exit codes: 0 when all extensions load, 1 for load failures, 2 for invalid configuration.
+Exit codes: 0 when all extensions load, 1 for load or binary launch failures,
+2 for invalid configuration.
 """
 
 from __future__ import annotations
@@ -44,6 +45,8 @@ def load_error(binary: Path, extension: Path, timeout: int = TIMEOUT) -> str | N
             )
         except subprocess.TimeoutExpired:
             return f"omp did not exit within {timeout} s"
+        except OSError as exc:
+            return f"cannot run {binary}: {exc.strerror}"
 
     if result.returncode == 0:
         return None
@@ -68,7 +71,8 @@ def main(argv: list[str]) -> int:
     if not binary.is_file() or not os.access(binary, os.X_OK):
         sys.stderr.write(
             f"{argv[0]} is not an executable file; download the compiled omp binary for your platform: "
-            "gh release download -R can1357/oh-my-pi -p omp-<os>-<arch>, then chmod +x it\n"
+            "dir=$(mktemp -d) && gh release download -R can1357/oh-my-pi "
+            '-p "omp-<os>-<arch>" -D "$dir", then chmod +x the file\n'
         )
         return 2
 

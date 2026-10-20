@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Contract tests for the compiled OMP extension load checker.
+"""Contract tests for compiled OMP extension loading, including relative CLI paths.
 
 Run: python3 scripts/test_check_omp_extensions.py
 """
@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -103,6 +105,23 @@ class CheckerTest(unittest.TestCase):
             self.assertEqual(stdout, f"3 OMP extensions load in {binary.resolve()}\n")
             self.assertEqual(stderr, "")
 
+    def test_relative_arguments_are_resolved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = fake_omp(root)
+            plugin(root / "edition", "alpha", {"extensions/a.ts": ""})
+            previous_cwd = Path.cwd()
+
+            try:
+                os.chdir(root)
+                result, stdout, stderr = run_check([binary.name, "edition"])
+            finally:
+                os.chdir(previous_cwd)
+
+            self.assertEqual(result, 0)
+            self.assertEqual(stdout, f"1 OMP extensions load in {binary.resolve()}\n")
+            self.assertEqual(stderr, "")
+
     def test_extensions_follow_manifest_order_then_declaration_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             edition = Path(tmp)
@@ -147,6 +166,32 @@ class CheckerTest(unittest.TestCase):
 
             self.assertEqual(load_error(binary, extension, timeout=1), "omp did not exit within 1 s")
 
+    def test_wrong_platform_binary_reports_reason_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = fake_omp(root, "\x7fELFgarbage").resolve()
+            edition = root / "edition"
+            extension = plugin(edition, "plugin", {"extensions/one.ts": ""})[0]
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("check_omp_extensions.py")),
+                    str(binary),
+                    str(edition),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "")
+            self.assertIn(f"{extension}: cannot run {binary}: ", result.stderr)
+            self.assertRegex(result.stderr, r": cannot run [^\n]+: [^\n]+\n")
+            self.assertIn(f"1 of 1 OMP extensions fail to load in {binary}\n", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
     def test_missing_binary_explains_how_to_download(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             binary = Path(tmp) / "missing"
@@ -156,7 +201,8 @@ class CheckerTest(unittest.TestCase):
             self.assertEqual(result, 2)
             self.assertEqual(stdout, "")
             self.assertIn(f"{binary} is not an executable file", stderr)
-            self.assertIn("gh release download", stderr)
+            self.assertIn("dir=$(mktemp -d) && gh release download", stderr)
+            self.assertIn('-D "$dir"', stderr)
 
     def test_nonexecutable_binary_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
