@@ -69,6 +69,7 @@ Each stage leaves an artifact the next stage consumes: the brainstormed spec is 
 - [Oh My Pi (OMP)](docs/oh-my-pi.md)
 - [Plugin Guides](docs/plugins/)
 - [Contributing](docs/contributing.md)
+- [Writing Extensions](docs/extensions.md)
 
 ## Support
 

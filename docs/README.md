@@ -26,3 +26,4 @@
 ## Contributing
 
 - [Contributing Guide](contributing.md) — Plugin architecture, creating new plugins, code standards
+- [Writing extensions](extensions.md) — Plugins in your own repository and marketplace that build on an av-marketplace plugin, such as QA desktop drivers
