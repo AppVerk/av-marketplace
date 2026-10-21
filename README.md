@@ -12,7 +12,7 @@ Plan, deliver, test, review and commit, with each stage handing its output to th
 
 </div>
 
-![From plan to pull request, one flow for both tools. Plan: write the plan in plan mode, or in Claude Code with superpowers, where you brainstorm a spec, check it with /superutils:spec-review and plan from it; in Oh My Pi, Plan Review has a second model review the plan; you approve the plan, which starts the delivery. Delivery, for every task: route it to the agent that owns its files, implement, review with up to 3 fix rounds, commit. After the last task: verification, QA and code review, then you choose which findings to fix and open the PR.](docs/assets/harness-flow.png)
+![From plan to pull request, one flow for both tools. Plan: write the plan in plan mode, or in Claude Code with superpowers, where you brainstorm a spec, check it with /superutils:spec-review and plan from it; in Oh My Pi, Plan Review has a second model review the plan; you approve the plan, which starts the delivery. Delivery, for every task: route it to the agent that owns its files, implement, review with up to 3 fix rounds, commit. After the last task: verification, QA and code review, then you choose which findings to fix, or set after_review = "fix-all" to fix them automatically, and open the PR.](docs/assets/harness-flow.png)
 
 ## Why use it
 

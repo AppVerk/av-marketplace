@@ -18,6 +18,9 @@
     .row4 .loop-label { grid-column: 2 / span 2; }
     .row5 { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: 108px 30px; column-gap: 28px; row-gap: 14px; }
     .row5 .loop-label { grid-column: 2; }
+    .auto-label { grid-column: 4 / span 2; display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; color: var(--accent); }
+    .auto-label code { color: var(--accent); }
+    .chip.auto { border-style: dashed; border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
   </style>
 </head>
 <body>
@@ -62,6 +65,7 @@
         <div class="box human" id="a-fixes"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Choose fixes</b><small>fix all, pick from a list, or skip</small></div>
         <div class="box human" id="a-pr"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Open the PR</b><small>you commit and push</small></div>
         <p class="loop-label"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 9a6 6 0 1 1-1.8-4.3"/><path d="M13.6 1.6v3.6H10"/></svg>test, fix, retest</p>
+        <p class="auto-label"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M10.5 1L3 10.5h5.5L7.5 17 15 7.5H9.5z" fill="currentColor"/></svg>or automatic: <code>after_review = "fix-all"</code></p>
       </div>
     </section>
     <footer class="legend">
@@ -70,6 +74,7 @@
       <span class="chip human"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>You decide</span>
       <span class="chip rule">Rule in code</span>
       <span class="chip loop"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 9a6 6 0 1 1-1.8-4.3"/><path d="M13.6 1.6v3.6H10"/></svg>Loop</span>
+      <span class="chip auto"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M10.5 1L3 10.5h5.5L7.5 17 15 7.5H9.5z" fill="currentColor"/></svg>Can be automated</span>
     </footer>
   </main>
   <script src="wires.js"></script>
