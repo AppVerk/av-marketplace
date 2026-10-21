@@ -2,7 +2,7 @@
 
 Delivery runs approved plans task by task, or delivers an existing plan with `/delivery:execute <PLAN_PATH>`. Each task goes to the agent the router selects from its file list, then receives a review and its own commit. After the last task, Delivery runs the plan's Verification, QA when the change is testable, and a full code review. Delivery never asks which developer should implement a task.
 
-**Version:** 0.8.0
+**Version:** 0.8.1
 
 ## How a delivery starts
 

@@ -12,13 +12,17 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { resolveLocalUrlToPath } from "@oh-my-pi/pi-coding-agent/internal-urls/local-protocol";
 import { normalizePlanTitle, planFileUrlForSlug } from "@oh-my-pi/pi-coding-agent/plan-mode/approved-plan";
-import approvedPlanPrompt from "@oh-my-pi/pi-coding-agent/prompts/system/plan-mode-approved" with { type: "text" };
 import { parseXdUrl } from "@oh-my-pi/pi-tui/tools/xd-url";
 
 const ROUTER = path.join(import.meta.dir, "..", "scripts", "route_task.py");
 type PlanCheck = { tasks: number; problems: string[]; no_files: string[] };
-const APPROVED_PLAN_PREFIX = approvedPlanPrompt.split("\n", 1)[0];
-const APPROVED_PLAN_TAG = approvedPlanPrompt.match(/^<plan path="\{\{planFilePath\}\}">$/m)?.[0];
+// The first line and the plan tag of OMP's plan approval prompt (pi-coding-agent's
+// src/prompts/system/plan-mode-approved.md), inlined because the compiled omp binary serves
+// extensions only the code modules of @oh-my-pi/*. tests/delivery.test.ts builds its
+// prompts from that file, so a change to it fails those tests.
+const APPROVED_PLAN_PREFIX = "Plan approved.";
+const PLAN_TAG_START = '<plan path="';
+const PLAN_TAG_END = '">';
 
 const PLAN_FORMAT = `# Delivery plans
 
@@ -90,13 +94,12 @@ function proposedPlanUrl(title: string): string | undefined {
 }
 
 function approvedPlanPath(prompt: string): string | undefined {
-	if (!prompt.startsWith(APPROVED_PLAN_PREFIX) || !APPROVED_PLAN_TAG) return undefined;
-	const [start, end] = APPROVED_PLAN_TAG.split("{{planFilePath}}");
-	const tagStart = prompt.indexOf(start);
+	if (!prompt.startsWith(APPROVED_PLAN_PREFIX)) return undefined;
+	const tagStart = prompt.indexOf(PLAN_TAG_START);
 	if (tagStart < 0) return undefined;
 	const tagEnd = prompt.indexOf("\n", tagStart);
 	const tag = prompt.slice(tagStart, tagEnd < 0 ? undefined : tagEnd);
-	return tag.endsWith(end) ? tag.slice(start.length, -end.length) : undefined;
+	return tag.endsWith(PLAN_TAG_END) ? tag.slice(PLAN_TAG_START.length, -PLAN_TAG_END.length) : undefined;
 }
 
 export default function deliveryExtension(pi: ExtensionAPI): void {
