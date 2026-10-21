@@ -34,3 +34,6 @@ jobs:
 
       - name: Check the Category→Prefix table against its consumers
         run: bash plugins/code-review/scripts/check-prefix-sync.sh
+
+      - name: Run the code-review auto-accept engine tests
+        run: python3 plugins/code-review/tests/test_auto_accept.py

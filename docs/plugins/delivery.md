@@ -2,7 +2,7 @@
 
 Delivery runs approved plans task by task, or delivers an existing plan with `/delivery:execute <PLAN_PATH>`. Each task goes to the agent the router selects from its file list, then receives a review and its own commit. After the last task, Delivery runs the plan's Verification, QA when the change is testable, and a full code review. Delivery never asks which developer should implement a task.
 
-**Version:** 0.6.1
+**Version:** 0.7.0
 
 ## How a delivery starts
 
@@ -52,9 +52,9 @@ Number tasks 1, 2, 3… in execution order, each number exactly once; put produc
 
 A task's file list decides its agent: `.py` files go to the Python Developer, `.php` files to the PHP Developer, TypeScript, JavaScript and CSS files to the Frontend Developer when the nearest manifest above them is a `package.json` that depends on React, and everything else (docs, CI, configuration, Node tooling) to Delivery's generic implementer. Docs and configuration files do not vote.
 
-A task without a file list is routed by its text. Mentioned directory paths vote for their stack as listed files would, except URL-shaped paths with a dotted host before the first `/`. Bare code file names vote only in inline code or fenced blocks; a bare TypeScript, JavaScript or CSS file name, and every fenced code block in those languages, votes frontend when the repository has a React package and generic otherwise. A fenced Python or PHP block votes for that stack. The stack with the most votes gets the task. No votes, or a tie, sends it to the generic implementer. In OMP, when the repository has a Python project (`pyproject.toml`, `setup.py`, `setup.cfg` or `requirements.txt`), a PHP project (`composer.json`) or a `package.json` that depends on React, at its root or up to three directory levels below it, Delivery first asks the model on the `judge` role and uses the answer only when that model's name contains `jev` (as the default `typesafe/jev-latest` does) and the answer names one stack with at least 0.8 confidence. A repository without such a project, a `judge` role mapped to a model without `jev` in its name, or a judge that fails or does not answer leaves the task to routing by its text.
+A task without a file list is routed by its text. Mentioned directory paths vote for their stack as listed files would, except URL-shaped paths with a dotted host before the first `/`. Bare code file names vote only in inline code or fenced blocks; a bare TypeScript, JavaScript or CSS file name, and every fenced code block in those languages, votes frontend when the repository has a React package and generic otherwise. A fenced Python or PHP block votes for that stack. The stack with the most votes gets the task. No votes, or a tie, sends it to the generic implementer. In OMP, when the repository has a Python project (`pyproject.toml`, `setup.py`, `setup.cfg` or `requirements.txt`), a PHP project (`composer.json`) or a `package.json` that depends on React, at its root or up to three directory levels below it, Delivery first asks the model on the `judge` role and uses the answer only when the answering model is a catalog decision model and the answer names one stack with at least 0.8 confidence. The model must match a selector from `omp models --kind judge --json`, or that selector followed by `-` and eight digits. A repository without such a project, a chat model on the `judge` role, a failed model listing, or a judge that fails or does not answer leaves the task to routing by its text. See [Decision model](../oh-my-pi.md#decision-model) for the role and a local model configuration.
 
-Delivery prints one `Routing: task <N> → <agent> (source: <source>)` line per task before the first one starts; the source is `files`, `text (<votes>)`, `default`, or in OMP `jev p=<confidence> via <model>`.
+Delivery prints one `Routing: task <N> → <agent> (source: <source>)` line per task before the first one starts; the source is `files`, `text (<votes>)`, `default`, or in OMP `decision model p=<confidence, 2 decimals> via <model>`.
 
 ## Branch and plan location
 

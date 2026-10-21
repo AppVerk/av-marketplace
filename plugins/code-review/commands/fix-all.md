@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git log:*), Bash(git show:*), Bash(git diff:*), Bash(git blame:*), Bash(git status:*), Bash(git hash-object:*), Bash(git rev-parse:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), Bash(shasum:*), Bash(sha256sum:*), Bash(head:*), Bash(tail:*), Bash(grep:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git log:*), Bash(git show:*), Bash(git diff:*), Bash(git blame:*), Bash(git status:*), Bash(git hash-object:*), Bash(git rev-parse:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), Bash(shasum:*), Bash(sha256sum:*), Bash(head:*), Bash(tail:*), Bash(grep:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task, Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py *)
 description: Fix unfixed issues from a review/QA report after a single yes/no confirmation — everything except issues flagged needs-decision, which it then offers to resolve with you. Optional severity floor.
 model: opus
 argument-hint: [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
@@ -473,9 +473,9 @@ For a finding in the second group, the verification is:
 1. Read the source file.
 2. Locate the issue's `### [SEVERITY] ID: Title` heading and read its block, down to the next `###`, `---` or EOF.
 3. Locate the block's **live `**Decision:**` line** — the decision this dispatch was made against, not a `**Decision-retired:**` line beside it that a superseded decision left behind. The one exception is a line this same run's retirement rewrote in place: retirement keys the line `**Decision-retired:**` with its attempt entries intact, so where the run retired this decision the rewritten line is the one to read. It is a single physical line either way, so its bracketed field is read whole and split on `; `.
-4. Confirm its **last bracketed entry** is the `attempt N: <outcome>` entry stage 4 appended for this dispatch, with the `N` and the `<outcome>` this run just wrote. Like step 3 above, this is a comparison against something this run wrote itself, so it is exact rather than a prefix match.
+4. Confirm its **last bracketed entry** is the `attempt N: <outcome>` entry stage 4 appended for this dispatch, with the `N` and the `<outcome>` this run just wrote. Where the line read is a `**Decision-retired:**` line whose last bracketed entry is `revoked`, the entry this run appended is the one **immediately before `revoked`**: confirm that entry is the `attempt N: <outcome>` this run wrote. Like step 3 above, this is a comparison against something this run wrote itself, so it is exact rather than a prefix match.
 
-The append has not landed if the bracketed field still ends with the entry it carried before this dispatch, or if the block carries no decision line of either key at all.
+The append has not landed if the bracketed field still ends with the entry it carried before this dispatch, if it ends with `revoked` and the preceding entry is not this run's attempt, or if the block carries no decision line of either key at all. Record `attempt-entry-missing` exactly as for any missing append.
 
 This is the one check whose absence is not merely cosmetic. The attempt entry is what advances the two-attempt retirement counter; a lost append freezes it, and a decision that fails every run then replays forever with the escape to `reject` unreachable behind it — precisely the failure retirement exists to prevent. A status line that fails to land costs an annotation; an attempt entry that fails to land costs the loop its exit.
 
@@ -596,12 +596,12 @@ Then ask, with AskUserQuestion, one question. `N` is the length of `needs_decisi
 question: "Resolve <N> findings requiring your decision now? <N> findings to analyse, in <B> batch(es) of at most 8."
 options:
   - label: "Yes — resolve <N>"
-    description: "At least one question per finding — more where a location must be supplied or an out-of-boundary check approved. Then each decision is fixed and verified."
+    description: "One question per finding auto-accept does not resolve — more where a location must be supplied, an out-of-boundary check approved or the auto-accept settings trusted. Then each decision is fixed and verified."
   - label: "No — leave them"
     description: "Stop here. They stay unresolved and return on the next run."
 ```
 
-The count and the batch shape are named **before** anything is dispatched, and deliberately: the decision stage carries no dispatch, wall-clock or token budget, and at least one question per finding is asked however many findings there are. Stating the size here bounds nothing — it only makes what you are agreeing to visible before you agree to it.
+The count and the batch shape are named **before** anything is dispatched, and deliberately: the decision stage carries no dispatch, wall-clock or token budget, and every finding auto-accept does not resolve costs at least one question however many findings there are. Stating the size here bounds nothing — it only makes what you are agreeing to visible before you agree to it.
 
 Interrupting the stage is the exit from an unbounded one, and it is lossless: `code-review:decision-gate` writes each decision into the source report **as it is made**, so a sweep stopped part-way keeps every answer already given and the next run re-asks only the findings still undecided.
 
@@ -639,12 +639,18 @@ Collect `status_write_failures` exactly as Step 4.1.5 does. If the list is non-e
 
 Print the block below after the write-and-verify pass. On the normal path it follows the Fix Summary Step 4.2 printed; on the zero-auto path it follows nothing but the list Step 5.2 printed.
 
-Its rows are the nine disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty.
+Its rows are the eleven disclosures `code-review:decision-gate` **raises and does not print**. That skill is their single source of truth: what each one means, and which stage raises it, is stated there and is not restated here. This block only renders them. Omit any row whose list is empty.
 
 ```markdown
 ## Decision Stage
 
 **Decided:** N | **Skipped:** N | **Rejected:** N
+
+**Auto-accepted — no question asked:**
+- [SEVERITY] ID: Title — <label> (analyst <c1>%, <source> <c2>%)
+
+**Auto-accepted decisions retired — asked instead:**
+- [SEVERITY] ID: Title
 
 **Failed — no target supplied:**
 - [SEVERITY] ID: Title

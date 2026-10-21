@@ -14,7 +14,7 @@ omp plugin install <plugin>@av-marketplace
 
 `omp plugin install` accepts several plugin IDs at once. Delivery hands tasks to the developer plugins and, with QA installed, runs `/qa:run` on testable deliveries; `/qa:run` needs Code Review for fixes. Start a new OMP session after installing: a running session does not load the extensions that Commit, Delivery and Plan Review ship.
 
-QA needs Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
+QA and Code Review's opt-in auto-accept need Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
 
 ## Updating
 
@@ -64,7 +64,39 @@ The suffix after a model sets its thinking level. The mapping pairs each check w
 
 The models need the `anthropic` and `openai-codex` providers logged in (`/login anthropic`, `/login openai-codex`); `omp models anthropic` and `omp models openai-codex` list what your account offers. If you use other providers, keep the pairing: map each checking role to a different model family than the role it checks.
 
-Leave `judge` unmapped: OMP's default list for it starts with `typesafe/jev-latest`, the model Delivery asks first to route a task that lists no files (see the [Delivery guide](plugins/delivery.md#routing)). Delivery asks the judge only in a repository with a Python, PHP or React project and uses its answer only from a model whose name contains `jev`, so with `judge` mapped to another model, tasks without a file list are routed by their text.
+### Decision model
+
+The `judge` role supplies the decision model for [Delivery routing](plugins/delivery.md#routing) and Code Review's second opinion when `[code-review]` sets `auto_accept_gate = "decision-model"` (see [Code Review configuration](plugins/code-review.md#configuration)). Code Review re-runs the cited evidence for that opinion and cascades to a second `decision-analyst` when the decision model does not agree. Unmapped, the role uses TypeSafe Jev when you have TypeSafe or OpenRouter credentials.
+
+Only catalog decision models count: `omp models --kind judge` lists them. The answering model must match a catalog selector, or that selector followed by `-` and eight digits. A failed listing accepts no model. A chat model from OMP's fallback chain is ignored: Delivery falls back to text routing, and Code Review asks a second analyst.
+
+A local alternative is `nimble-v3:9b`, which needs Ollama 0.40.4 or newer. Download it:
+
+```bash
+ollama pull nimble-v3:9b
+```
+
+Declare it in `~/.omp/agent/models.yml`, using the Ollama base URL:
+
+```yaml
+providers:
+  nimble-local:
+    baseUrl: http://127.0.0.1:11434
+    api: typesafe
+    auth: none
+    models:
+      - id: nimble-v3:9b
+        kind: judge
+```
+
+Then map the role in `~/.omp/agent/config.yml`:
+
+```yaml
+modelRoles:
+  judge: nimble-local/nimble-v3:9b
+```
+
+The role also drives OMP's own judged features (`find`, TTSR question rules and auto-thinking), so remapping it changes those too.
 
 ### Fallbacks
 

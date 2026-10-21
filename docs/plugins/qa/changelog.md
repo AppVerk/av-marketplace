@@ -2,6 +2,10 @@
 
 This page lists user-visible changes per release.
 
+## 3.0.1: shared loader reads the user configuration file
+
+No change to `/qa:run`. The shared configuration loader QA ships for every configurable plugin can read policy keys from `${XDG_CONFIG_HOME:-~/.config}/av/config.toml` for a plugin that allows them; QA allows none, so it never reads that file. See [Files](../../configuration.md#files).
+
 ## 3.0.0: flagless `/qa:run` with project configuration
 
 Changes since `qa` 2.9.0.

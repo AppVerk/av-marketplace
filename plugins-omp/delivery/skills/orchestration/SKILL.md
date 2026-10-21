@@ -166,30 +166,45 @@ Decide the implementer for each task. Never ask the user which agent to use: eve
   1. Run `python3 "$ROUTER" layout "$REPO"` and keep its JSON as `LAYOUT`. If `LAYOUT["stacks"]` is empty → go to step 4.
   2. Run this in the `eval` tool (python). Set `LAYOUT` to that JSON and `TASK_TEXT` to the task text:
      ```python
+     import json
+     import re
+     import subprocess
+
+     decision_models = set()
+     try:
+         listing = subprocess.run(["omp", "models", "--kind", "judge", "--json"], capture_output=True, text=True, timeout=60)
+         if listing.returncode == 0:
+             decision_models = {m["selector"] for m in json.loads(listing.stdout)["models"]
+                                if m.get("kind") == "judge" and isinstance(m.get("selector"), str)}
+     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
+         decision_models = set()
+
      CRIT = {"python": "Python code or its tests.", "frontend": "React/TypeScript web app code or its tests.", "php": "PHP code or its tests."}
      crit = {s: CRIT[s] for s in LAYOUT["stacks"]}
      crit["generic"] = "Work outside those stacks: docs, CI, repo configuration, Node tooling without React."
      crit["split"] = "The task needs changes in two or more of the stacks above."
      Q = {"route": {"type": "choice", "instructions": "Pick the implementer for this task given the repository layout. One task should touch one stack.", "criteria": crit}}
      state = "Repository layout:\n" + "\n".join(LAYOUT["lines"]) + "\n\nTask:\n" + TASK_TEXT
-     b = judge_batch({"t": state}, Q, intent="Routing a delivery task")
+     b = judge_batch({"t": state}, Q, concurrency=4, intent="Routing a delivery task")
      got = []
      for _ in range(3):
          got = await b.drain(timeout=60)
          if got:
              break
-     model = b.status()["model"]
      item = got[0][1] if got else None
+     model = item.model if item is not None else None
+     dated = re.fullmatch(r"(.+)-[0-9]{8}", model or "")
+     decision_model = model in decision_models or (dated is not None and dated.group(1) in decision_models)
      answer = item.answers["route"] if item is not None and not getattr(item, "error", None) else None
-     print({"model": model, "answer": answer, "error": getattr(item, "error", None) if item is not None else "no answer"})
+     print({"model": model, "decision_model": decision_model, "answer": answer, "error": getattr(item, "error", None) if item is not None else "no answer"})
      ```
   3. Accept `answer["choice"]` only when all of these hold:
      - `answer` is not `None`;
-     - `"jev" in model.lower()`;
+     - `decision_model` is `True` (the answering model is a selector from `omp models --kind judge --json`, or that selector followed by `-` and eight digits; a failed listing accepts no model);
      - `answer["choice"] != "split"`;
      - `answer["confidence"] >= 0.8`.
 
-     The agent is `python` → `python-developer:developer`, `frontend` → `frontend-developer:developer`, `php` → `php-developer:developer`, `generic` → `delivery:implementer`. Source: `jev p=<confidence, 2 decimals> via <model>`.
+     The agent is `python` → `python-developer:developer`, `frontend` → `frontend-developer:developer`, `php` → `php-developer:developer`, `generic` → `delivery:implementer`. Source: `decision model p=<confidence, 2 decimals> via <model>`.
   4. Otherwise use the entry's `agent`, decided by the router from the task text. Source: `text (<evidence joined with "; ">)` when the entry's `source` is `text`, otherwise `default`.
 
 For every routed task, print exactly one line:
