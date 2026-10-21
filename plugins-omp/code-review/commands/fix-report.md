@@ -194,6 +194,8 @@ Compose each page in that order:
   - label: "[SEVERITY] Short title"
   - description: "path/to/file.py:line — first sentence of the Problem field"
 
+**The checklist is fail-closed.** Where a page cannot be asked — AskUserQuestion unavailable, as in a subagent or a print-mode run, or it errors — selection ends at once with the issues selected on the pages already answered, none when it is the first page. Never select an issue yourself. With nothing selected, Step 2.3 ends the run.
+
 **Needs-decision prefix:** if the issue block contains `**Fix-policy:** needs-decision`, prefix the option's *description* with `[needs-decision: <Drift-class value>] ` (labels stay unchanged so `/fix <ID>` referencing remains stable). Example: `[needs-decision: dead-reference] docs/guide.md:12 — Doc cites a removed script`. If the block has no **Drift-class:** field, render the prefix as [needs-decision: —].
 
 **Auto-merge mode hint:** When `files` (from Step 1.1) contains more than one path, append a separator and the basename of `issue.source_file` to each option's description so the user can tell which report each issue came from. Example:

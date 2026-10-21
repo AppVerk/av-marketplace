@@ -85,8 +85,11 @@ BASH_GRANT_RE = re.compile(r"^Bash\((?P<spec>.*)\)$", re.DOTALL)
 
 CLASSES = frozenset({"inside-boundary", "pipeline", "outside-escalates"})
 STAGE_RUNNING_KIND = "runs-the-stage"
+# hands-over: loads a stage-running command in its own turn; its grants stay
+# active there (Claude Code keeps allowed-tools for the whole turn) and are
+# recorded, not diffed.
 SCOPE_KINDS = frozenset(
-    {STAGE_RUNNING_KIND, "render-only", "dispatch-only", "reference-only"}
+    {STAGE_RUNNING_KIND, "render-only", "dispatch-only", "reference-only", "hands-over"}
 )
 
 # False-pass floors, in the spirit of check-prefix-sync.sh's `>= 5` prefixes and

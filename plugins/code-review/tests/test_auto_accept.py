@@ -22,6 +22,7 @@ from auto_accept import AutoAcceptConfig
 BASE = "version = 1\n[code-review]\n"
 KEY = "code-review.auto_accept_min_confidence"
 GATE_KEY = "code-review.auto_accept_gate"
+AFTER_KEY = "code-review.after_review"
 
 
 class AutoAcceptTests(unittest.TestCase):
@@ -75,21 +76,21 @@ class AutoAcceptTests(unittest.TestCase):
     def test_missing_file_uses_disabled_policy(self) -> None:
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "missing-file")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst", "after_review": "ask"})
         self.assertEqual(report["trust"], "not-required")
 
     def test_missing_table_uses_disabled_policy(self) -> None:
         self.put("version = 1\n")
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "missing-table")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst", "after_review": "ask"})
         self.assertEqual(report["trust"], "not-required")
 
     def test_empty_table_does_not_need_trust(self) -> None:
         self.put(BASE)
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "ok")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst", "after_review": "ask"})
         self.assertEqual(report["trust_subset"], {})
         self.assertEqual(report["trust"], "not-required")
 
@@ -97,7 +98,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.put(BASE + "auto_accept_min_confidence = 90\n")
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "ok")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 90, "auto_accept_gate": "analyst"})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 90, "auto_accept_gate": "analyst", "after_review": "ask"})
         self.assertEqual(report["trust"], "new")
         self.assertEqual(report["trust_subset"], {KEY: 90})
         approved_hash = cast(str, report["trust_hash"])
@@ -143,7 +144,7 @@ class AutoAcceptTests(unittest.TestCase):
                 self.put(BASE + f"auto_accept_min_confidence = {value}\n")
                 report = self.report(self.cli("config"))
                 self.assertEqual(report["state"], "ok")
-                self.assertEqual(report["policy"], {"auto_accept_min_confidence": value, "auto_accept_gate": "analyst"})
+                self.assertEqual(report["policy"], {"auto_accept_min_confidence": value, "auto_accept_gate": "analyst", "after_review": "ask"})
                 self.assertEqual(report["trust_subset"], {KEY: value})
 
     def test_unknown_plugin_key_is_invalid(self) -> None:
@@ -184,7 +185,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.put("[code-review]\nauto_accept_min_confidence = 95\n", ".av/local.toml")
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "ok")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 95, "auto_accept_gate": "analyst"})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 95, "auto_accept_gate": "analyst", "after_review": "ask"})
         self.assertEqual(cast(dict[str, str], report["provenance"])[KEY], ".av/local.toml")
 
     def test_local_override_cannot_supply_shared_plugin_presence(self) -> None:
@@ -196,7 +197,7 @@ class AutoAcceptTests(unittest.TestCase):
                 )
                 report = self.report(self.cli("config"))
                 self.assertEqual(report["state"], "missing-file")
-                self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
+                self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst", "after_review": "ask"})
                 self.assertEqual(report["trust_subset"], {})
                 self.assertEqual(report["trust"], "not-required")
 
@@ -204,14 +205,14 @@ class AutoAcceptTests(unittest.TestCase):
         self.put("version = 1\n")
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "missing-table")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst", "after_review": "ask"})
         self.assertEqual(report["trust_subset"], {})
         self.assertEqual(report["trust"], "not-required")
 
         self.put('version = 1\n[env.values]\nGREETING = "env:AV_GREETING"\n')
         report = self.report(self.cli("config"))
         self.assertEqual(report["state"], "missing-table")
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst"})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": None, "auto_accept_gate": "analyst", "after_review": "ask"})
         self.assertEqual(report["trust_subset"], {"env.values.GREETING": "env:AV_GREETING"})
         self.assertEqual(report["trust"], "new")
 
@@ -222,6 +223,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.assertEqual(report["state"], "ok")
         self.assertEqual(report["policy"], {
             "auto_accept_min_confidence": 90, "auto_accept_gate": "analyst",
+            "after_review": "ask",
         })
         self.assertEqual(report["trust"], "not-required")
         self.assertEqual(report["trust_subset"], {})
@@ -233,6 +235,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.assertEqual(report["state"], "ok")
         self.assertEqual(report["policy"], {
             "auto_accept_min_confidence": 90, "auto_accept_gate": "decision-model",
+            "after_review": "ask",
         })
         self.assertEqual(report["trust"], "not-required")
         self.assertEqual(report["trust_subset"], {})
@@ -251,6 +254,7 @@ class AutoAcceptTests(unittest.TestCase):
                 report = self.report(self.cli("config"))
                 self.assertEqual(report["policy"], {
                     "auto_accept_min_confidence": 90, "auto_accept_gate": gate,
+                    "after_review": "ask",
                 })
                 self.assertEqual(report["trust_subset"], subset)
                 self.assertEqual(report["trust"], trust)
@@ -263,6 +267,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.assertEqual(report["state"], "ok")
         self.assertEqual(report["policy"], {
             "auto_accept_min_confidence": None, "auto_accept_gate": "analyst",
+            "after_review": "ask",
         })
         self.assertEqual(report["trust"], "not-required")
         self.assertEqual(report["trust_subset"], {})
@@ -271,6 +276,7 @@ class AutoAcceptTests(unittest.TestCase):
         report = self.report(self.cli("config"))
         self.assertEqual(report["policy"], {
             "auto_accept_min_confidence": 95, "auto_accept_gate": "analyst",
+            "after_review": "ask",
         })
         self.assertEqual(report["trust_subset"], {KEY: 95})
         self.assertEqual(report["trust"], "new")
@@ -286,6 +292,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.assertEqual(report["state"], "ok")
         self.assertEqual(report["policy"], {
             "auto_accept_min_confidence": 95, "auto_accept_gate": "decision-model",
+            "after_review": "ask",
         })
         self.assertEqual(report["trust_subset"], {KEY: 95, GATE_KEY: "decision-model"})
         self.assertEqual(report["trust"], "new")
@@ -305,6 +312,7 @@ class AutoAcceptTests(unittest.TestCase):
                 self.assertEqual(report["state"], "ok")
                 self.assertEqual(report["policy"], {
                     "auto_accept_min_confidence": None, "auto_accept_gate": "analyst",
+                    "after_review": "ask",
                 })
                 self.assertEqual(report["trust_subset"], {})
                 self.assertEqual(report["trust"], "not-required")
@@ -322,10 +330,100 @@ class AutoAcceptTests(unittest.TestCase):
                 self.assertNotIn("policy", report)
                 self.assertEqual(report["trust_subset"], {})
 
+    def test_after_review_accepts_each_action(self) -> None:
+        for value in ("ask", "fix-all", "fix-report", "none"):
+            with self.subTest(value=value):
+                self.put(BASE + f'after_review = "{value}"\n')
+                report = self.report(self.cli("config"))
+                self.assertEqual(report["state"], "ok")
+                self.assertEqual(cast(dict[str, object], report["policy"])["after_review"], value)
+                self.assertEqual(cast(dict[str, str], report["provenance"])[AFTER_KEY], ".av/config.toml")
+
+    def test_after_review_rejects_unknown_values_and_wrong_types(self) -> None:
+        for value in ('"fix"', '"FIX-ALL"', '"fix_all"', '""', "1", "true"):
+            with self.subTest(value=value):
+                self.put(BASE + f"after_review = {value}\n")
+                report = self.report(self.cli("config"), 2)
+                self.assertEqual(report["state"], "invalid")
+                self.assertIn(
+                    {
+                        "file": ".av/config.toml", "key": AFTER_KEY,
+                        "error": 'expected "ask", "fix-all", "fix-report" or "none"',
+                    },
+                    cast(list[dict[str, str]], report["errors"]),
+                )
+                self.assertNotIn("policy", report)
+                self.assertEqual(report["trust_subset"], {})
+
+    def test_repository_fix_all_is_pinned_but_other_actions_are_not(self) -> None:
+        self.put(BASE + 'after_review = "fix-all"\n')
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["trust_subset"], {AFTER_KEY: "fix-all"})
+        self.assertEqual(report["trust"], "new")
+        approved_hash = cast(str, report["trust_hash"])
+        self.assertEqual(
+            self.report(self.cli("trust", "accept", approved_hash)),
+            {"trusted": approved_hash},
+        )
+        self.assertEqual(self.report(self.cli("config"))["trust"], "trusted")
+
+        for value in ("ask", "fix-report", "none"):
+            with self.subTest(value=value):
+                self.put(BASE + f'after_review = "{value}"\n')
+                report = self.report(self.cli("config"))
+                self.assertEqual(report["trust_subset"], {})
+                self.assertEqual(report["trust"], "not-required")
+
+        self.put(BASE)
+        self.put('[code-review]\nafter_review = "fix-all"\n', ".av/local.toml")
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["trust_subset"], {AFTER_KEY: "fix-all"})
+        self.assertEqual(cast(dict[str, str], report["provenance"])[AFTER_KEY], ".av/local.toml")
+
+    def test_one_approval_covers_threshold_and_after_review(self) -> None:
+        self.put(BASE + 'auto_accept_min_confidence = 90\nafter_review = "fix-all"\n')
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["trust_subset"], {KEY: 90, AFTER_KEY: "fix-all"})
+        approved_hash = cast(str, report["trust_hash"])
+        self.assertEqual(
+            self.report(self.cli("trust", "accept", approved_hash)),
+            {"trusted": approved_hash},
+        )
+        self.assertEqual(self.report(self.cli("config"))["trust"], "trusted")
+
+        for threshold, action in ((80, "fix-all"), (90, "ask")):
+            with self.subTest(threshold=threshold, action=action):
+                self.put(BASE + f'auto_accept_min_confidence = {threshold}\nafter_review = "{action}"\n')
+                self.assertEqual(self.report(self.cli("config"))["trust"], "changed")
+
+    def test_user_fix_all_is_not_pinned(self) -> None:
+        self.put_user(BASE + 'after_review = "fix-all"\n')
+        report = self.report(self.cli("config"))
+        self.assertFalse((self.repo / ".av").exists())
+        self.assertEqual(report["state"], "ok")
+        self.assertEqual(cast(dict[str, object], report["policy"])["after_review"], "fix-all")
+        self.assertEqual(report["trust_subset"], {})
+        self.assertEqual(report["trust"], "not-required")
+        self.assertEqual(cast(dict[str, str], report["provenance"])[AFTER_KEY], str(self.user_file))
+
+    def test_local_after_review_cannot_supply_shared_plugin_presence(self) -> None:
+        self.put('[code-review]\nafter_review = "fix-all"\n', ".av/local.toml")
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["state"], "missing-file")
+        self.assertEqual(cast(dict[str, object], report["policy"])["after_review"], "ask")
+        self.assertEqual(report["trust_subset"], {})
+
+        self.put("version = 1\n")
+        report = self.report(self.cli("config"))
+        self.assertEqual(report["state"], "missing-table")
+        self.assertEqual(cast(dict[str, object], report["policy"])["after_review"], "ask")
+        self.assertEqual(report["trust_subset"], {})
+
     def test_user_values_use_policy_validation_with_user_provenance(self) -> None:
         for text, key, message in (
             ("auto_accept_min_confidence = true\n", KEY, "expected an integer from 70 to 100, or false"),
             ('auto_accept_gate = "jev"\n', GATE_KEY, 'expected "analyst" or "decision-model"'),
+            ('after_review = "fix"\n', AFTER_KEY, 'expected "ask", "fix-all", "fix-report" or "none"'),
         ):
             with self.subTest(key=key):
                 self.put_user(BASE + text)
@@ -359,6 +457,7 @@ class AutoAcceptTests(unittest.TestCase):
         self.assertEqual(reloaded.trust, "trusted")
         self.assertEqual(reloaded.report()["policy"], {
             "auto_accept_min_confidence": 90, "auto_accept_gate": "decision-model",
+            "after_review": "ask",
         })
         self.put_user(BASE + "foo = 1\n")
         with self.assertRaisesRegex(InvalidConfig, "invalid config cannot be trusted"):
@@ -397,7 +496,7 @@ class AutoAcceptTests(unittest.TestCase):
         nested = self.repo / "nested"
         nested.mkdir()
         report = self.report(self.raw_cli("config", cwd=nested))
-        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 90, "auto_accept_gate": "analyst"})
+        self.assertEqual(report["policy"], {"auto_accept_min_confidence": 90, "auto_accept_gate": "analyst", "after_review": "ask"})
 
     def test_repository_outside_git_needs_explicit_root(self) -> None:
         self.assertEqual(

@@ -124,18 +124,19 @@ Print the table `Task | Agent | Routing | Fix rounds | Result`, one row per task
 Mark `Final code review` in progress.
 
 - `code-review` root is `null` → print `Install code-review@av-marketplace and run /code-review:review.` and end.
-- Otherwise `read <code-review root>/commands/review.md` and carry it out completely, as if it had been invoked with this argument in place of its `$ARGUMENTS`:
+- Otherwise `read <code-review root>/commands/review.md` and carry it out through its Step 6 (Save Review), as if it had been invoked with this argument in place of its `$ARGUMENTS`:
   ```
   Changes on branch <BRANCH> in <BASE>..HEAD (git diff <BASE>..HEAD), delivered from <PLAN_PATH>. Review only these changes.
   ```
+  Do not run its Step 7 (Post-review action) here: it runs in **7. Post-review action**, after the report is committed.
 
 - If the review saved a report, run `git check-ignore -q -- "<report path>"`. Exit 0 means git ignores the report: leave it uncommitted. Otherwise commit it before anything else touches it: `git add -- "<report path>"`, then `AV_COMMIT_SKILL=1 git commit -m "docs: add review of delivery $SLUG" -- "<report path>"`. Commit only that path. If adding or committing fails, print git's output and stop.
 
 Mark `Final code review` done.
 
-### 7. Fix offer
+### 7. Post-review action
 
-If the review saved a report, use the `ask` tool: `Run /code-review:fix-all on <report path>?` with options `Yes` and `No`. On `Yes`, `read <code-review root>/commands/fix-all.md` and carry it out completely with `$ARGUMENTS` = the report path. Whatever it changes, including the statuses it writes into the report, stays uncommitted: end with `Review fixes are uncommitted; review them and commit.` Without a saved report, end the run.
+Carry out the review's Step 7 (Post-review action) now, with the report its Step 6 saved, or without one when it printed `Review not saved:`. That step decides from `[code-review] after_review` whether to ask, hand the report to `/code-review:fix-all` or `/code-review:fix-report`, or print the fix commands; never answer its questions yourself. When it hands the report to a fix command, read that command's file as the review's Step 7 says for OMP and carry it out completely; whatever it changes, including the statuses it writes into the report, stays uncommitted: end with `Review fixes are uncommitted; review them and commit.` When no fix command ran, end the run after the review's Step 7.
 
 ## Plugin roots
 

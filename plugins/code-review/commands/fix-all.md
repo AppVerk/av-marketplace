@@ -1,19 +1,19 @@
 ---
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git log:*), Bash(git show:*), Bash(git diff:*), Bash(git blame:*), Bash(git status:*), Bash(git hash-object:*), Bash(git rev-parse:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(semgrep:*), Bash(npm test:*), Bash(eslint:*), Bash(tsc:*), Bash(bandit:*), Bash(trufflehog:*), Bash(command:*), Bash(jq:*), Bash(shasum:*), Bash(sha256sum:*), Bash(head:*), Bash(tail:*), Bash(grep:*), TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Task, Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py *)
-description: Fix unfixed issues from a review/QA report after a single yes/no confirmation — everything except issues flagged needs-decision, which it then offers to resolve with you. Optional severity floor.
+description: Fix unfixed issues from a review/QA report after a single yes/no confirmation (--yes skips it) — everything except issues flagged needs-decision, which it then offers to resolve with you. Optional severity floor.
 model: opus
-argument-hint: [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
+argument-hint: [--yes] [CRITICAL|HIGH|MEDIUM|LOW] [path-to-report]
 ---
 
 # Fix All Issues From Report
 
-You are an expert code fixer that reads one or more saved code review reports, presents every unfixed issue as a pre-flight summary (issues flagged `needs-decision` are listed as skipped), asks for a single yes/no confirmation, and then fixes the whole batch sequentially via the `fix-auto` subagent. Once that batch is done, Step 5 offers to resolve the skipped `needs-decision` findings with you rather than leaving them to another command.
+You are an expert code fixer that reads one or more saved code review reports, builds a full pre-flight record (issues flagged `needs-decision` are listed as skipped), asks for a single yes/no confirmation unless `--yes` skips it, and then fixes the whole batch sequentially via the `fix-auto` subagent. With `--yes`, the record opens the final summary as **Set out to fix** rather than relying on a separate pre-dispatch message. Once that batch is done, Step 5 offers to resolve the skipped `needs-decision` findings with you rather than leaving them to another command.
 
 This command is the bulk counterpart to `/fix-report`. Where `/fix-report` paginates issues into a checklist and asks the user to pick which to fix, `/fix-all` fixes everything except `needs-decision`-flagged issues (optionally filtered by minimum severity) after one confirmation, then asks a second time whether to work through the `needs-decision` ones. Use it when you trust the report and want every auto-fixable issue addressed.
 
 ## Input
 
-- `$ARGUMENTS` — optional severity floor (`CRITICAL`/`HIGH`/`MEDIUM`/`LOW`, case-insensitive) and/or optional path to a report file. Order is free. See [Argument grammar](#argument-grammar) below.
+- `$ARGUMENTS` — optional `--yes`, optional severity floor (`CRITICAL`/`HIGH`/`MEDIUM`/`LOW`, case-insensitive) and/or optional path to a report file. Order is free. See [Argument grammar](#argument-grammar) below.
 
 ---
 
@@ -60,18 +60,19 @@ precondition because the MANDATORY FIRST STEP runs before Step 0.
 | Token | Regex | Classification |
 |---|---|---|
 | Severity | `^(CRITICAL\|HIGH\|MEDIUM\|LOW)$` (case-insensitive, normalize to upper) | `severity_floor` |
+| Confirmation skip | `^--yes$` (exact, case-sensitive) | `skip_confirmation` |
 | Anything else | — | candidate path |
 
 Rules:
 
 1. **At most one severity token.** Two severity tokens → error: `Multiple severities provided: 'X' and 'Y'. Pass at most one.`
 2. **At most one path token.** Two distinct path tokens → error: `Multiple paths provided: 'X' and 'Y'. Pass only one.`
-3. **Non-severity tokens always classify as `path`** (no third "unrecognized" branch). A typo like `/fix-all HIG` becomes a single-file invocation with `path = "HIG"`; the failure surfaces from Step 1.1 as `Could not read file 'HIG'. Make sure the path is correct and the file exists.`
+3. **Tokens that are neither a severity nor `--yes` always classify as `path`** (no "unrecognized" branch). A typo like `/fix-all HIG` becomes a single-file invocation with `path = "HIG"`; the failure surfaces from Step 1.1 as `Could not read file 'HIG'. Make sure the path is correct and the file exists.`
 4. Token order is free — `/fix-all HIGH foo.md` and `/fix-all foo.md HIGH` are equivalent.
 5. Empty `$ARGUMENTS` → both `severity_floor` and `path` unset; auto-merge mode.
 6. **Whitespace in paths is not supported.** `$ARGUMENTS` is tokenized by whitespace. A path like `docs/my reports/foo.md` splits into two tokens and triggers Rule 2. Workaround: rename the directory or symlink it.
-7. **Files literally named `CRITICAL`/`HIGH`/`MEDIUM`/`LOW`** match the severity regex first. To target them, prefix with `./` (e.g., `./HIGH`).
-8. **Flag-like tokens are not recognized.** `/fix-all` has no `--help`, `-h`, `--severity=…`, or similar flags. Per Rule 3, any non-severity token (including `--help`, `-h`, `--verbose`, etc.) classifies as a `path` and will fail in Step 1.1 with `Could not read file '--help'. Make sure the path is correct and the file exists.` For general slash-command help use Claude Code's `/help`; for `/fix-all` usage details see [`docs/plugins/code-review.md`](../../../docs/plugins/code-review.md) (`/fix-all` section).
+7. **Files literally named `CRITICAL`/`HIGH`/`MEDIUM`/`LOW`** match the severity regex first. To target them, prefix with `./` (e.g., `./HIGH`). A file literally named `--yes` likewise needs `./--yes`.
+8. **`--yes` is the only flag.** It answers Step 2.5's confirmation gate in advance; `/code-review:review` passes it when its post-review action hands a saved report to `/fix-all`. A repeated `--yes` changes nothing. Any other flag-like token (`--help`, `-h`, `--verbose`, `--severity=…`) classifies as a `path` and will fail in Step 1.1 with `Could not read file '--help'. Make sure the path is correct and the file exists.` For general slash-command help use Claude Code's `/help`; for `/fix-all` usage details see [`docs/plugins/code-review.md`](../../../docs/plugins/code-review.md) (`/fix-all` section).
 
 **Severity floor semantics:** the floor includes itself and everything *above* it. `HIGH` matches HIGH+CRITICAL. `MEDIUM` matches MEDIUM+HIGH+CRITICAL. `LOW` matches all four levels.
 
@@ -81,20 +82,21 @@ Rules:
 
 This step runs **before** any filesystem I/O so that argument-grammar errors (Rule 1 "Multiple severities", Rule 2 "Multiple paths") surface before "No reports found" or "Could not read file" errors from Step 1.
 
-Split `$ARGUMENTS` on whitespace into tokens. Track two slots: `severity_floor` (initially unset) and `path` (initially unset).
+Split `$ARGUMENTS` on whitespace into tokens. Track three slots: `severity_floor` (initially unset), `path` (initially unset) and `skip_confirmation` (initially false).
 
 For each token:
 
-- If the token matches `^(CRITICAL|HIGH|MEDIUM|LOW)$` case-insensitively:
+- If the token is exactly `--yes`: set `skip_confirmation` to `true` and go on to the next token.
+- Otherwise, if the token matches `^(CRITICAL|HIGH|MEDIUM|LOW)$` case-insensitively:
   - If `severity_floor` is already set, follow the [Abort helper](#abort-helper) procedure, using the error from Rule 1 as the abort message.
   - Otherwise set `severity_floor` to the uppercase form.
-- Otherwise (any non-severity token):
+- Otherwise (any token that is neither `--yes` nor a severity):
   - If `path` is already set, follow the [Abort helper](#abort-helper) procedure, using the error from Rule 2 as the abort message.
   - Otherwise set `path` to the token.
 
-Empty `$ARGUMENTS` leaves both unset (auto-merge mode, no filter).
+Empty `$ARGUMENTS` leaves all three at their initial values (auto-merge mode, no filter).
 
-These resolved values are consumed by Step 1.1 (mode detection: `path` set → single-file; unset → auto-merge) and Step 2.2 (severity-floor filter application).
+These resolved values are consumed by Step 1.1 (mode detection: `path` set → single-file; unset → auto-merge), Step 2.2 (severity-floor filter application) and Step 2.5 (`skip_confirmation`).
 
 ---
 
@@ -282,7 +284,7 @@ Compute:
 - `show_report_column` = true if `files` from Step 1.1 has >1 distinct path
 - `show_source_column` = true if at least one issue in the list has `source_handle` set, counting the bound components of every dispatchable composite, which the list itself holds as one issue
 
-Render to stdout (Markdown):
+Without `skip_confirmation`, render it as visible reply text (Markdown) before the confirmation question. With `skip_confirmation`, the full record instead opens Step 4.2's final summary as **Set out to fix**; still render the Composites block here before any dissolve question, so that question shows the proposed changes:
 
 ~~~markdown
 ## Pre-flight: Fix All Issues
@@ -354,7 +356,13 @@ This is the one human gate on a grouping. A composite that passes it is fixed as
 
 ### Step 2.5: Confirmation gate
 
-Use AskUserQuestion with one question:
+**With `skip_confirmation`** (the `--yes` token), do not ask. After Step 2.4.5 has applied every dissolution, including its fail-closed path, freeze `preflight_snapshot`: the report names, severity floor, total and per-severity counts, skipped needs-decision count and IDs, all ordered issue-table rows with their Source/Report column visibility, and the Composites block with its bound components and composition-pass disclosures.
+
+Keep this snapshot unchanged through Steps 3–4: do not rebuild it from the edited reports or replace it if Step 3.0 falls back to individual dispatches after a marker-write failure. It records the intended batch at the gate; Step 4.2's Results and Composition blocks report what actually happened.
+
+Continue exactly as after the `Yes — fix all <total_count>` answer. Step 4.2 records `Confirmation skipped (--yes): fixing all <total_count> issues.` alongside the snapshot in the final summary; no separate pre-dispatch print is required.
+
+Otherwise use AskUserQuestion with one question:
 
 ```
 question: "Proceed with fixing all <total_count> issues sequentially?"
@@ -379,7 +387,7 @@ Follow the [Abort helper](#abort-helper) procedure.
 
 ### Step 3.0: Persist the composites
 
-Markers are written **only now that the run has committed to dispatching** — after Step 2.5's `yes`, before the first fixer call — so an aborted run keeps `Aborted. No changes made.` true. Each write uses the `Edit` tool and is verified by re-reading the file, as Step 4.1.5 verifies status lines:
+Markers are written **only now that the run has committed to dispatching** — after Step 2.5's `yes` or its `--yes` skip, before the first fixer call — so an aborted run keeps `Aborted. No changes made.` true. Each write uses the `Edit` tool and is verified by re-reading the file, as Step 4.1.5 verifies status lines:
 
 1. **Composite block** for each proposed composite (`**Origin:** fix-time`), in the Review Comment Format of `commands/review.md` with `**ID:**`, `**Location:**`, `**Category:** Composite`, `**Composed-of:**` (one physical line), `**Origin:**`, `**Effort:**`, `**Fix-policy:** needs-decision` where inherited, `**Problem:**`, `**Impact:**`, `**Remediation:**` — inserted immediately before the heading of the component that appears first **in the file** among its `Composed-of` members (not first in `Composed-of` order), so the block always precedes every member: `old_string` = that heading line, `new_string` = the composite block, a blank line, then the heading.
 2. **`**Part-of:** COMP-NNN`** on each component, directly after its `**ID:**` line, or after the heading where there is none. A block carries at most one `**Part-of:**` line: where one already exists, replace it in place.
@@ -505,8 +513,39 @@ This list is consumed by Step 4.2's "Status write failures" block — the same o
 
 ### Step 4.2: Display fix summary
 
+With `skip_confirmation`, open the final summary with **Set out to fix**, rendered from `preflight_snapshot`, before any results. Include the full pre-flight record in the template below even if every fixer failed or no report received a Status write. This is part of the final summary, not a separate progress message.
+
+Apply all Step 2.4 rendering rules to that prefix: retain every ordered issue row, the conditional Source/Report columns, severity counts, skipped-decision IDs and the Composites block with bound components and disclosures where applicable; never collapse the table to a count or a list of IDs. All values in the prefix, including the confirmation-skipped count, come from the snapshot, not from the outcomes.
+
+Without `skip_confirmation`, omit the entire **Set out to fix** section, its confirmation-skipped line and the **Results** subheading; keep the existing Fix Summary status table.
+
 ```markdown
 ## Fix Summary
+
+### Set out to fix
+
+**Reports:** <report_basenames>
+**Severity floor:** <severity_floor>            <-- omit this line if severity_floor is unset
+**Total to fix:** <total_count> issues
+**Requires user decision (skipped):** <needs_decision count> issues (<comma-separated IDs>)        <-- omit this line when zero
+
+**By severity:**
+| CRITICAL | HIGH | MEDIUM | LOW |
+|----------|------|--------|-----|
+|   <c>    | <c>  |  <c>   | <c> |        <-- each cell is the count or `—` if zero
+
+**Issues:**
+
+| # | ID | Severity | Title | Location | Source | Report |
+|---|----|----------|-------|----------|--------|--------|
+| 1 | SEC-001 | CRITICAL | <truncated title> | path:line | @handle or — | feature-auth.md |
+<all remaining rows from preflight_snapshot>
+
+<Composites block from preflight_snapshot, when applicable>
+
+Confirmation skipped (--yes): fixing all <total_count> issues.
+
+### Results
 
 | # | Issue | Status |
 |---|-------|--------|
@@ -600,6 +639,8 @@ options:
   - label: "No — leave them"
     description: "Stop here. They stay unresolved and return on the next run."
 ```
+
+**The offer is fail-closed.** Where it cannot be asked — AskUserQuestion unavailable, as in a subagent or a print-mode run, or it errors — take Step 5.3's "no" path. Silence is never read as consent.
 
 The count and the batch shape are named **before** anything is dispatched, and deliberately: the decision stage carries no dispatch, wall-clock or token budget, and every finding auto-accept does not resolve costs at least one question however many findings there are. Stating the size here bounds nothing — it only makes what you are agreeing to visible before you agree to it.
 
