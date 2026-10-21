@@ -12,7 +12,7 @@ All 3 policy keys are strings. Omitted keys use the defaults below; explicitly c
 | `mutations` | `"deny"` | `"deny"`: skip declared or detected writes. `"allow"`: guard nothing; use only when every target's data is disposable. |
 | `start_services` | `"ask"` | `"ask"`: ask before needed `up`/`prepare`. `"auto"`: show scope, then run configured commands when needed. |
 
-Every frontend and backend scenario needs `- **Writes:** yes|no`. Under `deny`, `yes`, missing or invalid declarations guard the whole scenario. Detected writes also guard the scenario, including preconditions, edges and State Checks; `no` cannot override detection.
+Every FE, BE and DESKTOP scenario needs `- **Writes:** yes|no`. Under `deny`, `yes`, missing or invalid declarations guard the whole scenario. For FE/BE, detected writes also guard the scenario, including preconditions, edges and State Checks; `no` cannot override detection. DESKTOP relies on the declaration, which covers files or settings the app persists outside the run.
 
 Registration and session-writing login count as writes. Guarded scenarios are `SKIP`, never fix candidates. Static detection has [residual risks](../qa.md#residual-risks); `deny` is not a read-only guarantee.
 
@@ -48,6 +48,28 @@ See [interactive versus headless](../qa.md#interactive-versus-headless) for appr
 </details>
 
 See [QA safety](../qa.md#safety) for fix eligibility and authentication guards.
+
+## Desktop apps
+
+`[qa.desktop.<name>]` configures a desktop app that a desktop driver plugin builds and runs. Names start with an ASCII letter or `_`, followed by ASCII letters, digits or `_`. A DESKTOP scenario's `**Target:**` selects that name; without one, QA uses `app` or the only configured app. With several apps and none named `app`, each scenario needs an explicit target. Missing names are reported in `missing.apps`.
+
+| Key | Type | Default | Validation |
+|---|---|---|---|
+| `driver` | String | Required | The driver name of an installed desktop driver plugin, as its README gives it: a lowercase ASCII letter followed by up to 39 lowercase letters, digits or `-`. Missing: `required desktop driver`; another type or form: `expected a desktop driver name`. A driver that is not installed is reported when its scenarios run, as `NEED_INFO kind=tool`. |
+| `package` | String | `"."` | `.` or a repository-relative package such as `./cmd/game`, without `..` segments. Invalid: `expected a relative package path such as ./cmd/game`. |
+| `args` | List of strings | `[]` | At most 32 items, each at most 256 characters without NUL. Invalid: `expected a list of strings`. |
+| `screen` | `[width, height]` | `[960, 540]` | Two integers, each from 64 to 4096; booleans are not integers. Invalid: `expected [width, height] between 64 and 4096`. |
+
+```toml
+[qa.desktop.app]
+driver = "<driver>"
+package = "."
+args = ["-debug"]
+```
+
+Configured `args` hold only flags the documented run command always passes; scenario-specific flags such as seeds belong in `**Args:**`. Set `screen` only when the repository documents a needed size. Each app's driver, package, args and screen are [trust-pinned](../../configuration.md#trust).
+
+The app runs from the repository root. The driver's README lists its requirements; see [Desktop apps](../qa.md#desktop-apps) for operation, examples and evidence paths. DESKTOP scenarios cannot use absolute URLs or State Checks. They may reference configured existing users, values, `$QA_NEW_PASSWORD` and `$QA_TAG` through `type_env` steps; registered users are FE/BE only.
 
 ## Users
 
@@ -226,7 +248,7 @@ Each teardown attempts eligible accounts from earlier runs too. QA saves each ou
 
 ## State Checks
 
-A State Check verifies application state in a configured store. Only backend scenarios support State Checks; frontend State Checks are plan errors.
+A State Check verifies application state in a configured store. Only backend scenarios support State Checks; FE and DESKTOP State Checks are plan errors.
 
 Use repeatable lines such as `- **State Check:** main: <query> → <expected>`. A store name is optional only when exactly 1 store is configured; with zero or several stores, an unprefixed check is a plan error. An unknown store name is a configuration gap.
 

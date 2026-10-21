@@ -1,8 +1,8 @@
 # QA plugin
 
-`/qa:run` tests a change and reports observed failures with `QA-NNN` issue IDs. It can fix eligible issues and retest within fixed limits. Frontend tests use the browser; backend tests use APIs and configured stores.
+`/qa:run` tests a change and reports observed failures with `QA-NNN` issue IDs. It can fix eligible issues and retest within fixed limits. Frontend tests use the browser; backend tests use APIs and configured stores; DESKTOP tests drive desktop apps headless in the background through installable driver plugins.
 
-**Version:** 3.0.1
+**Version:** 3.1.0
 
 ## Quick start
 
@@ -73,7 +73,7 @@ Run the complete workflow. The command accepts no flags; set policy in configura
 
 Automatic selection considers a plan stale when `Head:` is missing, invalid or no longer an ancestor of HEAD. Committed changes outside `docs/` since that head also make the plan stale.
 
-Interactive QA shows changed files and defaults to regeneration; headless QA regenerates. Failed generation never silently reuses an old plan. QA shows generated paths and frontend/backend scenario counts.
+Interactive QA shows changed files and defaults to regeneration; headless QA regenerates. Failed generation never silently reuses an old plan. QA shows generated paths and FE, BE and DESKTOP scenario counts.
 
 Open blockers require an interactive run-anyway decision; headless runs stop. Concerns remain visible but do not stop execution.
 
@@ -84,7 +84,7 @@ Open blockers require an interactive run-anyway decision; headless runs stop. Co
 The baseline is the first test pass, before fixes.
 
 1. Validate configuration and trust.
-2. Select or generate a reviewed plan; check targets, users, values, stores and writes.
+2. Select or generate a reviewed plan; check targets, desktop apps, users, values, stores and writes.
 3. Check tracked changes; reserve target origins and store endpoints.
 4. Check services and start approved services when needed; prepare private tester inputs.
 5. Test the baseline and report failures or setup gaps.
@@ -166,7 +166,7 @@ For `last N commits`, planning reads delivery plans named by valid Git `Delivery
 | `## Source` | `Branch:` and `Head:` enable automatic selection and staleness checks. |
 | `## Users` | Declares [existing or registered users](qa/configuration.md#users). |
 | `## Setup` | Optional human notes, never parsed configuration. |
-| `- **Target:** <name>` | Selects a configured origin; cross-origin preconditions use configured absolute URLs. |
+| `- **Target:** <name>` | Selects a configured origin for FE/BE or a configured app for DESKTOP; FE/BE cross-origin preconditions use configured absolute URLs. |
 | `- **Writes:** yes|no` | Required application-write declaration. |
 | Expected results and edges | Source-grounded `(path:line)` or tagged `(unverified — confirm at run time)`. |
 | Backend State Checks | Assertions against [configured stores](qa/configuration.md#state-checks), never embedded connections. |
@@ -174,6 +174,51 @@ For `last N commits`, planning reads delivery plans named by valid Git `Delivery
 Plans create needed application data through preconditions instead of assuming seeded records exist. Upload fixtures may use repository files. When the app cannot create the data a scenario needs, QA records a fixture gap and does not invent a test result.
 
 </details>
+
+## Desktop apps
+
+QA ships no desktop driver. A driver is a separate plugin, published from its author's own marketplace, that provides a skill named `qa-desktop-driver-<driver>`; install it there, following its README. [Writing extensions](../extensions.md#qa-desktop-drivers) describes the driver contract.
+
+A driver builds and runs the app headless in the background. The tester injects keys, text and mouse input by ticks, then reads PNG frames and the app log. No window takes focus, no OS input is sent and no screen is captured.
+
+`/qa:run` detects installed drivers, passes them to planning and configuration, and registers them for each run. An app whose driver is not installed gets `NEED_INFO kind=tool` with `Missing: desktop-driver:<driver>`. Keys are W3C `KeyboardEvent.code` values such as `KeyA`, `Digit1`, `Enter` and `Backquote`.
+
+The app runs with the repository root as its working directory. Add an app to the existing configuration, with the driver name the driver's README gives:
+
+```toml
+[qa.desktop.app]
+driver = "<driver>"
+package = "."
+args = ["-debug"]
+```
+
+Use only flags the repository's documented run command always passes in configured `args`; per-scenario flags such as seeds belong in the plan's `**Args:**`. See [Desktop apps configuration](qa/configuration.md#desktop-apps) for defaults and validation.
+
+For an app with a Backquote console, a `seed` command and a `-seed` flag, adapt this scenario and replace `(path:line)` with the producing source citation:
+
+```markdown
+## DESKTOP Test Scenarios
+
+### DESKTOP-01: Console reports the run seed
+- **Area:** Console
+- **Target:** app
+- **Writes:** no
+- **Args:** `-seed 42`
+- **Preconditions:** none
+- **Steps:**
+  1. Wait 30 ticks
+  2. Press `Backquote`
+  3. Type `seed`
+  4. Press `Enter`, wait 5 ticks
+  5. Shot `console`
+- **Expected:** Shot `console` shows `42` (path:line)
+```
+
+Every scenario and edge starts a fresh app. Expectations name a shot or app log line. DESKTOP scenarios do not use absolute URLs or State Checks; registered users are FE/BE only.
+
+The engine's `desktop run` command, invoked by `<run-dir>/desktop.sh`, writes shots and the masked `guest.log` under `<run-dir>/results/<dispatch>/desktop/<NNN>-<app>/`. Raw guest output is deleted. A Fail's evidence shot is copied to `docs/testing/reports/screenshots/<ID>-fail.png` unless marked `sensitive`; sensitive shots are never copied, although viewing them can expose injected credentials in the session transcript. Run artifacts are temporary, so review needed evidence before teardown.
+
+The driver's README lists its limits. A driver failure is reported as `NEED_INFO kind=tool`, not as an application failure.
 
 ## Safety
 
@@ -326,6 +371,7 @@ See [Code Review](code-review.md) for routing and decisions. [Delivery](delivery
 | Repository | Git repository with a HEAD. |
 | Backend requests | `curl` for credentials; HTTPie only for credential-free requests. `jq`, standard shell tools and Perl with `JSON::PP` for capture/sanitization. |
 | Frontend browser | Playwright MCP in Claude Code; built-in browser in OMP. |
+| DESKTOP apps | An installed desktop driver plugin and the tools its README lists; see [Desktop apps](#desktop-apps). |
 | Application | Running services or evidenced health/startup commands. |
 | State Checks | Configured store and matching `psql`, `mysql`, `sqlite3` or `redis-cli`. Redis checks need `redis-cli` with `--json`; configured password authentication also needs `4.0.11+`. |
 | Fixes | Code Review; test/report-only runs need no fixer. |
@@ -354,7 +400,7 @@ Before running QA, enable `browser.enabled`, disable `browser.relay` and `browse
 
 QA uses managed Chromium through OMP's built-in browser, not Playwright MCP. Disabled browser support produces tool gaps. Backend clients and sanitization match Claude Code.
 
-Testers use the `tester` model role; planning/configuration use `plan`; review uses `advisor`. The main command uses the session model. See [Model roles](../oh-my-pi.md#model-roles) and [Advisor](../oh-my-pi.md#advisor).
+Testers, including `qa:desktop-tester`, use the `tester` model role; planning/configuration use `plan`; review uses `advisor`. The main command uses the session model. See [Model roles](../oh-my-pi.md#model-roles) and [Advisor](../oh-my-pi.md#advisor).
 
 </details>
 

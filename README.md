@@ -1,7 +1,7 @@
 # AppVerk Claude Code Marketplace
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Plugins](https://img.shields.io/badge/plugins-13-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/plugins-14-green.svg)](#available-plugins)
 
 Claude Code plugins that compose into one development harness — from idea and spec, through TDD implementation and QA, to code review and commit — with each stage's artifact feeding the next.
 
@@ -54,7 +54,7 @@ Each stage leaves an artifact the next stage consumes: the brainstormed spec is 
 | [Frontend Developer](docs/plugins/frontend-developer.md) | 1.2.2 | `frontend-developer` | ✓ | ✓ | TypeScript + React development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (Tailwind, Zustand, TanStack Query, React Hook Form, TanStack Router) |
 | [PHP Developer](docs/plugins/php-developer.md) | 1.0.4 | `php-developer` | ✓ | ✓ | PHP development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (Symfony, Doctrine ORM, DDD) |
 | [Python Developer](docs/plugins/python-developer.md) | 3.0.5 | `python-developer` | ✓ | ✓ | Python development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery) |
-| [QA](docs/plugins/qa.md) | 3.0.1 | `qa` | ✓ | ✓ | `/qa:run` bootstraps `.av/config.toml` with stores and users, reuses or generates a reviewed plan, and runs FE (browser) and BE (API/store) tests through a bounded test→fix→retest loop. Testers register accounts; a configured cleanup recipe removes them at teardown. `/qa:create-plan` lets you review the plan first. Fixes require batch approval by default; reports work with code-review's `/fix QA-001` and `/fix-report` |
+| [QA](docs/plugins/qa.md) | 3.1.0 | `qa` | ✓ | ✓ | `/qa:run` bootstraps `.av/config.toml` with stores and users, reuses or generates a reviewed plan, and runs FE (browser), BE (API/store) and DESKTOP (desktop apps through driver plugins, headless in the background) tests through a bounded test→fix→retest loop. Testers register accounts; a configured cleanup recipe removes them at teardown. `/qa:create-plan` lets you review the plan first. Fixes require batch approval by default; reports work with code-review's `/fix QA-001` and `/fix-report` |
 | [Delivery](docs/plugins/delivery.md) | 0.8.0 | `delivery` | ✓ | ✓ | Delivers implementation plans task by task, without asking which developer to use: each task goes to the developer agent that owns its files (or, without a file list, its code), is reviewed and committed, then the plan's Verification, QA when the change is testable, and a full code review run. Starts when you approve a plan-mode plan, and in Claude Code also when you pick subagent-driven execution for a Superpowers plan. `/delivery:execute` resumes an interrupted delivery |
 | [Plan Review](docs/plugins/plan-review.md) | 0.1.0 | `plan-review` | — | ✓ | A second model (the `advisor` role) reviews every plan-mode plan before the approval dialog; the plan cannot be proposed until a review approves it or 3 review rounds are used |
 | [Superutils](docs/plugins/superutils.md) | 2.0.0 | `superutils` | ✓ | — | Companion utilities for the superpowers workflow. `/superutils:spec-review` runs a bounded triage pipeline on design specs: MoA lens panel, challengers for criticals, an approve-gated fix batch, verification of the applied edits, a second approve-gated batch — hard dispatch and time budgets, every residual reported, every verdict advisory (never "Verified") |
@@ -68,6 +68,7 @@ Each stage leaves an artifact the next stage consumes: the brainstormed spec is 
 - [Oh My Pi (OMP)](docs/oh-my-pi.md)
 - [Plugin Guides](docs/plugins/)
 - [Contributing](docs/contributing.md)
+- [Writing Extensions](docs/extensions.md)
 
 ## Support
 

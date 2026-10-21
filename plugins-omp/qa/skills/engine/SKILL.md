@@ -43,7 +43,7 @@ The shapes below name object fields; `[]` means an array, `{}` a map, `?` an opt
 
 | Subcommand | JSON output |
 |---|---|
-| `config` | `{state, errors[], warnings[], provenance{}, trust, trust_hash, trust_subset, targets{}, defaults{FE, BE}, policy{fix, mutations, start_services}, services{health[], up, prepare[], down}, users{<name>: <description>}, values[], exposed[], stores{<name>: {kind, engine?}}}`. Unconfigured service keys are reported as `health: []`, `up: null`, `prepare: []` and `down: null`. On invalid config the metadata after `trust_subset` may be absent. |
+| `config` | `{state, errors[], warnings[], provenance{}, trust, trust_hash, trust_subset, targets{}, desktop{}, defaults{FE, BE, DESKTOP}, policy{fix, mutations, start_services}, services{health[], up, prepare[], down}, users{<name>: <description>}, values[], exposed[], stores{<name>: {kind, engine?}}}`. Unconfigured service keys are reported as `health: []`, `up: null`, `prepare: []` and `down: null`. On invalid config the metadata after `trust_subset` may be absent. |
 | `trust accept <hash>` | `{trusted: hash}`. Exit 1 if the current trust subset hashes differently. |
 | `config preview <proposal>` | `{ok, errors[], diff, gitignore_add[]?, trust_subset, trust_hash, snapshot}`. Writes nothing. |
 | `config apply <proposal> --snapshot S --approved-hash H` | `{applied}`. Uses the preview's snapshot and approved hash. |
@@ -53,6 +53,8 @@ The shapes below name object fields; `[]` means an array, `{}` a map, `?` an opt
 - When `ok` is true, `diff` is a unified-diff string of the masked, parsed config and any `.gitignore` additions; config comments are enforced by the section guard, not shown in the diff. Otherwise, `diff` is `[]`.
 
 `state` is `missing-file`, `missing-table`, `invalid` or `ok`. `trust` is `not-required`, `new`, `trusted` or `changed`; only `trusted`/`not-required` permits `run start`. `provenance` identifies `.av/config.toml` or `.av/local.toml` for effective keys. `users` contains descriptions, `stores` contains kind/engine only, and `values` / `exposed` contain names only. `exposed` lists sorted `QA_<U>_EMAIL`, `QA_<U>_PASSWORD`, configured `QA_<U>_ID`, `QA_<X>` for every value and `QA_NEW_PASSWORD`. Show `trust_subset` for the one trust question, not the raw config or a source's output.
+
+`desktop` maps `[qa.desktop.<name>]` apps to `{driver, package, args[], screen[width, height]}`; `driver` names a desktop driver plugin (see [Desktop drivers](#desktop-drivers)). `defaults.DESKTOP` is `app` when that name exists, otherwise the only configured desktop app, or `null` when no unambiguous default exists. HTTP `targets` never supply a desktop default.
 
 `<proposal>` is a path to a JSON transaction:
 
@@ -67,11 +69,11 @@ Preview accepts only the exact `.av/local.toml` and `.av/secrets.local.env` stri
 | Subcommand | JSON output |
 |---|---|
 | `plan resolve [ARG]` | `{action: "reuse"|"stale"|"generate", plan, branch, head, source, changed_files[]}`. `plan` is `null` when generation is needed. |
-| `plan check <plan>` | `{ok, sections{FE[], BE[]}, users[], registrations[], values[], missing{users[{name, token, reason}], values[], targets[], stores[], cleanup}, off_target[], plan_errors[{scenario, reason}], guarded[], state_checks{<scenario>: [<store>]}}`. `missing.cleanup` is a boolean soft gap and does not affect `ok`; all other missing lists, `off_target` and `plan_errors` must be empty for `ok: true`. |
+| `plan check <plan>` | `{ok, sections{FE[], BE[], DESKTOP[]}, users[], registrations[], values[], missing{users[{name, token, reason}], values[], targets[], apps[], stores[], cleanup}, off_target[], plan_errors[{scenario, reason}], guarded[], state_checks{<scenario>: [<store>]}}`. `missing.cleanup` is a boolean soft gap and does not affect `ok`; all other missing lists, `off_target` and `plan_errors` must be empty for `ok: true`. |
 
 An existing argument path is reused; a change source requests generation. With no argument, resolution selects the newest plan whose Source `Branch:` matches the current branch, otherwise generation. Detached HEAD generates. A selected plan is stale if its Source `Head:` is not an ancestor of HEAD, or the intervening diff touches a file outside `docs/`; `changed_files` explains that decision.
 
-Plan checks derive users and values from `$QA_NAME` / `${QA_NAME}` tokens anywhere in scenarios, including preconditions and edges, and declarations under `## Users`. They distinguish configured existing users from tester-registered users, reject token/cookie plan fields and undeclared users, check scenario targets and strict `ui`/`backend` section origins (a single target serves both), every absolute URL's exact origin, cleartext credential origins, repeatable BE-only State Checks and mutation policy. Unknown store/value/user configuration is a config gap; invalid user declarations/tokens and ambiguous unprefixed checks are plan errors, not a tester's runtime credential request. `off_target` identifies scenario/origin/reason; `guarded` contains scenario IDs. Under `deny`, every scenario with `Writes: yes`, missing/invalid Writes or syntactically detected writes is guarded, including registration/preconditions; `allow` guards nothing. State Check store lists retain line order.
+Plan checks derive users and values from `$QA_NAME` / `${QA_NAME}` tokens anywhere in scenarios, including preconditions and edges, and declarations under `## Users`. They distinguish configured existing users from tester-registered users, reject token/cookie plan fields and undeclared users, check FE/BE scenario targets and strict `ui`/`backend` section origins (a single target serves both), every absolute URL's exact origin, cleartext credential origins, repeatable BE-only State Checks and mutation policy. DESKTOP Targets name `qa.desktop` apps, defaulting to `defaults.DESKTOP`; unresolved names appear in `missing.apps`. DESKTOP allows no absolute URLs or State Checks and refuses registered-user tokens; configured existing users' fields, values, `QA_NEW_PASSWORD` and `QA_TAG` are allowed. Unknown app/store/value/user configuration is a config gap; invalid user declarations/tokens and ambiguous unprefixed checks are plan errors, not a tester's runtime credential request. `off_target` identifies scenario/origin/reason; `guarded` contains scenario IDs. Under `deny`, every scenario with `Writes: yes` or missing/invalid Writes is guarded, as are syntactically detected FE/BE writes including registration/preconditions; DESKTOP is guarded only by Writes. `allow` guards nothing. State Check store lists retain line order.
 
 Each configured user declared `registered` is reported once in `plan_errors` with `scenario: "plan"`, even when no scenario references that user. Scenario-specific token errors retain their scenario IDs.
 
@@ -102,11 +104,11 @@ Engine logs and `run stop` details use `SecretSet`: collect literal values and e
 
 Every post-start stop/abort records `run stop` before report flush and teardown. `--detail` must contain only sanitized diagnostics/names/statuses, never secret values or raw recipe output. Whitespace is flattened to one line after masking. Repeat calls preserve the first stop reason. A recorded stop always yields `**Result:** Stopped` with its reason/detail, regardless of PASS verdicts, and never writes new Status lines, even on a later `report --final`. Existing Status lines are preserved.
 
-`users provision`, `services check|up|prepare` and `dispatch` compare the current config against the run-bound config. `config changed during run` stops the run; teardown is still mandatory. `users teardown`, `services down` and `run end` skip that comparison. Services down uses the recorded, previously trusted command; registered-account cleanup uses current config only when valid and `trust` is `trusted` or `not-required`, with the cleanup's destination locked by this run. Otherwise accounts stay `left` without counting an attempt. `qa.start_services = "ask"` asks once before needed bring-up and headless stops; `"auto"` prints scope then runs `up` + `prepare`, independently of `qa.fix`. `prepare` runs only after QA's own `up`, must be idempotent against persistent data, and never applies branch migrations to an already-running stack.
+`users provision`, `services check|up|prepare`, `dispatch` and `desktop run` compare the current config against the run-bound config. `config changed during run` stops the run; teardown is still mandatory. `users teardown`, `services down` and `run end` skip that comparison. Services down uses the recorded, previously trusted command; registered-account cleanup uses current config only when valid and `trust` is `trusted` or `not-required`, with the cleanup's destination locked by this run. Otherwise accounts stay `left` without counting an attempt. `qa.start_services = "ask"` asks once before needed bring-up and headless stops; `"auto"` prints scope then runs `up` + `prepare`, independently of `qa.fix`. `prepare` runs only after QA's own `up`, must be idempotent against persistent data, and never applies branch migrations to an already-running stack.
 
-Provisioning runs even with zero users, so every tester has a secrets channel. Only plan-referenced configured user fields, values and State Check stores are exposed, plus `QA_NEW_PASSWORD`, generated once as `secrets.token_urlsafe(18) + "Aa1!"` and reused on every provision in that run. Store client variables are namespaced `STORE_<NAME_UPPER>_<CLIENT>`: postgres `PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD PGOPTIONS` (`PGOPTIONS=-c default_transaction_read_only=on`), mysql `MYSQL_HOST MYSQL_TCP_PORT MYSQL_USER MYSQL_DATABASE MYSQL_PWD`, sqlite `SQLITE_DB` (absolute), redis `REDIS_HOST REDIS_PORT REDIS_DB` plus `REDISCLI_AUTH` only with a password. `secrets.env`, `secrets.json`, `load.sh`, `capture.sh` and `redact-names` are mode 0600. Redact names include every `QA_*`, namespaced store name except `*_PGOPTIONS`, and native store aliases except `PGOPTIONS`, so masking works with or without store selection. `qa_load_store='<name>' qa_load_require='NAME...' . '<run-dir>/load.sh' || exit 1` exports that store's native aliases then checks a space-separated list of required names; an unknown store fails with `<NAME>: unknown store`, and an empty exported endpoint fails with `<NAME>: store not exported`. Omit `qa_load_store` when no native aliases are needed and use empty `qa_load_require` when no names are required. Never pass dot-script arguments: dash ignores them. Lower-case controls do not collide with exposed `QA_*` values; the loader consumes them before unsetting inherited `QA_*|PG*|MYSQL_*|SQLITE_DB|REDIS*|STORE_*`. The OMP FE cell reads `secrets.json`; never rely on inherited harness credentials or print the files. Engine-only secrets never reach testers. `QA_TAG` is not in the channel; use the dispatch's `Tag:`.
+Provisioning runs even with zero users, so every tester has a secrets channel. Only plan-referenced configured user fields, values and State Check stores are exposed, plus `QA_NEW_PASSWORD`, generated once as `secrets.token_urlsafe(18) + "Aa1!"` and reused on every provision in that run. Store client variables are namespaced `STORE_<NAME_UPPER>_<CLIENT>`: postgres `PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD PGOPTIONS` (`PGOPTIONS=-c default_transaction_read_only=on`), mysql `MYSQL_HOST MYSQL_TCP_PORT MYSQL_USER MYSQL_DATABASE MYSQL_PWD`, sqlite `SQLITE_DB` (absolute), redis `REDIS_HOST REDIS_PORT REDIS_DB` plus `REDISCLI_AUTH` only with a password. `secrets.env`, `secrets.json`, `load.sh`, `capture.sh`, `desktop.sh` and `redact-names` are mode 0600. Redact names include every `QA_*`, namespaced store name except `*_PGOPTIONS`, and native store aliases except `PGOPTIONS`, so masking works with or without store selection. `qa_load_store='<name>' qa_load_require='NAME...' . '<run-dir>/load.sh' || exit 1` exports that store's native aliases then checks a space-separated list of required names; an unknown store fails with `<NAME>: unknown store`, and an empty exported endpoint fails with `<NAME>: store not exported`. Omit `qa_load_store` when no native aliases are needed and use empty `qa_load_require` when no names are required. Never pass dot-script arguments: dash ignores them. Lower-case controls do not collide with exposed `QA_*` values; the loader consumes them before unsetting inherited `QA_*|PG*|MYSQL_*|SQLITE_DB|REDIS*|STORE_*`. The OMP FE cell reads `secrets.json`; never rely on inherited harness credentials or print the files. Engine-only secrets never reach testers. `QA_TAG` is not in the channel; FE/BE use the dispatch's `Tag:`, while DESKTOP uses `type_env QA_TAG` for the engine to resolve from that dispatch.
 
-Testers register accounts with a tagged email such as `qa+<tag>-owner@test.local` and the run password. Immediately after successful registration, before another step, call `sh '<run-dir>/capture.sh' <dispatch> --account <email> [<id>]`; it invokes `users record` and writes the durable ledger outside the run directory. Non-zero exit is `NEED_INFO kind=fixture` naming the email. `accounts: [{email, id}]` in `qa-results` is only the fallback when that helper could not record. Acceptance requires email matching `[A-Za-z0-9._+-]{1,64}@[A-Za-z0-9.-]{1,253}`, the dispatch tag in its local part case-insensitively, no equality with any channel `QA_*_EMAIL`, and id either null or matching `[A-Za-z0-9._:-]{1,128}`. Invalid entries are rejected by email; a non-list accounts value or an entry lacking a string email invalidates the whole block.
+FE/BE testers register accounts with a tagged email such as `qa+<tag>-owner@test.local` and the run password; DESKTOP scenarios register no accounts. Immediately after successful registration, before another step, call `sh '<run-dir>/capture.sh' <dispatch> --account <email> [<id>]`; it invokes `users record` and writes the durable ledger outside the run directory. Non-zero exit is `NEED_INFO kind=fixture` naming the email. `accounts: [{email, id}]` in `qa-results` is only the fallback when that helper could not record. Acceptance requires email matching `[A-Za-z0-9._+-]{1,64}@[A-Za-z0-9.-]{1,253}`, the dispatch tag in its local part case-insensitively, no equality with any channel `QA_*_EMAIL`, and id either null or matching `[A-Za-z0-9._:-]{1,128}`. Invalid entries are rejected by email; a non-list accounts value or an entry lacking a string email invalidates the whole block.
 
 The engine-owned `<state>/av-marketplace/qa-accounts.json` ledger is keyed by repository realpath. Records carry `email`, `id`, `run_id`, `tag`, `dispatch`, `destination`, `deleted`, `status` and `attempts`; recording is idempotent on `(run_id, dispatch, email)`, only filling a missing id without resetting attempts/status. Status is `pending`, `deleted` or `manual-cleanup`. A destination records the cleanup's target origin or SQL store lock key (null without cleanup or for command); mismatches stay `left`, and a null destination takes the current destination on the first attempt. A usable recipe attempts undeleted non-manual records from any run of this repository; success marks deleted, every failure increments attempts, and the third failure moves the record to manual-cleanup, listed once in `manual`. Missing/untrusted cleanup or an unlocked destination leaves records without counting attempts. Later teardowns do not retry manual-cleanup. Run end, takeover and stale-directory cleanup delete capture files but leave the ledger intact.
 
@@ -114,11 +116,106 @@ Teardown validates persisted email/ID safety, dispatch tags and attempt counters
 
 Teardown shares one lazily opened runtime across attempted records: successful source resolutions are cached for that call, and engine logs are flushed once on exit. Keep failures isolated per record and save each outcome before the next attempt, preserving deletions, attempt counters and manual-cleanup transitions across interruptions.
 
+### Desktop drivers
+
+qa ships no desktop driver. A driver plugin provides a skill named `qa-desktop-driver-<driver>` (Claude Code lists it as `<plugin>:qa-desktop-driver-<driver>`, OMP without the prefix); the skill directory holds the manifest `qa-desktop-driver.json`, the guide `SKILL.md` (the skill itself) and the driver's code.
+
+**The Desktop drivers procedure.** Run it once per invocation and reuse the block it produces:
+
+1. List every available skill whose name, after an optional `<plugin>:` prefix, starts with `qa-desktop-driver-`.
+2. Load each one: in Claude Code with the Skill tool and the listed name; in OMP with `read skill://<name exactly as listed>`, never adding a `qa:` prefix.
+3. Take its `Driver manifest:` and `Driver guide:` paths. In OMP, where `${CLAUDE_SKILL_DIR}` stays literal, take them from `realpath skill://<name>/qa-desktop-driver.json` and `realpath skill://<name>/SKILL.md`.
+4. Produce this block, one line per driver, or the single line `none` after `Desktop drivers:` when no skill matched:
+
+```text
+Desktop drivers:
+<driver>: manifest <absolute path>; guide <absolute path>
+```
+
+**Registration.** `desktop register --run ID --manifest <path>` records the driver for that run in `<run-dir>/desktop/drivers.json` (0600) and returns `{driver, version, contract, manifest}`. Registering the same manifest again exits 0. Exit 2 with `{"error": …}` for an invalid manifest: inside the repository, unreadable or not a JSON object, keys other than exactly `contract`, `driver`, `version`, `entry`, an unsupported contract, an invalid driver name or version, or an `entry` outside the manifest directory. Exit 1 with `{"error": "desktop driver <name> is already registered from another manifest"}` when the same driver name was registered from another path. Register every driver from the block after `users provision`, and again after every `run start`.
+
+An app whose driver is not registered for the run gets `tool-missing` with detail `desktop-driver:<driver>`.
+
+**Contract 1 for driver authors.**
+
+- Manifest: `{"contract": 1, "driver": "<name>", "version": "<version>", "entry": "<relative path>"}`, exactly these keys. `driver` matches `[a-z][a-z0-9-]{0,39}`; `version` matches `[0-9A-Za-z.+-]{1,40}`; `entry` is a relative path, without `..`, to a Python 3.11+ stdlib script inside the manifest's directory.
+- The engine runs `[sys.executable, <entry>, <phase>, …]` for each phase, with cwd = the resolved repository root, the engine's environment minus every `QA_*` and `STORE_*` variable plus `PWD=<repository root>`, stdin `/dev/null`, in its own session. On a timeout or interruption it kills the phase's whole process group: SIGTERM, then SIGKILL after 5 s.
+
+|Phase|Arguments|Contract|Engine result on failure|
+|---|---|---|---|
+|`check`|`--repo R`|exit 0; stdout is exactly one JSON object: `{"result": null}` (supported), `{"result": "tool-missing", "detail": "<missing tool id>"}` or `{"result": "unsupported", "detail": "<one line>"}`; timeout 60 s|`tool-missing` / `unsupported` with the driver's detail; any other output, a non-zero exit or the timeout gives `host-failed`, detail `desktop driver check failed`|
+|`prepare`|`--repo R --cache C`|one-time per run and driver setup; exit 0 = ready; runs under the lock `C/.lock`, and the engine writes `C/.prepared` after success, so it never runs twice in a run; timeout 300 s|`host-build-failed`, detail = first non-comment line of `C/prepare.log`, `driver prepare exited <code>` or `driver prepare timed out after <n>s`|
+|`build`|`--repo R --cache C --package P --out G`|builds the app under test at `G`; exit 0 = built; timeout 300 s|`build-failed`, detail = first line of `build.log`, `guest build exited <code>` or `guest build timed out after <n>s`|
+|`run`|`--repo R --cache C --guest G --steps S --out A --width W --height H --deadline N -- <args…>`|executes `S` against `G`; writes `A/result.json`, one PNG per shot and `A/guest.raw.log` (the app's stdout and stderr); stops the app and itself after `N` seconds; timeout 120 s, `N` = 135|`timeout` (`host did not finish within <n>s`); no `result.json` gives `host-failed`, detail `host exited <code> without result.json`; a `result.json` that breaks the schema gives `host-failed`, detail `host exited <code> with an invalid result.json`; `handshake-failed` is retried once|
+
+- `result.json` is one JSON object with at least these keys (others are ignored; integers never include booleans): `result` (one of `completed`, `guest-exited`, `handshake-failed`, `host-failed`, `invalid-script`, `timeout`); `detail` (string or null); `step` (non-negative integer or null); `exit_code` (integer or null); `ticks` (non-negative integer); `tps` (integer of at least -1; -1 means the app ties ticks to rendered frames); `scale` (positive number or null); `screen` (two positive integers); `shots` (list of `{"name", "file": "<name>.png", "tick"}`, each file a regular file in `A`).
+- Run results, exactly one of:
+  - `completed`: every step ran and the app did not fail; the driver then stopped it. An exit with code 0 after the last step also counts.
+  - `guest-exited` with `exit_code` 0 and detail exactly `guest terminated itself`: the app ended itself through its toolkit's normal quit path while the steps ran. This is the only form of an intentional quit.
+  - any other `guest-exited`: the app crashed, exited non-zero, ended with an error or exited before the driver connected; `detail` says which (for example `guest exited 3 before connecting`) and `exit_code` is set when known. Never use the detail `guest terminated itself` for these.
+  - `handshake-failed`: the app started but the driver could not connect (retried once); `host-failed`: the driver itself failed; `invalid-script`: the driver rejected the step named by `step`; `timeout`: the driver's own deadline or no-progress limit ended the run.
+- Script semantics and key codes are those of `desktop-testing`; the driver validates key codes and returns `invalid-script` naming the step. `type_env` never reaches the driver: the engine resolves it in `steps.json`.
+
+### Desktop runs
+
+The `desktop` command group drives a configured desktop app through its registered desktop driver plugin (see [Desktop drivers](#desktop-drivers)). Load `desktop-testing` for the JSON script vocabulary and driver-result-to-verdict mapping; the engine validates scripts but does not judge images.
+
+| Subcommand | JSON output |
+|---|---|
+| `desktop register --run ID --manifest <path>` | `{driver, version, contract, manifest}`; registers the manifest's driver for this run. |
+| `desktop run --run ID --dispatch D --target <app> --script <file>` | `{result, detail, step, exit_code, ticks, tps, scale, screen[], shots[{name, path, tick, sensitive}], log, build_log, artifacts, attempts, duration_ms}`. Inspect `result`; exit 0 is not an application verdict. |
+
+`--run`, `--dispatch`, `--target` and `--script` are required. `--target` names an entry in `config.desktop`, not an HTTP target. Relative script paths resolve against the repository root. The engine uses that root as the working directory for every driver phase. Configured `args` precede the script's optional `args`; both are passed as argv without a shell.
+
+`users provision` also writes `<run-dir>/desktop.sh` (0600), alongside `capture.sh`, even with zero users. Invoke it with exactly three arguments:
+
+```bash
+sh '<run-dir>/desktop.sh' <dispatch> <app> <script-file>
+```
+
+The helper validates the dispatch and app names and exits 2 for malformed names or the wrong argument count. Otherwise it execs `desktop run` with this run and repository already bound; it does not build or drive the app itself.
+
+`desktop run` stdout (one JSON object): `result` (`completed`, `guest-exited`, `build-failed`, `host-build-failed`, `handshake-failed`, `host-failed`, `invalid-script`, `timeout`, `tool-missing`, `unsupported`), `detail` (one sanitized line or null), `step` (0-based index of the step where the run stopped, or null when it stopped before the first step or after the last), `exit_code` (guest exit code or null), `ticks`, `tps` (ticks per second the app requests; -1 means ticks follow rendered frames), `scale`, `screen` ([w, h]), `shots` ([{`name`, `path` absolute, `tick`, `sensitive` boolean}]), `log` (absolute path of the masked guest log, or null), `build_log` (absolute path or null), `artifacts` (absolute directory, or null when the app's driver is not registered), `attempts` (host runs, 0 to 2: 0 when the run phase never ran, 2 after a `handshake-failed` retry), `duration_ms`. Exit 0 for every `result`; exit 2 with `{"error": "script: …"}` for a structurally invalid script; exit 1 with `{"error": …}` for an unknown run, dispatch or app, a non-DESKTOP dispatch, missing trust, config drift or an interruption (`desktop run interrupted`).
+
+Validation holds the run lock only long enough to check the run-bound config, trust, an uningested DESKTOP tester dispatch, the configured app and the registered drivers. Script validation and the driver phases happen outside that lock. Each call starts a fresh guest. An app whose driver is not registered for the run returns `tool-missing` with detail `desktop-driver:<driver>` before any phase runs.
+
+Artifacts are private to each call:
+
+```text
+<run-dir>/
+  desktop/
+    drivers.json
+    <driver>/
+      .lock
+      .prepared
+      prepare.log
+      <driver-owned files>
+  results/<dispatch>/
+    scripts/<ID>.json
+    scripts/<ID>-edge<n>.json
+    desktop/<NNN>-<app>/
+      script.json
+      steps.json
+      check.json
+      check.log
+      build.log
+      host.log
+      guest.log
+      <shot-name>.png
+```
+
+The artifacts directory is mode 0700; private `steps.json` and masked `guest.log` are mode 0600. `script.json` preserves the tester's input, while `steps.json` holds the host's steps with `type_env` resolved privately. `QA_TAG` is taken from the dispatch tag, never secrets.json; every other `type_env` name must be a non-empty exposed name in that channel. Every shot after such a non-`QA_TAG` step is marked `sensitive`. Read the expected shots to judge them, but never copy sensitive ones into the repository: they may show injected credentials.
+
+Phase order per call: `check`, then `prepare` once per run and driver (under `<run-dir>/desktop/<driver>/.lock`; `.prepared` marks success, so it never runs twice in a run), then `build`, then `run`. Timeouts: check 60 s, prepare 300 s, build 300 s, run 120 s; the driver gets `--deadline` 15 s beyond the run timeout (135 s) to stop the app and itself. Every phase runs in its own process group (session), with stdin `/dev/null`, cwd and `PWD` set to the repository root, and the engine's environment minus every `QA_*` and `STORE_*` variable.
+
+Only `handshake-failed` is retried once, yielding `attempts: 2`; guest exits, including startup failures, are never retried by the engine. Before that retry, the engine deletes the previous attempt's result, raw log and PNGs. Builds, timeouts, host failures and SIGINT/SIGTERM all use exception-safe process-group cleanup. On every exit, guest output is masked into `guest.log` using the run's secret set, then `guest.raw.log` and the guest binary are deleted; even a masking failure still deletes the raw log. An interruption exits 1 with `{"error": "desktop run interrupted"}` after cleanup. The returned `log` and `shots[].path` are authoritative absolute paths; never read raw guest output or treat driver infrastructure errors as app failures.
+
+
 ### Dispatch, results and iterations
 
 | Subcommand | JSON output |
 |---|---|
-| `dispatch --run ID tester --section FE|BE --phase baseline|retry|iteration|final` | `{dispatch, scenarios[], edges{}, guarded[], tag, stores[], dispatch_count, budget_left}`. |
+| `dispatch --run ID tester --section FE\|BE\|DESKTOP --phase baseline\|retry\|iteration\|final` | `{dispatch, scenarios[], edges{}, guarded[], tag, stores[], dispatch_count, budget_left}`. |
 | `dispatch --run ID fix --qa QA-NNN` | `{dispatch, qa, scenarios[], edges{}, dispatch_count, budget_left}`. |
 | `fix done --run ID --dispatch D --result fixed|partial|failed` | `{warnings[]}`. |
 | `ingest --run ID --dispatch D <file>` | `{verdicts{}, need_info{}, new_failures[], regressions[], now_passing[], incomplete[], accounts{recorded, rejected[]}, error?}`. |
@@ -127,7 +224,7 @@ Teardown shares one lazily opened runtime across attempted records: successful s
 | `iteration open --run ID` | `{decision: "iterate"|"final"|"stop", iteration, reason}`. |
 | `iteration close --run ID` | `{decision: "continue"|"final", reason, now_passing[], regressions[], fix_touched_files[], overlap[]}`. |
 
-Call engine dispatches sequentially, even when FE and BE tester agents will run in parallel. A tester dispatch issues a distinct eight-hex-digit tag, records scenario IDs/planned edges and the section's State Check stores, and creates `results/<dispatch>/` mode 0700 with empty `captured.env` and a copy of `redact-names`, both 0600, before launching the tester. A dispatch logs nobody in. `sh '<run-dir>/capture.sh' <dispatch> QA_CAPTURED_<USER>_<FIELD>` reads stdin, strips one trailing newline, shell-quotes the value and appends an export and its redact name; only `QA_CAPTURED_[A-Z0-9_]+` names are accepted. Each request sources both `load.sh` and `results/<dispatch>/captured.env`; after capture, source captured.env again before sanitising that same response against the dispatch's redact-names. A fix dispatch records the engine-assigned QA ID; `fix done` records its outcome and computes warnings for added literals matching the failed BE request payload.
+Call engine dispatches sequentially, even when FE, BE and DESKTOP tester agents will run in parallel. A tester dispatch issues a distinct eight-hex-digit tag, records scenario IDs/planned edges and the section's State Check stores, and creates `results/<dispatch>/` mode 0700 with empty `captured.env` and a copy of `redact-names`, both 0600, before launching the tester. A dispatch logs nobody in. `sh '<run-dir>/capture.sh' <dispatch> QA_CAPTURED_<USER>_<FIELD>` reads stdin, strips one trailing newline, shell-quotes the value and appends an export and its redact name; only `QA_CAPTURED_[A-Z0-9_]+` names are accepted. Each HTTP request sources both `load.sh` and `results/<dispatch>/captured.env`; after capture, source captured.env again before sanitising that same response against the dispatch's redact-names. DESKTOP uses `desktop.sh` and `type_env` instead of this HTTP capture channel. A fix dispatch records the engine-assigned QA ID; `fix done` records its outcome and computes warnings for added literals matching the failed BE request payload.
 
 Save a tester's complete answer to a file in `<run-dir>/results/` and pass it to `ingest`. Only its final fenced `json qa-results` block is parsed. The section must match the dispatch; every assigned scenario and planned edge must appear exactly once. Missing items become `cannot-confirm`, never an earlier retained PASS; duplicates or a wrong section invalidate the block. Invalid/missing blocks yield cannot-confirm results plus `error`, not permission to invent results. Tester status is `PASS|FAIL|SKIP|NEED_INFO`; a need-info kind is `credentials|service|fixture|tool` or `null`. Let `ingest` compute precedence, reasons, auth classification and regressions.
 

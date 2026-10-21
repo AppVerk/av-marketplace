@@ -27,6 +27,13 @@ It also writes `.omp-plugin/marketplace.json`, listing only plugins that have
 an OMP edition, with versions of generated plugins taken from the Claude
 catalog.
 
+A plugin kept in its own repository has a remote `source` object in the Claude
+catalog and no code here. `omp/remote-plugins.json`, an optional JSON array of
+plugin names, lists such plugins for OMP: each gets an OMP catalog entry with
+the Claude catalog's `source` object, description, version and category
+unchanged. A name that is not a remote catalog entry, or that already has a
+generated or native OMP edition, fails the build.
+
 Every mapping is total: an unknown source entry, tool, frontmatter key, or an
 agent without an overlay entry fails the build instead of disappearing silently.
 The one prefix rule is `mcp__`: MCP grants in an agent's `tools:` are dropped,
@@ -52,6 +59,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 OUTPUT_DIR_NAME = "plugins-omp"
 OMP_CATALOG_REL = Path(".omp-plugin") / "marketplace.json"
+REMOTE_PLUGINS_REL = Path("omp") / "remote-plugins.json"
 
 VERBATIM_DIRS = ("scripts",)
 KNOWN_ENTRIES = {".claude-plugin", "agents", "commands", "skills", "hooks", *VERBATIM_DIRS}
@@ -623,7 +631,7 @@ def build(dest_repo: Path, source_repo: Path = REPO) -> None:
     reject_source_symlinks(source_repo / "omp" / "overlay")
     reject_source_symlinks(source_repo / "omp" / "native", NATIVE_SKIPPED_DIRS)
     reject_source_symlinks(source_repo / "omp" / "claude-hooks", NATIVE_SKIPPED_DIRS)
-    for path in (source_repo / "omp" / "preamble.md", source_repo / ".claude-plugin" / "marketplace.json"):
+    for path in (source_repo / "omp" / "preamble.md", source_repo / ".claude-plugin" / "marketplace.json", source_repo / REMOTE_PLUGINS_REL):
         if path.is_symlink():
             raise BuildError(f"{path}: symlinks are not allowed in plugin sources")
     out_root = dest_repo / OUTPUT_DIR_NAME
@@ -651,6 +659,7 @@ def build(dest_repo: Path, source_repo: Path = REPO) -> None:
         for native in sorted(p for p in native_dir.iterdir() if p.is_dir()):
             twin = entries.get(native.name)
             omp_plugins.append(build_native(native, out_root, generated, source_repo / twin["source"] if twin else None))
+    omp_plugins.extend(remote_entries(source_repo / REMOTE_PLUGINS_REL, entries, {entry["name"] for entry in omp_plugins}))
     omp_plugins.sort(key=lambda entry: entry["name"])
 
     omp_catalog = {
@@ -666,6 +675,36 @@ def build(dest_repo: Path, source_repo: Path = REPO) -> None:
     catalog_path = dest_repo / OMP_CATALOG_REL
     catalog_path.parent.mkdir(parents=True, exist_ok=True)
     catalog_path.write_text(json.dumps(omp_catalog, indent=2, ensure_ascii=False) + "\n")
+
+
+def remote_entries(path: Path, entries: dict[str, dict], built: set[str]) -> list[dict]:
+    """OMP catalog entries for the remote plugins `path` lists; none when the file is absent."""
+    if not path.exists():
+        return []
+    try:
+        names = json.loads(path.read_text())
+    except ValueError as error:
+        raise BuildError(f"{path}: expected a JSON array of plugin names") from error
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise BuildError(f"{path}: expected a JSON array of plugin names")
+    listed: list[dict] = []
+    for name in names:
+        entry = entries.get(name)
+        if entry is None:
+            raise BuildError(f"{path}: {name!r} is not in the Claude catalog")
+        if not isinstance(entry.get("source"), dict):
+            raise BuildError(f"{path}: {name!r} has a local source; only remote plugins belong here")
+        if name in built:
+            raise BuildError(f"{path}: {name!r} already has an OMP edition in this repository")
+        built.add(name)
+        listed.append({
+            "name": name,
+            "source": entry["source"],
+            "description": entry["description"],
+            "version": entry["version"],
+            "category": entry["category"],
+        })
+    return listed
 
 
 def diff_trees(expected: Path, actual: Path) -> list[str]:

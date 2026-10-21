@@ -22,6 +22,9 @@ if sys.version_info < (3, 11):
 from av_config.errors import ConfigError
 from av_config.errors import InvalidConfig
 from qa_engine.config import Config
+from qa_engine.config import SECTIONS
+from qa_engine.desktop import register_driver
+from qa_engine.desktop import run_desktop
 from qa_engine.users import provision
 from qa_engine.users import record_account_cli
 from qa_engine.users import teardown
@@ -124,7 +127,7 @@ def parser() -> argparse.ArgumentParser:
     dispatch_operations = dispatch.add_subparsers(dest="operation", required=True)
     tester = repo_option(dispatch_operations.add_parser("tester"))
     tester.set_defaults(state_handler=_state_dispatch_tester)
-    tester.add_argument("--section", required=True, choices=["FE", "BE"])
+    tester.add_argument("--section", required=True, choices=list(SECTIONS))
     tester.add_argument("--phase", required=True, choices=["baseline", "retry", "iteration", "final"])
     dispatch_fix_parser = repo_option(dispatch_operations.add_parser("fix"))
     dispatch_fix_parser.set_defaults(state_handler=_state_dispatch_fix)
@@ -166,6 +169,16 @@ def parser() -> argparse.ArgumentParser:
     report_input.add_argument("--issues", type=Path)
     report_input.add_argument("--accounts", action="store_true")
     report.add_argument("--final", action="store_true")
+    desktop = repo_option(commands.add_parser("desktop"))
+    desktop_operations = desktop.add_subparsers(dest="operation", required=True)
+    desktop_run = run_option(desktop_operations.add_parser("run"))
+    desktop_run.set_defaults(handler=_execute_desktop_run)
+    desktop_run.add_argument("--dispatch", required=True)
+    desktop_run.add_argument("--target", required=True)
+    desktop_run.add_argument("--script", required=True, type=Path)
+    register = run_option(desktop_operations.add_parser("register"))
+    register.set_defaults(handler=run_state, state_handler=_state_desktop_register)
+    register.add_argument("--manifest", required=True, type=Path)
     run_option(commands.add_parser("summary")).set_defaults(handler=run_state, state_handler=_state_summary, close_iteration=True)
     return root
 
@@ -278,6 +291,10 @@ def _state_stop(run: Run, args: argparse.Namespace) -> Mapping[str, object]:
     return stop_run(run, args.reason, args.detail)
 
 
+def _state_desktop_register(run: Run, args: argparse.Namespace) -> Mapping[str, object]:
+    return register_driver(run, args.manifest)
+
+
 def _execute_run_start(repo: Path, args: argparse.Namespace) -> tuple[Mapping[str, object], int]:
     path = args.plan if args.plan.is_absolute() else repo / args.plan
     baseline = args.baseline_file
@@ -326,6 +343,12 @@ def _execute_trust(repo: Path, args: argparse.Namespace) -> tuple[dict[str, obje
 
 def _execute_tools(repo: Path, args: argparse.Namespace) -> tuple[dict[str, object], int]:
     return tools(), 0
+
+
+def _execute_desktop_run(repo: Path, args: argparse.Namespace) -> tuple[dict[str, object], int]:
+    # Outside run_state: the run lock is held only while run_desktop validates, never while the app runs.
+    path = args.script if args.script.is_absolute() else repo / args.script
+    return run_desktop(repo, args.run, args.dispatch, args.target, path), 0
 
 
 def execute(args: argparse.Namespace) -> tuple[CommandResult, int]:

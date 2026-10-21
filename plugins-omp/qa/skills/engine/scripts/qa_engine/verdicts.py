@@ -30,7 +30,7 @@ class Evaluation:
 
 def scenario_kind(scenario: Scenario) -> str:
     """What a PASS of this scenario means for coverage: ``feature``, ``sanity`` or ``negative``."""
-    if scenario.section == "FE":
+    if scenario.section in {"FE", "DESKTOP"}:
         return "feature"
     statuses = scenario.expected.statuses
     if statuses and statuses[0] >= 400:

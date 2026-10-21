@@ -20,6 +20,12 @@ each tool installs from, .claude-plugin/marketplace.json and the generated
 .omp-plugin/marketplace.json: a column holds ✓ when that catalog lists the
 plugin and — otherwise, and every catalog entry needs a row.
 
+A remote plugin, kept in its own repository, has a `source` object in
+.claude-plugin/marketplace.json: {"source": "github", "repo": "<owner>/<repo>",
+"ref": "v<version>", "sha": "<40-character commit SHA>"}. Its pin must match its
+catalog version, and its README row's Version cell must equal that version; it
+needs no plugins/<name>/ directory.
+
 Optionally (with --check-regression) compares each plugin's version against the
 last commit on origin/master and fails if any plugin's version went backwards.
 With --check-hooks-version-bump BASE_REF, requires a version bump of every
@@ -65,6 +71,10 @@ README_ROW_RE = re.compile(
 AVAILABILITY_CATALOGS = {"Claude Code": MARKETPLACE_JSON, "OMP": OMP_MARKETPLACE_JSON}
 AVAILABLE, UNAVAILABLE = "✓", "—"
 README_ID_RE = re.compile(r"`([a-z0-9][a-z0-9.-]*)`")
+REMOTE_SOURCE_KEYS = {"source", "repo", "ref", "sha"}
+REMOTE_REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+")
+REMOTE_SHA_RE = re.compile(r"[0-9a-f]{40}")
+SEMVER_FULL_RE = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?")
 
 # Locates the body of the "Available Plugins" section so we never match rows
 # inside other tables, code blocks, or HTML comments elsewhere in README.md.
@@ -317,6 +327,59 @@ def _catalog_names(path: Path) -> set[str]:
     return {entry["name"] for entry in _read_json(path).get("plugins", []) if entry.get("name")}
 
 
+def _readme_table() -> tuple[list[str], list[list[str]]]:
+    """Return the header cells and the row cells of README.md's Available Plugins table."""
+    section = README_TABLE_SECTION_RE.search(README_MD.read_text(encoding="utf-8"))
+    lines = [line.strip() for line in section.group(0).splitlines() if line.startswith("|")] if section else []
+    if len(lines) < 2:
+        return [], []
+    header = [cell.strip() for cell in lines[0].strip("|").split("|")]
+    return header, [[cell.strip() for cell in line.strip("|").split("|")] for line in lines[2:]]
+
+
+def check_remote_entries(plugins: list[dict], header: list[str], rows: list[list[str]]) -> tuple[list[str], list[str]]:
+    """Check every catalog entry with a remote `source` object; return (errors, OK lines)."""
+    errors: list[str] = []
+    ok_lines: list[str] = []
+    readme: dict[str, str] = {}
+    if "ID" in header and "Version" in header:
+        for cells in rows:
+            if len(cells) < len(header):
+                continue
+            match = README_ID_RE.fullmatch(cells[header.index("ID")])
+            if match:
+                readme[match.group(1)] = cells[header.index("Version")]
+    for entry in plugins:
+        source = entry.get("source")
+        if not isinstance(source, dict):
+            continue
+        name = entry.get("name")
+        repo, ref, sha = source.get("repo"), source.get("ref"), source.get("sha")
+        if (set(source) != REMOTE_SOURCE_KEYS or source.get("source") != "github"
+                or not isinstance(repo, str) or not REMOTE_REPO_RE.fullmatch(repo)):
+            errors.append(
+                f'[{name}] remote source must be {{"source": "github", "repo": "<owner>/<repo>", '
+                f'"ref": "v<version>", "sha": "<40-character commit SHA>"}}'
+            )
+            continue
+        version = entry.get("version")
+        if not isinstance(version, str) or not SEMVER_FULL_RE.fullmatch(version):
+            errors.append(f"[{name}] missing version in: marketplace.json")
+            continue
+        problems: list[str] = []
+        if ref != f"v{version}":
+            problems.append(f"[{name}] source.ref is {ref!r}, expected 'v{version}'")
+        if not isinstance(sha, str) or not REMOTE_SHA_RE.fullmatch(sha):
+            problems.append(f"[{name}] source.sha must be a 40-character lowercase commit SHA")
+        if name in readme and readme[name] != version:
+            problems.append(f"[{name}] version mismatch: marketplace.json={version}, README.md={readme[name]}")
+        if problems:
+            errors.extend(problems)
+        else:
+            ok_lines.append(f"[{name}] {version} (OK, remote {repo}@{ref})")
+    return errors, ok_lines
+
+
 def _check_availability() -> list[str]:
     """Return errors where the README table's ID and tool columns disagree with the catalogs."""
     errors: list[str] = []
@@ -329,19 +392,17 @@ def _check_availability() -> list[str]:
     if errors:
         return errors
 
-    section = README_TABLE_SECTION_RE.search(README_MD.read_text(encoding="utf-8"))
-    lines = [line.strip() for line in section.group(0).splitlines() if line.startswith("|")] if section else []
-    if len(lines) < 2:
+    header, table = _readme_table()
+    if not header:
         return ["README.md: no Available Plugins table"]
-    header = [cell.strip() for cell in lines[0].strip("|").split("|")]
     missing_columns = [column for column in ("ID", *AVAILABILITY_CATALOGS) if column not in header]
     if missing_columns:
         return [f"README.md: Available Plugins table lacks column(s): {', '.join(missing_columns)}"]
 
     rows: set[str] = set()
-    for line in lines[2:]:
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
+    for cells in table:
         if len(cells) < len(header):
+            line = "| " + " | ".join(cells) + " |"
             errors.append(f"README.md: Available Plugins row has too few cells: {line[:60]}")
             continue
         match = README_ID_RE.fullmatch(cells[header.index("ID")])
@@ -491,14 +552,21 @@ def main(argv: list[str] | None = None) -> int:
 
     # Orphan detection: entries that exist in marketplace.json or README.md
     # but have no plugin directory backing them. The loops above only iterate
-    # over local slugs and would silently miss these.
+    # over local slugs and would silently miss these. Remote plugins live in
+    # their own repositories and are checked by check_remote_entries.
+    catalog_plugins = _read_json(MARKETPLACE_JSON).get("plugins", [])
+    remote = {entry.get("name") for entry in catalog_plugins if isinstance(entry.get("source"), dict)}
     slug_set = set(slugs)
-    for orphan in sorted(set(marketplace) - slug_set):
+    for orphan in sorted(set(marketplace) - slug_set - remote):
         errors.append(f"[{orphan}] stale entry in: marketplace.json (no plugins/{orphan}/ directory)")
     for orphan in sorted(set(readme) - slug_set - set(native_slugs)):
         errors.append(
             f"[{orphan}] stale entry in: README.md (no plugins/{orphan}/ or omp/native/{orphan}/ directory)"
         )
+    remote_errors, remote_ok = check_remote_entries(catalog_plugins, *_readme_table())
+    for line in remote_ok:
+        print(line)
+    errors.extend(remote_errors)
     errors.extend(_check_availability())
 
     if args.check_regression:
@@ -516,7 +584,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print(f"\nVersion parity OK for {len(set(slugs) | set(native_slugs))} plugin(s).")
+    print(f"\nVersion parity OK for {len(set(slugs) | set(native_slugs) | remote)} plugin(s).")
     return 0
 
 
