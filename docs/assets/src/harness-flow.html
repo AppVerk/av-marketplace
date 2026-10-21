@@ -3,13 +3,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="render-size" content="1200x1060">
+  <meta name="render-size" content="1200x980">
   <title>From plan to pull request</title>
   <link rel="stylesheet" href="theme.css">
   <style>
-    .lanes { display: grid; grid-template-columns: 140px repeat(4, 1fr); grid-template-rows: 124px 108px; column-gap: 32px; row-gap: 14px; }
-    .lanes > .chip { align-self: center; justify-self: start; }
-    #omp-2 { grid-column: span 2; }
+    .plan-row { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 156px; column-gap: 36px; }
+    .box > .chip { align-self: flex-start; }
     .row4 { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 108px 30px; column-gap: 36px; row-gap: 34px; }
     .row4 .loop-label { grid-column: 2 / span 2; }
     .row5 { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: 108px 30px; column-gap: 28px; row-gap: 14px; }
@@ -22,25 +21,20 @@
     <header>
       <p class="kicker">av-marketplace · how it works</p>
       <h1>From plan to pull request</h1>
-      <p class="sub">Claude Code and Oh My Pi start differently, then hand the plan to the same Delivery pipeline.</p>
+      <p class="sub">One flow for Claude Code and Oh My Pi. A tagged step runs only in that tool; every other step is the same in both.</p>
     </header>
     <section>
-      <p class="band-label">1 · Start with a plan</p>
-      <div class="lanes">
-        <span class="chip cc">Claude Code</span>
-        <div class="box cc" id="cc-1"><b>Brainstorm</b><small>a spec, with superpowers (external)</small></div>
-        <div class="box cc" id="cc-2"><b>Spec review</b><small><code>/superutils:<wbr>spec-review</code></small></div>
-        <div class="box cc" id="cc-3"><b>Write the plan</b><small>superpowers or plan mode</small></div>
-        <div class="box human" id="cc-4"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Start delivery</b><small>subagent-driven run or plan approval</small></div>
-        <span class="chip omp">Oh My Pi</span>
-        <div class="box omp" id="omp-1"><b>Write the plan</b><small>plan mode, <code>plan</code> role</small></div>
-        <div class="box omp" id="omp-2"><b>Plan Review</b><small>a second model (<code>advisor</code> role) reviews it; blockers and concerns go back, up to 3 rounds</small></div>
-        <div class="box human" id="omp-3"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Approve the plan</b><small>in the approval dialog</small></div>
+      <p class="band-label">1 · Plan</p>
+      <div class="plan-row">
+        <div class="box cc" id="p-spec"><span class="chip cc">Claude Code</span><b>Spec review</b><small>optional: a superpowers spec, checked by <code>/superutils:<wbr>spec-review</code></small></div>
+        <div class="box shared" id="p-plan"><b>Write the plan</b><small>plan mode, or superpowers in Claude Code</small></div>
+        <div class="box omp" id="p-review"><span class="chip omp">Oh My Pi</span><b>Plan Review</b><small>a second model (<code>advisor</code> role) reviews it, up to 3 rounds</small></div>
+        <div class="box human" id="p-approve"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Approve the plan</b><small>approval starts the delivery</small></div>
       </div>
     </section>
     <div class="gap" id="gap-1"></div>
     <section>
-      <p class="band-label">2 · Delivery, for every task <span class="chip both">Both</span><span class="band-note">A plan in Delivery's format also works: <code>/delivery:execute &lt;plan&gt;</code></span></p>
+      <p class="band-label">2 · Delivery, for every task<span class="band-note">A plan in Delivery's format also works: <code>/delivery:execute &lt;plan&gt;</code></span></p>
       <div class="row4">
         <div class="box rule" id="d-route"><b>Route</b><small>to the agent that owns the task's files</small></div>
         <div class="box shared" id="d-implement"><b>Implement</b><small>developer agent: coding standards, TDD</small></div>
@@ -51,7 +45,7 @@
     </section>
     <div class="gap" id="gap-2"></div>
     <section>
-      <p class="band-label">3 · After the last task <span class="chip both">Both</span></p>
+      <p class="band-label">3 · After the last task</p>
       <div class="row5">
         <div class="box shared" id="a-verify"><b>Verification</b><small>runs the plan's checks</small></div>
         <div class="box shared" id="a-qa"><b>QA</b><small><code>/qa:run</code> on testable changes</small></div>
@@ -62,9 +56,8 @@
       </div>
     </section>
     <footer class="legend">
-      <span class="chip cc">Claude Code</span>
-      <span class="chip omp">Oh My Pi</span>
-      <span class="chip both">Both</span>
+      <span class="chip cc">Claude Code only</span>
+      <span class="chip omp">Oh My Pi only</span>
       <span class="chip human"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>You decide</span>
       <span class="chip rule">Rule in code</span>
       <span class="chip loop"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 9a6 6 0 1 1-1.8-4.3"/><path d="M13.6 1.6v3.6H10"/></svg>Loop</span>
@@ -73,13 +66,10 @@
   <script src="wires.js"></script>
   <script>
     drawWires([
-      { from: "cc-1", to: "cc-2" },
-      { from: "cc-2", to: "cc-3" },
-      { from: "cc-3", to: "cc-4" },
-      { from: "omp-1", to: "omp-2" },
-      { from: "omp-2", to: "omp-3" },
-      { from: "cc-4", to: "d-route", fromSide: "right", toSide: "left", via: "gap-1" },
-      { from: "omp-3", to: "d-route", fromSide: "right", toSide: "left", via: "gap-1" },
+      { from: "p-spec", to: "p-plan" },
+      { from: "p-plan", to: "p-review" },
+      { from: "p-review", to: "p-approve" },
+      { from: "p-approve", to: "d-route", fromSide: "right", toSide: "left", via: "gap-1" },
       { from: "d-route", to: "d-implement" },
       { from: "d-implement", to: "d-review" },
       { from: "d-review", to: "d-commit" },
