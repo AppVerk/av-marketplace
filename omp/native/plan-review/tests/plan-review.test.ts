@@ -1,15 +1,16 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test, vi } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as zod from "@oh-my-pi/omptype/zod";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+import { USER_INTERRUPT_LABEL } from "@oh-my-pi/pi-coding-agent/session/messages";
 import planReviewExtension, { MAX_ROUNDS } from "../extensions/plan-review";
 
 type Hook = (event: { toolName?: string; input?: unknown }, ctx: ExtensionContext) => Promise<unknown>;
 type ToolResult = { content: { type: string; text: string }[] };
 type Tool = {
-	execute: (id: string, params: { title: string }, signal: AbortSignal | undefined, onUpdate: undefined, ctx: ExtensionContext) => Promise<ToolResult>;
+	execute: (id: string, params: { title: string }, signal: AbortSignal | undefined, onUpdate: ((update: ToolResult) => void) | undefined, ctx: ExtensionContext) => Promise<ToolResult>;
 };
 type Blocked = { block: boolean; reason: string };
 
@@ -22,8 +23,9 @@ let ctx: ExtensionContext;
 let hooks: Map<string, Hook>;
 let tool: Tool;
 let notifications: { message: string; level: string }[];
-let answers: { text: string; code?: number }[];
+let answers: { text: string; code?: number; killed?: boolean }[];
 let reviewerCalls: number;
+let duringReview: (() => void | Promise<void>) | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "plan-review-"));
@@ -33,6 +35,7 @@ beforeEach(() => {
 	notifications = [];
 	answers = [];
 	reviewerCalls = 0;
+	duringReview = undefined;
 	ctx = {
 		cwd: root,
 		sessionManager: {
@@ -49,10 +52,13 @@ beforeEach(() => {
 		registerTool: (definition: Tool) => {
 			tool = definition;
 		},
-		exec: async () => {
+		exec: async (_command: string, _args: string[], options?: { signal?: AbortSignal }) => {
 			reviewerCalls++;
+			await duringReview?.();
+			if (options?.signal?.aborted) return { stdout: "", stderr: "", code: -1, killed: true };
 			const answer = answers.shift();
 			if (!answer) throw new Error("Unexpected reviewer call");
+			if (answer.killed) return { stdout: "", stderr: "", code: -1, killed: true };
 			// `omp -p --mode json` ends with an `agent_end` event carrying the whole transcript.
 			const assistant = {
 				role: "assistant",
@@ -71,7 +77,10 @@ beforeEach(() => {
 	} as unknown as ExtensionAPI);
 });
 
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+	vi.useRealTimers();
+	rmSync(root, { recursive: true, force: true });
+});
 
 function propose(title = "feature"): Promise<unknown> {
 	const hook = hooks.get("tool_call");
@@ -122,6 +131,37 @@ test("requested changes keep the plan blocked until a review approves its revise
 	expect(((await propose()) as Blocked).block).toBe(true);
 });
 
+test("review progress updates immediately and every 15 seconds, then stops when the review ends", async () => {
+	vi.useFakeTimers();
+	const updates: string[] = [];
+	let start!: () => void;
+	let release!: () => void;
+	const started = new Promise<void>(resolve => {
+		start = resolve;
+	});
+	const pending = new Promise<void>(resolve => {
+		release = resolve;
+	});
+	duringReview = () => {
+		start();
+		return pending;
+	};
+	answers.push({ text: '{"findings": []}' });
+	const result = tool.execute("call", { title: "feature" }, undefined, update => updates.push(update.content[0].text), ctx);
+
+	await started;
+	vi.advanceTimersByTime(15_000);
+	vi.advanceTimersByTime(15_000);
+	release();
+	await result;
+
+	const updateCount = updates.length;
+	vi.advanceTimersByTime(60_000);
+	expect(updates.map(text => text.match(/^Plan review round 1\/3: (\d+:\d\d) elapsed/)?.[1])).toEqual(["0:00", "0:15", "0:30"]);
+	for (const text of updates) expect(text.split("\n")[0].length).toBeLessThan(70);
+	expect(updates).toHaveLength(updateCount);
+});
+
 test("a review that cannot run lets that plan text through with a warning", async () => {
 	answers.push({ text: "", code: 1 });
 	expect(await review()).toContain("exited with code 1: reviewer failed");
@@ -132,6 +172,54 @@ test("a review that cannot run lets that plan text through with a warning", asyn
 	answers.push({ text: "I think the plan is fine." });
 	expect(await review()).toContain("not the expected JSON");
 	expect(await propose()).toBeUndefined();
+});
+
+test("a reviewer run that fails, times out or answers badly uses one of the rounds", async () => {
+	const failures = [
+		{ answer: { text: "", code: 1 }, reason: "exited with code 1" },
+		{ answer: { text: "", killed: true }, reason: "did not finish within 15 minutes" },
+		{ answer: { text: "I think the plan is fine." }, reason: "not the expected JSON" },
+	];
+	for (const [index, { answer, reason }] of failures.entries()) {
+		const round = index + 1;
+		writeFileSync(planPath, `# Feature plan\n\nRevision ${round}.\n`);
+		answers.push(answer);
+		const result = await review();
+		expect(result).toContain(`round ${round} of ${MAX_ROUNDS}`);
+		expect(result).toContain(reason);
+	}
+
+	writeFileSync(planPath, "# Feature plan\n\nRevision 4.\n");
+	expect(await review()).toContain(`All ${MAX_ROUNDS} plan review rounds`);
+	expect(reviewerCalls).toBe(MAX_ROUNDS);
+	expect(await propose()).toBeUndefined();
+	expect(notifications.at(-1)?.message).toContain(`all ${MAX_ROUNDS} rounds are used`);
+});
+
+test("an abort with the user-interrupt reason lets that plan text through until the plan changes", async () => {
+	const controller = new AbortController();
+	duringReview = () => controller.abort(USER_INTERRUPT_LABEL);
+	await expect(tool.execute("call", { title: "feature" }, controller.signal, undefined, ctx)).rejects.toThrow(
+		"Plan review cancelled by the user",
+	);
+	expect(notifications.at(-1)?.level).toBe("warning");
+	expect(await propose()).toBeUndefined();
+
+	duringReview = undefined;
+	writeFileSync(planPath, "# Feature plan\n\nRevised after cancelling.\n");
+	expect(((await propose()) as Blocked).reason).toContain("changed since its last review");
+	answers.push({ text: '{"findings": []}' });
+	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved`);
+});
+
+test("an abort without the user-interrupt reason keeps the plan blocked", async () => {
+	const controller = new AbortController();
+	duringReview = () => controller.abort();
+	await expect(tool.execute("call", { title: "feature" }, controller.signal, undefined, ctx)).rejects.toThrow(
+		/^Plan review cancelled\.$/,
+	);
+	expect(notifications).toEqual([]);
+	expect(((await propose()) as Blocked).reason).toContain("This plan has not been reviewed");
 });
 
 test("after the last round the plan goes to approval with a warning and no further review runs", async () => {
@@ -145,4 +233,21 @@ test("after the last round the plan goes to approval with a warning and no furth
 
 	expect(await propose()).toBeUndefined();
 	expect(notifications.at(-1)).toEqual(expect.objectContaining({ level: "warning" }));
+});
+
+test("a session switch clears used rounds and reviews, so the next plan is reviewed again", async () => {
+	for (let round = 1; round <= MAX_ROUNDS; round++) {
+		writeFileSync(planPath, `# Feature plan\n\nRevision ${round}.\n`);
+		answers.push({ text: CONCERN });
+		expect(await review()).toContain(`round ${round} of ${MAX_ROUNDS}: changes requested`);
+	}
+
+	const hook = hooks.get("session_switch");
+	if (!hook) throw new Error("Missing session_switch hook");
+	await hook({}, ctx);
+
+	expect(await propose()).toEqual(expect.objectContaining({ block: true }));
+	answers.push({ text: NIT_ONLY });
+	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved`);
+	expect(reviewerCalls).toBe(MAX_ROUNDS + 1);
 });
