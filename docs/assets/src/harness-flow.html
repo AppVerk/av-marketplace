@@ -3,12 +3,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="render-size" content="1200x980">
+  <meta name="render-size" content="1200x1000">
   <title>From plan to pull request</title>
   <link rel="stylesheet" href="theme.css">
   <style>
-    .plan-row { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 156px; column-gap: 36px; }
+    .plan-row { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 172px; column-gap: 36px; }
     .box > .chip { align-self: flex-start; }
+    #p-plan { grid-column: span 2; }
+    .inset { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 10px 12px; border: 2px dashed var(--anthropic); border-radius: 10px; background: var(--anthropic-bg); }
+    .inset-head { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); }
+    .steps { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 1.3; color: var(--fg); }
+    .steps .arrow { width: 16px; height: 10px; flex: none; color: var(--wire); }
     .row4 { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 108px 30px; column-gap: 36px; row-gap: 34px; }
     .row4 .loop-label { grid-column: 2 / span 2; }
     .row5 { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: 108px 30px; column-gap: 28px; row-gap: 14px; }
@@ -26,8 +31,12 @@
     <section>
       <p class="band-label">1 · Plan</p>
       <div class="plan-row">
-        <div class="box cc" id="p-spec"><span class="chip cc">Claude Code</span><b>Spec review</b><small>optional: a superpowers spec, checked by <code>/superutils:<wbr>spec-review</code></small></div>
-        <div class="box shared" id="p-plan"><b>Write the plan</b><small>plan mode, or superpowers in Claude Code</small></div>
+        <div class="box shared" id="p-plan"><b>Write the plan</b><small>in plan mode, in either tool</small>
+          <div class="inset">
+            <div class="inset-head"><span class="chip cc">Claude Code</span>optional, with superpowers</div>
+            <div class="steps"><span>Brainstorm a spec</span><svg class="arrow" viewBox="0 0 16 10" aria-hidden="true"><path d="M1 5h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M10 1l5 4-5 4z" fill="currentColor"/></svg><code>/superutils:spec-review</code><svg class="arrow" viewBox="0 0 16 10" aria-hidden="true"><path d="M1 5h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M10 1l5 4-5 4z" fill="currentColor"/></svg><span>plan</span></div>
+          </div>
+        </div>
         <div class="box omp" id="p-review"><span class="chip omp">Oh My Pi</span><b>Plan Review</b><small>a second model (<code>advisor</code> role) reviews it, up to 3 rounds</small></div>
         <div class="box human" id="p-approve"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Approve the plan</b><small>approval starts the delivery</small></div>
       </div>
@@ -66,7 +75,6 @@
   <script src="wires.js"></script>
   <script>
     drawWires([
-      { from: "p-spec", to: "p-plan" },
       { from: "p-plan", to: "p-review" },
       { from: "p-review", to: "p-approve" },
       { from: "p-approve", to: "d-route", fromSide: "right", toSide: "left", via: "gap-1" },

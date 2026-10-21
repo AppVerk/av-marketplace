@@ -12,7 +12,7 @@ Plan, deliver, test, review and commit, with each stage handing its output to th
 
 </div>
 
-![From plan to pull request, one flow for both tools. Plan: in Claude Code, optionally review a superpowers spec with /superutils:spec-review; write the plan; in Oh My Pi, Plan Review has a second model review it; you approve the plan, which starts the delivery. Delivery, for every task: route it to the agent that owns its files, implement, review with up to 3 fix rounds, commit. After the last task: verification, QA and code review, then you choose which findings to fix and open the PR.](docs/assets/harness-flow.png)
+![From plan to pull request, one flow for both tools. Plan: write the plan in plan mode, or in Claude Code with superpowers, where you brainstorm a spec, check it with /superutils:spec-review and plan from it; in Oh My Pi, Plan Review has a second model review the plan; you approve the plan, which starts the delivery. Delivery, for every task: route it to the agent that owns its files, implement, review with up to 3 fix rounds, commit. After the last task: verification, QA and code review, then you choose which findings to fix and open the PR.](docs/assets/harness-flow.png)
 
 ## Why use it
 
@@ -29,7 +29,7 @@ Claude Code and Oh My Pi hand the plan to the same Delivery pipeline. They diffe
 
 | | Claude Code | Oh My Pi |
 |---|---|---|
-| Before the plan | Brainstorm a spec with [superpowers](docs/workflow.md#prerequisites), then check it with `/superutils:spec-review` | Write the plan in plan mode |
+| Writing the plan | Plan mode, or [superpowers](docs/workflow.md#prerequisites): brainstorm a spec, check it with `/superutils:spec-review`, then write the plan from it | Plan mode |
 | Plan check | Delivery sends back a plan whose tasks break its format | Plan Review: a second model reviews every plan before the approval dialog; Delivery checks the task format |
 | Delivery starts when you | pick subagent-driven execution for a superpowers plan, approve a plan-mode plan, or run `/delivery:execute <plan>` on a plan in [Delivery's format](docs/plugins/delivery.md#plan-format) | approve a plan-mode plan, or run `/delivery:execute <plan>` on a plan in Delivery's format |
 | Models | Plugin agents run on `opus`; `decision-analyst` uses the session model | Agents ask for model roles; with the [recommended role mapping](docs/oh-my-pi.md#recommended-models), each check runs on a different model family than the work |
