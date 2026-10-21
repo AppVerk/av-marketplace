@@ -177,7 +177,7 @@ Plans create needed application data through preconditions instead of assuming s
 
 ## Desktop apps
 
-QA ships no desktop driver. The available driver is `qa-ebitengine` ([mszenfeld/qa-ebitengine](https://github.com/mszenfeld/qa-ebitengine), Ebitengine v2.10.5 or later). Install it with `/plugin install qa-ebitengine@av-marketplace` in Claude Code or `omp plugin install qa-ebitengine@av-marketplace` in OMP; its README lists its requirements.
+QA ships no desktop driver. A driver is a separate plugin, published from its author's own marketplace, that provides a skill named `qa-desktop-driver-<driver>`; install it there, following its README. [Writing extensions](../extensions.md#qa-desktop-drivers) describes the driver contract. For example, [qa-ebitengine](https://github.com/mszenfeld/qa-ebitengine) drives Ebitengine games (v2.10.5 or later).
 
 A driver builds and runs the app headless in the background. The tester injects keys, text and mouse input by ticks, then reads PNG frames and the app log. No window takes focus, no OS input is sent and no screen is captured.
 

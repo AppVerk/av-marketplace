@@ -42,9 +42,12 @@ A new plugin is registered in `.claude-plugin/marketplace.json` with `name`,
 and the generated `.omp-plugin/marketplace.json`, so a plugin that gains or
 loses an OMP edition updates its row.
 
-A plugin kept in its own repository is registered in
-`.claude-plugin/marketplace.json` with the source `{"source": "github", "repo":
-"<owner>/<repo>", "ref": "v<version>", "sha": "<40-character commit SHA>"}`,
+Only an official AppVerk plugin kept in its own repository is registered here.
+A community extension lives in its author's marketplace and depends on ours;
+[`docs/extensions.md`](docs/extensions.md) is the authors' guide. An official
+one is registered in `.claude-plugin/marketplace.json` with the source
+`{"source": "github", "repo": "<owner>/<repo>", "ref": "v<version>", "sha":
+"<40-character commit SHA>"}`,
 gets a README row whose ID cell is its name, and is listed in
 `omp/remote-plugins.json`, which puts it in the generated
 `.omp-plugin/marketplace.json`. `scripts/check_plugin_versions.py` checks the
