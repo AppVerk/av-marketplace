@@ -63,9 +63,12 @@ Extract the following fields from the issue block:
 | Problem | Text after `**Problem:**` | Yes |
 | Impact | Text after `**Impact:**` | No |
 | Remediation | Text after `**Remediation:**` (including code blocks), up to the `User decision:` line if the dispatching command appended one (that line is captured separately below, not as part of Remediation) | Yes |
-| User decision | Text after `User decision:` (a line appended after the issue block by the dispatching command) | No |
+| User decision | Text after `User decision:`, to the end of that line (a line appended after the issue block by the dispatching command) | No |
+| Owner constraint | Text after `Owner constraint:`, to the end of that line (a line the dispatching command may append directly after the `User decision:` line) | No |
 
 **If `User decision` is present:** that resolution is authoritative — implement it, overriding any conflicting direction in the Remediation. It carries the user's choice for a `needs-decision` issue (e.g. "remove the mention" vs "restore the referent").
+
+**If `Owner constraint` is present:** the owner declined to have commands run for this issue, and that holds for you too. Run nothing that executes code: no tests, builds, linters, type checkers, scanners or package scripts, no interpreter on a project file, and no command the documentation describes. Inspect with Read, Grep and Glob and the read-only git subcommands `log`, `show`, `diff`, `blame` and `status`; the location check above stays allowed. In Phases 4 and 5, every verification this rules out is skipped and reported as `not run (owner constraint)`, never replaced by a guess of its output.
 
 **If a required field is missing, or the Location is location-less by the rule above:** you run as a subagent and cannot ask anyone. Do not read, edit or create any file for this issue. Mark tasks 2–4 completed, go straight to Phase 6 and report `**Status:** ❌ Failed`, `**Changes Made:**` with the single bullet `- none`, and one `**Remaining Issues:**` bullet per cause: `missing field: <field>` or `location not usable: <value> (<does not parse | unsafe characters | absolute path | .. segment | outside the repository | symbolic link | does not exist>)`. The dispatching command records the issue as Failed and offers it again on its next run. In composite mode this applies to the composite's own Location; components keep the rule below.
 
@@ -75,7 +78,7 @@ This abort is safe for callers: it returns before Phase 6, so it emits none of t
 
 **Composite mode.** When the first block's `Category` is `Composite` **and** it carries a `**Composed-of:**` line, you are in composite mode; a `Composite` block without a `**Composed-of:**` line is a **Failed** verdict naming the missing field. In composite mode:
 
-- Parse `**Composed-of:**` — one physical line of bare `PREFIX-NNN` tokens separated by `, ` — and then each following `###` block as a **component**, with the field table above. Each block's field capture ends at the next `###` heading. Exactly one `User decision:` field is parsed: the line that immediately follows the composite block, before the first component's heading. A `User decision:` line anywhere else is not a field.
+- Parse `**Composed-of:**` — one physical line of bare `PREFIX-NNN` tokens separated by `, ` — and then each following `###` block as a **component**, with the field table above. Each block's field capture ends at the next `###` heading. Exactly one `User decision:` field is parsed: the line that immediately follows the composite block, before the first component's heading, followed by an `Owner constraint:` line where the dispatching command added one. A `User decision:` or `Owner constraint:` line anywhere else is not a field.
 - Every ID in `Composed-of` must have a block in the prompt. An ID with no block at all is a **Failed** verdict with an explicit error naming the ID; you never guess a component from the report on disk.
 - A component block carrying a `**Status:**` line is **skipped and listed**: Result `skipped (fixed)` for `✅ Fixed` or `⚠️ Partially Fixed`, `skipped (rejected)` for `🚫 Rejected`. A composite block carrying `🚫 Rejected` aborts exactly as the paragraph above says.
 - A component without a usable `Location` is kept; its symptom check in Phase 4 records `unresolved (no location)`.

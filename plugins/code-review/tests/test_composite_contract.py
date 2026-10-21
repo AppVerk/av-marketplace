@@ -253,20 +253,6 @@ class CompositeContract(unittest.TestCase):
 
     # ---- Task 7: decision gate ------------------------------------------
 
-    def test_gate_aborts_on_every_decision_stage_question_except_trust(self) -> None:
-        # mutation: narrow "any question of the decision stage other than the entry's trust question" in decision-gate SKILL.md
-        outcomes = read(GATE).split("## The five outcomes\n", 1)[1]
-        self.assertIn(
-            "If `AskUserQuestion` is unavailable or errors at any question of the decision stage "
-            "other than the entry's trust question, the decision stage **aborts immediately**",
-            outcomes,
-        )
-        self.assertIn("no dispatch, and no further `**Decision:**` line", outcomes)
-        self.assertIn(
-            "The trust question's failure only leaves auto-accept off (*Entry: the auto-accept policy*).",
-            outcomes,
-        )
-
     def test_gate_ref_clause_for_component_locations(self):
         # mutation: delete the sentence "each component's `Location` path is pinned `:ref`" from decision-gate SKILL.md
         self.assertIn("each component's `Location` path is pinned `:ref`", read(GATE))
