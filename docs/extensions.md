@@ -6,8 +6,6 @@ An extension is a plugin that builds on an av-marketplace plugin through a contr
 |---|---|---|---|
 | [QA](plugins/qa.md) | Desktop drivers that run DESKTOP scenarios | 1 | qa 3.1.0 |
 
-[qa-ebitengine](https://github.com/mszenfeld/qa-ebitengine) is a working desktop driver published this way. Its repository follows the layout below and makes a good template.
-
 ## Repository layout
 
 One repository can hold both the plugin and the marketplace that publishes it:
@@ -117,7 +115,7 @@ A desktop driver lets `/qa:run` test a desktop app headless in the background. T
 
 A driver plugin ships a skill named `qa-desktop-driver-<driver>`. The skill's directory holds the manifest `qa-desktop-driver.json`, the guide `SKILL.md` (the skill itself) and the driver's code.
 
-`/qa:create-plan` and `/qa:run` list every available skill whose name, after an optional `<plugin>:` prefix, starts with `qa-desktop-driver-`. They load each one and take two absolute paths from it, the manifest and the guide. Write them in `SKILL.md` the way qa-ebitengine does:
+`/qa:create-plan` and `/qa:run` list every available skill whose name, after an optional `<plugin>:` prefix, starts with `qa-desktop-driver-`. They load each one and take two absolute paths from it, the manifest and the guide. Write them in `SKILL.md` like this:
 
 ```markdown
 Driver: <driver> (contract 1)
@@ -152,7 +150,7 @@ package = "."
 | `version` | `[0-9A-Za-z.+-]{1,40}` |
 | `entry` | a relative path without `..` to a Python 3.11+ script inside the manifest's directory that uses only the standard library |
 
-The entry script may start other programs. qa-ebitengine's `driver.py`, for example, runs `go build` and a Go host.
+The entry script may start other programs, such as the toolkit's build tool or a separate host process that drives the app.
 
 ### Phases
 
@@ -165,7 +163,7 @@ For every DESKTOP script, QA runs `[sys.executable, <entry>, <phase>, …]` for 
 | `build` | `--repo R --cache C --package P --out G` | Builds the configured `package` `P` into `G` | 300 s | `build-failed`, with the first line of `build.log` as the detail |
 | `run` | `--repo R --cache C --guest G --steps S --out A --width W --height H --deadline N -- <args…>` | Starts `G`, executes the steps in `S` and writes `A/result.json`, one PNG per shot and `A/guest.raw.log` with the app's stdout and stderr; stops the app and itself after `N` seconds | 120 s, with `N` = 135 | `timeout`; `host-failed` when `result.json` is missing or breaks the schema. `handshake-failed` is retried once |
 
-`C` is a cache directory QA keeps per run and driver, and `A` holds the run's artifacts. QA keeps `check`'s stderr and everything the other phases print in logs. A failed `prepare` or `build` reports the first line of its log as the detail, so print the cause first. qa-ebitengine writes nothing to the repository; keep your build output in `G` and scratch files in `C`.
+`C` is a cache directory QA keeps per run and driver, and `A` holds the run's artifacts. QA keeps `check`'s stderr and everything the other phases print in logs. A failed `prepare` or `build` reports the first line of its log as the detail, so print the cause first. Write nothing to the repository: keep build output in `G` and scratch files in `C`.
 
 ### The steps file
 
@@ -212,11 +210,11 @@ The `result` values:
 
 ### The guide
 
-QA's planner, config-author and tester read the driver's `SKILL.md`. The tester relies on it for the app's tick rate, for how the app's drawing coordinates map to window pixels and for the driver's limits. qa-ebitengine's guide also tells the config-author how to recognise an app the driver can run, which `package` to propose and which flags belong in `args`, and it lists the key codes the driver accepts and the tools it needs on `PATH`.
+QA's planner, config-author and tester read the driver's `SKILL.md`. The tester relies on it for the app's tick rate, for how the app's drawing coordinates map to window pixels and for the driver's limits. The guide should also tell the config-author how to recognise an app the driver can run, which `package` to propose and which flags belong in `args`, and list the key codes the driver accepts and the tools it needs on `PATH`.
 
 ### Testing a driver
 
-qa-ebitengine tests `driver.py` with the standard library's `unittest`. For an end-to-end check, install the driver, configure an app in a sample repository with `driver = "<driver>"`, and run `/qa:run` with a DESKTOP scenario. [Desktop apps](plugins/qa.md#desktop-apps) in the QA guide has an example scenario to adapt.
+Test the entry script with the standard library's `unittest`. For an end-to-end check, install the driver, configure an app in a sample repository with `driver = "<driver>"`, and run `/qa:run` with a DESKTOP scenario. [Desktop apps](plugins/qa.md#desktop-apps) in the QA guide has an example scenario to adapt.
 
 ## Official extensions
 

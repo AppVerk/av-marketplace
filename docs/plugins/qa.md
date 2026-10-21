@@ -177,17 +177,17 @@ Plans create needed application data through preconditions instead of assuming s
 
 ## Desktop apps
 
-QA ships no desktop driver. A driver is a separate plugin, published from its author's own marketplace, that provides a skill named `qa-desktop-driver-<driver>`; install it there, following its README. [Writing extensions](../extensions.md#qa-desktop-drivers) describes the driver contract. For example, [qa-ebitengine](https://github.com/mszenfeld/qa-ebitengine) drives Ebitengine games (v2.10.5 or later).
+QA ships no desktop driver. A driver is a separate plugin, published from its author's own marketplace, that provides a skill named `qa-desktop-driver-<driver>`; install it there, following its README. [Writing extensions](../extensions.md#qa-desktop-drivers) describes the driver contract.
 
 A driver builds and runs the app headless in the background. The tester injects keys, text and mouse input by ticks, then reads PNG frames and the app log. No window takes focus, no OS input is sent and no screen is captured.
 
 `/qa:run` detects installed drivers, passes them to planning and configuration, and registers them for each run. An app whose driver is not installed gets `NEED_INFO kind=tool` with `Missing: desktop-driver:<driver>`. Keys are W3C `KeyboardEvent.code` values such as `KeyA`, `Digit1`, `Enter` and `Backquote`.
 
-The app runs with the repository root as its working directory. Add an app to the existing configuration:
+The app runs with the repository root as its working directory. Add an app to the existing configuration, with the driver name the driver's README gives:
 
 ```toml
 [qa.desktop.app]
-driver = "ebitengine"
+driver = "<driver>"
 package = "."
 args = ["-debug"]
 ```
@@ -371,7 +371,7 @@ See [Code Review](code-review.md) for routing and decisions. [Delivery](delivery
 | Repository | Git repository with a HEAD. |
 | Backend requests | `curl` for credentials; HTTPie only for credential-free requests. `jq`, standard shell tools and Perl with `JSON::PP` for capture/sanitization. |
 | Frontend browser | Playwright MCP in Claude Code; built-in browser in OMP. |
-| DESKTOP apps | An installed desktop driver plugin such as qa-ebitengine, and the tools its README lists; see [Desktop apps](#desktop-apps). |
+| DESKTOP apps | An installed desktop driver plugin and the tools its README lists; see [Desktop apps](#desktop-apps). |
 | Application | Running services or evidenced health/startup commands. |
 | State Checks | Configured store and matching `psql`, `mysql`, `sqlite3` or `redis-cli`. Redis checks need `redis-cli` with `--json`; configured password authentication also needs `4.0.11+`. |
 | Fixes | Code Review; test/report-only runs need no fixer. |
