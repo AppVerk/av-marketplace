@@ -55,14 +55,14 @@ See [QA safety](../qa.md#safety) for fix eligibility and authentication guards.
 
 | Key | Type | Default | Validation |
 |---|---|---|---|
-| `driver` | String | Required | The driver name of an installed desktop driver plugin, such as `"ebitengine"` for qa-ebitengine: a lowercase ASCII letter followed by up to 39 lowercase letters, digits or `-`. Missing: `required desktop driver`; another type or form: `expected a desktop driver name`. A driver that is not installed is reported when its scenarios run, as `NEED_INFO kind=tool`. |
+| `driver` | String | Required | The driver name of an installed desktop driver plugin, as its README gives it: a lowercase ASCII letter followed by up to 39 lowercase letters, digits or `-`. Missing: `required desktop driver`; another type or form: `expected a desktop driver name`. A driver that is not installed is reported when its scenarios run, as `NEED_INFO kind=tool`. |
 | `package` | String | `"."` | `.` or a repository-relative package such as `./cmd/game`, without `..` segments. Invalid: `expected a relative package path such as ./cmd/game`. |
 | `args` | List of strings | `[]` | At most 32 items, each at most 256 characters without NUL. Invalid: `expected a list of strings`. |
 | `screen` | `[width, height]` | `[960, 540]` | Two integers, each from 64 to 4096; booleans are not integers. Invalid: `expected [width, height] between 64 and 4096`. |
 
 ```toml
 [qa.desktop.app]
-driver = "ebitengine"
+driver = "<driver>"
 package = "."
 args = ["-debug"]
 ```

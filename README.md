@@ -55,7 +55,6 @@ Each stage leaves an artifact the next stage consumes: the brainstormed spec is 
 | [PHP Developer](docs/plugins/php-developer.md) | 1.0.4 | `php-developer` | ✓ | ✓ | PHP development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (Symfony, Doctrine ORM, DDD) |
 | [Python Developer](docs/plugins/python-developer.md) | 3.0.5 | `python-developer` | ✓ | ✓ | Python development workflow with `/develop` command and autonomous `developer` agent. Coding standards, TDD, and stack-specific patterns (FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery) |
 | [QA](docs/plugins/qa.md) | 3.1.0 | `qa` | ✓ | ✓ | `/qa:run` bootstraps `.av/config.toml` with stores and users, reuses or generates a reviewed plan, and runs FE (browser), BE (API/store) and DESKTOP (desktop apps through driver plugins, headless in the background) tests through a bounded test→fix→retest loop. Testers register accounts; a configured cleanup recipe removes them at teardown. `/qa:create-plan` lets you review the plan first. Fixes require batch approval by default; reports work with code-review's `/fix QA-001` and `/fix-report` |
-| [QA Ebitengine](https://github.com/mszenfeld/qa-ebitengine) | 0.1.0 | `qa-ebitengine` | ✓ | ✓ | Desktop driver for QA: lets `/qa:run` test Ebitengine games headless in the background. Requires `qa` |
 | [Delivery](docs/plugins/delivery.md) | 0.8.1 | `delivery` | ✓ | ✓ | Delivers implementation plans task by task, without asking which developer to use: each task goes to the developer agent that owns its files (or, without a file list, its code), is reviewed and committed, then the plan's Verification, QA when the change is testable, and a full code review run. Starts when you approve a plan-mode plan, and in Claude Code also when you pick subagent-driven execution for a Superpowers plan. `/delivery:execute` resumes an interrupted delivery |
 | [Plan Review](docs/plugins/plan-review.md) | 0.1.0 | `plan-review` | — | ✓ | A second model (the `advisor` role) reviews every plan-mode plan before the approval dialog; the plan cannot be proposed until a review approves it or 3 review rounds are used |
 | [Superutils](docs/plugins/superutils.md) | 2.0.0 | `superutils` | ✓ | — | Companion utilities for the superpowers workflow. `/superutils:spec-review` runs a bounded triage pipeline on design specs: MoA lens panel, challengers for criticals, an approve-gated fix batch, verification of the applied edits, a second approve-gated batch — hard dispatch and time budgets, every residual reported, every verdict advisory (never "Verified") |
@@ -69,6 +68,7 @@ Each stage leaves an artifact the next stage consumes: the brainstormed spec is 
 - [Oh My Pi (OMP)](docs/oh-my-pi.md)
 - [Plugin Guides](docs/plugins/)
 - [Contributing](docs/contributing.md)
+- [Writing Extensions](docs/extensions.md)
 
 ## Support
 
