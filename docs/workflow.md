@@ -20,15 +20,9 @@ scanners and linters the plugins auto-detect.
 
 ## The cycle
 
-```mermaid
-flowchart LR
-    A[Idea] --> B[Spec]
-    B --> C[Spec review]
-    C --> D[Implement]
-    D --> E[QA]
-    E --> F[Code review]
-    F --> G[Commit / PR]
-```
+![From plan to pull request: one flow for Claude Code and Oh My Pi. Writing the plan includes, in Claude Code with superpowers, a spec checked by /superutils:spec-review; Plan Review is tagged Oh My Pi only. Then one Delivery pipeline of routing, implementation, task review and commits, followed by verification, QA, code review and the fixes you choose, or that after_review = "fix-all" runs automatically.](assets/harness-flow.png)
+
+The diagram covers both tools; the stages below follow Claude Code. The [Oh My Pi guide](oh-my-pi.md) describes what differs there: Plan Review, model roles and the decision model.
 
 ### Stage 1 — Idea → Spec *(superpowers, strongly recommended)*
 

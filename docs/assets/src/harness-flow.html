@@ -1,0 +1,98 @@
+<!-- Rendered to docs/assets/harness-flow.png by: bun docs/assets/src/render.ts harness-flow -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="render-size" content="1200x1000">
+  <title>From plan to pull request</title>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    .plan-row { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 172px; column-gap: 36px; }
+    .box > .chip { align-self: flex-start; }
+    #p-plan { grid-column: span 2; }
+    .inset { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 10px 12px; border: 2px dashed var(--anthropic); border-radius: 10px; background: var(--anthropic-bg); }
+    .inset-head { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); }
+    .steps { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 1.3; color: var(--fg); }
+    .steps .arrow { width: 16px; height: 10px; flex: none; color: var(--wire); }
+    .row4 { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 108px 30px; column-gap: 36px; row-gap: 34px; }
+    .row4 .loop-label { grid-column: 2 / span 2; }
+    .row5 { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: 108px 30px; column-gap: 28px; row-gap: 14px; }
+    .row5 .loop-label { grid-column: 2; }
+    .auto-label { grid-column: 4 / span 2; display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; color: var(--accent); }
+    .auto-label code { color: var(--accent); }
+    .chip.auto { border-style: dashed; border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <svg class="wires" aria-hidden="true"></svg>
+    <header>
+      <p class="kicker">av-marketplace · how it works</p>
+      <h1>From plan to pull request</h1>
+      <p class="sub">One flow for Claude Code and Oh My Pi. A tagged step runs only in that tool; every other step is the same in both.</p>
+    </header>
+    <section>
+      <p class="band-label">1 · Plan</p>
+      <div class="plan-row">
+        <div class="box shared" id="p-plan"><b>Write the plan</b><small>in plan mode, in either tool</small>
+          <div class="inset">
+            <div class="inset-head"><span class="chip cc">Claude Code</span>optional, with superpowers</div>
+            <div class="steps"><span>Brainstorm a spec</span><svg class="arrow" viewBox="0 0 16 10" aria-hidden="true"><path d="M1 5h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M10 1l5 4-5 4z" fill="currentColor"/></svg><code>/superutils:spec-review</code><svg class="arrow" viewBox="0 0 16 10" aria-hidden="true"><path d="M1 5h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M10 1l5 4-5 4z" fill="currentColor"/></svg><span>plan</span></div>
+          </div>
+        </div>
+        <div class="box omp" id="p-review"><span class="chip omp">Oh My Pi</span><b>Plan Review</b><small>a second model (<code>advisor</code> role) reviews it, up to 3 rounds</small></div>
+        <div class="box human" id="p-approve"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Approve the plan</b><small>approval starts the delivery</small></div>
+      </div>
+    </section>
+    <div class="gap" id="gap-1"></div>
+    <section>
+      <p class="band-label">2 · Delivery, for every task<span class="band-note">A plan in Delivery's format also works: <code>/delivery:execute &lt;plan&gt;</code></span></p>
+      <div class="row4">
+        <div class="box rule" id="d-route"><b>Route</b><small>to the agent that owns the task's files</small></div>
+        <div class="box shared" id="d-implement"><b>Implement</b><small>developer agent: coding standards, TDD</small></div>
+        <div class="box shared" id="d-review"><b>Review</b><small>critical and important findings block</small></div>
+        <div class="box shared" id="d-commit"><b>Commit</b><small>one commit per task</small></div>
+        <p class="loop-label"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 9a6 6 0 1 1-1.8-4.3"/><path d="M13.6 1.6v3.6H10"/></svg>up to 3 fix rounds, then you decide</p>
+      </div>
+    </section>
+    <div class="gap" id="gap-2"></div>
+    <section>
+      <p class="band-label">3 · After the last task</p>
+      <div class="row5">
+        <div class="box shared" id="a-verify"><b>Verification</b><small>runs the plan's checks</small></div>
+        <div class="box shared" id="a-qa"><b>QA</b><small><code>/qa:run</code> on testable changes</small></div>
+        <div class="box shared" id="a-review"><b>Code review</b><small>audit, challenge, cross-verify</small></div>
+        <div class="box human" id="a-fixes"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Choose fixes</b><small>fix all, pick from a list, or skip</small></div>
+        <div class="box human" id="a-pr"><b><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>Open the PR</b><small>you commit and push</small></div>
+        <p class="loop-label"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 9a6 6 0 1 1-1.8-4.3"/><path d="M13.6 1.6v3.6H10"/></svg>test, fix, retest</p>
+        <p class="auto-label"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M10.5 1L3 10.5h5.5L7.5 17 15 7.5H9.5z" fill="currentColor"/></svg>or automatic: <code>after_review = "fix-all"</code></p>
+      </div>
+    </section>
+    <footer class="legend">
+      <span class="chip cc">Claude Code only</span>
+      <span class="chip omp">Oh My Pi only</span>
+      <span class="chip human"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="5.5" r="3.5" fill="currentColor"/><path d="M2 17c0-3.9 3.1-7 7-7s7 3.1 7 7z" fill="currentColor"/></svg>You decide</span>
+      <span class="chip rule">Rule in code</span>
+      <span class="chip loop"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 9a6 6 0 1 1-1.8-4.3"/><path d="M13.6 1.6v3.6H10"/></svg>Loop</span>
+      <span class="chip auto"><svg class="icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M10.5 1L3 10.5h5.5L7.5 17 15 7.5H9.5z" fill="currentColor"/></svg>Can be automated</span>
+    </footer>
+  </main>
+  <script src="wires.js"></script>
+  <script>
+    drawWires([
+      { from: "p-plan", to: "p-review" },
+      { from: "p-review", to: "p-approve" },
+      { from: "p-approve", to: "d-route", fromSide: "right", toSide: "left", via: "gap-1" },
+      { from: "d-route", to: "d-implement" },
+      { from: "d-implement", to: "d-review" },
+      { from: "d-review", to: "d-commit" },
+      { from: "d-review", to: "d-implement", fromSide: "bottom", toSide: "bottom", kind: "loop" },
+      { from: "d-commit", to: "a-verify", fromSide: "bottom", toSide: "left", via: "gap-2" },
+      { from: "a-verify", to: "a-qa" },
+      { from: "a-qa", to: "a-review" },
+      { from: "a-review", to: "a-fixes" },
+      { from: "a-fixes", to: "a-pr" },
+    ]);
+  </script>
+</body>
+</html>
