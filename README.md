@@ -77,7 +77,6 @@ omp plugin install <plugin>@av-marketplace
 | [PHP Developer](docs/plugins/php-developer.md) | 1.0.4 | `php-developer` | ✓ | ✓ | `developer` agent and `/develop` command for PHP: coding standards, TDD, Symfony, Doctrine ORM, DDD |
 | [Python Developer](docs/plugins/python-developer.md) | 3.0.5 | `python-developer` | ✓ | ✓ | `developer` agent and `/develop` command for Python: coding standards, TDD, FastAPI, SQLAlchemy, Pydantic, Django, DRF, Celery |
 | [QA](docs/plugins/qa.md) | 3.1.0 | `qa` | ✓ | ✓ | `/qa:run` tests your change in the browser, through APIs and stores, and in desktop apps, can fix the issues you approve and retests within fixed limits; reports use `QA-001` IDs |
-| [QA Ebitengine](https://github.com/mszenfeld/qa-ebitengine) | 0.1.0 | `qa-ebitengine` | ✓ | ✓ | Desktop driver for QA: lets `/qa:run` test Ebitengine games headless in the background. Requires `qa` |
 | [Delivery](docs/plugins/delivery.md) | 0.8.1 | `delivery` | ✓ | ✓ | Runs an approved plan task by task: each task goes to the developer agent that owns its files and is reviewed and committed; then Verification, QA on testable changes and a full code review |
 | [Plan Review](docs/plugins/plan-review.md) | 0.2.0 | `plan-review` | — | ✓ | A second model, on the `advisor` role, reviews every plan-mode plan before the approval dialog; the plan cannot be proposed until a review approves it, 3 review rounds are used, or you skip a running review with Esc |
 | [Superutils](docs/plugins/superutils.md) | 2.0.0 | `superutils` | ✓ | — | `/superutils:spec-review` runs a bounded triage pipeline on design specs: a lens panel, challengers for criticals and approve-gated fix batches |
@@ -91,6 +90,7 @@ omp plugin install <plugin>@av-marketplace
 - [Oh My Pi (OMP)](docs/oh-my-pi.md)
 - [Plugin Guides](docs/plugins/)
 - [Contributing](docs/contributing.md)
+- [Writing Extensions](docs/extensions.md)
 
 ## Support
 

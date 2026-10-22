@@ -328,7 +328,7 @@ There is no per-fix/step mode. Every failing assertion is a fix candidate. The e
 - 2xx-shaped gating, tenant-shaped 404s and FE gating remain undetected by auth-status classification. A dispatch outliving token lifetime can turn expiry into an `auth`-flagged FAIL.
 - Drift checks run at engine calls; an already dispatched tester finishes against old config before the run stops.
 - Locks coordinate identical configured target origins and store endpoint keys; an undeclared store, or one backend reached through different host aliases, is not coordinated.
-- A desktop driver is installed plugin code that builds and runs the branch's app with your user rights; a driver can rely on an experimental toolkit API (qa-ebitengine uses Ebitengine's exp/vmhost), so a toolkit release can break it (NEED_INFO kind=tool).
+- A desktop driver is installed plugin code that builds and runs the branch's app with your user rights; a driver can rely on an experimental toolkit API, so a toolkit release can break it (NEED_INFO kind=tool).
 - Desktop ticks are exact, but code reading the wall clock sees real time between ticks.
 - A desktop run executes the branch's own code, as `env.services` does.
 - Reading a shot marked `sensitive` puts any injected credential it shows into the session transcript, as FE form fills do, although such shots never enter the repository.
