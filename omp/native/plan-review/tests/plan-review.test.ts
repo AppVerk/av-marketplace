@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as zod from "@oh-my-pi/omptype/zod";
@@ -15,6 +15,8 @@ type Tool = {
 type Blocked = { block: boolean; reason: string };
 
 const CONCERN = '```json\n{"findings": [{"severity": "concern", "location": "Task 1", "issue": "No test covers the change.", "fix": "Add a test."}]}\n```';
+const BLOCKER = '{"findings": [{"severity": "blocker", "location": "Task 2", "issue": "The script it runs does not exist.", "fix": "Name the existing script."}, {"severity": "concern", "location": "Task 1", "issue": "No test covers the change.", "fix": "Add a test."}, {"severity": "nit", "location": "Summary", "issue": "Wording.", "fix": ""}]}';
+const CONCERN_AND_NIT = '{"findings": [{"severity": "concern", "location": "Task 1", "issue": "No test covers\\nthe change.", "fix": "Add a test."}, {"severity": "nit", "location": "Summary", "issue": "Wording.", "fix": ""}]}';
 const NIT_ONLY = 'Done.\n{"findings": [{"severity": "nit", "location": "Summary", "issue": "Wording.", "fix": ""}]}';
 
 let root: string;
@@ -25,6 +27,7 @@ let tool: Tool;
 let notifications: { message: string; level: string }[];
 let answers: { text: string; code?: number; killed?: boolean }[];
 let reviewerCalls: number;
+let reviewerPrompts: string[];
 let duringReview: (() => void | Promise<void>) | undefined;
 
 beforeEach(() => {
@@ -35,6 +38,7 @@ beforeEach(() => {
 	notifications = [];
 	answers = [];
 	reviewerCalls = 0;
+	reviewerPrompts = [];
 	duringReview = undefined;
 	ctx = {
 		cwd: root,
@@ -52,8 +56,9 @@ beforeEach(() => {
 		registerTool: (definition: Tool) => {
 			tool = definition;
 		},
-		exec: async (_command: string, _args: string[], options?: { signal?: AbortSignal }) => {
+		exec: async (_command: string, args: string[], options?: { signal?: AbortSignal }) => {
 			reviewerCalls++;
+			reviewerPrompts.push(args.at(-1) ?? "");
 			await duringReview?.();
 			if (options?.signal?.aborted) return { stdout: "", stderr: "", code: -1, killed: true };
 			const answer = answers.shift();
@@ -93,6 +98,15 @@ async function review(title = "feature"): Promise<string> {
 	return result.content[0].text;
 }
 
+function useCwdPlan(content: string): string {
+	rmSync(planPath);
+	const path = join(root, "PLAN.md");
+	writeFileSync(path, content);
+	const sessionManager = ctx.sessionManager as unknown as { getBranch: () => unknown[] };
+	sessionManager.getBranch = () => [{ type: "mode_change", mode: "plan", data: { planFilePath: "PLAN.md" } }];
+	return path;
+}
+
 test("xd://propose blocks an unreviewed plan and leaves other writes alone", async () => {
 	const blocked = (await propose()) as Blocked;
 	expect(blocked.block).toBe(true);
@@ -112,10 +126,12 @@ test("a title that names no plan file is checked against the plan xd://propose f
 });
 
 test("requested changes keep the plan blocked until a review approves its revised text", async () => {
-	answers.push({ text: CONCERN }, { text: NIT_ONLY });
+	answers.push({ text: BLOCKER }, { text: NIT_ONLY });
 
 	const first = await review();
 	expect(first).toContain("by openai-codex/gpt-6-astra, round 1 of 3: changes requested");
+	expect(first).toContain("- [blocker] Task 2: The script it runs does not exist. Fix: Name the existing script.");
+	expect(readFileSync(planPath, "utf8")).not.toContain("## Open review findings");
 	expect(first).toContain("- [concern] Task 1: No test covers the change. Fix: Add a test.");
 	expect(((await propose()) as Blocked).reason).toContain("has not changed since");
 
@@ -129,6 +145,111 @@ test("requested changes keep the plan blocked until a review approves its revise
 
 	writeFileSync(planPath, "# Feature plan\n\nSomething else entirely.\n");
 	expect(((await propose()) as Blocked).block).toBe(true);
+});
+
+test("a review with concerns and no blockers approves the plan and lists the concerns in the plan file", async () => {
+	answers.push({ text: CONCERN_AND_NIT });
+	const result = await review();
+	expect(result).toContain(`round 1 of ${MAX_ROUNDS}: approved with open concerns.`);
+	expect(result).toContain("- [nit] Summary: Wording.");
+	expect(result).toContain('"## Open review findings" section');
+	const plan = readFileSync(planPath, "utf8");
+	expect(plan).toStartWith("# Feature plan\n\nChange the code.\n\n## Open review findings\n\nPlan Review (openai-codex/gpt-6-astra, round 1 of 3) found no blockers.");
+	expect(plan).toEndWith("\n\n- [concern] Task 1: No test covers the change. Fix: Add a test.\n");
+	expect(plan).not.toContain("[nit]");
+	expect(await propose()).toBeUndefined();
+
+	// An edit of the plugin's section is an edit of the plan: it needs a new review.
+	writeFileSync(planPath, `${plan}Edited.\n`);
+	expect(((await propose()) as Blocked).reason).toContain("changed since its last review");
+});
+
+test("every review removes the previous open findings section before the reviewer reads the plan, and keeps fenced headings", async () => {
+	const fenced = "```markdown\n## Open review findings\n```\n";
+	writeFileSync(planPath, `# Feature plan\n\nChange the code.\n\n${fenced}`);
+	answers.push({ text: CONCERN }, { text: NIT_ONLY });
+	await review();
+	expect(readFileSync(planPath, "utf8")).toContain("- [concern] Task 1: No test covers the change.");
+
+	writeFileSync(planPath, readFileSync(planPath, "utf8").replace("Change the code.", "Change the code and add a test."));
+	expect(await review()).toContain(`round 2 of ${MAX_ROUNDS}: approved.`);
+	expect(reviewerPrompts[1]).toContain(fenced);
+	expect(reviewerPrompts[1]).not.toContain("- [concern]");
+	expect(readFileSync(planPath, "utf8")).toBe(`# Feature plan\n\nChange the code and add a test.\n\n${fenced}`);
+	expect(await propose()).toBeUndefined();
+});
+
+test("a plan edited while the review runs keeps the edit and needs a new review", async () => {
+	duringReview = () => writeFileSync(planPath, "# Feature plan\n\nEdited during the review.\n");
+	answers.push({ text: CONCERN });
+	expect(await review()).toContain("changed while the review ran");
+	expect(readFileSync(planPath, "utf8")).toBe("# Feature plan\n\nEdited during the review.\n");
+	expect(((await propose()) as Blocked).reason).toContain("changed since its last review");
+});
+
+test("a plan outside the session's local:// directory is reviewed as it is and never written", async () => {
+	const content = "# Feature plan\n\nChange the code.\n\n## Open review findings\n\nWritten by hand.\n";
+	const path = useCwdPlan(content);
+	answers.push({ text: CONCERN });
+	const result = await review();
+	expect(result).toContain("Plan review of PLAN.md by openai-codex/gpt-6-astra, round 1 of 3: approved with open concerns.");
+	expect(result).toContain("only into plan files stored in this session's local:// directory. Tell the user about them");
+	expect(reviewerPrompts[0]).toContain("Written by hand.");
+	expect(readFileSync(path, "utf8")).toBe(content);
+	expect(await propose()).toBeUndefined();
+});
+
+test("after the last round, the agent hands the findings of a plan outside the session's local:// directory to the user", async () => {
+	const path = useCwdPlan("# Feature plan\n\nRevision 0.\n");
+	let last = "";
+	for (let round = 1; round <= MAX_ROUNDS; round++) {
+		writeFileSync(path, `# Feature plan\n\nRevision ${round}.\n`);
+		answers.push({ text: BLOCKER });
+		last = await review();
+	}
+	expect(last).toContain(`round ${MAX_ROUNDS} of ${MAX_ROUNDS}: changes requested`);
+	expect(last).toContain("does not list these findings");
+	expect(last).toContain("Tell the user about the blockers and concerns above");
+	expect(readFileSync(path, "utf8")).toBe(`# Feature plan\n\nRevision ${MAX_ROUNDS}.\n`);
+});
+
+test("a session-local plan that links outside the session's local:// directory is never written", async () => {
+	const outside = join(root, "outside-plan.md");
+	writeFileSync(outside, "# Feature plan\n\nChange the code.\n");
+	rmSync(planPath);
+	symlinkSync(outside, planPath);
+	answers.push({ text: CONCERN });
+	expect(await review()).toContain("only into plan files stored in this session's local:// directory");
+	expect(readFileSync(outside, "utf8")).toBe("# Feature plan\n\nChange the code.\n");
+	expect(await propose()).toBeUndefined();
+});
+
+test("a plan swapped for a symlink while the review runs is never written through it", async () => {
+	const outside = join(root, "outside-plan.md");
+	writeFileSync(outside, "# Feature plan\n\nChange the code.\n");
+	duringReview = () => {
+		rmSync(planPath);
+		symlinkSync(outside, planPath);
+	};
+	answers.push({ text: CONCERN });
+	expect(await review()).toContain("changed while the review ran");
+	expect(readFileSync(outside, "utf8")).toBe("# Feature plan\n\nChange the code.\n");
+	expect(((await propose()) as Blocked).reason).toContain("changed since its last review");
+});
+
+test("a review whose findings cannot be written still uses its round and hands the concerns to the agent", async () => {
+	chmodSync(planPath, 0o444);
+	answers.push({ text: CONCERN });
+	const result = await review();
+	expect(result).toContain(`round 1 of ${MAX_ROUNDS}: approved with open concerns.`);
+	expect(result).toContain("the plugin could not write them");
+	expect(readFileSync(planPath, "utf8")).toBe("# Feature plan\n\nChange the code.\n");
+	expect(await propose()).toBeUndefined();
+
+	chmodSync(planPath, 0o644);
+	writeFileSync(planPath, "# Feature plan\n\nRevised.\n");
+	answers.push({ text: NIT_ONLY });
+	expect(await review()).toContain(`round 2 of ${MAX_ROUNDS}: approved.`);
 });
 
 test("review progress updates immediately and every 15 seconds, then stops when the review ends", async () => {
@@ -222,12 +343,19 @@ test("an abort without the user-interrupt reason keeps the plan blocked", async 
 	expect(((await propose()) as Blocked).reason).toContain("This plan has not been reviewed");
 });
 
-test("after the last round the plan goes to approval with a warning and no further review runs", async () => {
+test("after the last round its open blockers and concerns go to approval in the plan file, with a warning and no further review", async () => {
 	for (let round = 1; round <= MAX_ROUNDS; round++) {
 		writeFileSync(planPath, `# Feature plan\n\nRevision ${round}.\n`);
-		answers.push({ text: CONCERN });
-		expect(await review()).toContain(`round ${round} of ${MAX_ROUNDS}: changes requested`);
+		answers.push({ text: BLOCKER });
+		const result = await review();
+		expect(result).toContain(`round ${round} of ${MAX_ROUNDS}: changes requested`);
+		if (round === MAX_ROUNDS) expect(result).toContain('"## Open review findings" section');
 	}
+	const plan = readFileSync(planPath, "utf8");
+	expect(plan).toContain("still found blockers in its last round");
+	expect(plan).toContain("- [blocker] Task 2: The script it runs does not exist. Fix: Name the existing script.");
+	expect(plan).toContain("- [concern] Task 1: No test covers the change. Fix: Add a test.");
+	expect(plan).not.toContain("[nit]");
 	expect(await review()).toContain(`All ${MAX_ROUNDS} plan review rounds`);
 	expect(reviewerCalls).toBe(MAX_ROUNDS);
 
@@ -238,7 +366,7 @@ test("after the last round the plan goes to approval with a warning and no furth
 test("a session switch clears used rounds and reviews, so the next plan is reviewed again", async () => {
 	for (let round = 1; round <= MAX_ROUNDS; round++) {
 		writeFileSync(planPath, `# Feature plan\n\nRevision ${round}.\n`);
-		answers.push({ text: CONCERN });
+		answers.push({ text: BLOCKER });
 		expect(await review()).toContain(`round ${round} of ${MAX_ROUNDS}: changes requested`);
 	}
 
