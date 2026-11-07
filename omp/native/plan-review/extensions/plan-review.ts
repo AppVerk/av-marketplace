@@ -194,7 +194,17 @@ function sha256(text: string): string {
 
 /** One finding as a list item; line breaks inside the reviewer's text are folded so the item stays one line. */
 function formatFinding({ severity, location, issue, fix }: Finding): string {
-	return `- [${severity}]${location ? ` ${location}:` : ""} ${issue}${fix ? ` Fix: ${fix}` : ""}`.replace(/\s*\n\s*/g, " ");
+	const item = `- [${severity}]${location ? ` ${location}:` : ""} ${issue}${fix ? ` Fix: ${fix}` : ""}`;
+	return item.split(/[\r\n\u2028\u2029]/).map(line => line.trim()).filter(Boolean).join(" ");
+}
+
+/** Track the fence enclosing a line, using the same rules when removing and appending findings. */
+function fenceAfterLine(line: string, fence: string | undefined): string | undefined {
+	const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line.trimEnd());
+	if (fence !== undefined) {
+		return marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim() ? undefined : fence;
+	}
+	return marker?.[1];
 }
 
 /**
@@ -208,26 +218,27 @@ function withoutOpenFindings(content: string): string {
 	let inSection = false;
 	let removed = false;
 	for (const line of content.split("\n")) {
-		const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-		if (fence !== undefined) {
-			if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = undefined;
-		} else if (marker) {
-			fence = marker[1];
-		} else if (line.trimEnd() === OPEN_FINDINGS_HEADING) {
-			inSection = true;
-			removed = true;
-			continue;
-		} else if (inSection && /^#{1,2}\s/.test(line)) {
-			inSection = false;
+		fence = fenceAfterLine(line, fence);
+		if (fence === undefined) {
+			if (line.trimEnd() === OPEN_FINDINGS_HEADING) {
+				inSection = true;
+				removed = true;
+				continue;
+			} else if (inSection && /^#{1,2}\s/.test(line)) {
+				inSection = false;
+			}
 		}
 		if (!inSection) kept.push(line);
 	}
 	return removed ? `${kept.join("\n").trimEnd()}\n` : content;
 }
 
-/** The plan with a `## Open review findings` section at its end: `intro`, then one item per finding. */
+/** Append findings outside any fence the plan left open, so a later review can remove the section. */
 function withOpenFindings(body: string, intro: string, findings: Finding[]): string {
-	return `${body.trimEnd()}\n\n${OPEN_FINDINGS_HEADING}\n\n${intro}\n\n${findings.map(formatFinding).join("\n")}\n`;
+	let fence: string | undefined;
+	for (const line of body.split("\n")) fence = fenceAfterLine(line, fence);
+	const closed = `${body.trimEnd()}${fence ? `\n${fence}` : ""}`;
+	return `${closed}\n\n${OPEN_FINDINGS_HEADING}\n\n${intro}\n\n${findings.map(formatFinding).join("\n")}\n`;
 }
 
 function textResult(text: string, details: Record<string, unknown>) {
@@ -360,7 +371,7 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 					changed = true;
 				}
 			}
-			// A plan that changed during the review gets no hash: its next proposal needs a new review.
+			// A plan that changed during the review gets no hash: this review does not cover its current text.
 			reviews.set(plan.url, { hash: changed ? "" : sha256(reviewed), outcome, rounds: round });
 			const status = { approve: "approved", "approve-with-concerns": "approved with open concerns", revise: "changes requested" }[outcome];
 			const lines = [
@@ -368,7 +379,11 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 				...(findings.length > 0 ? ["", ...findings.map(formatFinding)] : []),
 				"",
 			];
-			if (changed)
+			if (changed && round >= MAX_ROUNDS)
+				lines.push(
+					`${plan.url} changed while the review ran, so the plugin did not list the open findings in it, and all ${MAX_ROUNDS} review rounds are used. Tell the user about the findings above, then write "${plan.slug}" to xd://propose; the user decides on them.`,
+				);
+			else if (changed)
 				lines.push(
 					`${plan.url} changed while the review ran, so the plugin did not list the open findings in it and this review does not cover its current text. Write {"title": ${JSON.stringify(plan.slug)}} to xd://plan_review again.`,
 				);
