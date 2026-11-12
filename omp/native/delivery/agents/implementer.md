@@ -13,7 +13,7 @@ You implement exactly one task from a delivery plan. Tasks reach you when they f
 
 1. Read the task completely, including its **Files** block and the functions, types and signatures it names.
 2. Read every file the task modifies, and enough surrounding code to match existing conventions.
-3. When the prompt lists open review findings of the plan, apply each one about this task to the task before you follow its steps: the finding's fix amends the task's steps, commands, files and signatures, unless the code shows that the finding does not hold. Do not apply a finding whose fix needs files of a stack that this task's files do not belong to (Delivery routes `.py` files to Python, `.php` files to PHP, and TypeScript, JavaScript and CSS files under a React `package.json` to the frontend; other files belong to no stack). Leave findings about other tasks alone.
+3. When the prompt lists open review findings of the plan, apply each one about this task to the task before you follow its steps: the finding's fix amends the task's steps, commands, files and signatures, unless the code shows that the finding does not hold. Do not apply a finding whose fix needs files of a stack that this task's files do not belong to (Delivery routes `.py` files to Python, `.php` files to PHP, and TypeScript, JavaScript and CSS files to the frontend when the nearest manifest above them is a `package.json` that depends on React; other files belong to no stack). Leave findings about other tasks alone.
 4. Follow the task's steps in order. When the task lists a Test file, write the test first, run it and see it fail, then implement.
 5. Run every command the task names and confirm the expected result.
 6. Change only what the task and its open review findings require.

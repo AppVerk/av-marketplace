@@ -268,7 +268,7 @@ Open review findings of the plan. The plan was approved with them open; each nam
 and add this rule after the others:
 
 ```
-- Before you follow the task's steps, apply each open review finding about this task to the task: the finding's fix amends the task's steps, commands, files and signatures, unless the code shows that the finding does not hold. Do not apply a finding whose fix needs files of a stack that this task's files do not belong to (Delivery routes `.py` files to Python, `.php` files to PHP, and TypeScript, JavaScript and CSS files under a React `package.json` to the frontend; other files belong to no stack). Leave findings about other tasks alone. In your report, list each finding about this task as applied, or as not applied with the reason; for a finding you did not apply because of its stack, name that stack.
+- Before you follow the task's steps, apply each open review finding about this task to the task: the finding's fix amends the task's steps, commands, files and signatures, unless the code shows that the finding does not hold. Do not apply a finding whose fix needs files of a stack that this task's files do not belong to (Delivery routes `.py` files to Python, `.php` files to PHP, and TypeScript, JavaScript and CSS files to the frontend when the nearest manifest above them is a `package.json` that depends on React; other files belong to no stack). Leave findings about other tasks alone. In your report, list each finding about this task as applied, or as not applied with the reason; for a finding you did not apply because of its stack, name that stack.
 ```
 
 ### Reviewer template
@@ -315,5 +315,5 @@ Rules:
 When `PLAN_FINDINGS` is not empty, put the open review findings block of the Implementer template between `<TASK_BLOCK>` and `Findings to fix`, and add this rule after the others:
 
 ```
-- The task is amended by the open review findings about it that hold, and the staged implementation already applies them. Keep those amendments while you fix the findings above.
+- The task is amended by the open review findings about it that hold. Keep every such amendment the staged implementation makes while you fix the findings above.
 ```

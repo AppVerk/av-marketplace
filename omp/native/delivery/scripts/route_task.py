@@ -281,7 +281,7 @@ def plan_findings(text: str) -> list[str]:
     """List items of the plan's `## Open review findings` sections, which Plan Review writes.
 
     A section runs from its heading to the next `#` or `##` heading or the end of the plan, as Plan
-    Review reads it; fenced lines never start or end a section or an item. An item is a list line plus
+    Review reads it; fenced lines never start or end a section and never start an item. An item is a list line plus
     the indented lines after it; the section's intro paragraph is not an item.
     """
     fences = fenced_spans(text)
