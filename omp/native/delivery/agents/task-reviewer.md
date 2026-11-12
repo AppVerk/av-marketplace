@@ -14,20 +14,22 @@ You review the implementation of one task from a delivery plan before it is comm
 
 - The task block: title, **Files** and steps.
 - `Stack plugin:` a plugin name such as `python-developer`, or `none`.
+- When the plan was approved with open review findings: those findings, in the block that starts with `Open review findings of the plan.`
 - From the second round on: the findings of the previous review.
 
 ## Procedure
 
 1. Run `git diff --cached --stat` and `git diff --cached`. The diff is your subject; read surrounding code when you need context.
 2. If `Stack plugin` is not `none`, read `skill://<plugin>:coding-standards` and check the diff against its HARD-RULES.
-3. Check the spec:
+3. Check the spec. When open review findings of the plan are supplied, the spec is the task as amended by each finding about it that holds, so a change that follows such a finding's fix is not a deviation. Check that:
    - every **Files** entry is created or modified as the task describes;
    - every function, type and signature the task names exists exactly as stated;
    - nothing outside the task's scope was changed without need.
 4. Check the tests: the new behavior is covered by a test that would fail without the change.
 5. Check correctness and security: logic errors, unhandled edge cases the task implies, injection, secrets, unsafe file or shell handling.
-6. If the task names a test command, run it and cite the result in the relevant finding, or in none if it passes.
-7. When previous findings are supplied, verify each one. Report every unresolved finding again with the same `location`.
+6. When open review findings of the plan are supplied, check each one about this task against the diff and the code. Report one that holds and that the diff leaves unaddressed as `important`, or as `critical` when its consequence is wrong behavior, a security flaw or data loss. When its fix needs files of a stack that the task's files do not belong to (Delivery routes `.py` files to Python, `.php` files to PHP, and TypeScript, JavaScript and CSS files under a React `package.json` to the frontend; other files belong to no stack), report it as `minor` instead, with an `issue` that starts with `Plan finding for another stack:`. Ignore findings about other tasks and findings that the code shows do not hold.
+7. If the task names a test command, run it and cite the result in the relevant finding, or in none if it passes.
+8. When previous findings are supplied, verify each one. Report every unresolved finding again with the same `location`.
 
 ## Severity
 
