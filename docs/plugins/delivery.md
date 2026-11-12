@@ -2,7 +2,7 @@
 
 Delivery runs approved plans task by task, or delivers an existing plan with `/delivery:execute <PLAN_PATH>`. Each task goes to the agent the router selects from its file list, then receives a review and its own commit. After the last task, Delivery runs the plan's Verification, QA when the change is testable, and a full code review. Delivery never asks which developer should implement a task.
 
-**Version:** 0.8.1
+**Version:** 0.9.0
 
 ## How a delivery starts
 
@@ -87,6 +87,10 @@ Every task is reviewed before its commit. Findings marked `critical` or `importa
 After the last task, the plan's Verification and QA, Delivery runs `/code-review:review` over the delivered commits. The review always saves its report; Delivery commits it alone as `docs: add review of delivery <slug>`, unless your `.gitignore` excludes the report, in which case it stays uncommitted. Then the review's post-review action runs as `[code-review] after_review` sets it ([Code Review configuration](code-review.md#configuration)): by default it asks whether to run `/code-review:fix-all`, choose from `/code-review:fix-report`'s checklist, or stop. Whatever the fix commands change, including the statuses they write into the report, stays uncommitted for you to review and commit.
 
 The closing message `Review fixes are uncommitted; review them and commit.` appears only when a fix command ran. Otherwise, Delivery ends after the review's post-review action without claiming there are fixes to commit.
+
+## Plan Review findings
+
+In OMP, a plan that [Plan Review](plan-review.md) approved with open concerns lists them in a `## Open review findings` section after its last task; after a last review round that still found blockers, the section holds that round's blockers and concerns. Delivery reads the section's list items with the router's `plan-findings` command and adds them after the task block to the prompt of every task's implementer, every fix round and every review of the task. Before following the task's steps, the implementer applies each finding about its task to the task, so the finding's fix amends the task's steps, commands, files and signatures, unless the code shows that the finding does not hold; it leaves findings about other tasks alone and says in its report what it did with each finding about its task. Fix rounds keep those amendments. The task reviewer checks the change against the task as amended by the findings about it that hold, and reports such a finding that the change leaves unaddressed as `important`, or as `critical` when its consequence is wrong behavior, a security flaw or data loss, so it goes through the fix rounds above. A finding whose fix needs files of a stack that the task's files do not belong to is not applied, because the task's agent was routed by those files: the task reviewer reports it as `minor`, and Delivery's summary lists it as `Task <N>: Plan finding for another stack: …` for you to plan. A finding about no task, such as one about the plan's Verification, reaches the agents but no task acts on it. Approving a plan with open findings leaves them to the implementers. Claude Code's Delivery does not read the section: Plan Review exists only in OMP.
 
 ## QA
 
