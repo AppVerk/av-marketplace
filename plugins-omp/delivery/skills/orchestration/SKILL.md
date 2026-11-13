@@ -73,13 +73,13 @@ For each not-done task, in ascending order of `N`:
 
 ### 3. Verification
 
-Mark `Plan verification` in progress. When `PLAN_PATH` has a `## Verification` section, carry out each check it lists, in order, with your own tools — commands, scripts, smoke runs — without editing project files. A check that needs a person, such as a manual UI step you cannot perform, is `manual`. Print one line per check:
+Mark `Plan verification` in progress. When `PLAN_PATH` has a `## Verification` section, carry out each check it lists, in order, with your own tools — commands, scripts, smoke runs — without editing project files. Write any file a check needs, such as a throwaway smoke script, in a private temporary directory outside `REPO`; a file left in the working tree makes step 4 report QA as `Not run`. When `PLAN_PATH` has that section and `PLAN_FINDINGS` is not empty, first apply each finding about the section to its checks: the finding's fix changes a check's commands, order, environment or expected result, or adds a check, unless the code shows that the finding does not hold. Carry out the checks as amended, and name the finding in the evidence of every check it changed or added. Name a finding that does not hold, with what the code shows, in the evidence of the check it concerns, or print it as one more `manual` check when it concerns none. A finding about the section whose fix needs a file in `REPO` created or changed, such as a new test, or a step outside this delivery, is not applied: print it as one more check, with the finding as `<check>` and `manual` as its result. Leave findings that concern only tasks to the task loop. A check that needs a person, such as a manual UI step you cannot perform, is `manual`. Print one line per check:
 
 ```
 Verification: <check> — pass | fail | manual (<evidence>)
 ```
 
-Without a `## Verification` section, print `Verification: none in plan`. Any `fail` → use the `ask` tool: `Verification failed: <checks>. What now?` with options `Continue to the final review` and `Stop delivery`. `Stop delivery` → run step 5 and end the run. Mark `Plan verification` done.
+Without a `## Verification` section, print `Verification: none in plan` and apply no finding. Any `fail` → use the `ask` tool: `Verification failed: <checks>. What now?` with options `Continue to the final review` and `Stop delivery`. `Stop delivery` → run step 5 and end the run. Mark `Plan verification` done.
 
 ### 4. QA
 
