@@ -38,7 +38,18 @@ With Delivery installed, a plan that Delivery's task check rejects still needs a
 
 ## Review records
 
-Every `xd://plan_review` call saves one JSON record in the session's artifacts directory, which is the session file's path without `.jsonl`: `<artifacts directory>/plan-review/<start time>-<8 hex characters>.json`, for example `2026-11-13T09-41-07.123Z-1a2b3c4d.json`. The names sort in start order. The plugin saves the record when the call ends, whatever its result, so a session has one record per call: reviews, reviews that could not run, skipped or cancelled runs, calls after the 3 rounds are used, and calls that failed. Records never go to the repository.
+Review records are for contributors who work on Plan Review: they feed its eval and the measurement of its cost. They are off by default. Turn them on in your user file `${XDG_CONFIG_HOME:-~/.config}/av/config.toml`, which applies to every repository:
+
+```toml
+version = 1
+
+[plan-review]
+records = true
+```
+
+`records` is the only key of the `[plan-review]` table: `true` or `false`, `false` by default. A repository's `.av/config.toml` can set it too, and `.av/local.toml` overrides it when one of those files has the table ([override resolution](../configuration.md#files)). The plugin reads the setting at every `xd://plan_review` call through the shared configuration loader, which needs `python3` 3.11 or newer; without it, records stay off. An invalid `[plan-review]` table turns records off with a warning. In every case the review result and the `xd://propose` gate stay as they are.
+
+With records on, every `xd://plan_review` call saves one JSON record in the session's artifacts directory, which is the session file's path without `.jsonl`: `<artifacts directory>/plan-review/<start time>-<8 hex characters>.json`, for example `2026-11-13T09-41-07.123Z-1a2b3c4d.json`. The names sort in start order. The plugin saves the record when the call ends, whatever its result, so a session has one record per call: reviews, reviews that could not run, skipped or cancelled runs, calls after the 3 rounds are used, and calls that failed. Records never go to the repository.
 
 | Field | Content |
 |-------|---------|

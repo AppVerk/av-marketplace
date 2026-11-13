@@ -14,9 +14,11 @@
  *   Every review attempt first removes that section; the recorded hash covers the file with the new section. Only a
  *   plan file whose real path lies in the session's `local://` directory is written, and never one edited while the
  *   reviewer ran.
- * - Records: every plan_review call, whatever its result, saves one JSON record in the session's artifacts directory
- *   (`plan-review/<start>-<id>.json`): the plan text sent to the reviewer, its raw answer, findings, outcome and token
- *   usage. A record that cannot be saved only warns; it never changes the result or the gate.
+ * - Records: with `[plan-review] records = true` in the av configuration (off by default; a contributor's tool for
+ *   Plan Review's eval and cost measurement), every plan_review call, whatever its result, saves one JSON record in the
+ *   session's artifacts directory (`plan-review/<start>-<id>.json`): the plan text sent to the reviewer, its raw
+ *   answer, findings, outcome and token usage. A record that cannot be saved only warns; it never changes the result
+ *   or the gate.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
@@ -58,6 +60,9 @@ type Finding = { severity: Severity; location: string; issue: string; fix: strin
 type Review = { hash: string; outcome: "approve" | "approve-with-concerns" | "revise" | "unavailable" | "skipped"; rounds: number };
 
 const RECORDS_DIR = "plan-review";
+/** Reads `[plan-review] records` through the shared av_config loader, which is Python. */
+const RECORDS_SETTING = join(import.meta.dir, "..", "scripts", "records_setting.py");
+const RECORDS_SETTING_TIMEOUT_MS = 30_000;
 
 type Outcome = Review["outcome"] | "cancelled" | "exhausted" | "error";
 /** One plan_review call as saved in the session's artifacts directory; the field order is the file's. */
@@ -295,6 +300,33 @@ function pluginVersion(): string | null {
 	}
 }
 
+type RecordsSetting = { records: boolean; warning: string | null };
+
+/**
+ * `[plan-review] records` from the av configuration (docs/configuration.md), read by `records_setting.py`. Records stay
+ * off without python3, since nothing else can read the setting; a setting that cannot be read otherwise warns.
+ */
+async function recordsSetting(pi: ExtensionAPI, cwd: string): Promise<RecordsSetting> {
+	let result: ExecResult;
+	try {
+		result = await pi.exec("python3", ["-B", RECORDS_SETTING, "--cwd", cwd], { cwd, timeout: RECORDS_SETTING_TIMEOUT_MS });
+	} catch {
+		return { records: false, warning: null };
+	}
+	try {
+		const setting = JSON.parse(result.stdout) as { records?: unknown; warning?: unknown };
+		if (result.code === 0 && typeof setting.records === "boolean") {
+			return { records: setting.records, warning: typeof setting.warning === "string" ? setting.warning : null };
+		}
+	} catch {
+		// Reported below with the script's stderr.
+	}
+	return {
+		records: false,
+		warning: `Plan review could not read its [plan-review] records setting, so it saves no record of this call.\n${result.stderr.trim().slice(-500)}`,
+	};
+}
+
 /** Save the record of one plan_review call in the session's artifacts directory, never the repository; a failure only warns. */
 async function saveRecord(record: ReviewRecord, ctx: ExtensionContext): Promise<void> {
 	try {
@@ -512,7 +544,9 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 				throw error;
 			} finally {
 				record.endedAt = new Date().toISOString();
-				await saveRecord(record, ctx);
+				const setting = await recordsSetting(pi, ctx.cwd);
+				if (setting.warning) ctx.ui.notify(setting.warning, "warning");
+				if (setting.records) await saveRecord(record, ctx);
 			}
 		},
 	});

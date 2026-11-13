@@ -41,6 +41,9 @@ const USAGE = [
 ];
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 const VERSION = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")).version;
+const RECORDS_ON = "[plan-review]\nrecords = true\n";
+// The interpreter behind `python3`, resolved once: version-manager shims add a long start-up to every call.
+const PYTHON = Bun.spawnSync(["python3", "-c", "import sys; print(sys.executable)"]).stdout.toString().trim();
 
 let root: string;
 let planPath: string;
@@ -54,6 +57,8 @@ let reviewerPrompts: string[];
 let duringReview: (() => void | Promise<void>) | undefined;
 let abortedStdout: string;
 let seenRecords: Set<string>;
+let configHome: string;
+let python: "real" | "missing";
 
 function assistantMessage(content: unknown[], usage: unknown) {
 	return { role: "assistant", provider: "openai-codex", model: "gpt-6-astra", content, usage };
@@ -99,6 +104,9 @@ beforeEach(() => {
 	duringReview = undefined;
 	abortedStdout = "";
 	seenRecords = new Set();
+	configHome = join(root, "config-home");
+	mkdirSync(configHome);
+	python = "real";
 	ctx = {
 		cwd: root,
 		sessionManager: {
@@ -115,7 +123,8 @@ beforeEach(() => {
 		registerTool: (definition: Tool) => {
 			tool = definition;
 		},
-		exec: async (_command: string, args: string[], options?: { signal?: AbortSignal }) => {
+		exec: async (command: string, args: string[], options?: { cwd?: string; signal?: AbortSignal }) => {
+			if (command === "python3") return runPython(args, options?.cwd);
 			reviewerCalls++;
 			reviewerPrompts.push(args.at(-1) ?? "");
 			await duringReview?.();
@@ -132,6 +141,23 @@ afterEach(() => {
 	vi.useRealTimers();
 	rmSync(root, { recursive: true, force: true });
 });
+
+/** The records setting runs on the real python3 and reads only this test's user config home and repository. */
+function runPython(args: string[], cwd: string | undefined) {
+	if (python === "missing") throw new Error('Executable not found in $PATH: "python3"');
+	const run = Bun.spawnSync([PYTHON, ...args], { cwd, env: { ...process.env, XDG_CONFIG_HOME: configHome } });
+	return { stdout: run.stdout.toString(), stderr: run.stderr.toString(), code: run.exitCode ?? -1, killed: false };
+}
+
+function userConfig(table: string): void {
+	mkdirSync(join(configHome, "av"), { recursive: true });
+	writeFileSync(join(configHome, "av", "config.toml"), `version = 1\n\n${table}`);
+}
+
+function repositoryConfig(content: string): void {
+	mkdirSync(join(root, ".av"), { recursive: true });
+	writeFileSync(join(root, ".av", "config.toml"), content);
+}
 
 function propose(title = "feature"): Promise<unknown> {
 	const hook = hooks.get("tool_call");
@@ -161,7 +187,8 @@ function newRecord(): SavedRecord {
 	return JSON.parse(readFileSync(join(dir, names[0]), "utf8"));
 }
 
-test("every review saves a record with the text sent to the reviewer, its raw answer, findings, usage and the hash the gate accepts", async () => {
+test("with records turned on, every review saves a record with the text sent to the reviewer, its raw answer, findings, usage and the hash the gate accepts", async () => {
+	userConfig(RECORDS_ON);
 	writeFileSync(planPath, "# Feature plan\n\nChange the code.\n\n## Open review findings\n\n- [concern] Old: stale.\n");
 	answers.push({ text: BLOCKER });
 	await review();
@@ -206,6 +233,7 @@ test("every review saves a record with the text sent to the reviewer, its raw an
 });
 
 test("a record keeps the usage of every reviewer turn, also of turns before a continuation", async () => {
+	userConfig(RECORDS_ON);
 	answers.push({ text: "", stdout: continuedStdout('{"findings": []}') });
 	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved.`);
 	expect(newRecord()).toMatchObject({
@@ -216,7 +244,8 @@ test("a record keeps the usage of every reviewer turn, also of turns before a co
 	});
 });
 
-test("calls that end without a review still save one record each", async () => {
+test("with records turned on, calls that end without a review still save one record each", async () => {
+	userConfig(RECORDS_ON);
 	const records: SavedRecord[] = [];
 	answers.push({ text: "", code: 1 });
 	await review();
@@ -323,6 +352,7 @@ test.each([
 	"a file in place of the records directory",
 	"a session without an artifacts directory",
 ])("a record that cannot be saved (%s) only warns: the review result and the gate stay the same", async (failure: string) => {
+	userConfig(RECORDS_ON);
 	if (failure === "a file in place of the records directory") {
 		writeFileSync(join(root, "artifacts", "plan-review"), "");
 	} else {
@@ -336,6 +366,45 @@ test.each([
 	expect(notifications).toEqual([
 		expect.objectContaining({ level: "warning", message: expect.stringContaining("could not save its record") }),
 	]);
+	expect(await propose()).toBeUndefined();
+});
+
+test.each([
+	"no configuration",
+	"records = false in the user file",
+	"a repository configuration without a [plan-review] table",
+	"records = true but no python3 to read it",
+])("records stay off with %s: a review saves none and warns about nothing", async (setup: string) => {
+	if (setup === "records = false in the user file") userConfig("[plan-review]\nrecords = false\n");
+	if (setup === "a repository configuration without a [plan-review] table") repositoryConfig('version = 1\n\n[code-review]\nafter_review = "none"\n');
+	if (setup === "records = true but no python3 to read it") {
+		userConfig(RECORDS_ON);
+		python = "missing";
+	}
+	answers.push({ text: CONCERN });
+	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved with open concerns.`);
+	expect(notifications).toEqual([]);
+	expect(existsSync(join(root, "artifacts", "plan-review"))).toBe(false);
+	expect(await propose()).toBeUndefined();
+});
+
+test("records = true in the repository's .av/config.toml turns records on too", async () => {
+	repositoryConfig(`version = 1\n\n${RECORDS_ON}`);
+	answers.push({ text: CONCERN });
+	await review();
+	expect(newRecord()).toMatchObject({ outcome: "approve-with-concerns", answer: CONCERN });
+	expect(notifications).toEqual([]);
+});
+
+test.each([
+	["a value that is not a boolean", '[plan-review]\nrecords = "yes"\n', "plan-review.records: expected true or false"],
+	["a key the user file does not allow", "[plan-review]\nrecords = true\nrecord = true\n", "plan-review.record: not allowed in the user config"],
+])("an invalid [plan-review] table (%s) turns records off with a warning; the review result and the gate stay the same", async (_case: string, table: string, problem: string) => {
+	userConfig(table);
+	answers.push({ text: CONCERN });
+	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved with open concerns.`);
+	expect(notifications).toEqual([expect.objectContaining({ level: "warning", message: expect.stringContaining(problem) })]);
+	expect(existsSync(join(root, "artifacts", "plan-review"))).toBe(false);
 	expect(await propose()).toBeUndefined();
 });
 
