@@ -109,7 +109,8 @@ function planModeChange(ctx: ExtensionContext): { data?: Record<string, unknown>
 
 /**
  * `file` resolved through symlinks when it lies inside this session's `local://` directory, the only place the plugin
- * writes: plan_review is a read-tier tool, so it must not change repository files.
+ * writes plan files (its review records go to the artifacts directory's `plan-review/`, see `saveRecord`): plan_review
+ * is a read-tier tool, so it must not change repository files.
  */
 function sessionFile(file: string, localProtocolOptions: LocalProtocolOptions): string | undefined {
 	try {
