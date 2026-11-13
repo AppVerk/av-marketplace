@@ -14,10 +14,14 @@
  *   Every review attempt first removes that section; the recorded hash covers the file with the new section. Only a
  *   plan file whose real path lies in the session's `local://` directory is written, and never one edited while the
  *   reviewer ran.
+ * - Records: every plan_review call, whatever its result, saves one JSON record in the session's artifacts directory
+ *   (`plan-review/<start>-<id>.json`): the plan text sent to the reviewer, its raw answer, findings, outcome and token
+ *   usage. A record that cannot be saved only warns; it never changes the result or the gate.
  */
-import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { sep } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { join, sep } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { ExecResult } from "@oh-my-pi/pi-coding-agent/exec/exec";
 import { type LocalProtocolOptions, resolveLocalRoot } from "@oh-my-pi/pi-coding-agent/internal-urls/local-protocol";
@@ -52,6 +56,27 @@ const SEVERITIES: Record<Severity, true> = { blocker: true, concern: true, nit: 
 
 type Finding = { severity: Severity; location: string; issue: string; fix: string };
 type Review = { hash: string; outcome: "approve" | "approve-with-concerns" | "revise" | "unavailable" | "skipped"; rounds: number };
+
+const RECORDS_DIR = "plan-review";
+
+type Outcome = Review["outcome"] | "cancelled" | "exhausted" | "error";
+/** One plan_review call as saved in the session's artifacts directory; the field order is the file's. */
+type ReviewRecord = {
+	version: string | null;
+	title: string;
+	url: string | null;
+	round: number | null;
+	startedAt: string;
+	endedAt: string;
+	outcome: Outcome;
+	reason: string | null;
+	reviewer: string | null;
+	plan: { text: string; sha256: string } | null;
+	answer: string | null;
+	findings: Finding[] | null;
+	usage: unknown[] | null;
+	proposeSha256: string | null;
+};
 
 const PLAN_REVIEW_PROMPT = `# Plan review
 
@@ -167,25 +192,33 @@ function parseFindings(output: string): Finding[] | undefined {
 	return undefined;
 }
 
-type ReviewerMessage = { role?: string; provider?: string; model?: string; content?: { type?: string; text?: string }[] };
+type ReviewerMessage = { role?: string; provider?: string; model?: string; content?: { type?: string; text?: string }[]; usage?: unknown };
 
-/** The model that answered and its final text, from the `agent_end` event of `omp -p --mode json`. */
-function reviewerAnswer(stdout: string): { reviewer: string; text: string } | undefined {
-	const lines = stdout.trim().split("\n");
-	for (let i = lines.length - 1; i >= 0; i--) {
-		let event: { type?: string; messages?: ReviewerMessage[] };
+/**
+ * The reviewer's stdout from `omp -p --mode json`: the model that answered and its final text, from the last
+ * `agent_end` event, and the `usage` of every assistant `message_end` event. An `agent_end` lists only its own loop's
+ * messages, and a continuation starts a new loop, so usage comes from the whole stream.
+ */
+function reviewerOutput(stdout: string): { answer: { reviewer: string; text: string } | undefined; usage: unknown[] | null } {
+	let end: { messages?: ReviewerMessage[] } | undefined;
+	let usage: unknown[] | null = null;
+	for (const line of stdout.split("\n")) {
+		let event: { type?: string; message?: ReviewerMessage; messages?: ReviewerMessage[] } | null;
 		try {
-			event = JSON.parse(lines[i]);
+			event = JSON.parse(line);
 		} catch {
 			continue;
 		}
-		if (event.type !== "agent_end") continue;
-		const message = event.messages?.findLast(entry => entry.role === "assistant");
-		if (!message) return undefined;
-		const text = (message.content ?? []).flatMap(part => (part.type === "text" && part.text ? [part.text] : [])).join("\n");
-		return { reviewer: `${message.provider}/${message.model}`, text };
+		if (event?.type === "agent_end") end = event;
+		else if (event?.type === "message_end" && event.message?.role === "assistant") {
+			usage ??= [];
+			if (event.message.usage !== undefined) usage.push(event.message.usage);
+		}
 	}
-	return undefined;
+	const message = end?.messages?.findLast(entry => entry.role === "assistant");
+	if (!message) return { answer: undefined, usage };
+	const text = (message.content ?? []).flatMap(part => (part.type === "text" && part.text ? [part.text] : [])).join("\n");
+	return { answer: { reviewer: `${message.provider}/${message.model}`, text }, usage };
 }
 
 function sha256(text: string): string {
@@ -251,7 +284,32 @@ function formatElapsed(ms: number): string {
 	return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+/** The plugin version from its package.json, for the review records; null when it cannot be read. */
+function pluginVersion(): string | null {
+	try {
+		const { version } = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version?: unknown };
+		return typeof version === "string" ? version : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Save the record of one plan_review call in the session's artifacts directory, never the repository; a failure only warns. */
+async function saveRecord(record: ReviewRecord, ctx: ExtensionContext): Promise<void> {
+	try {
+		const artifactsDir = ctx.sessionManager.getArtifactsDir();
+		if (!artifactsDir) throw new Error("this session has no artifacts directory");
+		const dir = join(artifactsDir, RECORDS_DIR);
+		await mkdir(dir, { recursive: true });
+		const name = `${record.startedAt.replaceAll(":", "-")}-${randomUUID().slice(0, 8)}.json`;
+		await Bun.write(join(dir, name), `${JSON.stringify(record, null, 2)}\n`);
+	} catch (error) {
+		ctx.ui.notify(`Plan review could not save its record of this call; the review result stands.\n${String(error)}`, "warning");
+	}
+}
+
 export default function planReviewExtension(pi: ExtensionAPI): void {
+	const version = pluginVersion();
 	/** Latest review per plan file path, for the current session: `local://` plan files belong to one session. */
 	const reviews = new Map<string, Review>();
 	// `/new`, `/resume`, a fork and a session reload keep this extension loaded; their plan files need fresh reviews.
@@ -274,141 +332,187 @@ export default function planReviewExtension(pi: ExtensionAPI): void {
 		}),
 		approval: "read",
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const plan = await resolvePlan(params.title, ctx);
-			if (!plan) throw new Error(`No plan file found for "${params.title}". Write the plan to local://<slug>-plan.md first.`);
-			const rounds = reviews.get(plan.url)?.rounds ?? 0;
-			if (rounds >= MAX_ROUNDS) {
-				return textResult(
-					`All ${MAX_ROUNDS} plan review rounds for ${plan.url} are used. Write "${plan.slug}" to xd://propose; the user decides on the plan without another review.`,
-					{ url: plan.url, rounds },
-				);
-			}
-			const round = rounds + 1;
-			// Every review attempt replaces the section an earlier review wrote: the reviewer must not read stale findings,
-			// and the plan must not go to approval with them. Only a plan file inside the session's local:// directory is written.
-			const { writable } = plan;
-			const body = writable ? withoutOpenFindings(plan.content) : plan.content;
-			if (writable && body !== plan.content) await Bun.write(writable, body);
-			const hash = sha256(body);
-			const unavailable = (reason: string) => {
-				reviews.set(plan.url, { hash, outcome: "unavailable", rounds: round });
-				ctx.ui.notify(`Plan review could not run (round ${round} of ${MAX_ROUNDS}); the plan goes to approval unreviewed.\n${reason}`, "warning");
-				return textResult(
-					`Plan review could not run (round ${round} of ${MAX_ROUNDS}); write "${plan.slug}" to xd://propose, the plan goes to approval unreviewed.\n${reason}`,
-					{ url: plan.url, round, outcome: "unavailable" },
-				);
-			};
-			const skipped = () => {
-				reviews.set(plan.url, { hash, outcome: "skipped", rounds });
-				ctx.ui.notify(
-					`Plan review skipped: the current text of ${plan.url} goes to approval unreviewed. Any edit to the plan needs a new review.`,
-					"warning",
-				);
-				return new Error(
-					`Plan review cancelled by the user. If the user asks to propose the plan, write "${plan.slug}" to xd://propose; its current text goes to approval unreviewed.`,
-				);
-			};
-			const cancelled = () => (signal?.reason === USER_INTERRUPT_LABEL ? skipped() : new Error("Plan review cancelled."));
-
 			const started = Date.now();
-			const progress = () =>
-				onUpdate?.(
-					textResult(
-						`Plan review round ${round}/${MAX_ROUNDS}: ${formatElapsed(Date.now() - started)} elapsed (stops at ${REVIEW_TIMEOUT_MS / 60_000}:00). Esc skips it.\nReviewing ${plan.url} with the advisor model role.`,
-						{ url: plan.url, round },
-					),
-				);
-			progress();
-			const heartbeat = setInterval(progress, PROGRESS_INTERVAL_MS);
-
-			let result: ExecResult;
+			const record: ReviewRecord = {
+				version,
+				title: params.title,
+				url: null,
+				round: null,
+				startedAt: new Date(started).toISOString(),
+				endedAt: "",
+				outcome: "error",
+				reason: null,
+				reviewer: null,
+				plan: null,
+				answer: null,
+				findings: null,
+				usage: null,
+				proposeSha256: null,
+			};
 			try {
-				result = await pi.exec("omp", [...REVIEWER_ARGS, `${REVIEWER_PROMPT}\n\nPlan (${plan.url}):\n\n<plan>\n${body}\n</plan>`], {
-					cwd: ctx.cwd,
-					signal,
-					timeout: REVIEW_TIMEOUT_MS,
-				});
-			} catch (error) {
-				if (signal?.aborted) throw cancelled();
-				return unavailable(`${String(error)}.`);
-			} finally {
-				clearInterval(heartbeat);
-			}
-			if (signal?.aborted) throw cancelled();
-			if (result.killed) return unavailable(`the reviewer did not finish within ${REVIEW_TIMEOUT_MS / 60_000} minutes.`);
-			if (result.code !== 0) return unavailable(`the reviewer exited with code ${result.code}: ${result.stderr.trim().slice(-500)}`);
-			const answer = reviewerAnswer(result.stdout);
-			if (!answer) return unavailable(`the reviewer's output has no final answer: ${result.stdout.trim().slice(-500)}`);
-			const { reviewer, text } = answer;
-			const findings = parseFindings(text);
-			if (!findings) return unavailable(`${reviewer}'s answer is not the expected JSON: ${text.trim().slice(0, 500)}`);
-
-			const blocked = findings.some(finding => finding.severity === "blocker");
-			const concerns = findings.filter(finding => finding.severity === "concern");
-			const outcome = blocked ? "revise" : concerns.length > 0 ? "approve-with-concerns" : "approve";
-			const lastRound = blocked && round >= MAX_ROUNDS;
-			const open = lastRound ? findings.filter(finding => finding.severity !== "nit") : outcome === "approve-with-concerns" ? concerns : [];
-			let reviewed = body;
-			let listed = false;
-			let changed = false;
-			let unlisted = "the plugin writes open findings only into plan files stored in this session's local:// directory";
-			if (open.length > 0 && writable) {
-				// The review can run for minutes: never overwrite an edit made meanwhile, nor write through a swapped-in symlink.
-				if (await stillHolds(writable, body)) {
-					const by = `Plan Review (${reviewer}, round ${round} of ${MAX_ROUNDS})`;
-					const intro = lastRound
-						? `${by} still found blockers in its last round. These findings remain open: decide on them when you approve the plan. The plan-review plugin wrote this section; any later review of the plan replaces it.`
-						: `${by} found no blockers. These concerns remain open and do not block approval: decide on them when you approve the plan. The plan-review plugin wrote this section; any later review of the plan replaces it.`;
-					const annotated = withOpenFindings(body, intro, open);
-					try {
-						await Bun.write(writable, annotated);
-						reviewed = annotated;
-						listed = true;
-					} catch (error) {
-						unlisted = `the plugin could not write them (${String(error)})`;
-					}
-				} else {
-					changed = true;
+				const plan = await resolvePlan(params.title, ctx);
+				if (!plan) throw new Error(`No plan file found for "${params.title}". Write the plan to local://<slug>-plan.md first.`);
+				record.url = plan.url;
+				const rounds = reviews.get(plan.url)?.rounds ?? 0;
+				if (rounds >= MAX_ROUNDS) {
+					record.outcome = "exhausted";
+					return textResult(
+						`All ${MAX_ROUNDS} plan review rounds for ${plan.url} are used. Write "${plan.slug}" to xd://propose; the user decides on the plan without another review.`,
+						{ url: plan.url, rounds },
+					);
 				}
+				const round = rounds + 1;
+				// Every review attempt replaces the section an earlier review wrote: the reviewer must not read stale findings,
+				// and the plan must not go to approval with them. Only a plan file inside the session's local:// directory is written.
+				const { writable } = plan;
+				const body = writable ? withoutOpenFindings(plan.content) : plan.content;
+				if (writable && body !== plan.content) await Bun.write(writable, body);
+				const hash = sha256(body);
+				record.round = round;
+				record.plan = { text: body, sha256: hash };
+				const unavailable = (reason: string) => {
+					reviews.set(plan.url, { hash, outcome: "unavailable", rounds: round });
+					record.outcome = "unavailable";
+					record.reason = reason;
+					record.proposeSha256 = hash;
+					ctx.ui.notify(`Plan review could not run (round ${round} of ${MAX_ROUNDS}); the plan goes to approval unreviewed.\n${reason}`, "warning");
+					return textResult(
+						`Plan review could not run (round ${round} of ${MAX_ROUNDS}); write "${plan.slug}" to xd://propose, the plan goes to approval unreviewed.\n${reason}`,
+						{ url: plan.url, round, outcome: "unavailable" },
+					);
+				};
+				const skipped = () => {
+					reviews.set(plan.url, { hash, outcome: "skipped", rounds });
+					record.outcome = "skipped";
+					record.proposeSha256 = hash;
+					ctx.ui.notify(
+						`Plan review skipped: the current text of ${plan.url} goes to approval unreviewed. Any edit to the plan needs a new review.`,
+						"warning",
+					);
+					return new Error(
+						`Plan review cancelled by the user. If the user asks to propose the plan, write "${plan.slug}" to xd://propose; its current text goes to approval unreviewed.`,
+					);
+				};
+				const cancelled = () => {
+					if (signal?.reason === USER_INTERRUPT_LABEL) return skipped();
+					record.outcome = "cancelled";
+					return new Error("Plan review cancelled.");
+				};
+
+				const progress = () =>
+					onUpdate?.(
+						textResult(
+							`Plan review round ${round}/${MAX_ROUNDS}: ${formatElapsed(Date.now() - started)} elapsed (stops at ${REVIEW_TIMEOUT_MS / 60_000}:00). Esc skips it.\nReviewing ${plan.url} with the advisor model role.`,
+							{ url: plan.url, round },
+						),
+					);
+				progress();
+				const heartbeat = setInterval(progress, PROGRESS_INTERVAL_MS);
+
+				let result: ExecResult;
+				try {
+					result = await pi.exec("omp", [...REVIEWER_ARGS, `${REVIEWER_PROMPT}\n\nPlan (${plan.url}):\n\n<plan>\n${body}\n</plan>`], {
+						cwd: ctx.cwd,
+						signal,
+						timeout: REVIEW_TIMEOUT_MS,
+					});
+				} catch (error) {
+					if (signal?.aborted) throw cancelled();
+					return unavailable(`${String(error)}.`);
+				} finally {
+					clearInterval(heartbeat);
+				}
+				const { answer, usage } = reviewerOutput(result.stdout);
+				record.usage = usage;
+				if (answer) {
+					record.reviewer = answer.reviewer;
+					record.answer = answer.text;
+				}
+				if (signal?.aborted) throw cancelled();
+				if (result.killed) return unavailable(`the reviewer did not finish within ${REVIEW_TIMEOUT_MS / 60_000} minutes.`);
+				if (result.code !== 0) return unavailable(`the reviewer exited with code ${result.code}: ${result.stderr.trim().slice(-500)}`);
+				if (!answer) return unavailable(`the reviewer's output has no final answer: ${result.stdout.trim().slice(-500)}`);
+				const { reviewer, text } = answer;
+				const findings = parseFindings(text);
+				if (!findings) return unavailable(`${reviewer}'s answer is not the expected JSON: ${text.trim().slice(0, 500)}`);
+				record.findings = findings;
+
+				const blocked = findings.some(finding => finding.severity === "blocker");
+				const concerns = findings.filter(finding => finding.severity === "concern");
+				const outcome = blocked ? "revise" : concerns.length > 0 ? "approve-with-concerns" : "approve";
+				const lastRound = blocked && round >= MAX_ROUNDS;
+				const open = lastRound ? findings.filter(finding => finding.severity !== "nit") : outcome === "approve-with-concerns" ? concerns : [];
+				let reviewed = body;
+				let listed = false;
+				let changed = false;
+				let unlisted = "the plugin writes open findings only into plan files stored in this session's local:// directory";
+				if (open.length > 0 && writable) {
+					// The review can run for minutes: never overwrite an edit made meanwhile, nor write through a swapped-in symlink.
+					if (await stillHolds(writable, body)) {
+						const by = `Plan Review (${reviewer}, round ${round} of ${MAX_ROUNDS})`;
+						const intro = lastRound
+							? `${by} still found blockers in its last round. These findings remain open: decide on them when you approve the plan. The plan-review plugin wrote this section; any later review of the plan replaces it.`
+							: `${by} found no blockers. These concerns remain open and do not block approval: decide on them when you approve the plan. The plan-review plugin wrote this section; any later review of the plan replaces it.`;
+						const annotated = withOpenFindings(body, intro, open);
+						try {
+							await Bun.write(writable, annotated);
+							reviewed = annotated;
+							listed = true;
+						} catch (error) {
+							unlisted = `the plugin could not write them (${String(error)})`;
+						}
+					} else {
+						changed = true;
+					}
+				}
+				// A plan that changed during the review gets no hash: this review does not cover its current text.
+				const gateHash = changed ? "" : sha256(reviewed);
+				reviews.set(plan.url, { hash: gateHash, outcome, rounds: round });
+				record.outcome = outcome;
+				record.proposeSha256 = gateHash || null;
+				const status = { approve: "approved", "approve-with-concerns": "approved with open concerns", revise: "changes requested" }[outcome];
+				const lines = [
+					`Plan review of ${plan.url} by ${reviewer}, round ${round} of ${MAX_ROUNDS}: ${status}.`,
+					...(findings.length > 0 ? ["", ...findings.map(formatFinding)] : []),
+					"",
+				];
+				if (changed && round >= MAX_ROUNDS)
+					lines.push(
+						`${plan.url} changed while the review ran, so the plugin did not list the open findings in it, and all ${MAX_ROUNDS} review rounds are used. Tell the user about the findings above, then write "${plan.slug}" to xd://propose; the user decides on them.`,
+					);
+				else if (changed)
+					lines.push(
+						`${plan.url} changed while the review ran, so the plugin did not list the open findings in it and this review does not cover its current text. Write {"title": ${JSON.stringify(plan.slug)}} to xd://plan_review again.`,
+					);
+				else if (outcome === "approve") lines.push(`Write "${plan.slug}" to xd://propose to request approval.`);
+				else if (outcome === "approve-with-concerns" && listed)
+					lines.push(
+						`The concerns are listed in the "${OPEN_FINDINGS_HEADING}" section at the end of ${plan.url}, where the user decides on them in the approval dialog. Do not revise the plan for them and do not edit that section: any edit to the plan needs a new review. Write "${plan.slug}" to xd://propose to request approval.`,
+					);
+				else if (outcome === "approve-with-concerns")
+					lines.push(
+						`${plan.url} does not list these concerns: ${unlisted}. Tell the user about them, then write "${plan.slug}" to xd://propose to request approval.`,
+					);
+				else if (lastRound && listed)
+					lines.push(
+						`All ${MAX_ROUNDS} review rounds are used. The blockers and concerns are listed in the "${OPEN_FINDINGS_HEADING}" section at the end of ${plan.url}. Write "${plan.slug}" to xd://propose; the user decides on these findings.`,
+					);
+				else if (lastRound)
+					lines.push(
+						`All ${MAX_ROUNDS} review rounds are used. ${plan.url} does not list these findings: ${unlisted}. Tell the user about the blockers and concerns above, then write "${plan.slug}" to xd://propose; the user decides on them.`,
+					);
+				else
+					lines.push(
+						`Resolve every blocker and concern in the plan file, or state in the plan why one does not apply. Then write {"title": ${JSON.stringify(plan.slug)}} to xd://plan_review again; xd://propose stays blocked until a review finds no blockers in the current plan.`,
+					);
+				return textResult(lines.join("\n"), { url: plan.url, reviewer, round, outcome, findings });
+			} catch (error) {
+				if (record.outcome === "error") record.reason = error instanceof Error ? error.message : String(error);
+				throw error;
+			} finally {
+				record.endedAt = new Date().toISOString();
+				await saveRecord(record, ctx);
 			}
-			// A plan that changed during the review gets no hash: this review does not cover its current text.
-			reviews.set(plan.url, { hash: changed ? "" : sha256(reviewed), outcome, rounds: round });
-			const status = { approve: "approved", "approve-with-concerns": "approved with open concerns", revise: "changes requested" }[outcome];
-			const lines = [
-				`Plan review of ${plan.url} by ${reviewer}, round ${round} of ${MAX_ROUNDS}: ${status}.`,
-				...(findings.length > 0 ? ["", ...findings.map(formatFinding)] : []),
-				"",
-			];
-			if (changed && round >= MAX_ROUNDS)
-				lines.push(
-					`${plan.url} changed while the review ran, so the plugin did not list the open findings in it, and all ${MAX_ROUNDS} review rounds are used. Tell the user about the findings above, then write "${plan.slug}" to xd://propose; the user decides on them.`,
-				);
-			else if (changed)
-				lines.push(
-					`${plan.url} changed while the review ran, so the plugin did not list the open findings in it and this review does not cover its current text. Write {"title": ${JSON.stringify(plan.slug)}} to xd://plan_review again.`,
-				);
-			else if (outcome === "approve") lines.push(`Write "${plan.slug}" to xd://propose to request approval.`);
-			else if (outcome === "approve-with-concerns" && listed)
-				lines.push(
-					`The concerns are listed in the "${OPEN_FINDINGS_HEADING}" section at the end of ${plan.url}, where the user decides on them in the approval dialog. Do not revise the plan for them and do not edit that section: any edit to the plan needs a new review. Write "${plan.slug}" to xd://propose to request approval.`,
-				);
-			else if (outcome === "approve-with-concerns")
-				lines.push(
-					`${plan.url} does not list these concerns: ${unlisted}. Tell the user about them, then write "${plan.slug}" to xd://propose to request approval.`,
-				);
-			else if (lastRound && listed)
-				lines.push(
-					`All ${MAX_ROUNDS} review rounds are used. The blockers and concerns are listed in the "${OPEN_FINDINGS_HEADING}" section at the end of ${plan.url}. Write "${plan.slug}" to xd://propose; the user decides on these findings.`,
-				);
-			else if (lastRound)
-				lines.push(
-					`All ${MAX_ROUNDS} review rounds are used. ${plan.url} does not list these findings: ${unlisted}. Tell the user about the blockers and concerns above, then write "${plan.slug}" to xd://propose; the user decides on them.`,
-				);
-			else
-				lines.push(
-					`Resolve every blocker and concern in the plan file, or state in the plan why one does not apply. Then write {"title": ${JSON.stringify(plan.slug)}} to xd://plan_review again; xd://propose stays blocked until a review finds no blockers in the current plan.`,
-				);
-			return textResult(lines.join("\n"), { url: plan.url, reviewer, round, outcome, findings });
 		},
 	});
 

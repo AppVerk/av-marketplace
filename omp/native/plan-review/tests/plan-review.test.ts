@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as zod from "@oh-my-pi/omptype/zod";
@@ -13,11 +14,33 @@ type Tool = {
 	execute: (id: string, params: { title: string }, signal: AbortSignal | undefined, onUpdate: ((update: ToolResult) => void) | undefined, ctx: ExtensionContext) => Promise<ToolResult>;
 };
 type Blocked = { block: boolean; reason: string };
+type SavedRecord = {
+	version: string | null;
+	title: string;
+	url: string | null;
+	round: number | null;
+	startedAt: string;
+	endedAt: string;
+	outcome: "approve" | "approve-with-concerns" | "revise" | "unavailable" | "skipped" | "cancelled" | "exhausted" | "error";
+	reason: string | null;
+	reviewer: string | null;
+	plan: { text: string; sha256: string } | null;
+	answer: string | null;
+	findings: { severity: "blocker" | "concern" | "nit"; location: string; issue: string; fix: string }[] | null;
+	usage: unknown[] | null;
+	proposeSha256: string | null;
+};
 
 const CONCERN = '```json\n{"findings": [{"severity": "concern", "location": "Task 1", "issue": "No test covers the change.", "fix": "Add a test."}]}\n```';
 const BLOCKER = '{"findings": [{"severity": "blocker", "location": "Task 2", "issue": "The script it runs does not exist.", "fix": "Name the existing script."}, {"severity": "concern", "location": "Task 1", "issue": "No test covers the change.", "fix": "Add a test."}, {"severity": "nit", "location": "Summary", "issue": "Wording.", "fix": ""}]}';
 const CONCERN_AND_NIT = '{"findings": [{"severity": "concern", "location": "Task 1", "issue": "No test covers\\nthe change.", "fix": "Add a test."}, {"severity": "nit", "location": "Summary", "issue": "Wording.", "fix": ""}]}';
 const NIT_ONLY = 'Done.\n{"findings": [{"severity": "nit", "location": "Summary", "issue": "Wording.", "fix": ""}]}';
+const USAGE = [
+	{ input: 900, output: 40, cacheRead: 0, cacheWrite: 0, totalTokens: 940 },
+	{ input: 300, output: 150, cacheRead: 900, cacheWrite: 0, totalTokens: 1350 },
+];
+const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+const VERSION = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")).version;
 
 let root: string;
 let planPath: string;
@@ -25,10 +48,44 @@ let ctx: ExtensionContext;
 let hooks: Map<string, Hook>;
 let tool: Tool;
 let notifications: { message: string; level: string }[];
-let answers: { text: string; code?: number; killed?: boolean }[];
+let answers: { text: string; stdout?: string; code?: number; killed?: boolean }[];
 let reviewerCalls: number;
 let reviewerPrompts: string[];
 let duringReview: (() => void | Promise<void>) | undefined;
+let abortedStdout: string;
+let seenRecords: Set<string>;
+
+function assistantMessage(content: unknown[], usage: unknown) {
+	return { role: "assistant", provider: "openai-codex", model: "gpt-6-astra", content, usage };
+}
+
+function reviewerStdout(text: string): string {
+	const toolTurn = assistantMessage([{ type: "toolCall", id: "read-1", name: "read", arguments: { path: "README.md" } }], USAGE[0]);
+	const toolResult = { role: "toolResult", toolCallId: "read-1", content: [] };
+	const finalTurn = assistantMessage([{ type: "thinking", thinking: "Checking the plan." }, { type: "text", text }], USAGE[1]);
+	return [
+		{ type: "agent_start" },
+		{ type: "message_end", message: toolTurn },
+		{ type: "message_end", message: toolResult },
+		{ type: "message_end", message: finalTurn },
+		{ type: "agent_end", messages: [{ role: "user", content: [] }, toolTurn, toolResult, finalTurn] },
+	].map(event => JSON.stringify(event)).join("\n");
+}
+
+function continuedStdout(text: string): string {
+	const toolTurn = assistantMessage([{ type: "toolCall", id: "read-1", name: "read", arguments: { path: "README.md" } }], USAGE[0]);
+	const toolResult = { role: "toolResult", toolCallId: "read-1", content: [] };
+	const finalTurn = assistantMessage([{ type: "thinking", thinking: "Checking the plan." }, { type: "text", text }], USAGE[1]);
+	return [
+		{ type: "agent_start" },
+		{ type: "message_end", message: toolTurn },
+		{ type: "message_end", message: toolResult },
+		{ type: "agent_end", messages: [{ role: "user", content: [] }, toolTurn, toolResult] },
+		{ type: "agent_start" },
+		{ type: "message_end", message: finalTurn },
+		{ type: "agent_end", messages: [finalTurn] },
+	].map(event => JSON.stringify(event)).join("\n");
+}
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "plan-review-"));
@@ -40,6 +97,8 @@ beforeEach(() => {
 	reviewerCalls = 0;
 	reviewerPrompts = [];
 	duringReview = undefined;
+	abortedStdout = "";
+	seenRecords = new Set();
 	ctx = {
 		cwd: root,
 		sessionManager: {
@@ -60,24 +119,11 @@ beforeEach(() => {
 			reviewerCalls++;
 			reviewerPrompts.push(args.at(-1) ?? "");
 			await duringReview?.();
-			if (options?.signal?.aborted) return { stdout: "", stderr: "", code: -1, killed: true };
+			if (options?.signal?.aborted) return { stdout: abortedStdout, stderr: "", code: -1, killed: true };
 			const answer = answers.shift();
 			if (!answer) throw new Error("Unexpected reviewer call");
 			if (answer.killed) return { stdout: "", stderr: "", code: -1, killed: true };
-			// `omp -p --mode json` ends with an `agent_end` event carrying the whole transcript.
-			const assistant = {
-				role: "assistant",
-				provider: "openai-codex",
-				model: "gpt-6-astra",
-				content: [
-					{ type: "thinking", thinking: "Checking the plan." },
-					{ type: "text", text: answer.text },
-				],
-			};
-			const stdout = [{ type: "agent_start" }, { type: "agent_end", messages: [{ role: "user", content: [] }, assistant] }]
-				.map(event => JSON.stringify(event))
-				.join("\n");
-			return { stdout, stderr: "reviewer failed", code: answer.code ?? 0, killed: false };
+			return { stdout: answer.stdout ?? reviewerStdout(answer.text), stderr: "reviewer failed", code: answer.code ?? 0, killed: false };
 		},
 	} as unknown as ExtensionAPI);
 });
@@ -106,6 +152,192 @@ function useCwdPlan(content: string): string {
 	sessionManager.getBranch = () => [{ type: "mode_change", mode: "plan", data: { planFilePath: "PLAN.md" } }];
 	return path;
 }
+
+function newRecord(): SavedRecord {
+	const dir = join(root, "artifacts", "plan-review");
+	const names = (existsSync(dir) ? readdirSync(dir) : []).filter(name => !seenRecords.has(name));
+	for (const name of names) seenRecords.add(name);
+	expect(names).toHaveLength(1);
+	return JSON.parse(readFileSync(join(dir, names[0]), "utf8"));
+}
+
+test("every review saves a record with the text sent to the reviewer, its raw answer, findings, usage and the hash the gate accepts", async () => {
+	writeFileSync(planPath, "# Feature plan\n\nChange the code.\n\n## Open review findings\n\n- [concern] Old: stale.\n");
+	answers.push({ text: BLOCKER });
+	await review();
+	const record = newRecord();
+	const text = "# Feature plan\n\nChange the code.\n";
+	expect(record).toMatchObject({
+		version: VERSION,
+		title: "feature",
+		url: "local://feature-plan.md",
+		round: 1,
+		outcome: "revise",
+		reason: null,
+		reviewer: "openai-codex/gpt-6-astra",
+		plan: { text, sha256: sha(text) },
+		answer: BLOCKER,
+		findings: [
+			{ severity: "blocker", location: "Task 2", issue: "The script it runs does not exist.", fix: "Name the existing script." },
+			{ severity: "concern", location: "Task 1", issue: "No test covers the change.", fix: "Add a test." },
+			{ severity: "nit", location: "Summary", issue: "Wording.", fix: "" },
+		],
+		usage: USAGE,
+		proposeSha256: sha(text),
+	});
+	expect(new Date(record.startedAt).toISOString()).toBe(record.startedAt);
+	expect(new Date(record.endedAt).toISOString()).toBe(record.endedAt);
+	expect(record.startedAt <= record.endedAt).toBe(true);
+	expect(reviewerPrompts[0]).toContain(`<plan>\n${record.plan!.text}\n</plan>`);
+
+	writeFileSync(planPath, "# Feature plan\n\nRevised.\n");
+	answers.push({ text: CONCERN });
+	await review();
+	const revised = newRecord();
+	expect(revised).toMatchObject({
+		round: 2,
+		outcome: "approve-with-concerns",
+		answer: CONCERN,
+		findings: [{ severity: "concern", location: "Task 1", issue: "No test covers the change.", fix: "Add a test." }],
+		proposeSha256: sha(readFileSync(planPath, "utf8")),
+	});
+	expect(revised.proposeSha256).not.toBe(revised.plan!.sha256);
+	expect(await propose()).toBeUndefined();
+});
+
+test("a record keeps the usage of every reviewer turn, also of turns before a continuation", async () => {
+	answers.push({ text: "", stdout: continuedStdout('{"findings": []}') });
+	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved.`);
+	expect(newRecord()).toMatchObject({
+		outcome: "approve",
+		usage: USAGE,
+		answer: '{"findings": []}',
+		reviewer: "openai-codex/gpt-6-astra",
+	});
+});
+
+test("calls that end without a review still save one record each", async () => {
+	const records: SavedRecord[] = [];
+	answers.push({ text: "", code: 1 });
+	await review();
+	const failed = newRecord();
+	records.push(failed);
+	expect(failed).toMatchObject({
+		outcome: "unavailable",
+		round: 1,
+		reason: expect.stringContaining("exited with code 1: reviewer failed"),
+		reviewer: "openai-codex/gpt-6-astra",
+		answer: "",
+		usage: USAGE,
+		findings: null,
+		proposeSha256: failed.plan!.sha256,
+	});
+
+	writeFileSync(planPath, "# Feature plan\n\nRevision 2.\n");
+	answers.push({ text: "", killed: true });
+	await review();
+	const timedOut = newRecord();
+	records.push(timedOut);
+	expect(timedOut).toMatchObject({
+		outcome: "unavailable",
+		round: 2,
+		reason: expect.stringContaining("did not finish within 15 minutes"),
+		reviewer: null,
+		answer: null,
+		usage: null,
+	});
+
+	const text = "# Feature plan\n\nRevision 3.\n";
+	writeFileSync(planPath, text);
+	abortedStdout = reviewerStdout("partial");
+	let controller = new AbortController();
+	duringReview = () => controller.abort(USER_INTERRUPT_LABEL);
+	await expect(tool.execute("call", { title: "feature" }, controller.signal, undefined, ctx)).rejects.toThrow(
+		"Plan review cancelled by the user",
+	);
+	const skipped = newRecord();
+	records.push(skipped);
+	expect(skipped).toMatchObject({
+		outcome: "skipped",
+		round: 3,
+		plan: { text },
+		proposeSha256: skipped.plan!.sha256,
+		reviewer: "openai-codex/gpt-6-astra",
+		answer: "partial",
+		usage: USAGE,
+		findings: null,
+	});
+
+	abortedStdout = "";
+	controller = new AbortController();
+	duringReview = () => controller.abort();
+	await expect(tool.execute("call", { title: "feature" }, controller.signal, undefined, ctx)).rejects.toThrow(
+		/^Plan review cancelled\.$/,
+	);
+	const cancelled = newRecord();
+	records.push(cancelled);
+	expect(cancelled).toMatchObject({
+		outcome: "cancelled",
+		round: 3,
+		proposeSha256: null,
+		answer: null,
+		usage: null,
+	});
+
+	duringReview = undefined;
+	answers.push({ text: "I think the plan is fine." });
+	await review();
+	const malformed = newRecord();
+	records.push(malformed);
+	expect(malformed).toMatchObject({
+		outcome: "unavailable",
+		round: 3,
+		reason: expect.stringContaining("not the expected JSON"),
+		answer: "I think the plan is fine.",
+		findings: null,
+	});
+
+	expect(await review()).toContain(`All ${MAX_ROUNDS} plan review rounds`);
+	const exhausted = newRecord();
+	records.push(exhausted);
+	expect(exhausted).toMatchObject({
+		outcome: "exhausted",
+		url: "local://feature-plan.md",
+		round: null,
+		plan: null,
+	});
+
+	rmSync(planPath);
+	await expect(review()).rejects.toThrow("No plan file found");
+	const missing = newRecord();
+	records.push(missing);
+	expect(missing).toMatchObject({
+		outcome: "error",
+		url: null,
+	});
+	expect(missing.reason).toStartWith('No plan file found for "feature".');
+	for (const record of records) expect(record).toMatchObject({ title: "feature", version: VERSION });
+});
+
+test.each([
+	"a file in place of the records directory",
+	"a session without an artifacts directory",
+])("a record that cannot be saved (%s) only warns: the review result and the gate stay the same", async (failure: string) => {
+	if (failure === "a file in place of the records directory") {
+		writeFileSync(join(root, "artifacts", "plan-review"), "");
+	} else {
+		const context = ctx as unknown as { localProtocolOptions: { getArtifactsDir: () => string; getSessionId: () => string } };
+		context.localProtocolOptions = { getArtifactsDir: () => join(root, "artifacts"), getSessionId: () => "test-session" };
+		const sessionManager = ctx.sessionManager as unknown as { getArtifactsDir: () => string | null };
+		sessionManager.getArtifactsDir = () => null;
+	}
+	answers.push({ text: CONCERN });
+	expect(await review()).toContain(`round 1 of ${MAX_ROUNDS}: approved with open concerns.`);
+	expect(notifications).toEqual([
+		expect.objectContaining({ level: "warning", message: expect.stringContaining("could not save its record") }),
+	]);
+	expect(await propose()).toBeUndefined();
+});
 
 test("xd://propose blocks an unreviewed plan and leaves other writes alone", async () => {
 	const blocked = (await propose()) as Blocked;
