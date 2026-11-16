@@ -37,7 +37,7 @@ Agents pick their model through model roles instead of a fixed model:
 | `challenger` | Code Review's challenger and cross-verifier |
 | `analyst` | Code Review's composition analyst, decision analyst and feedback analyzer |
 | `plan` | OMP plan mode, QA's test planner and config author |
-| `advisor` | Plan Review's reviewer, QA's test-plan reviewer, the Advisor of QA's test planner |
+| `advisor` | Plan Review's reviewer, QA's test-plan reviewer |
 
 ### Recommended models
 
@@ -58,7 +58,7 @@ The suffix after a model sets its thinking level. The mapping pairs each check w
 
 | Work | Checked by |
 |------|------------|
-| Plans (`plan`, Anthropic) | Plan Review, QA's test-plan reviewer and the test planner's Advisor (`advisor`, OpenAI) |
+| Plans (`plan`, Anthropic) | Plan Review and QA's test-plan reviewer (`advisor`, OpenAI) |
 | Code (`executor`, OpenAI) | Delivery's task reviewer and Code Review's auditors (`code_review`, Anthropic) |
 | Review findings (`code_review`, Anthropic) | Code Review's challenger and cross-verifier (`challenger`, OpenAI) |
 
@@ -108,13 +108,12 @@ An unmapped role falls back:
 
 ## Advisor
 
-QA's test planner runs with OMP's Advisor: a second model on the `advisor` role watches the planner's turns while it writes the plan and can steer it. The main session and every other agent run without an Advisor unless you enable one (`advisor.enabled` or `/advisor on` for the session). Switch it off for the planner, or on for another agent, with `task.agentAdvisor` in `~/.omp/agent/config.yml`:
+No agent of these plugins runs with OMP's Advisor, a second model on the `advisor` role that watches an agent's turns while it works and can steer it. The main session and every agent run without an Advisor unless you enable one (`advisor.enabled` or `/advisor on` for the session). Switch it on or off for one agent with `task.agentAdvisor` in `~/.omp/agent/config.yml`; this runs QA's test planner with an Advisor:
 
 ```yaml
 task:
   agentAdvisor:
-    "qa:test-planner": "off"
-    "delivery:implementer": "on"
+    "qa:test-planner": "on"
 ```
 
 A value other than `"on"` or `"off"` is a model pattern for that agent's Advisor.
