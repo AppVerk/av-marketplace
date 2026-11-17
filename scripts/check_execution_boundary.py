@@ -32,6 +32,18 @@ consumers:
   4. A wildcard over a command family the boundary admits only *partly* —
      `Bash(git:*)` against five named git subcommands — fails. No registry row
      can make the rest of that family prompt-free-and-acceptable.
+  5. No consumer, whatever its kind, pre-approves the auto-accept engine's
+     `trust accept`, the call that records a lasting trust approval. A grant
+     naming the engine must be its `config *` or `doc-paths *` grant; any
+     other grant fails when its pattern can match
+     `python3 <root>/skills/decision-gate/scripts/auto_accept.py` followed by
+     `trust` and `accept`, with any options and hash, where `<root>` is any
+     path without a space: Claude Code substitutes `${CLAUDE_PLUGIN_ROOT}`
+     with an absolute path in commands and grants alike. Running the engine
+     through another program (`xargs`, `env`, `bash -c`), a plugin root
+     containing a space, the session's permission mode and the user's settings
+     are outside this check. The engine path is anchored to an existing file;
+     a missing or moved engine is a source error, never a successful scan.
 
 Errors exit non-zero; warnings print and do not fail the build. Exit 2 is a
 usage error or an unparseable source, which is not a failed check.
@@ -44,6 +56,7 @@ are the blind spots; its parser is not.
 
 from __future__ import annotations
 
+import functools
 import re
 import sys
 from pathlib import Path, PurePath
@@ -82,6 +95,18 @@ HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s")
 TABLE_SEPARATOR_RE = re.compile(r"^\|[\s:|-]+\|$")
 
 BASH_GRANT_RE = re.compile(r"^Bash\((?P<spec>.*)\)$", re.DOTALL)
+
+# The auto-accept engine as the commands invoke it. `trust accept` records a
+# lasting trust approval, so no consumer may pre-approve it.
+PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}"
+ENGINE_RELPATH = PurePath("skills/decision-gate/scripts/auto_accept.py")
+ENGINE = f"python3 {PLUGIN_ROOT}/{ENGINE_RELPATH}"
+ENGINE_GRANTS = frozenset({f"Bash({ENGINE} config *)", f"Bash({ENGINE} doc-paths *)"})
+# Pattern symbols: ANY is a rule's `*`, any text; ROOT is a substituted
+# plugin root, any text without a space.
+ANY = "\x00"
+ROOT = "\x01"
+TRUST_ACCEPT_FAMILY = f"{ENGINE.replace(PLUGIN_ROOT, ROOT)} {ANY}trust {ANY}accept {ANY}"
 
 CLASSES = frozenset({"inside-boundary", "pipeline", "outside-escalates"})
 STAGE_RUNNING_KIND = "runs-the-stage"
@@ -297,6 +322,7 @@ def bash_grants(text: str) -> tuple[list[str], list[str]]:
 
     A file with no frontmatter and no `allowed-tools:` yields no grants and no
     error — `render-only` and `dispatch-only` consumers are legitimately here.
+    A bare `Bash` entry grants every command and is returned too.
     """
     fields, parse_errors = parse_frontmatter(text)
     if parse_errors:
@@ -307,7 +333,7 @@ def bash_grants(text: str) -> tuple[list[str], list[str]]:
     entries, split_error, _ = split_entries(value)
     if split_error:
         return [], [f"allowed-tools: {split_error}"]
-    return [entry for entry in entries if BASH_GRANT_RE.match(entry)], []
+    return [entry for entry in entries if entry == "Bash" or BASH_GRANT_RE.match(entry)], []
 
 
 def grant_prefix(grant: str) -> str:
@@ -323,6 +349,69 @@ def grant_prefix(grant: str) -> str:
     if spec.endswith(":*"):
         spec = spec[:-2]
     return " ".join(spec.split())
+
+
+def rule_pattern(grant: str) -> str | None:
+    """A `Bash` or `Bash(...)` rule as a pattern of ANY and ROOT symbols.
+
+    Claude Code's rules (https://code.claude.com/docs/en/permissions): a bare
+    `Bash` allows every command, a trailing `:*` is a trailing ` *`, and `*`
+    stands for any text. `${CLAUDE_PLUGIN_ROOT}` becomes an absolute path
+    before matching, so it turns into ROOT.
+    """
+    if grant == "Bash":
+        return ANY
+    match = BASH_GRANT_RE.match(grant)
+    if match is None:
+        return None
+    spec = " ".join(match.group("spec").split())
+    if spec.endswith(":*"):
+        spec = spec[:-2] + " *"
+    return spec.replace("*", ANY).replace(PLUGIN_ROOT, ROOT)
+
+
+def patterns_intersect(left: str, right: str) -> bool:
+    """Whether some string matches both patterns.
+
+    ANY stands for any text; ROOT for any text without a space. Either may
+    match nothing, which only widens the check.
+    """
+
+    def absorbs(symbol: str, other: str) -> bool:
+        return symbol == ANY or other != " "
+
+    @functools.lru_cache(maxsize=None)
+    def meet(i: int, j: int) -> bool:
+        if i == len(left) and j == len(right):
+            return True
+        if i < len(left) and left[i] in (ANY, ROOT):
+            if meet(i + 1, j):
+                return True
+            return j < len(right) and absorbs(left[i], right[j]) and meet(i, j + 1)
+        if j < len(right) and right[j] in (ANY, ROOT):
+            if meet(i, j + 1):
+                return True
+            return i < len(left) and absorbs(right[j], left[i]) and meet(i + 1, j)
+        return i < len(left) and j < len(right) and left[i] == right[j] and meet(i + 1, j + 1)
+
+    return meet(0, 0)
+
+
+def pre_approves_trust_accept(grant: str) -> bool:
+    """Whether a grant pre-approves the engine's `trust accept`.
+
+    A grant naming the engine passes only as one of ENGINE_GRANTS: the
+    engine's parser rejects `trust` after `config`, and `doc-paths` takes
+    every later word as a path. Any other grant fails when its pattern can
+    match TRUST_ACCEPT_FAMILY. TRUST_ACCEPT_FAMILY ends with ANY, so a
+    rule's bare-command match adds nothing.
+    """
+    if ENGINE_RELPATH.name in grant:
+        return grant not in ENGINE_GRANTS
+    pattern = rule_pattern(grant)
+    if pattern is None:
+        return False
+    return patterns_intersect(pattern, TRUST_ACCEPT_FAMILY)
 
 
 def classify_prefix(
@@ -392,6 +481,18 @@ def check(skill_text: str, consumers: dict[str, str]) -> tuple[list[str], list[s
         grants, parse_errors = bash_grants(text)
         for message in parse_errors:
             errors.append(f"{path}: {message}")
+        for grant in grants:
+            if not pre_approves_trust_accept(grant):
+                continue
+            reason = (
+                "names the auto-accept engine but is not exactly one of its allowed grants"
+                if ENGINE_RELPATH.name in grant
+                else "pre-approves the auto-accept engine's `trust accept`"
+            )
+            errors.append(
+                f"{path}: allowed-tools: {grant!r} {reason}; grant only "
+                f"{' and '.join(sorted(ENGINE_GRANTS))}"
+            )
         if kind != STAGE_RUNNING_KIND:
             continue
         for grant in grants:
@@ -487,6 +588,9 @@ def main(argv: list[str] | None = None, plugins_dir: Path = PLUGINS_DIR) -> int:
         skill_path = str(SKILL_RELPATH)
         if skill_path not in consumers:
             raise SourceError(f"{skill_path}: not found — the boundary lives here")
+        engine = plugins_dir / "code-review" / ENGINE_RELPATH
+        if not engine.is_file():
+            raise SourceError(f"{engine}: not found — rule 5 would measure nothing")
         errors, warnings = check(consumers[skill_path], consumers)
     except SourceError as exc:
         print(f"error: {exc}", file=sys.stderr)

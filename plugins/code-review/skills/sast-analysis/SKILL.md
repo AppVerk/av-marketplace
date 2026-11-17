@@ -1,7 +1,7 @@
 ---
 name: sast-analysis
 description: Static Application Security Testing (SAST) for multi-language codebases. Uses Semgrep and language-specific tools to detect vulnerabilities across Python, JavaScript, TypeScript, Go, Java, and more.
-allowed-tools: Read, Grep, Glob, Bash(semgrep:*), Bash(bandit:*), Bash(eslint:*), Bash(command:*), Bash(jq:*), Bash(cat:*)
+allowed-tools: Read, Grep, Glob, Bash(semgrep:*), Bash(bandit:*), Bash(eslint:*), Bash(command:*), Bash(jq:*), Bash(cat:*), Bash(echo:*), Bash(mktemp:*)
 ---
 
 # SAST Analysis - Multi-Language Security Scanner
@@ -39,6 +39,8 @@ command -v jq >/dev/null 2>&1 && echo "OK: jq" || echo "OPTIONAL: jq (JSON forma
 
 ### Installation
 
+Outside an audit only; an audit never installs tools:
+
 ```bash
 # Semgrep (required - supports all languages)
 pip install semgrep
@@ -53,22 +55,34 @@ npm install -g eslint @eslint/js
 
 ---
 
+## Scan Output
+
+Scan results go to one directory per run, outside the repository. Create it once, before the first scan, unless the calling agent has already created it:
+
+```bash
+OUT=$(mktemp -d) && echo "$OUT"
+```
+
+Each scan below that saves a result writes it to `"$OUT/<name>"` and its error output to a `.err` file of the same base name, and the Read tool reads `"$OUT/<name>"`. A Bash call may not keep shell variables from an earlier one: in each later command, write the printed directory, single-quoted, in place of `$OUT`, and give the Read tool the plain path. Never write a result into the repository.
+
+---
+
 ## Universal Scan: Semgrep Auto-Detect
 
 Semgrep automatically detects languages and applies relevant rules:
 
 ```bash
 # Auto-detect language and apply security rules (RECOMMENDED)
-semgrep scan --config=auto . --json-output /tmp/semgrep-auto.json 2>/dev/null
+semgrep scan --config=auto . --json-output "$OUT/semgrep-auto.json" 2>"$OUT/semgrep-auto.err"
 
 # OWASP Top 10 rules (all languages)
-semgrep scan --config=p/owasp-top-ten . --json-output /tmp/semgrep-owasp.json 2>/dev/null
+semgrep scan --config=p/owasp-top-ten . --json-output "$OUT/semgrep-owasp.json" 2>"$OUT/semgrep-owasp.err"
 
 # Security audit (comprehensive)
-semgrep scan --config=p/security-audit . --json-output /tmp/semgrep-security.json 2>/dev/null
+semgrep scan --config=p/security-audit . --json-output "$OUT/semgrep-security.json" 2>"$OUT/semgrep-security.err"
 
 # Secure defaults (guardrails)
-semgrep scan --config=p/secure-defaults . --json-output /tmp/semgrep-defaults.json 2>/dev/null
+semgrep scan --config=p/secure-defaults . --json-output "$OUT/semgrep-defaults.json" 2>"$OUT/semgrep-defaults.err"
 ```
 
 **After each scan:** Read the output file with the Read tool and analyze the JSON results. Key fields to extract: `.results[].check_id`, `.results[].extra.severity`, `.results[].path`, `.results[].start.line`, `.results[].extra.message`, `.results[].extra.metadata.cwe`.
@@ -87,14 +101,14 @@ semgrep scan \
   --config=p/python \
   --config=p/django \
   --config=p/flask \
-  . --json-output /tmp/semgrep-python.json 2>/dev/null
+  . --json-output "$OUT/semgrep-python.json" 2>"$OUT/semgrep-python.err"
 
 # FastAPI-specific patterns (included in p/python with framework-native analysis)
 # Semgrep automatically tracks implicit data flows in FastAPI
-semgrep scan --config=auto . --json-output /tmp/semgrep-fastapi.json 2>/dev/null
+semgrep scan --config=auto . --json-output "$OUT/semgrep-fastapi.json" 2>"$OUT/semgrep-fastapi.err"
 
 # Bandit for deeper Python-specific analysis
-bandit -r . -f json -o /tmp/bandit-results.json 2>/dev/null
+bandit -r . -f json -o "$OUT/bandit-results.json" 2>"$OUT/bandit-results.err"
 ```
 
 **After each scan:** Read the output file with the Read tool. For bandit, key fields: `.results[].issue_severity`, `.results[].filename`, `.results[].line_number`, `.results[].test_id`, `.results[].issue_text`, `.results[].issue_cwe.id`.
@@ -108,10 +122,10 @@ semgrep scan \
   --config=p/typescript \
   --config=p/react \
   --config=p/nodejs \
-  . --json-output /tmp/semgrep-js.json 2>/dev/null
+  . --json-output "$OUT/semgrep-js.json" 2>"$OUT/semgrep-js.err"
 
 # ESLint security plugin
-eslint --ext .js,.jsx,.ts,.tsx . --format json -o /tmp/eslint-security.json 2>/dev/null
+eslint --ext .js,.jsx,.ts,.tsx . --format json -o "$OUT/eslint-security.json" 2>"$OUT/eslint-security.err"
 ```
 
 **After each scan:** Read the output file with the Read tool and analyze the JSON results.
@@ -120,37 +134,37 @@ eslint --ext .js,.jsx,.ts,.tsx . --format json -o /tmp/eslint-security.json 2>/d
 
 ```bash
 # Go security rules
-semgrep scan --config=p/golang . --json-output /tmp/semgrep-go.json 2>/dev/null
+semgrep scan --config=p/golang . --json-output "$OUT/semgrep-go.json" 2>"$OUT/semgrep-go.err"
 ```
 
-**After scan:** Read `/tmp/semgrep-go.json` with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/semgrep-go.json"` with the Read tool and analyze the JSON results.
 
 ### Java
 
 ```bash
 # Java + Spring rules
-semgrep scan --config=p/java --config=p/spring . --json-output /tmp/semgrep-java.json 2>/dev/null
+semgrep scan --config=p/java --config=p/spring . --json-output "$OUT/semgrep-java.json" 2>"$OUT/semgrep-java.err"
 ```
 
-**After scan:** Read `/tmp/semgrep-java.json` with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/semgrep-java.json"` with the Read tool and analyze the JSON results.
 
 ### Ruby
 
 ```bash
 # Ruby + Rails rules
-semgrep scan --config=p/ruby --config=p/rails . --json-output /tmp/semgrep-ruby.json 2>/dev/null
+semgrep scan --config=p/ruby --config=p/rails . --json-output "$OUT/semgrep-ruby.json" 2>"$OUT/semgrep-ruby.err"
 ```
 
-**After scan:** Read `/tmp/semgrep-ruby.json` with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/semgrep-ruby.json"` with the Read tool and analyze the JSON results.
 
 ### PHP
 
 ```bash
 # PHP + Laravel/Symfony rules
-semgrep scan --config=p/php . --json-output /tmp/semgrep-php.json 2>/dev/null
+semgrep scan --config=p/php . --json-output "$OUT/semgrep-php.json" 2>"$OUT/semgrep-php.err"
 ```
 
-**After scan:** Read `/tmp/semgrep-php.json` with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/semgrep-php.json"` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -182,10 +196,10 @@ semgrep scan \
   --config=p/command-injection \
   --config=p/ssrf \
   --config=p/secure-defaults \
-  . --json-output /tmp/semgrep-owasp-full.json 2>/dev/null
+  . --json-output "$OUT/semgrep-owasp-full.json" 2>"$OUT/semgrep-owasp-full.err"
 ```
 
-**After scan:** Read `/tmp/semgrep-owasp-full.json` with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/semgrep-owasp-full.json"` with the Read tool and analyze the JSON results.
 
 ### A10:2025 - Exceptional Conditions Patterns
 
@@ -314,15 +328,6 @@ grep -rn "ObjectInputStream\|readObject(" --include="*.java" .
 }
 ```
 
-### Severity Classification
-
-| Severity | Action Required | SLA |
-|----------|-----------------|-----|
-| CRITICAL | Block merge, fix immediately | Same day |
-| HIGH | Fix before release | Within sprint |
-| MEDIUM | Review and plan fix | Next sprint |
-| LOW | Track for future | Backlog |
-
 ---
 
 ## Framework-Specific Rules
@@ -427,6 +432,7 @@ steps:
 ```bash
 #!/bin/bash
 echo "=== Multi-Language SAST Report ==="
+OUT=$(mktemp -d)
 
 # Detect languages
 echo "Detecting languages..."
@@ -435,14 +441,14 @@ find . -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.go" -
 # Universal scan with Semgrep
 if command -v semgrep &> /dev/null; then
     echo "Running Semgrep..."
-    semgrep scan --config=auto --config=p/security-audit . --json-output /tmp/semgrep-report.json 2>/dev/null
-    echo "Results saved to /tmp/semgrep-report.json"
+    semgrep scan --config=auto --config=p/security-audit . --json-output "$OUT/semgrep-report.json" 2>"$OUT/semgrep-report.err"
+    echo "Results saved to $OUT/semgrep-report.json"
 else
     echo "Semgrep not found, using pattern matching..."
 fi
 ```
 
-**After scan:** Read `/tmp/semgrep-report.json` with the Read tool to analyze results and count findings.
+**After scan:** Read `"$OUT/semgrep-report.json"` (the path the script prints) with the Read tool to analyze results and count findings.
 
 ---
 

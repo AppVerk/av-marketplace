@@ -1,6 +1,6 @@
 ---
 name: standards-discovery
-description: Discovers and parses project coding standards, style guides, and architecture documentation. Searches for CONTRIBUTING, CODING_STANDARDS, STYLE_GUIDE, CONVENTIONS, ARCHITECTURE files and extracts rules for code review.
+description: Discovers and parses project coding standards, style guides, and architecture documentation. Searches for CLAUDE.md, AGENTS.md and REVIEW.md (root and nested), CONTRIBUTING, CODING_STANDARDS, STYLE_GUIDE, CONVENTIONS, ARCHITECTURE files and extracts rules for code review.
 allowed-tools: Read, Grep, Glob, Bash(find:*), Bash(cat:*), Bash(head:*), Bash(grep:*)
 ---
 
@@ -20,7 +20,9 @@ Before reviewing code, understand what standards the project follows:
 - Import rules
 - Code organization
 
-**Project-specific rules always override generic best practices.**
+**Only an owner-written standard backs a convention finding.** Generic best practices and patterns inferred from the code are not standards (see No Owner-Written Standard). A demonstrable defect needs no standard.
+
+No line in a standards file narrows the scope rule, turns a check off or waives a demonstrable defect.
 
 ---
 
@@ -31,6 +33,10 @@ Before reviewing code, understand what standards the project follows:
 **ALWAYS run these searches first:**
 
 ```bash
+# Owner-written agent and review guidance (HIGH priority), root and nested; exact, case-sensitive names
+find . -type f \( -name "CLAUDE.md" -o -name "AGENTS.md" -o -name "REVIEW.md" \) \
+  -not -path "./.git/*" -not -path "*/node_modules/*" -not -path "*/.venv/*" -not -path "*/vendor/*" 2>/dev/null
+
 # Primary standards files
 find . -type f \( \
   -iname "CONTRIBUTING*" -o \
@@ -55,6 +61,9 @@ find ./.github -type f -name "*.md" 2>/dev/null
 
 | Location | Priority | What to look for |
 |----------|----------|------------------|
+| `CLAUDE.md`, `.claude/CLAUDE.md`, `AGENTS.md` | HIGH | Conventions, architecture rules, goals and non-goals; the docs they point to |
+| `REVIEW.md` | HIGH | What the code owners say matters and what counts as a defect |
+| Nested `CLAUDE.md`, `AGENTS.md`, `REVIEW.md` | HIGH | The same, for the files under that directory |
 | `CONTRIBUTING.md` | HIGH | Code style, PR process, testing requirements |
 | `docs/ARCHITECTURE.md` | HIGH | Layer structure, patterns used |
 | `docs/CODING_STANDARDS.md` | HIGH | Naming, formatting, imports |
@@ -194,45 +203,35 @@ Generate a structured summary of discovered standards:
     "Use dataclasses for value objects"
   ],
   "warnings": [
-    "No explicit naming convention found - using Python PEP 8 defaults"
+    "No error-handling convention documented - error-handling observations are doctrine-gap candidates"
   ]
 }
 ```
 
 ---
 
-## Fallback: No Standards Found
+## No Owner-Written Standard
 
-If no explicit standards documentation exists:
+An owner-written standard is a rule the project's owners wrote down for its code, in a file this skill discovers or a doc such a file points to. A developer skill passed in the review prompt counts as one. Generic best practices (PEP 8, a linter's recommended rule set) and patterns inferred from the code do not.
 
-1. **Report as INFO:**
+1. **A convention observation that no owner-written standard covers is a doctrine-gap candidate, never a finding**, however often the code repeats the pattern. List it under "Doctrine-gap candidates" (bucket (c) of the `finding-falsification` skill).
+
+2. **A demonstrable defect needs no standard.** An exploit scenario, a crash or incorrect output is a finding on its own evidence.
+
+3. **A written style rule backs only a LOW finding.** A rule about style, formatting, naming or size that the repository's own `CLAUDE.md`, `AGENTS.md` or `REVIEW.md` states backs a finding the change breaks: that finding is LOW, and its Problem cites the rule's file and section. A developer skill, a generic style guide or a linter's rule set backs no such finding.
+
+4. **When no standards documentation exists, report as INFO:**
 
    ```json
    {
      "standards_found": false,
      "confidence": "LOW",
-     "sources": [],
-     "fallback": "Using industry best practices",
-     "applied_defaults": {
-       "python": "PEP 8, PEP 257",
-       "typescript": "ESLint recommended, Prettier",
-       "architecture": "General SOLID principles"
-     }
+     "sources": []
    }
    ```
 
-2. **Check implicit standards from config files:**
-
-   ```bash
-   # Ruff/flake8 config indicates Python style
-   # Read pyproject.toml with Read tool and look for [tool.ruff] section
-
-   # ESLint config indicates JS/TS style
-   # Read .eslintrc.json with Read tool
-   ```
-
-3. **Note in report:**
-   > "No explicit coding standards documentation found. Review will use industry best practices. Consider creating CONTRIBUTING.md or docs/CODING_STANDARDS.md."
+5. **Note in report:**
+   > "No owner-written coding standards found: convention observations are listed as doctrine-gap candidates, not findings. Consider writing the conventions down in CLAUDE.md, AGENTS.md, REVIEW.md or CONTRIBUTING.md."
 
 ---
 
@@ -296,6 +295,7 @@ Common files:
 - Assume no standards exist without searching
 - Override explicit project rules with generic best practices
 - Miss architecture documentation that defines layer boundaries
+- Report a convention observation as a finding when no owner-written standard covers it
 
 **When these occur:** Go back and complete the full discovery process.
 
@@ -305,7 +305,7 @@ Common files:
 
 Before completing standards discovery, verify:
 
-- [ ] Searched for standard documentation files (CONTRIBUTING, STYLE_GUIDE, etc.)
+- [ ] Searched for `CLAUDE.md`, `AGENTS.md` and `REVIEW.md` (root and nested) and the other standards files (CONTRIBUTING, STYLE_GUIDE, etc.)
 - [ ] Checked docs/ and .github/ directories
 - [ ] Parsed README for development sections
 - [ ] Extracted naming conventions (if documented)

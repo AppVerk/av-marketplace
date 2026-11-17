@@ -1,7 +1,7 @@
 ---
 name: secret-scanning
 description: Detects and handles sensitive information in code. Use when reviewing code for secret leaks and hard-coded credentials.
-allowed-tools: Read, Grep, Glob, Bash(trufflehog:*), Bash(jq:*), Bash(command:*), Bash(grep:*), Bash(echo:*)
+allowed-tools: Read, Grep, Glob, Bash(trufflehog:*), Bash(jq:*), Bash(command:*), Bash(grep:*), Bash(echo:*), Bash(mktemp:*)
 ---
 
 # Secret Scanning
@@ -24,7 +24,7 @@ command -v trufflehog >/dev/null 2>&1 && echo "OK: trufflehog available" || echo
 command -v jq >/dev/null 2>&1 && echo "OK: jq available" || echo "WARNING: jq not installed - output will be raw JSON"
 ```
 
-If tools are missing, install them:
+If `trufflehog` is missing, use the fallback method below; never install tools during an audit. To install them outside one:
 
 ```bash
 # macOS
@@ -40,28 +40,40 @@ pipx install trufflehog
 
 ---
 
+## Scan Output
+
+Scan results go to one directory per run, outside the repository. Create it once, before the first scan, unless the calling agent has already created it:
+
+```bash
+OUT=$(mktemp -d) && echo "$OUT"
+```
+
+Each trufflehog scan below writes its result to `"$OUT/<name>"` and its error output to a `.err` file of the same base name, and the Read tool reads `"$OUT/<name>"`. A Bash call may not keep shell variables from an earlier one: in each later command, write the printed directory, single-quoted, in place of `$OUT`, and give the Read tool the plain path. Never write a result or a pattern file into the repository.
+
+---
+
 ## Primary Method: Trufflehog Scan
 
 When `trufflehog` is available, use this as the primary scanning method:
 
 ```bash
 # Scan for verified secrets only (recommended)
-trufflehog git file://. --json --output-report /tmp/trufflehog-verified.json 2>/dev/null
+trufflehog git file://. --json 1>"$OUT/trufflehog-verified.json" 2>"$OUT/trufflehog-verified.err"
 
 # Scan for ALL secrets (including unverified)
-trufflehog git file://. --json --output-report /tmp/trufflehog-all.json 2>/dev/null
+trufflehog git file://. --json 1>"$OUT/trufflehog-all.json" 2>"$OUT/trufflehog-all.err"
 
 # Scan specific directory
-trufflehog filesystem ./src --json --output-report /tmp/trufflehog-fs.json 2>/dev/null
+trufflehog filesystem ./src --json 1>"$OUT/trufflehog-fs.json" 2>"$OUT/trufflehog-fs.err"
 ```
 
-**After scan:** Read the output file with the Read tool. Filter for verified secrets (`.Verified == true`) and extract: `.DetectorName`, `.SourceMetadata.Data.Git.filename`, `.SourceMetadata.Data.Git.line`.
+**After scan:** Read the result file (`"$OUT/trufflehog-all.json"`, or the one of the scan you ran) with the Read tool. Filter for verified secrets (`.Verified == true`) and extract: `.DetectorName`, `.SourceMetadata.Data.Git.filename`, `.SourceMetadata.Data.Git.line`.
 
 ### Excluding Files from Scans
 
-TruffleHog v3 uses the `--exclude-paths` (`-x`) flag pointing to a file with **newline-separated regex patterns** (not globs):
+TruffleHog v3 uses the `--exclude-paths` (`-x`) flag pointing to a file with **newline-separated regex patterns** (not globs). Write that file under `$OUT`, never into the repository:
 
-**Example: `.trufflehog-exclude.txt`**
+**Example: `"$OUT/trufflehog-exclude.txt"`**
 
 ```text
 # Test fixtures and mock data
@@ -84,16 +96,16 @@ TruffleHog v3 uses the `--exclude-paths` (`-x`) flag pointing to a file with **n
 
 ```bash
 # Exclude paths using regex file
-trufflehog git file://. --exclude-paths=.trufflehog-exclude.txt --json --output-report /tmp/trufflehog-filtered.json 2>/dev/null
+trufflehog git file://. --exclude-paths="$OUT/trufflehog-exclude.txt" --json 1>"$OUT/trufflehog-filtered.json" 2>"$OUT/trufflehog-filtered.err"
 
 # Include only specific paths
-trufflehog git file://. --include-paths=.trufflehog-include.txt --json --output-report /tmp/trufflehog-included.json 2>/dev/null
+trufflehog git file://. --include-paths="$OUT/trufflehog-include.txt" --json 1>"$OUT/trufflehog-included.json" 2>"$OUT/trufflehog-included.err"
 ```
 
 **Alternative: `--exclude-globs`** for simpler cases (filters at `git log` level, faster):
 
 ```bash
-trufflehog git file://. --exclude-globs="*.md,docs/*,test/*" --json --output-report /tmp/trufflehog-globs.json 2>/dev/null
+trufflehog git file://. --exclude-globs="*.md,docs/*,test/*" --json 1>"$OUT/trufflehog-globs.json" 2>"$OUT/trufflehog-globs.err"
 ```
 
 > **IMPORTANT:** `--exclude-paths` takes **regex** patterns (one per line in a file). `--exclude-globs` takes **glob** patterns (comma-separated inline). Do NOT mix the two formats.
@@ -190,6 +202,8 @@ For each secret found, report:
 
 ## Remediation Guidelines
 
+Recommend these steps in a finding's remediation; an auditor never runs them.
+
 ### Immediate Actions
 
 1. **Rotate the exposed secret immediately**
@@ -263,6 +277,6 @@ For each secret found, report:
 ### Performance Tips
 
 - For large repos, scan only changed files: `trufflehog git file://. --since-commit=HEAD~10`
-- Exclude test fixtures: use `--exclude-paths=.trufflehog-exclude.txt` with regex patterns (see "Excluding Files from Scans" section above)
+- Exclude test fixtures: use `--exclude-paths="$OUT/trufflehog-exclude.txt"` with regex patterns (see "Excluding Files from Scans" section above)
 - For faster git-level filtering: use `--exclude-globs="test/*,docs/*"`
 - Run in parallel for multiple repos

@@ -407,7 +407,11 @@ Markers are written **only now that the run has committed to dispatching** — a
 2. **`**Part-of:** COMP-NNN`** on each component, directly after its `**ID:**` line, or after the heading where there is none. A block carries at most one `**Part-of:**` line: where one already exists, replace it in place.
 3. **Dissolution status** on each persisted composite the user dissolved in Step 2.4.5: `**Status:** 🚫 Rejected (YYYY-MM-DD) — dissolved into components`, by the Step 4.1 recipe.
 
-Failures: a composite block write that fails or does not verify dissolves the group for this run — its components are dispatched individually and Step 4.2 lists it with `marker-write-failed`; a `Part-of` write that fails is recorded there and membership is unaffected; a dissolution write that fails is recorded, the composite is treated as dissolved for this run and is offered again next run.
+Failures: a composite block write that fails or does not verify dissolves the group for this run — its components pass through Step 2.2's severity floor and Step 2.2.5's Fix-policy partition, as dissolved components do (Step 2.4.5, **Effects of dissolving**): a `needs-decision` component joins `needs_decision`, the rest join the fix list, and the fix list is sorted again by Step 2.3's rule (stable) before the first dispatch; Step 4.2 lists the group with `marker-write-failed` and names every component the floor or the partition removed; a `Part-of` write that fails is recorded there and membership is unaffected; a dissolution write that fails is recorded, the composite is treated as dissolved for this run and is offered again next run.
+
+On the zero-auto path (Step 5.2, item 3), where these writes run after the offer's yes, an `auto` component is left for the next bulk run, and Step 5.6 prints the `Marker write failures` line above the Decision Stage block, since Step 4.2 does not run there.
+
+`preflight_snapshot` stays frozen as the intended batch; Step 3.1's progress lines and Step 4.2's Results and Composition blocks show what was actually dispatched.
 
 ### Step 3.1: Sequential fix execution
 
@@ -417,7 +421,7 @@ For each issue in the filtered + sorted list from Step 2.3, in order, **sequenti
 
    > Fixing issue N/<total>: [<SEVERITY>] <ID>: <Title>
 
-   `N` is the 1-based index in the filtered+sorted list, `<total>` is the total count from the pre-flight summary, and the rest comes from the extracted issue block. A 30-issue run can take 10–30 minutes (~20–60 s per issue, see the Performance section in `docs/plugins/code-review.md`), so this line is the only signal the user gets between subagent invocations.
+   `N` is the 1-based index in the filtered+sorted dispatch list after Step 3.0's marker-write failures have released and re-filtered any components, `<total>` is that list's actual length, and the rest comes from the extracted issue block. The intended batch remains in `preflight_snapshot`; this progress line and Step 4.2's Results and Composition blocks show what was actually dispatched. A 30-issue run can take 10–30 minutes (~20–60 s per issue, see the Performance section in `docs/plugins/code-review.md`), so this line is the only signal the user gets between subagent invocations.
 
 2. Use the Task tool with these parameters:
    - subagent_type: `"code-review:fix-auto"`
@@ -603,6 +607,8 @@ Status icons: Fixed = ✅, Partially Fixed = ⚠️, Failed = ❌.
 
 `Written to the report` counts only the proposals this run persisted; `Dropped proposals` the proposals dissolved before persistence; `Marked 🚫 Rejected (dissolved)` lists the persisted composites whose block received the dissolution status; `Rejected by the analyst` renders the analyst's `## Rejected groupings`, one line per grouping; `Verification coverage` names each component the fixer could not check. `Malformed composites` lists each composite Step 1.6.1 set aside as malformed, with the reason. Omit any line whose value is empty; omit the block when the run held no composite and the pass was not unavailable.
 
+A `Marker write failures` entry with undispatched components continues `; not dispatched: <ID> (<below the severity floor | requires a decision | left for the next bulk run>)[, …]`.
+
 **Restart safety.** Markers are on disk before the first dispatch, so an interrupted run leaves its successor the same composites: an open composite is retried whole, and a component fixed through a composite is filtered by Step 1.3 like any fixed finding.
 
 **Status write failures (Step 4.1.5):** if the `status_write_failures` list collected in Step 4.1.5 is non-empty, append the following block immediately after the `**Reports updated:**` list (or in its place, if no file was successfully updated):
@@ -692,7 +698,9 @@ Collect `status_write_failures` exactly as Step 4.1.5 does. If the list is non-e
 
 ### Step 5.6: Decision-stage summary
 
-Print the block below after the write-and-verify pass. Print it also where Step 5.4's gate aborted, and wherever `code-review:decision-gate`'s *Relay mode* says to print the run record: before each relay request, and before Step 5.3 when relay mode ends the stage early. On the normal path it follows the Fix Summary Step 4.2 printed; on the zero-auto path it follows nothing but the list Step 5.2 printed.
+Print the block below after the write-and-verify pass. Print it also where Step 5.4's gate aborted, and wherever `code-review:decision-gate`'s *Relay mode* says to print the run record: before each relay request, and before Step 5.3 when relay mode ends the stage early. On the normal path it follows the Fix Summary Step 4.2 printed; on the zero-auto path it follows the list Step 5.2 printed and any marker write failures described below.
+
+On the zero-auto path, print any `Marker write failures` entries from Step 3.0 above the Decision Stage block, using Step 4.2's format and naming every undispatched component with its reason, including `left for the next bulk run` for an `auto` component. Omit these entries when no marker write failed; on the normal path Step 4.2 already printed them.
 
 Under the counts line comes the run record `code-review:decision-gate` keeps (*The run record*): the policy line, the relay line in relay mode, and one table row per finding the gate received, never omitted. Before you print it the first time, read *The run record* in full: every cell takes one of the values that section lists for its field, verbatim and in its own column. The rows after the table are the eleven disclosures that skill **raises and does not print**. That skill is the single source of truth for both: what each value means, and which stage sets it, is stated there and is not restated here. This block only renders them. Omit any disclosure row whose list is empty.
 

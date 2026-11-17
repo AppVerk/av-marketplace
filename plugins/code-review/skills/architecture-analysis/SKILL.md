@@ -1,7 +1,7 @@
 ---
 name: architecture-analysis
 description: Analyzes codebase for SOLID principles violations, DDD patterns compliance, Clean Architecture layer dependencies, and common anti-patterns. Works with Python and TypeScript, with language-agnostic pattern detection.
-allowed-tools: Read, Grep, Glob, Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(radon:*), Bash(vulture:*), Bash(command:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*)
+allowed-tools: Read, Grep, Glob, Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(radon:*), Bash(vulture:*), Bash(command:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(mktemp:*), Bash(git diff:*), Bash(git ls-files:*)
 ---
 
 # Architecture Analysis - SOLID, DDD & Clean Architecture
@@ -17,8 +17,10 @@ Analyzes codebases for architectural violations, design pattern issues, and main
 | **SOLID Principles** | SRP, OCP, LSP, ISP, DIP | CRITICAL - MEDIUM |
 | **DDD Patterns** | Aggregates, Value Objects, Repositories | HIGH - LOW |
 | **Clean Architecture** | Layer dependencies, boundary violations | CRITICAL - HIGH |
-| **Anti-Patterns** | God Objects, Circular Dependencies | HIGH - MEDIUM |
-| **Code Metrics** | Complexity, coupling, cohesion | HIGH - LOW |
+| **Anti-Patterns** | God Objects (by responsibilities), Circular Dependencies, Tight Coupling | HIGH - MEDIUM |
+| **Code Metrics** | Complexity, size, dead code | None on their own: context or evidence (Step 6) |
+
+**What is not a finding.** No finding rests only on a size or complexity metric — function or file length, parameter count, nesting depth, class size or method count, cyclomatic complexity, line-count duplication, a "God Object" by size — or only on style, formatting, naming or lint output. A metric appears in a finding only as context for a design defect the finding demonstrates; below, a count says where to look, never what to report. A rule about style, formatting, naming or size that the repository's own `CLAUDE.md`, `AGENTS.md` or `REVIEW.md` states backs a finding the change breaks: that finding is LOW, and its Problem cites the rule's file and section. A developer skill, a generic style guide or a linter's rule set backs no such finding.
 
 ---
 
@@ -56,17 +58,11 @@ done
 
 ### SRP - Single Responsibility Principle
 
-**Detection:** Classes/files doing too many things.
+**Detection:** A class or module that holds unrelated responsibilities — parts that change for different reasons or work with disjoint collaborators — especially one the change extends with yet another concern.
 
-**Metrics:**
+**Evidence a finding needs:** the responsibilities, named, with the methods or lines that carry each, and what the mixing costs here — a test that must build unrelated collaborators, a change that must edit code serving another concern. Lines of code and method counts may follow as context; they never make the finding or its severity.
 
-- Lines of code per file: >500 = HIGH violation
-- Methods per class: >15 = HIGH violation
-- Different responsibilities in one class
-
-**Large files detection:** Use the Glob tool to find all `**/*.py` and `**/*.ts`/`**/*.tsx` files. Then Read each file to check its line count. Flag files with >500 lines as HIGH severity SRP violations.
-
-**Classes with many methods:** Use the Grep tool to search for `class ` in Python files, then Read each matching file and count `def ` occurrences. Flag files with >15 methods as HIGH severity.
+**Where to look:** classes the change touches in `services/`, `handlers/` and `controllers/` first. A large file is a place to look, not a violation.
 
 **Report Format:**
 
@@ -92,11 +88,9 @@ done
 
 ### OCP - Open/Closed Principle
 
-**Detection:** Long switch/if-elif chains that need modification for new types.
+**Detection:** A switch or if/elif chain that dispatches on a type or kind, so every new type means editing it.
 
-**Long if-elif chains:** Use the Grep tool to search for `elif` in Python files. Read files with many matches (>5 elif per file) and flag as MEDIUM OCP violations.
-
-**Large switch statements:** Use the Grep tool to search for `switch` and `case ` in TypeScript files. Files with >5 case statements may indicate OCP violations.
+**Type dispatch:** Use the Grep tool to search for `elif` in Python files and `switch` and `case ` in TypeScript files. A chain is an OCP finding only when it dispatches on a type or kind that grows — the change adds a branch for a new type, or other chains repeat the same dispatch. The number of branches alone is not a finding.
 
 **Type checking patterns:** Use the Grep tool to search for `isinstance` in Python files and `typeof.*===` or `instanceof` in TypeScript files. These patterns often indicate OCP violations.
 
@@ -142,11 +136,9 @@ class Circle(Shape):
 
 ### ISP - Interface Segregation Principle
 
-**Detection:** Large interfaces/protocols with many methods.
+**Detection:** Interfaces/protocols that force implementers or clients to depend on methods they do not use.
 
-**Large interfaces (Python):** Use the Grep tool to search for `class.*Protocol` and `class.*ABC` in Python files. Read each matching file and count methods in the interface. Flag interfaces with >7 methods as MEDIUM ISP violations.
-
-**Large interfaces (TypeScript):** Use the Grep tool to search for `^interface` and `^export interface` in TypeScript files. Read each matching file and count method signatures. Flag interfaces with >7 methods as MEDIUM ISP violations.
+**Interfaces:** Use the Grep tool to search for `class.*Protocol` and `class.*ABC` in Python files, and `^interface` and `^export interface` in TypeScript files. An interface is an ISP finding only when its users show the cost: an implementer stubs methods it cannot support (`NotImplementedError`, an empty body, `throw new Error('not implemented')`), or a client depends on it for one or two of its methods. Its method count alone is not a finding.
 
 **Pattern to Flag:**
 
@@ -241,7 +233,7 @@ interface UserWriter {
 
 ### Anemic Domain Model Detection
 
-**Anemic entities:** Use the Grep tool to search for `@dataclass` and `class.*Entity` in Python files. Read each matching file and count `def ` occurrences. Files with <3 methods may be anemic domain models (LOW severity).
+**Anemic entities:** Use the Grep tool to search for `@dataclass` and `class.*Entity` in Python files. An entity is anemic when the rules that guard its state live outside it — a service checks or sets its fields directly; show the rule and where it lives. A low method count alone is not a finding.
 
 **Business logic location:** Use the Grep tool to search for `def.*validate`, `def.*calculate`, `def.*process` in Python files within service directories. Business logic in services rather than entities indicates anemic domain model.
 
@@ -251,10 +243,7 @@ interface UserWriter {
 
 ### God Object
 
-**God Object detection:** Use the Glob tool to find all `**/*.py` and `**/*.ts`/`**/*.tsx` files. Read each file and check:
-- Files with >500 lines AND >20 methods = CRITICAL (God Object)
-- Files with >500 lines OR >20 methods = HIGH
-- Focus on files in `services/`, `handlers/`, `controllers/` directories first
+Size never makes a God Object finding. A class is one only when it demonstrably holds unrelated responsibilities, as the SRP section requires; report it as an SRP violation, HIGH, with its line and method counts as context at most. Look first at classes the change extends in `services/`, `handlers/` and `controllers/`.
 
 ### Circular Dependencies
 
@@ -262,11 +251,9 @@ interface UserWriter {
 
 **Mutual import analysis:** Use the Grep tool to search for `^from \.` and `^import \.` in Python files to find relative imports. Read files with relative imports and trace import chains to detect circular dependencies.
 
-### Deep Inheritance
+### Fragile Inheritance
 
-**Inheritance analysis:** Use the Grep tool to search for `class.*\(` in Python files (excluding `ABC`, `Protocol`, `Exception`, `Enum`). Read matching files to trace inheritance chains. Flag chains >3 levels deep as MEDIUM severity.
-
-**Inheritance depth:** Use the Grep tool to search for `super().__init__` and `super().` in Python files to identify classes using super calls. Multiple super calls in a chain indicate deep inheritance.
+**Inheritance analysis:** Use the Grep tool to search for `class.*\(` in Python files (excluding `ABC`, `Protocol`, `Exception`, `Enum`) and read the chains around the classes the change touches. Depth alone is not a finding. A chain backs one only with a demonstrated defect: a subclass that breaks its parent's contract (LSP), or an override the change makes that silently alters behaviour other subclasses or callers rely on.
 
 ### Tight Coupling
 
@@ -276,41 +263,38 @@ interface UserWriter {
 
 ---
 
-## Step 6: Code Metrics (Python)
+## Step 6: Code Metrics and Dead Code (Python)
 
-### Cyclomatic Complexity (if radon available)
-
-```bash
-echo "=== Cyclomatic Complexity ==="
-
-if command -v radon >/dev/null 2>&1; then
-    echo "Running radon complexity analysis..."
-    radon cc . -a -s --json -O /tmp/radon-results.json 2>/dev/null
-    echo "Results saved to /tmp/radon-results.json"
-else
-    echo "radon not installed - using method length as proxy"
-fi
-```
-
-**After radon scan:** Read `/tmp/radon-results.json` with the Read tool. Look for functions/methods with complexity >10 (HIGH severity). Key fields per entry: `.complexity`, `.lineno`, `.name`.
-
-**If radon unavailable:** Use the Grep tool to search for `def ` and `async def ` in Python files, then Read files to estimate function length as a complexity proxy.
-
-### Dead Code (if vulture available)
+These tools write under one run directory per run — never a fixed `/tmp` path, never the repository. Create it once, or use the one another skill already created in this run:
 
 ```bash
-echo "=== Dead Code Detection ==="
-
-if command -v vulture >/dev/null 2>&1; then
-    echo "Running vulture dead code analysis..."
-    vulture . --min-confidence 80 1>/tmp/vulture-results.txt 2>/dev/null
-    echo "Results saved to /tmp/vulture-results.txt"
-else
-    echo "vulture not installed - skipping dead code detection"
-fi
+OUT=$(mktemp -d) && echo "$OUT"
 ```
 
-**After vulture scan:** Read `/tmp/vulture-results.txt` with the Read tool and analyze dead code findings.
+Bash calls do not keep shell variables: in every later command, write the printed path, single-quoted, in place of `$OUT`, and the full SHA from the scope, single-quoted, in place of `$REVIEW_BASE`. The Read tool reads `"$OUT/<name>"`, with the printed path for `$OUT`.
+
+### Cyclomatic Complexity (context only, if radon is available)
+
+Complexity never makes a finding. Measure it only for the code of a design finding you have already demonstrated, when the number helps the reader see its extent:
+
+```bash
+command -v radon >/dev/null 2>&1 && radon cc -s --json -O "$OUT/radon.json" -- './src/services/user_service.py' 2>"$OUT/radon.err"
+```
+
+The file operand follows the scope block's **Shell safety** rules for single-file operands: allow-listed, single-quoted, `./`-prefixed, after `--`. When the path fails the allow-list, skip the measurement; it is optional context. Read `"$OUT/radon.json"` and cite an entry's `.complexity`, `.lineno` and `.name` in that finding.
+
+### Dead Code (if vulture is available)
+
+Run vulture when the scope has Python files: changed ones in a changes-since scope, any in a whole-repository scope. In a changes-since scope, pass it the changed Python files as the scope block's **Shell safety** suffix requires:
+
+```bash
+git diff -z --name-only --diff-filter=d "$REVIEW_BASE" -- '*.py' | xargs -0 sh -c '[ "$#" -eq 0 ] || exec vulture --min-confidence 80 -- "${@}"' sh >"$OUT/vulture.txt" 2>"$OUT/vulture.err"
+git ls-files -z --others --exclude-standard -- '*.py' | xargs -0 sh -c '[ "$#" -eq 0 ] || exec vulture --min-confidence 80 -- "${@}"' sh >>"$OUT/vulture.txt" 2>>"$OUT/vulture.err"
+```
+
+With a whole-repository scope: `vulture --min-confidence 80 . >"$OUT/vulture.txt" 2>"$OUT/vulture.err"`.
+
+Read `"$OUT/vulture.txt"`, and `"$OUT/vulture.err"` when the result is empty, to tell a failure from a clean run. Its entries are evidence, not findings: one backs a finding only when it shows a defect the change causes — code the change made unreachable, or a condition that can never hold — and the finding names the changed line. An unused import or name alone is lint output.
 
 ---
 
@@ -344,16 +328,20 @@ For each issue found, report in this structure:
 }
 ```
 
+`metrics` is optional context for the defect the description demonstrates; omit it when no number helps the reader.
+
 ---
 
 ## Severity Classification
 
-| Severity | Criteria | Action |
-|----------|----------|--------|
-| **CRITICAL** | Architecture boundary violation, God Object in core domain | Block merge |
-| **HIGH** | SOLID violation affecting testability, DIP violation | Fix before release |
-| **MEDIUM** | Design smell, complexity issue | Plan fix |
-| **LOW** | Minor pattern deviation, style preference | Track |
+Severity ranks findings; it gates nothing.
+
+| Severity | Criteria |
+|----------|----------|
+| **CRITICAL** | Architecture boundary violation |
+| **HIGH** | SOLID violation affecting testability, DIP violation, a God Object (as an SRP violation) |
+| **MEDIUM** | Design smell with a demonstrated cost |
+| **LOW** | Minor pattern deviation |
 
 ---
 
@@ -380,24 +368,17 @@ For each issue found, report in this structure:
   "anti_patterns": {
     "god_objects": 1,
     "circular_dependencies": 0,
-    "deep_inheritance": 2,
     "tight_coupling": 5
-  },
-  "metrics": {
-    "avg_file_size": 120,
-    "max_file_size": 650,
-    "avg_complexity": 5,
-    "max_complexity": 25
   },
   "top_issues": [
     {
       "severity": "CRITICAL",
-      "title": "God Object: UserService",
-      "file": "src/services/user_service.py"
+      "title": "Domain imports infrastructure: OrderService",
+      "file": "src/domain/order_service.py"
     }
   ],
   "recommendations": [
-    "Split UserService into smaller services",
+    "Move billing out of UserService (SRP)",
     "Fix 4 DIP violations in domain layer",
     "Add interfaces for tight coupling in handlers"
   ]
@@ -412,6 +393,8 @@ For each issue found, report in this structure:
 - Report violations without file paths and line numbers
 - Miss layer boundary violations in Clean Architecture projects
 - Provide remediation without code examples for HIGH+ issues
+- Report a finding that rests only on a size or complexity metric, or on style, formatting, naming or lint output, except a LOW finding that a rule in the repository's own `CLAUDE.md`, `AGENTS.md` or `REVIEW.md` backs
+- Write a tool result to a fixed `/tmp` path or into the repository
 
 **When these occur:** Go back and complete the missed analysis.
 
@@ -425,8 +408,9 @@ Before completing architecture analysis, verify:
 - [ ] Analyzed all SOLID principles (SRP, OCP, LSP, ISP, DIP)
 - [ ] Checked Clean Architecture layer boundaries (if applicable)
 - [ ] Checked DDD patterns (if applicable)
-- [ ] Detected anti-patterns (God Objects, circular deps, etc.)
-- [ ] Collected code metrics
+- [ ] Detected anti-patterns (God Objects by responsibilities, circular deps, etc.)
+- [ ] Used metrics only as context for a demonstrated defect, or against a size limit the repository's own `CLAUDE.md`, `AGENTS.md` or `REVIEW.md` states
+- [ ] Wrote every tool result under the run directory
 - [ ] Each finding has: severity, principle, file, line, remediation
 - [ ] Code examples provided for HIGH+ issues
 - [ ] Generated summary with top issues

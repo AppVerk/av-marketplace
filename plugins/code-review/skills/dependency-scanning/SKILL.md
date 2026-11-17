@@ -1,7 +1,7 @@
 ---
 name: dependency-scanning
 description: Scans project dependencies for known vulnerabilities (CVEs). Supports Python (uv, pip, poetry), JavaScript, Go, Java, and other languages. Addresses OWASP A03:2025 - Software Supply Chain Failures.
-allowed-tools: Read, Grep, Glob, Bash(uv:*), Bash(pip-audit:*), Bash(pip:*), Bash(poetry:*), Bash(safety:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go:*), Bash(command:*), Bash(jq:*), Bash(cat:*)
+allowed-tools: Read, Grep, Glob, Bash(uv:*), Bash(pip-audit:*), Bash(pip:*), Bash(poetry:*), Bash(safety:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go:*), Bash(command:*), Bash(jq:*), Bash(cat:*), Bash(echo:*), Bash(mktemp:*)
 ---
 
 # Dependency Scanning - Supply Chain Security
@@ -53,6 +53,8 @@ command -v jq >/dev/null 2>&1 && echo "OK: jq" || echo "OPTIONAL: jq"
 
 ### Installation
 
+Outside an audit only; an audit never installs tools:
+
 ```bash
 # uv (recommended for Python)
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -68,6 +70,18 @@ go install golang.org/x/vuln/cmd/govulncheck@latest
 # Ruby
 gem install bundler-audit
 ```
+
+---
+
+## Scan Output
+
+Scan results go to one directory per run, outside the repository. Create it once, before the first scan, unless the calling agent has already created it:
+
+```bash
+OUT=$(mktemp -d) && echo "$OUT"
+```
+
+Each scan below that saves a result writes it to `"$OUT/<name>"` and its error output to a `.err` file of the same base name, and the Read tool reads `"$OUT/<name>"`. A Bash call may not keep shell variables from an earlier one: in each later command, write the printed directory, single-quoted, in place of `$OUT`, and give the Read tool the plain path. Never write into the repository: a command that would rewrite a lockfile or install packages there — `uv lock` without `--check` or `--dry-run`, `poetry lock`, `npm install`, `go mod tidy` without `-diff` — is a fix to recommend, not a check to run.
 
 ---
 
@@ -111,19 +125,19 @@ uv pip list --outdated 2>/dev/null
 uv lock --check 2>/dev/null && echo "Lock file OK" || echo "Lock file needs update"
 
 # Run pip-audit through uv
-uv tool run pip-audit --format=json -o /tmp/pip-audit-uv.json 2>/dev/null
+uv tool run pip-audit --format=json -o "$OUT/pip-audit-uv.json" 2>"$OUT/pip-audit-uv.err"
 
 # Export requirements and scan
-uv pip compile pyproject.toml -o /tmp/requirements.txt 2>/dev/null
-uv tool run pip-audit -r /tmp/requirements.txt --format=json -o /tmp/pip-audit-compiled.json 2>/dev/null
+uv pip compile pyproject.toml -o "$OUT/requirements.txt" 2>"$OUT/requirements.err"
+uv tool run pip-audit -r "$OUT/requirements.txt" --format=json -o "$OUT/pip-audit-compiled.json" 2>"$OUT/pip-audit-compiled.err"
 
-# Update all packages to latest secure versions
-uv lock --upgrade 2>/dev/null
+# Preview upgrades to the latest versions without writing uv.lock
+uv lock --upgrade --dry-run 2>/dev/null
 
 # Show dependency tree
 uv pip tree 2>/dev/null | head -50
 ```
-**After scan:** Read /tmp/pip-audit-uv.json and /tmp/pip-audit-compiled.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/pip-audit-uv.json"` and `"$OUT/pip-audit-compiled.json"` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -137,8 +151,8 @@ poetry show --outdated 2>/dev/null
 poetry check --lock 2>/dev/null && echo "Lock file OK" || echo "Lock file needs update"
 
 # Export and scan with pip-audit
-poetry export -f requirements.txt --output /tmp/poetry-requirements.txt 2>/dev/null
-pip-audit -r /tmp/poetry-requirements.txt --format=json -o /tmp/pip-audit-poetry.json 2>/dev/null
+poetry export -f requirements.txt --output "$OUT/poetry-requirements.txt" 2>"$OUT/poetry-requirements.err"
+pip-audit -r "$OUT/poetry-requirements.txt" --format=json -o "$OUT/pip-audit-poetry.json" 2>"$OUT/pip-audit-poetry.err"
 
 # Alternative: Run pip-audit in Poetry environment
 poetry run pip-audit --format=json 2>/dev/null
@@ -149,7 +163,7 @@ poetry update --dry-run 2>/dev/null
 # Show dependency tree
 poetry show --tree 2>/dev/null | head -50
 ```
-**After scan:** Read /tmp/pip-audit-poetry.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/pip-audit-poetry.json"` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -157,7 +171,7 @@ poetry show --tree 2>/dev/null | head -50
 
 ```bash
 # Scan requirements.txt directly
-pip-audit -r requirements.txt --format=json -o /tmp/pip-audit-pip.json 2>/dev/null
+pip-audit -r requirements.txt --format=json -o "$OUT/pip-audit-pip.json" 2>"$OUT/pip-audit-pip.err"
 
 # Scan with fix suggestions
 pip-audit -r requirements.txt --fix --dry-run 2>/dev/null
@@ -169,9 +183,9 @@ pip-audit -r requirements.txt --strict --format=json 2>/dev/null
 pip-audit --format=json 2>/dev/null
 
 # List outdated packages
-pip list --outdated --format=json 1>/tmp/pip-outdated.json 2>/dev/null
+pip list --outdated --format=json 1>"$OUT/pip-outdated.json" 2>"$OUT/pip-outdated.err"
 ```
-**After scan:** Read /tmp/pip-audit-pip.json and /tmp/pip-outdated.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/pip-audit-pip.json"` and `"$OUT/pip-outdated.json"` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -181,20 +195,20 @@ Works with all Python package managers:
 
 ```bash
 # Scan requirements file
-safety check -r requirements.txt --json --output /tmp/safety-results.json 2>/dev/null
+safety check -r requirements.txt --save-json "$OUT/safety-results.json" 2>"$OUT/safety-results.err"
 
 # Scan Poetry lock file
-poetry export -f requirements.txt --output /tmp/poetry-req.txt 2>/dev/null
-safety check -r /tmp/poetry-req.txt --json --output /tmp/safety-poetry.json 2>/dev/null
+poetry export -f requirements.txt --output "$OUT/poetry-req.txt" 2>"$OUT/poetry-req.err"
+safety check -r "$OUT/poetry-req.txt" --save-json "$OUT/safety-poetry.json" 2>"$OUT/safety-poetry.err"
 
 # Scan uv project
-uv pip compile pyproject.toml -o /tmp/uv-req.txt 2>/dev/null
-safety check -r /tmp/uv-req.txt --json --output /tmp/safety-uv.json 2>/dev/null
+uv pip compile pyproject.toml -o "$OUT/uv-req.txt" 2>"$OUT/uv-req.err"
+safety check -r "$OUT/uv-req.txt" --save-json "$OUT/safety-uv.json" 2>"$OUT/safety-uv.err"
 
 # Full report with recommendations
 safety check -r requirements.txt --full-report 2>/dev/null
 ```
-**After scan:** Read /tmp/safety-results.json, /tmp/safety-poetry.json, and /tmp/safety-uv.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/safety-results.json"`, `"$OUT/safety-poetry.json"`, and `"$OUT/safety-uv.json"` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -204,7 +218,7 @@ safety check -r requirements.txt --full-report 2>/dev/null
 
 ```bash
 # Basic audit with JSON output
-npm audit --json 1>/tmp/npm-audit.json 2>/dev/null
+npm audit --json 1>"$OUT/npm-audit.json" 2>"$OUT/npm-audit.err"
 
 # Production dependencies only
 npm audit --omit=dev --json 2>/dev/null
@@ -215,18 +229,18 @@ npm audit fix --dry-run 2>/dev/null
 # Force fix (may include breaking changes)
 npm audit fix --force --dry-run 2>/dev/null
 ```
-**After scan:** Read /tmp/npm-audit.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/npm-audit.json"` with the Read tool and analyze the JSON results.
 
 ### yarn audit
 
 ```bash
 # Yarn 1.x
-yarn audit --json 1>/tmp/yarn-audit.json 2>/dev/null
+yarn audit --json 1>"$OUT/yarn-audit.json" 2>"$OUT/yarn-audit.err"
 
 # Yarn 2+/Berry
 yarn npm audit --json 2>/dev/null
 ```
-**After scan:** Read /tmp/yarn-audit.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/yarn-audit.json"` with the Read tool and analyze the JSON results.
 
 ### pnpm audit
 
@@ -245,9 +259,9 @@ pnpm audit --json 2>/dev/null
 govulncheck ./... 2>/dev/null
 
 # JSON output
-govulncheck -json ./... 1>/tmp/govulncheck.json 2>/dev/null
+govulncheck -json ./... 1>"$OUT/govulncheck.json" 2>"$OUT/govulncheck.err"
 ```
-**After scan:** Read /tmp/govulncheck.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/govulncheck.json"` with the Read tool and analyze the JSON results.
 
 ### go list (Check for Updates)
 
@@ -256,9 +270,9 @@ govulncheck -json ./... 1>/tmp/govulncheck.json 2>/dev/null
 go list -m -u all 2>/dev/null | grep '\['
 
 # JSON format
-go list -m -u -json all 1>/tmp/go-outdated.json 2>/dev/null
+go list -m -u -json all 1>"$OUT/go-outdated.json" 2>"$OUT/go-outdated.err"
 ```
-**After scan:** Read /tmp/go-outdated.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/go-outdated.json"` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -267,15 +281,16 @@ go list -m -u -json all 1>/tmp/go-outdated.json 2>/dev/null
 ### OWASP Dependency-Check
 
 ```bash
-# Maven project
-mvn org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7 2>/dev/null
+# Maven project: the report goes to $OUT, not target/
+mvn org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7 -Dodc.outputDirectory="$OUT" 2>"$OUT/dependency-check.err"
 
-# Gradle project
+# Gradle project (writes build/ and .gradle/ into the project: never during an audit)
 ./gradlew dependencyCheckAnalyze 2>/dev/null
 
 # Check for updates (Maven)
 mvn versions:display-dependency-updates 2>/dev/null
 ```
+**After scan:** Read `"$OUT/dependency-check-report.html"` with the Read tool and analyze the results.
 
 ---
 
@@ -285,9 +300,9 @@ mvn versions:display-dependency-updates 2>/dev/null
 
 ```bash
 # Update vulnerability database and scan
-bundle-audit update 2>/dev/null && bundle-audit check --format=json 1>/tmp/bundler-audit.json 2>/dev/null
+bundle-audit update 2>/dev/null && bundle-audit check --format=json 1>"$OUT/bundler-audit.json" 2>"$OUT/bundler-audit.err"
 ```
-**After scan:** Read /tmp/bundler-audit.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/bundler-audit.json"` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -297,9 +312,9 @@ bundle-audit update 2>/dev/null && bundle-audit check --format=json 1>/tmp/bundl
 
 ```bash
 # Built-in audit (Composer 2.4+)
-composer audit --format=json 1>/tmp/composer-audit.json 2>/dev/null
+composer audit --format=json 1>"$OUT/composer-audit.json" 2>"$OUT/composer-audit.err"
 ```
-**After scan:** Read /tmp/composer-audit.json with the Read tool and analyze the JSON results.
+**After scan:** Read `"$OUT/composer-audit.json"` with the Read tool and analyze the JSON results.
 
 ---
 
@@ -342,12 +357,12 @@ composer audit --format=json 1>/tmp/composer-audit.json 2>/dev/null
 
 ### Severity Classification
 
-| Severity | CVSS Range | Action Required |
-|----------|------------|-----------------|
-| CRITICAL | 9.0 - 10.0 | Block deployment, fix immediately |
-| HIGH | 7.0 - 8.9 | Fix before release |
-| MEDIUM | 4.0 - 6.9 | Plan fix within sprint |
-| LOW | 0.1 - 3.9 | Track for future update |
+| Severity | CVSS Range |
+|----------|------------|
+| CRITICAL | 9.0 - 10.0 |
+| HIGH | 7.0 - 8.9 |
+| MEDIUM | 4.0 - 6.9 |
+| LOW | 0.1 - 3.9 |
 
 ---
 
@@ -373,8 +388,8 @@ poetry show --tree 2>/dev/null | head -30
 # JavaScript: Check for unused packages
 npx depcheck 2>/dev/null
 
-# Go: Clean up unused modules
-go mod tidy -v 2>/dev/null
+# Go: list unused or missing modules without editing go.mod or go.sum (Go 1.23+)
+go mod tidy -diff 2>/dev/null
 ```
 
 ### Lock File Verification
@@ -387,7 +402,7 @@ uv lock --check
 poetry check --lock
 
 # npm
-npm ci --ignore-scripts  # Fails if lock file doesn't match
+npm ci --dry-run --ignore-scripts  # Fails if lock file doesn't match; --dry-run leaves node_modules alone
 
 # Go
 go mod verify

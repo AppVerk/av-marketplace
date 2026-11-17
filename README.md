@@ -69,7 +69,7 @@ omp plugin install <plugin>@av-marketplace
 
 | Plugin | Version | ID | Claude Code | OMP | Description |
 |--------|---------|----|:-----------:|:---:|-------------|
-| [Code Review](docs/plugins/code-review.md) | 2.5.0 | `code-review` | ✓ | ✓ | Security, architecture and code-quality review with an adversarial challenger and cross-domain correlation; fix findings by ID (`/fix SEC-001`) or in bulk (`/fix-report`, `/fix-all`) |
+| [Code Review](docs/plugins/code-review.md) | 2.7.1 | `code-review` | ✓ | ✓ | Security, architecture and code-quality review with an adversarial challenger and cross-domain correlation; fix findings by ID (`/fix SEC-001`) or in bulk (`/fix-report`, `/fix-all`) |
 | [Commit](docs/plugins/commit.md) | 1.4.1 | `commit` | ✓ | ✓ | Conventional Commits messages; blocks direct `git commit`, force-push and protected-branch deletion, and asks before pushes to `main`/`master`, tags and other remotes |
 | [Security Pipeline](docs/plugins/security-pipeline.md) | 1.0.1 | `security-pipeline` | ✓ | — | `/setup` adds Semgrep SAST and TruffleHog secret-scanning steps to your CI; detects GitHub Actions, GitLab CI, Bitbucket and Azure DevOps |
 | [Web Auditor](docs/plugins/web-auditor.md) | 2.1.5 | `web-auditor` | ✓ | — | Audits a running website for security, SEO, performance and compliance; `--verify` adds cross-domain correlation and adversarial review |

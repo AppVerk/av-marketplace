@@ -14,7 +14,7 @@ Invoke when authoring or reviewing a code-review reporting agent, and at report 
 ## The refutation battery (MUST, per finding)
 
 1. **Toolchain check.** Is this a hand-derived finding duplicating what a linter/type-checker/formatter that ran in this session already reports? Don't duplicate the toolchain — duplicated findings train readers to skim. Surfacing the toolchain's own results where the agent's contract mandates it (a Linter Results section, a SAST report) is not duplication; check 1 targets hand-derived duplicates only.
-2. **Backing check** *(pattern-claim findings only)*. A finding claiming a convention/standard/pattern violation must cite a concrete standard (file + section) OR an established code pattern, operationalized as **≥3 occurrences outside the diff (grep)** — "established" without a count is vibes. A defect demonstrable on its own terms (an exploit scenario, a crash, incorrect output) is its own backing; check 2 does not apply to it.
+2. **Backing check** *(pattern-claim findings only)*. A finding claiming a convention/standard/pattern violation must cite the owner-written standard that covers it (file + section; the `standards-discovery` skill in this plugin defines what counts) — a generic best practice is not one. Without such a standard, an established code pattern — **≥3 occurrences outside the diff (grep)**; "established" without a count is vibes — makes a doctrine-gap candidate (bucket c), not a finding. A defect demonstrable on its own terms (an exploit scenario, a crash, incorrect output) is its own backing; check 2 does not apply to it. A rule about style, formatting, naming or size that the repository's own `CLAUDE.md`, `AGENTS.md` or `REVIEW.md` states backs a finding the change breaks: that finding is LOW, and its Problem cites the rule's file and section. A developer skill, a generic style guide or a linter's rule set backs no such finding. Where a linter that ran in this session already reports the same violation, its result stays in the linter's section and no finding repeats it.
 3. **Evidence-elsewhere check.** Could the evidence live where you didn't look — another file, a test, existing code outside the diff? Grep before you report MISSING.
 4. **Deliberate-omission check.** Is the "gap" an explicit no-op or deferral recorded in the plan or ticket? A recorded decision is not a defect.
 5. **Verifiability-class check.** Is this actually unverifiable in this scope (runtime/visual behavior) mislabeled as a static finding? Route it onward — name the venue in the disposition reason — don't report it as a violation.
@@ -52,17 +52,18 @@ The challenger is an *external* adversarial pass over other agents' findings; th
 
 ## Worked example *(Prospective)*
 
-*(Prospective: no in-repo agent conforms yet; genericized from the source pattern.)* A reviewer drafts "missing null-guard in `parse()`". Battery: toolchain — strict mode doesn't cover this path (passes); backing — grep finds 4 guard occurrences outside the diff (passes); evidence-elsewhere — grep finds the guard upstream at the call site (FAILS). Disposition: bucket (b) — `Rejected after verification: null-guard exists at call site (caller.ts:88)`.
+*(Prospective: no in-repo agent conforms yet; genericized from the source pattern.)* A reviewer drafts "missing null-guard in `parse()`". Battery: toolchain — strict mode doesn't cover this path (passes); backing — `CONTRIBUTING.md` § Input validation requires a guard on every parser input (passes); evidence-elsewhere — grep finds the guard upstream at the call site (FAILS). Disposition: bucket (b) — `Rejected after verification: null-guard exists at call site (caller.ts:88)`.
 
 ## Review checklist
 
 Paste into any reporting-agent review:
 
 - [ ] 1. Every finding ran the six-check battery before reporting
-- [ ] 2. Pattern-backed findings carry a citation or a ≥3-occurrence grep count
+- [ ] 2. Pattern-claim findings cite an owner-written standard (file + section); a ≥3-occurrence pattern with no owner-written standard is a doctrine-gap candidate, not a finding
 - [ ] 3. MISSING findings were grepped elsewhere first
 - [ ] 4. Deliberate omissions checked against plan/ticket
 - [ ] 5. Unverifiable-in-scope items routed (venue named), not reported as violations
 - [ ] 6. "Rejected after verification" present on every run (`None` allowed, never absent)
 - [ ] 7. "Doctrine-gap candidates" present and distinct from Rejected
 - [ ] 8. Any claimed exemption matches the recorded list above
+- [ ] 9. A style, formatting, naming or size finding is LOW and cites a rule in the repository's own `CLAUDE.md`, `AGENTS.md` or `REVIEW.md`

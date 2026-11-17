@@ -34,6 +34,18 @@ GATE = "plugins/code-review/skills/decision-gate/SKILL.md"
 DECISION_ANALYST = "plugins/code-review/agents/decision-analyst.md"
 DOCS = "docs/plugins/code-review.md"
 EXTRACT = "plugins/code-review/scripts/extract-issue-ids.sh"
+QUALITY = "plugins/code-review/agents/code-quality-auditor.md"
+STANDARDS = "plugins/code-review/skills/standards-discovery/SKILL.md"
+ARCHITECTURE = "plugins/code-review/skills/architecture-analysis/SKILL.md"
+CHALLENGER = "plugins/code-review/agents/challenger.md"
+FALSIFICATION = "plugins/code-review/skills/finding-falsification/SKILL.md"
+
+S1 = (
+    "A rule about style, formatting, naming or size that the repository's own "
+    "`CLAUDE.md`, `AGENTS.md` or `REVIEW.md` states backs a finding the change breaks: "
+    "that finding is LOW, and its Problem cites the rule's file and section."
+)
+S2 = "A developer skill, a generic style guide or a linter's rule set backs no such finding."
 
 
 def read(rel: str) -> str:
@@ -44,6 +56,57 @@ def read(rel: str) -> str:
 
 
 class CompositeContract(unittest.TestCase):
+    def test_written_style_rules_back_only_low_findings_in_every_gate(self) -> None:
+        # mutation: delete "A developer skill, a generic style guide or a linter's rule set backs no such finding." from review.md or any other gate below
+        for rel in (REVIEW, QUALITY, STANDARDS, ARCHITECTURE, CHALLENGER, FALSIFICATION):
+            with self.subTest(file=rel):
+                text = read(rel)
+                self.assertIn(S1, text)
+                self.assertIn(S2, text)
+
+    def test_marker_write_failure_releases_components_through_the_fix_policy_partition(self) -> None:
+        # mutation: delete "Step 2.2.5's Fix-policy partition" from fix-all.md's Step 3.0 Failures paragraph
+        with self.subTest(file=FIX_ALL):
+            persistence = read(FIX_ALL).split("### Step 3.0: Persist the composites", 1)[1].split("### Step 3.1:", 1)[0]
+            failures = persistence.split("Failures:", 1)[1].split("\n\n", 1)[0]
+            self.assertIn("Step 2.2.5's Fix-policy partition", failures)
+            self.assertIn("`needs_decision`", failures)
+
+    def test_written_style_rule_caps_only_findings_that_rest_on_style_alone(self) -> None:
+        # mutation: delete "keeps its severity; citing a written rule never caps it." from challenger.md
+        challenger = read(CHALLENGER)
+        self.assertIn(
+            "A finding that rests only on style, formatting, naming or one of the size metrics above, "
+            "and that a written style rule backs, is not a false positive either",
+            challenger,
+        )
+        self.assertIn(
+            "A finding with its own defect evidence — an exploit scenario, a crash, incorrect output — "
+            "keeps its severity; citing a written rule never caps it.",
+            challenger,
+        )
+        review = read(REVIEW)
+        self.assertIn("A finding that paragraph keeps because a written style rule backs it is LOW", review)
+        self.assertIn(
+            "A reinstated entry that **What is not a finding** would exclude but a written style rule backs is LOW",
+            review,
+        )
+
+    def test_marker_write_failure_on_the_zero_auto_path_is_reported_by_step_5_6(self) -> None:
+        # mutation: delete the "On the zero-auto path, print any `Marker write failures` entries" paragraph from fix-all.md's Step 5.6
+        text = read(FIX_ALL)
+        persistence = text.split("### Step 3.0: Persist the composites", 1)[1].split("### Step 3.1:", 1)[0]
+        self.assertIn("On the zero-auto path (Step 5.2, item 3)", persistence)
+        self.assertIn("an `auto` component is left for the next bulk run", persistence)
+        decision_summary = text.split("### Step 5.6: Decision-stage summary", 1)[1]
+        self.assertIn(
+            "On the zero-auto path, print any `Marker write failures` entries from Step 3.0 above the Decision Stage block",
+            decision_summary,
+        )
+        self.assertIn("including `left for the next bulk run` for an `auto` component", decision_summary)
+        summary = text.split("### Step 4.2: Display fix summary", 1)[1].split("## Step 5:", 1)[0]
+        self.assertIn("requires a decision | left for the next bulk run>", summary)
+
     # ---- Task 1: prefix and category ------------------------------------
 
     def test_docs_prefix_table_has_composite_row(self):
@@ -486,6 +549,43 @@ class CompositeContract(unittest.TestCase):
                         )
                         self.assertEqual(result.returncode, 0, result.stderr)
                         self.assertEqual(result.stdout, data)
+
+    # ---- Review contract with Delivery, the auditors and the scanners --------
+
+    def test_delivery_names_review_steps_that_exist(self) -> None:
+        # mutation: rename review.md's "## Step 6: Save Review" heading without updating both Delivery editions
+        review = read(REVIEW)
+        for heading in ("## Step 6: Save Review", "## Step 7: Post-review action"):
+            self.assertIn(f"\n{heading}\n", review)
+        for path in ("plugins/delivery/skills/orchestration/SKILL.md", "omp/native/delivery/skills/orchestration/SKILL.md"):
+            text = read(path)
+            with self.subTest(path=path):
+                self.assertIn("Step 6 (Save Review)", text)
+                self.assertIn("Step 7 (Post-review action)", text)
+                self.assertIn("Review not saved:", text)
+
+    def test_every_review_without_a_report_prints_review_not_saved(self) -> None:
+        # mutation: change "print `Review not saved: nothing to review`" in the Empty scope paragraph of review.md's Step 6
+        step6 = read(REVIEW).split("## Step 6: Save Review", 1)[1].split("## Step 7", 1)[0]
+        self.assertIn("Review not saved: nothing to review", step6)
+        self.assertIn("Review not saved: <error>", step6)
+
+    def test_both_scope_blocks_carry_the_check_plan_the_auditors_obey(self) -> None:
+        # mutation: delete the "Checks: secret scan run; SAST <status>; …" line from either scope block in review.md
+        blocks = re.findall(r"~~~text\nReview request:.*?\n~~~", read(REVIEW), re.S)
+        self.assertEqual(len(blocks), 2)
+        for block in blocks:
+            self.assertIn("Checks: secret scan run; SAST <status>; dependency scan <status>; linters <status>", block)
+        for agent in ("plugins/code-review/agents/security-auditor.md", "plugins/code-review/agents/code-quality-auditor.md"):
+            self.assertIn("`Checks:` line", read(agent))
+
+    def test_skills_write_scan_output_to_a_per_run_directory(self) -> None:
+        # mutation: restore "--json-output /tmp/semgrep-report.json" in sast-analysis/SKILL.md
+        # Two reviews on one machine must not read each other's results (or a stale one from an earlier run).
+        for path in sorted((ROOT / "plugins/code-review/skills").rglob("*.md")):
+            with self.subTest(path=str(path.relative_to(ROOT))):
+                self.assertNotRegex(path.read_text(encoding="utf-8"),
+                                    r"/tmp/[A-Za-z0-9._-]+\.(?:json|txt|sarif|xml|log)\b")
 
 
 if __name__ == "__main__":

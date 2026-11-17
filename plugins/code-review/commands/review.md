@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(git:*), mcp__github, mcp__sequential_thinking, Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(python:*), Bash(node:*), TaskCreate, TaskUpdate, TaskList, Write, AskUserQuestion, Task, Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/docs-drift/scripts/docs_drift.sh *), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py *), Skill(code-review:fix-all), Skill(code-review:fix-report)
+allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(git:*), mcp__github, mcp__sequential_thinking, Bash(semgrep:*), Bash(bandit:*), Bash(trufflehog:*), Bash(pip-audit:*), Bash(uv:*), Bash(npm:*), Bash(safety:*), Bash(poetry:*), Bash(go:*), Bash(yarn:*), Bash(pnpm:*), Bash(ruff:*), Bash(mypy:*), Bash(black:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(tsc:*), Bash(npx:*), Bash(prettier:*), Bash(radon:*), Bash(vulture:*), Bash(wc:*), Bash(find:*), Bash(sort:*), Bash(head:*), Bash(tail:*), Bash(awk:*), Bash(grep:*), Bash(command:*), Bash(echo:*), Bash(jq:*), Bash(cat:*), Bash(uniq:*), Bash(cut:*), Bash(xargs:*), Bash(mktemp:*), Bash(python:*), Bash(node:*), TaskCreate, TaskUpdate, TaskList, Write, AskUserQuestion, Task, Bash(bash ${CLAUDE_PLUGIN_ROOT}/skills/docs-drift/scripts/docs_drift.sh *), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py config *), Skill(code-review:fix-all), Skill(code-review:fix-report)
 description: Perform comprehensive analysis - security, performance, architecture, maintainability. Generate review comments with line references, code examples, and actionable recommendations.
 model: opus 
 argument-hint: [description]
@@ -17,28 +17,41 @@ Parse arguments:
 
 - All text is the review description
 - A git range ending in HEAD in it sets the review scope (Review Scope Phase)
+- The words `whole repository` in it make the whole repository the scope (Review Scope Phase)
 
 ---
 
 ## Review Scope Phase (Pre-Launch)
 
-Before launching subagents, fix what this review covers. Run every command in the repository root.
+Before launching subagents, fix what this review covers. Run every command in the repository root. A review description that contains the words `whole repository`, in any letter case, skips steps 1–4: the scope is the whole repository, reason `requested`.
 
 1. **Explicit range.** Take the first whitespace-separated word of the review description that contains `..HEAD` or `...HEAD`, after stripping surrounding backticks, quotes and parentheses and a trailing `,` `.` `;` or `:`. Its text before the dots is `<rev>`. With `..` the base is `git rev-parse --verify --quiet '<rev>^{commit}'`; with `...` it is `git merge-base '<rev>' HEAD`. When that prints nothing, print `Range <word> not found; using the default scope.` and continue with step 2.
 2. **Default.** Without an explicit base, let Git resolve the fixed ref with `git rev-parse --verify --quiet 'refs/remotes/origin/HEAD^{commit}'`; when it succeeds, the base is `git merge-base HEAD refs/remotes/origin/HEAD`. Otherwise try `git rev-parse --verify --quiet 'main^{commit}'` and, if that succeeds, `git merge-base HEAD main`; if `main` is unavailable, try `git rev-parse --verify --quiet 'master^{commit}'` and, if that succeeds, `git merge-base HEAD master`. Never obtain the symbolic ref's target name or paste it into shell source. No default branch, or a failing `merge-base`, leaves no base.
 3. **Changed files.** With a base: the lines of `git -c core.quotePath=false diff --name-status -M <base>` (commits since the base plus uncommitted changes to tracked files), then one line `A<TAB><path>` per path of `git -c core.quotePath=false ls-files --others --exclude-standard`. `core.quotePath=false` prints non-ASCII names as they are; git still wraps a name that contains a tab, a newline, a double quote or a backslash in double quotes with backslash escapes, and such a line is kept as printed. A path is a **changed file** when it equals, byte for byte, a path on one of these lines — either path of an `R` or `C` line — after removing those quotes and escapes. (Models read this list, so it stays line-based; `docs_drift.sh` reads its renames NUL-delimited.)
-4. **Result.** `REVIEW_BASE` is the full SHA of the base (`git rev-parse <base>`); `CHANGED_FILES` are the lines of step 3. With no base, or no changed files, the scope is the whole repository: `REVIEW_BASE = none`, `CHANGED_FILES` empty, reason `no default branch`, `merge-base failed` or `no changes since <first 7 characters of the base>`.
+4. **Review artifacts.** Remove each line of step 3 whose every path — both paths of an `R` or `C` line — lies under `docs/plans/`, `docs/reviews/`, `docs/testing/` or `docs/superpowers/`, the directories the docs drift pre-pass excludes; `n` is the number of lines removed. The secret scan still covers these files: scanners take names from Git, not from `CHANGED_FILES`.
+5. **Result.** The scope is the whole repository only when there is no base or the review description asks for it (above): `REVIEW_BASE = none`, `CHANGED_FILES` empty, reason `no default branch`, `merge-base failed` or `requested`. Otherwise `REVIEW_BASE` is the base's full SHA (`git rev-parse <base>`) and `CHANGED_FILES` are the lines step 4 kept. When step 3 found no changes at all, the scope is **empty**: nothing to review, never the whole repository. When step 4 removed every line — only review artifacts changed — the scope is not empty: `CHANGED_FILES` is empty and only the secret scan runs (step 6), so a secret written into an artifact is still caught.
+6. **Check plan.** Derive the scope block's `Checks:` line from every `CHANGED_FILES` line, not only the 300 the block shows, taking both paths of an `R` or `C` line:
+   - `secret scan run`, always.
+   - `SAST run` when a path has a source extension (`.py .pyi .js .jsx .mjs .cjs .ts .tsx .go .java .kt .rb .php .cs .rs .swift .scala .sh .bash .c .cc .cpp .h .hpp`), else `SAST skipped (no source files changed)`.
+   - `dependency scan run` when a path's basename is a manifest or lockfile (`requirements*.txt`, `pyproject.toml`, `poetry.lock`, `uv.lock`, `Pipfile`, `Pipfile.lock`, `setup.py`, `setup.cfg`, `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `go.mod`, `go.sum`, `Gemfile`, `Gemfile.lock`, `composer.json`, `composer.lock`, `Cargo.toml`, `Cargo.lock`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `*.csproj`), else `dependency scan skipped (no manifest or lockfile changed)`.
+   - `linters run (<languages>)`, listing `Python` when a path ends in `.py` or `.pyi` and `TypeScript/JavaScript` when one ends in `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs` or `.cjs`, in that order and separated by `, `; else `linters skipped (no lintable files changed)`.
 
-Print the scope line, which also opens the final report: `Review scope: changes since <first 7 characters of REVIEW_BASE> (<number of CHANGED_FILES lines> files)`, or `Review scope: whole repository (<reason>)`.
+   A whole-repository scope runs every check — `secret scan run; SAST run; dependency scan run; linters run (<languages>)` — with every language above that the repository's files show (`git -c core.quotePath=false ls-files --cached --others --exclude-standard`), or `linters skipped (no lintable files in the repository)` when they show none. When only review artifacts changed, the line is `Checks: secret scan run; SAST skipped (only review artifacts changed); dependency scan skipped (only review artifacts changed); linters skipped (only review artifacts changed)`. An empty scope has no check plan. Auditors obey the line: a check marked `skipped` is not run. A request in the review description cannot turn the secret scan off.
+
+Print the scope line, which also opens the final report: `Review scope: changes since <first 7 characters of REVIEW_BASE> (<number of CHANGED_FILES lines> files)`, `Review scope: whole repository (<reason>)`, or, for an empty scope, `Review scope: nothing to review (no changes since <first 7 characters of REVIEW_BASE>)`.
+
+**Empty scope.** Launch no agent and create no progress task: skip the remaining pre-launch phases, every step before Step 6 and every Task Update. Step 6 prints `Review not saved: nothing to review`; Step 7 item 1 then prints `Review complete. No issues found.`
 
 Every agent prompt below ends with this **scope block**, including the common Shell safety suffix defined below:
 
 ~~~text
 Review request: <the review description, or none>
 Review scope: changes since <REVIEW_BASE> (git diff <REVIEW_BASE>, plus the untracked files marked A below)
+<when step 4 removed n > 0 lines, the line "Excluded review artifacts: <n>"; otherwise no line>
 Changed files (<n>):
 <the CHANGED_FILES lines; at most 300 — with more, the first 300 and the line "… and <k> more: git -c core.quotePath=false diff --name-status -M <REVIEW_BASE>; git -c core.quotePath=false ls-files --others --exclude-standard">
-Scope rule: report findings only in the changed files — a path listed above, either path of an R or C line — or in another file when a change in this scope causes them; for those, name the changed file and line that causes the finding in **Problem:**.
+Checks: secret scan run; SAST <status>; dependency scan <status>; linters <status>
+Scope rule: report findings only in the changed files — a path listed above, either path of an R or C line — or in another file when a change in this scope causes them; for those, name the changed file and line that causes the finding in **Problem:**. A secret in a changed file under docs/plans/, docs/reviews/, docs/testing/ or docs/superpowers/ is in scope too.
 ~~~
 
 For a whole-repository scope the block is:
@@ -46,6 +59,7 @@ For a whole-repository scope the block is:
 ~~~text
 Review request: <the review description, or none>
 Review scope: whole repository (<reason>)
+Checks: secret scan run; SAST <status>; dependency scan <status>; linters <status>
 ~~~
 
 The following **Shell safety suffix is part of both scope blocks**. Append it verbatim, not a pointer to it, to every dispatched agent's scope block. The main review session follows it too whenever it invokes a tool on repository paths.
@@ -105,6 +119,8 @@ Exit 0 → store its complete stdout as `DOCS_DRIFT`. Any other exit, or a scrip
 
 **YOU MUST launch subagents as soon as the pre-launch phases are done — Review Scope, Stack Detection, and Documentation Detection with its docs drift pre-pass — and before doing ANYTHING else.**
 
+The one exception is an empty scope (Review Scope Phase): it launches no agent and goes straight to Step 6.
+
 Use the Task tool for each agent in your first response after the pre-launch phases:
 
 ### Agent 1: Security Auditor
@@ -113,7 +129,7 @@ Use the Task tool for each agent in your first response after the pre-launch pha
 Use Task tool with these EXACT parameters:
 - subagent_type: "code-review:security-auditor"
 - run_in_background: true
-- prompt: "Perform comprehensive security audit. Execute ALL skills: secret-scanning, sast-analysis, dependency-scanning, AI threat modeling. Report with severity, CWE, file path, line number, remediation."
+- prompt: "Perform comprehensive security audit. Execute the skills the scope block's Checks: line marks run — secret-scanning always, sast-analysis for SAST, dependency-scanning for the dependency scan — then AI threat modeling. Report with severity, CWE, file path, line number, remediation. End with your ## Checks section."
 ```
 
 If developer skills were detected in the Stack Detection Phase, append to the prompt:
@@ -125,7 +141,7 @@ If developer skills were detected in the Stack Detection Phase, append to the pr
 Use Task tool with these EXACT parameters:
 - subagent_type: "code-review:code-quality-auditor"
 - run_in_background: true
-- prompt: "Perform comprehensive code quality audit. Execute ALL skills: standards-discovery, linter-integration, architecture-analysis. Check SOLID, DDD, Clean Architecture. Report with severity, principle, file path, line number, code examples."
+- prompt: "Perform comprehensive code quality audit. Execute standards-discovery and architecture-analysis, and linter-integration when the scope block's Checks: line marks linters run. Check SOLID, DDD, Clean Architecture. Report with severity, principle, file path, line number, code examples. End with your ## Checks section."
 ```
 
 If developer skills were detected in the Stack Detection Phase, append to the prompt:
@@ -175,7 +191,7 @@ Use TaskCreate for each of the following (in a single response, all 5 tasks):
 | 7 | Save review to file | Saving review to file... |
 | 8 | Run post-review action | Running post-review action... |
 
-Note: All 8 tasks are always created.
+Note: All 8 tasks are always created, except for an empty scope, which creates none.
 
 **After creating all tasks:** Immediately mark task 1 as `completed` (auditors are already launched) and task 2 as `in_progress`.
 
@@ -183,7 +199,7 @@ Note: All 8 tasks are always created.
 
 ## Code Review Workflow
 
-**Scope.** Steps 2–4 cover the review scope: with a base, read `git diff <REVIEW_BASE>` and the untracked files marked `A`, and report under the scope rule; with a whole-repository scope, analyse the repository.
+**Scope.** Steps 2–4 cover the review scope: with a base, read `git diff <REVIEW_BASE>` and the untracked files marked `A`, and report under the scope rule; with a whole-repository scope, analyse the repository. They report nothing that **What is not a finding** (Review Comment Format) excludes.
 
 ### Step 1: Confirm Both Audits Running
 
@@ -211,7 +227,7 @@ Check for:
 Review:
 
 - SOLID principles compliance
-- Anti-patterns (God objects >500 lines, deep inheritance)
+- Anti-patterns (Architecture Red Flags below)
 - Dependency direction (inner layers don't depend on outer)
 - API versioning and backward compatibility
 
@@ -219,7 +235,6 @@ Review:
 
 Evaluate:
 
-- Code clarity and naming
 - Test coverage gaps
 - Error handling patterns (A10:2025 - Exceptional Conditions)
 - Documentation accuracy
@@ -277,7 +292,9 @@ findings = {
 }
 ```
 
-The `rejected` / `doctrine_gaps` collections come from each auditor's self-falsification output (security-auditor: trailing JSON object — extract it out of the security results when building the bundle; it is not a finding and must not remain in `findings.security`; code-quality-auditor: Final Report sections 7–8; documentation-auditor: trailing markdown sections). Normalize `rejected` entries to `{title, reason, severity, category, location, drift-class}`: split markdown bullets on the FIRST ` — ` (title before, reason after); the trailing `(was: …)` suffix carries the remaining fields; default any absent field to `—`. `doctrine_gaps` entries stay `{title, reason}`. Forward them verbatim — for the cross-verifier they are pass-through context (no action).
+The `rejected` / `doctrine_gaps` collections come from each auditor's self-falsification output (security-auditor: its JSON object with the `rejected` and `doctrine_gaps` keys — extract it out of the security results when building the bundle; it is not a finding and must not remain in `findings.security`; code-quality-auditor: Final Report sections 7–8; documentation-auditor: trailing markdown sections). Normalize `rejected` entries to `{title, reason, severity, category, location, drift-class}`: split markdown bullets on the FIRST ` — ` (title before, reason after); the trailing `(was: …)` suffix carries the remaining fields; default any absent field to `—`. `doctrine_gaps` entries stay `{title, reason}`. Forward them verbatim — for the cross-verifier they are pass-through context (no action).
+
+Set the `## Checks` section of security-auditor and code-quality-auditor aside for the Verification Summary's `### Checks`: it is not a finding and stays out of `findings`.
 
 **2. Spawn Cross-Verifier (background):**
 
@@ -314,7 +331,9 @@ Task(
 Here are the findings from all auditors:
 {findings}
 
-Challenge CRITICAL and HIGH findings from both security and quality auditors.
+Challenge every finding at every severity: the security, quality and
+documentation auditors' findings and the review's own performance and
+architecture findings.
 Check for false positives, especially in linter results and SAST output.
 Spot-check the rejected collections: flag wrongly-rejected findings for
 reinstatement per your Output Format. The doctrine_gaps collections are
@@ -337,9 +356,9 @@ challenger_results = TaskOutput(challenger_id, block: true)
 
 **5. Merge enhanced findings:**
 
-1. Apply Challenger decisions (remove false positives, adjust severity). Then, with a base, apply the **scope check**: remove every finding — an auditor's or your own — whose **Location:** is outside the changed files and whose **Problem:** names no changed file and line that causes it, and list each under `### Out of scope (scope check)`. Composites and reinstatements below work only with the findings that survive this step.
+1. Apply Challenger decisions (remove false positives, adjust severity). Then drop every finding — an auditor's or your own — that **What is not a finding** (Review Comment Format) excludes, and list each as a plain bullet under `### Challenged Findings`: `- {title} — not a finding: {the metric, or style, formatting, naming or lint}`. A finding that paragraph keeps because a written style rule backs it is LOW, whatever its auditor or the challenger said. Then, with a base, apply the **scope check**: remove every finding — an auditor's or your own — whose **Location:** is outside the changed files and whose **Problem:** names no changed file and line that causes it, except a secret in an excluded review artifact (Review Scope Phase step 4), and list each under `### Out of scope (scope check)`. Composites and reinstatements below work only with the findings that survive this step.
 2. Add Cross-Verifier composite findings. For each `[COMPOSITE-N]` the cross-verifier returned:
-   1. Resolve each basis by exact title (or `DOC-NNN` ID) against the findings that survived step 1. A basis the challenger or the scope check removed, that matches nothing, or that matches more than one surviving finding is dropped — an ambiguous title is not a resolved basis.
+   1. Resolve each basis by exact title (or `DOC-NNN` ID) against the findings that survived step 1. A basis the challenger, the not-a-finding drop or the scope check removed, that matches nothing, or that matches more than one surviving finding is dropped — an ambiguous title is not a resolved basis.
    2. Disjointness: process the composites in the order returned; a basis of an earlier composite rendered as a finding block (passed sub-items 2.3 and 2.4) is dropped from every later one, so no finding is a component of two rendered composites. Only a rendered composite consumes its bases; a composite kept as a plain bullet leaves its bases available to later composites.
    3. Fewer than two bases remain → do **not** render the composite as a finding block; keep its text as a plain bullet under `### Cross-Analysis` in the Verification Summary, never as a `###` heading.
    4. With a base, first apply the scope rule to the composite itself: a composite whose own `Location` is outside the changed files and whose `Cause` names no changed file and line that causes it is not rendered as a block; keep it as a plain bullet under `### Cross-Analysis`, and its bases stay findings of their own. This runs before Step 5.6, so `**Part-of:**` links are created only for rendered composites. Otherwise build a finding block in the Review Comment Format: severity = the greater of the composite's own severity and the maximum basis severity; `**Category:** Composite`; `**Location:**` and `**Effort:**` from the composite; `**Problem:**` from its `Cause`; `**Impact:**` from its `Combined risk`; `**Remediation:**` from its `Remediation`; `**Composed-of:**` = the resolved bases (filled with final IDs in Step 5.6); `**Origin:** review`; and `**Fix-policy:** needs-decision` when any basis carries a `**Fix-policy:**` value other than `auto`. `**Location:**` must parse as `path:line` or `path:line-range`, be contained in the repository tree, and exist there — a composite whose location fails any of the three is not rendered as a block and stays a bullet, never repaired. Each resolved basis's `**Location:**` must pass those same three checks — the fixer opens every component's site, not the composite's alone — and a basis whose location fails any of them is dropped from `Composed-of` exactly as sub-item 1 drops an unresolvable one, leaving the composite a bullet under sub-item 3 where fewer than two bases survive.
@@ -376,6 +395,8 @@ challenger_results = TaskOutput(challenger_id, block: true)
    (Reconstruction is needed because rejected collections carry compact
    entries, not full finding blocks.)
    With a base, a reinstated finding that breaks the scope rule — located outside the changed files and naming no changed file and line that causes it — is not moved into findings; list it under `### Out of scope (scope check)`.
+   A reinstated entry that **What is not a finding** excludes is not moved into findings either; list it under `### Challenged Findings` as in step 1.
+   A reinstated entry that **What is not a finding** would exclude but a written style rule backs is LOW, whatever its `reinstate at` severity.
 
 **Task Update:** Mark task 6 as `completed`.
 
@@ -415,6 +436,8 @@ challenger_results = TaskOutput(challenger_id, block: true)
 For each issue found, format as structured markdown:
 
 **Credential literals are never written.** In every finding — including `**Problem:**`, `**Impact:**`, `**Remediation:**` and its `# Before` snippet — replace each occurrence of a secret value with its first four characters followed by `…[REDACTED]`, e.g. `API_TOKEN = "ghp_…[REDACTED]"`. Apply this masking before displaying findings; Step 6 writes the report only after this masking.
+
+**What is not a finding.** No finding block may rest only on a size or complexity metric — function or file length, parameter count, nesting depth, class size or method count, cyclomatic complexity, line-count duplication, a "God Object" by size — or only on style, formatting, naming or lint diagnostics. Tool output stays evidence: in the auditor's tool section and in the Verification Summary's `### Checks`, never in a `### [SEVERITY]` block. The one exception is a linter or type-checker diagnostic that shows a defect the change causes — a type error, undefined name, broken import, unreachable or wrong logic, failing compile: it may back one finding, whose **Problem:** names the changed line that causes it, even when the diagnostic's own location is an unchanged line. A rule about style, formatting, naming or size that the repository's own `CLAUDE.md`, `AGENTS.md` or `REVIEW.md` states backs a finding the change breaks: that finding is LOW, and its Problem cites the rule's file and section. A developer skill, a generic style guide or a linter's rule set backs no such finding.
 
 ### [SEVERITY] {ID}: Title of Issue
 
@@ -465,12 +488,10 @@ cursor.execute("SELECT * FROM users WHERE id=?", (user_id,))
 
 | Anti-pattern | Detection | Severity |
 |--------------|-----------|----------|
-| God Object | Class >500 lines, >20 methods | HIGH |
 | Circular Dependencies | A imports B imports A | MEDIUM |
 | Shared Database | Multiple services, one DB | HIGH |
 | Breaking API Change | No deprecation warning | CRITICAL |
 | Anemic Domain Model | Logic in services, not entities | MEDIUM |
-| Deep Inheritance | >3 levels of inheritance | MEDIUM |
 
 ---
 
@@ -505,11 +526,18 @@ Include this section in the review output:
 | Severity adjustments | {n} |
 | Cross-analysis findings | {n} |
 
+### Checks
+- secret scan: {ran (<tools>, <n> files) | skipped (<reason>) | unavailable (<tool> not installed) | failed (<first error line>)}
+- SAST: {the same four forms}
+- dependency scan: {the same four forms}
+- linters: {the same four forms}
+- docs drift: {ran | not run: <reason>}
+
 ### Cross-Analysis (Security <-> Quality)
 {Correlations from Cross-Verifier}
 
 ### Challenged Findings
-{Findings removed or downgraded by Challenger, with reasoning — as plain bullets. NEVER paste original `### [SEVERITY]` issue blocks here; fix-all/fix-report extract any such heading as a fixable issue, which would resurrect a removed false positive.}
+{Findings removed or downgraded by Challenger, and findings dropped as not a finding (Step 5.5), with reasoning — as plain bullets. NEVER paste original `### [SEVERITY]` issue blocks here; fix-all/fix-report extract any such heading as a fixable issue, which would resurrect a removed false positive.}
 
 ### Rejected by auditors (self-falsification)
 {Per-auditor rejected entries as plain bullets `- {title} — {reason}`; `None` when empty. NEVER render these as `### [SEVERITY]` headings — fix-all/fix-report extract any such heading as a fixable issue.}
@@ -523,13 +551,15 @@ Include this section in the review output:
 
 The "Cross-analysis findings" count is the number of composites rendered as finding blocks.
 
+`### Checks` takes the `## Checks` lines of security-auditor (`secret scan`, `SAST`, `dependency scan`) and code-quality-auditor (`linters`) verbatim, in that order — a line that joins several statuses with `; ` stays whole, e.g. `- dependency scan: ran (npm audit, 2 files); unavailable (pip-audit not installed)`; a check an auditor did not report is `- <check>: failed (not reported)`. Its last line is `- docs drift: ran` when the pre-pass stored the script's output in `DOCS_DRIFT`, else `- docs drift: not run: <reason>`, the reason being `whole-repository scope`, `no documentation detected` or `unavailable: <its first output line, or the error>`. A skipped, unavailable or failed check is never described as clean, in `### Checks` or anywhere else in the report. `### Checks` is a bare heading, never `### [`.
+
 ---
 
 ## Step 5.6: Assign Issue IDs
 
 Before rendering the final report, assign unique identifiers to each issue based on category.
 
-The rendered report starts with the `Review scope:` line from the Review Scope Phase. Step 5.6 removes no finding: the scope check ran in Step 5.5 before composites were resolved, so every `**Composed-of:**` basis receives a final ID.
+The rendered report starts with the `Review scope:` line from the Review Scope Phase. Line 2 is blank and line 3 is the count line: `Findings: <N> (<c> CRITICAL, <h> HIGH, <m> MEDIUM, <l> LOW)`, or `Findings: none — nothing to fix.` when N is 0. N counts the `### [SEVERITY] ID:` blocks, composites included, exactly as Step 7 counts them, and c, h, m and l count them by severity; write the line once this step has assigned the IDs, by counting the headings of the rendered report. Step 5.6 removes no finding: the scope check ran in Step 5.5 before composites were resolved, so every `**Composed-of:**` basis receives a final ID.
 
 **Algorithm:**
 
@@ -584,9 +614,11 @@ After:
 
 ## Step 6: Save Review
 
+**Empty scope.** When the Review Scope Phase found nothing to review, print `Review not saved: nothing to review` and continue to Step 7 without a saved report.
+
 **Task Update:** Mark task 7 as `in_progress` using TaskUpdate.
 
-After the review report has been displayed, save it without asking; every review ends with a saved report:
+After the review report has been displayed, save it without asking; every review of a non-empty scope ends with a saved report:
 
 1. Get current branch name:
 
@@ -655,7 +687,7 @@ If any of these steps fails, print `Review not saved: <error>` and continue to S
    - question: `Trust the code-review settings? With them, every saved review goes straight to /code-review:fix-all, which fixes its auto-fixable findings without asking first.` When `policy.auto_accept_min_confidence` is a number `T`, append ` They also fix a documentation finding without asking when the analyst and an independent second opinion agree at or above <T>% confidence.` Follow it with one line per `trust_subset` entry, `<key> = <value>`, masked as returned. The approval covers every one of those lines: the decision gate reads the same approval.
    - options, in this order: `Trust and use it` — `Records approval for this worktree; asked again whenever these settings change.`; `Not now` — `Asks what to do with this review instead.`
 
-   `ACTION` stays `fix-all` only when the answer is exactly `Trust and use it` and the engine's `trust accept <trust_hash>` then exits 0 — `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py trust accept <trust_hash>` in Claude Code, `python3 '<resolved path>' trust accept <trust_hash>` in OMP. A failing `trust accept` prints `Post-review action: trust not recorded — <error>; asking instead.` Every other outcome — `Not now`, free text, a cancelled or missing answer, a question that cannot be asked or that errors — prints `Post-review action: settings not trusted; asking instead.` Both set `ACTION` to `ask`.
+   `ACTION` stays `fix-all` only when the answer is exactly `Trust and use it` and the engine's `trust accept <trust_hash>` then exits 0 — `python3 ${CLAUDE_PLUGIN_ROOT}/skills/decision-gate/scripts/auto_accept.py trust accept <trust_hash>` in Claude Code, `python3 '<resolved path>' trust accept <trust_hash>` in OMP. This command does not pre-approve that call, so in Claude Code's default permission mode, unless another permission rule allows it, Claude Code asks for permission before it runs; a denied permission is a failing `trust accept`. A failing `trust accept` prints `Post-review action: trust not recorded — <error>; asking instead.` Every other outcome — `Not now`, free text, a cancelled or missing answer, a question that cannot be asked or that errors — prints `Post-review action: settings not trusted; asking instead.` Both set `ACTION` to `ask`.
 
 5. **Ask.** `ACTION` is `ask` → ask one AskUserQuestion:
    - question: `What next with the {N} findings in <REPORT>?`
@@ -686,14 +718,16 @@ The handover runs in this command's turn. In Claude Code this command's `allowed
 
 ## Final Verification Checklist
 
+An empty scope (Review Scope Phase) skips this checklist: it launches no agent, prints `Review not saved: nothing to review` and goes to Step 7.
+
 ### Security (MANDATORY)
 
 - [ ] security-auditor subagent launched
 - [ ] Security results retrieved via AgentOutputTool
 - [ ] All security findings included in review
 - [ ] Secret scanning completed
-- [ ] SAST analysis completed
-- [ ] Dependency scan completed
+- [ ] SAST reported in `### Checks`, skipped only where the `Checks:` line planned it
+- [ ] Dependency scan reported in `### Checks`, skipped only where the `Checks:` line planned it
 
 ### Code Quality (MANDATORY)
 
@@ -701,7 +735,7 @@ The handover runs in this command's turn. In Claude Code this command's `allowed
 - [ ] Quality results retrieved via AgentOutputTool
 - [ ] All quality findings included in review
 - [ ] Standards discovery completed
-- [ ] Linter/typecheck results integrated
+- [ ] Linters reported in `### Checks`; their output kept as evidence, never as finding blocks (**What is not a finding**)
 - [ ] Architecture analysis completed
 
 ### Documentation (CONDITIONAL)
@@ -715,11 +749,13 @@ The handover runs in this command's turn. In Claude Code this command's `allowed
 ### Completeness
 
 - [ ] Performance analysis done
-- [ ] Review scope determined, its scope block passed to every dispatched agent, scope check applied before composites were resolved
+- [ ] Review scope determined (review artifacts excluded, `Checks:` line derived), its scope block passed to every dispatched agent, scope check applied before composites were resolved
+- [ ] Every finding that **What is not a finding** excludes dropped to `### Challenged Findings`
 - [ ] All findings have file:line references
 - [ ] Severity levels assigned (CRITICAL/HIGH/MEDIUM/LOW)
 - [ ] Actionable remediation provided
 - [ ] Code examples for HIGH+ severity issues
+- [ ] Report line 1 is the `Review scope:` line and line 3 the `Findings:` count line
 
 ### Post-Review Actions
 
@@ -739,5 +775,5 @@ The handover runs in this command's turn. In Claude Code this command's `allowed
 
 - [ ] Cross-Verifier and Challenger subagents spawned and results collected
 - [ ] Cross-Verifier correlations integrated
-- [ ] Challenger results applied (false positives removed, severity adjusted)
-- [ ] Verification Summary included in output
+- [ ] Challenger results applied to every finding, at every severity (false positives removed, severity adjusted)
+- [ ] Verification Summary included in output, with its `### Checks` subsection
