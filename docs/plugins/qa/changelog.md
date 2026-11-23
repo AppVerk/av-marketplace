@@ -2,6 +2,10 @@
 
 This page lists user-visible changes per release.
 
+## 3.2.1: browser guide for OMP 19.1
+
+In OMP, the testers and the plan-authoring probe read the `browser` guide at `help://eval/browser`, where OMP 19.1.0 moved it from `xd://eval/browser`. QA's OMP edition therefore needs OMP 19.1.0 or newer. The Claude Code edition is unchanged.
+
 ## 3.2.0: OMP test planner without OMP's Advisor
 
 In OMP, `qa:test-planner` no longer runs with OMP's Advisor, which 2.9.0 added, so a test plan no longer carries the Advisor's model cost; `qa:test-plan-reviewer` still reviews every plan on the `advisor` role. To run the planner with the Advisor, set `task.agentAdvisor` to `{"qa:test-planner": "on"}` (see [Advisor](../../oh-my-pi.md#advisor)). The Claude Code edition is unchanged.
