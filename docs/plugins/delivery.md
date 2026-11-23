@@ -2,7 +2,7 @@
 
 Delivery runs approved plans task by task, or delivers an existing plan with `/delivery:execute <PLAN_PATH>`. Each task goes to the agent the router selects from its file list, then receives a review and its own commit. After the last task, Delivery runs the plan's Verification, QA when the change is testable, and a full code review. Delivery never asks which developer should implement a task.
 
-**Version:** 0.9.0
+**Version:** 0.10.0
 
 ## How a delivery starts
 
@@ -46,7 +46,7 @@ Write a failing search test first, implement the search endpoint, then remove th
 
 Number tasks 1, 2, 3… in execution order, each number exactly once; put producers before consumers. Every file change belongs to a task: text outside task blocks is context, not implementation work. List every file the task will create, modify, test, or delete under `**Files:**`, with repository-relative paths in backticks. The file list determines the implementer. Keep one stack per task (Python, React/TypeScript frontend, PHP, or other files such as docs and CI); split work spanning stacks into separate tasks. Each task must stand alone and name any functions, types, or signatures later tasks depend on. Do not put `##` or `###` headings inside a task outside fenced code blocks: the next heading ends that task. Keep the English word `Task` in the heading even when the plan is written in another language: `### Zadanie 1:` is not a task heading.
 
-`**Commit:**` is optional; without it, the task commit subject is `chore: <title>`. After the last task, an optional `## Verification` section lists checks Delivery runs in order. A plan with no `### Task` headings runs without Delivery. Proposing a plan in plan mode (OMP's `xd://propose`, Claude Code's ExitPlanMode) rejects it, listing every violation, when a task heading is malformed, a task lists no files or touches several stacks, a `**Commit:**` line is empty, or a task number repeats. `/delivery:execute` and the Superpowers hand-over run the same check before Delivery creates a branch or commits anything and stop with the same list; the one difference is a task without a `**Files:**` block, which they accept and route by its text.
+`**Commit:**` is optional; without it, the task commit subject is `chore: <title>`. After the last task, an optional `## Verification` section lists checks Delivery runs in order. A plan with no `### Task` headings runs without Delivery. Proposing a plan in plan mode (OMP's `propose`, Claude Code's ExitPlanMode) rejects it, listing every violation, when a task heading is malformed, a task lists no files or touches several stacks, a `**Commit:**` line is empty, or a task number repeats. In OMP, a `bash` command that runs `propose` other than as `propose <slug>` or `propose --title <slug>` is rejected too. `/delivery:execute` and the Superpowers hand-over run the same check before Delivery creates a branch or commits anything and stop with the same list; the one difference is a task without a `**Files:**` block, which they accept and route by its text.
 
 ## Routing
 

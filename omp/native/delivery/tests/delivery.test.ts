@@ -73,19 +73,36 @@ async function callHook(name: string, event: Parameters<Hook>[0]): Promise<unkno
 	return hook(event, ctx);
 }
 
-test("xd://propose blocks an unroutable plan, including an uppercase XD scheme", async () => {
+test("propose blocks an unroutable plan, as a tool or as a bash command", async () => {
 	writeFileSync(join(artifacts, "local", "feature-plan.md"), invalidPlan);
-	const result = await callHook("tool_call", { toolName: "write", input: { path: "XD://propose", content: "feature" } }) as { block: boolean; reason: string };
+	const result = await callHook("tool_call", { toolName: "propose", input: { title: "feature" } }) as { block: boolean; reason: string };
 	expect(result.block).toBe(true);
 	expect(result.reason).toContain("Task 1");
 	expect(result.reason).toContain("local://feature-plan.md");
+	const command = await callHook("tool_call", { toolName: "bash", input: { command: "cd repo && propose 'feature'" } }) as { block: boolean; reason: string };
+	expect(command.block).toBe(true);
+	expect(command.reason).toContain("Task 1");
 
 	writeFileSync(join(artifacts, "local", "feature-plan.md"), validPlan);
-	expect(await callHook("tool_call", { toolName: "write", input: { path: "xd://propose", content: "feature.md" } })).toBeUndefined();
+	expect(await callHook("tool_call", { toolName: "propose", input: { title: "feature.md" } })).toBeUndefined();
+	expect(await callHook("tool_call", { toolName: "bash", input: { command: "propose --title=feature" } })).toBeUndefined();
+	expect(await callHook("tool_call", { toolName: "bash", input: { command: "propose --title feature" } })).toBeUndefined();
 });
 
-test("xd://propose warns when the plan file is missing or the router fails, but allows the proposal", async () => {
-	const event = { toolName: "write", input: { path: "xd://propose", content: "feature" } };
+test("a bash command that runs propose in a form the check cannot read is blocked; other commands pass", async () => {
+	writeFileSync(join(artifacts, "local", "feature-plan.md"), validPlan);
+	for (const command of ["propose feature; propose other", `propose -j '{"title": "feature"}'`, "propose @title.txt", "propose"]) {
+		const result = await callHook("tool_call", { toolName: "bash", input: { command } }) as { block: boolean; reason: string };
+		expect(result.block).toBe(true);
+		expect(result.reason).toContain("run `propose <slug>` as a command of its own");
+	}
+	for (const command of ["echo 'propose feature'", "git log --grep propose", "ls"])
+		expect(await callHook("tool_call", { toolName: "bash", input: { command } })).toBeUndefined();
+	expect(notifications).toEqual([]);
+});
+
+test("propose warns when the plan file is missing or the router fails, but allows the proposal", async () => {
+	const event = { toolName: "propose", input: { title: "feature" } };
 	expect(await callHook("tool_call", event)).toBeUndefined();
 	expect(notifications[0]).toContain("Delivery plan check skipped: plan file not found");
 	expect(notificationLevels[0]).toBe("warning");
@@ -98,7 +115,7 @@ test("xd://propose warns when the plan file is missing or the router fails, but 
 });
 
 test("nonzero process codes do not accept a repository or a router result", async () => {
-	const event = { toolName: "write", input: { path: "xd://propose", content: "feature" } };
+	const event = { toolName: "propose", input: { title: "feature" } };
 	writeFileSync(join(artifacts, "local", "feature-plan.md"), invalidPlan);
 	const realExec = execute;
 	execute = async (command, args, options) => {
@@ -153,10 +170,10 @@ test("approval warns when the router fails", async () => {
 	expect(notifications[0]).toContain("Delivery skipped: plan check failed for local://feature-plan.md");
 });
 
-test("xd://propose blocks a plan whose only task heading is malformed", async () => {
+test("propose blocks a plan whose only task heading is malformed", async () => {
 	const badPlan = "# Plan\n\n### Task 1 - Docs\n**Files:**\n- Modify: `README.md`\n";
 	writeFileSync(join(artifacts, "local", "bad-plan.md"), badPlan);
-	const result = await callHook("tool_call", { toolName: "write", input: { path: "xd://propose", content: "bad" } }) as { block: boolean; reason: string };
+	const result = await callHook("tool_call", { toolName: "propose", input: { title: "bad" } }) as { block: boolean; reason: string };
 	expect(result.block).toBe(true);
 	expect(result.reason).toContain("Invalid task heading");
 });

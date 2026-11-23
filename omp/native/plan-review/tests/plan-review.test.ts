@@ -160,9 +160,13 @@ function repositoryConfig(content: string): void {
 }
 
 function propose(title = "feature"): Promise<unknown> {
+	return proposeCall({ toolName: "propose", input: { title } });
+}
+
+function proposeCall(event: Parameters<Hook>[0]): Promise<unknown> {
 	const hook = hooks.get("tool_call");
 	if (!hook) throw new Error("Missing tool_call hook");
-	return hook({ toolName: "write", input: { path: "xd://propose", content: title } }, ctx);
+	return hook(event, ctx);
 }
 
 async function review(title = "feature"): Promise<string> {
@@ -408,16 +412,31 @@ test.each([
 	expect(await propose()).toBeUndefined();
 });
 
-test("xd://propose blocks an unreviewed plan and leaves other writes alone", async () => {
+test("propose blocks an unreviewed plan and leaves other tool calls alone", async () => {
 	const blocked = (await propose()) as Blocked;
 	expect(blocked.block).toBe(true);
-	expect(blocked.reason).toContain('write {"title": "feature"} to xd://plan_review');
+	expect(blocked.reason).toContain("run `plan_review feature`");
 
-	const hook = hooks.get("tool_call");
-	expect(await hook?.({ toolName: "write", input: { path: "README.md", content: "feature" } }, ctx)).toBeUndefined();
+	expect(await proposeCall({ toolName: "write", input: { path: "README.md", content: "feature" } })).toBeUndefined();
+	expect(await proposeCall({ toolName: "bash", input: { command: "echo 'propose feature'" } })).toBeUndefined();
+	expect(await proposeCall({ toolName: "bash", input: { command: "git log --grep propose" } })).toBeUndefined();
 });
 
-test("a title that names no plan file is checked against the plan xd://propose falls back to", async () => {
+test("propose in a bash command passes the same gate, and a propose call it cannot read is blocked", async () => {
+	const commands = ["propose feature", "cd repo && propose 'feature'", "propose --title=feature", 'propose --title "feature"'];
+	for (const command of commands) expect(((await proposeCall({ toolName: "bash", input: { command } })) as Blocked).block).toBe(true);
+
+	answers.push({ text: '{"findings": []}' });
+	await review();
+	for (const command of commands) expect(await proposeCall({ toolName: "bash", input: { command } })).toBeUndefined();
+	for (const command of ["propose feature; propose other", `propose -j '{"title": "feature"}'`, "propose @title.txt", "propose"]) {
+		const blocked = (await proposeCall({ toolName: "bash", input: { command } })) as Blocked;
+		expect(blocked.block).toBe(true);
+		expect(blocked.reason).toContain("run `propose <slug>` as a command of its own");
+	}
+});
+
+test("a title that names no plan file is checked against the plan `propose` falls back to", async () => {
 	// OMP resolves an unusable title to the newest *plan.md; the gate must judge that same file.
 	expect(((await propose("feature/Rename the script")) as Blocked).block).toBe(true);
 
@@ -754,8 +773,8 @@ test("a plan edited during the last blocking round keeps the edit and hands its 
 	expect(last).toContain("- [blocker] Task 2: The script it runs does not exist. Fix: Name the existing script.");
 	expect(last).toContain("- [concern] Task 1: No test covers the change. Fix: Add a test.");
 	expect(last).toContain(`changed while the review ran, so the plugin did not list the open findings in it, and all ${MAX_ROUNDS} review rounds are used.`);
-	expect(last).toContain('Tell the user about the findings above, then write "feature" to xd://propose; the user decides on them.');
-	expect(last).not.toContain("xd://plan_review");
+	expect(last).toContain("Tell the user about the findings above, then run `propose feature`; the user decides on them.");
+	expect(last).not.toContain("plan_review");
 	expect(readFileSync(planPath, "utf8")).toBe(edited);
 	expect(reviewerCalls).toBe(MAX_ROUNDS);
 	expect(await propose()).toBeUndefined();
