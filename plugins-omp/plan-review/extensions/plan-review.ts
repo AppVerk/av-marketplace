@@ -340,26 +340,45 @@ async function saveRecord(record: ReviewRecord, ctx: ExtensionContext): Promise<
 	}
 }
 
-/** `command` split into simple commands at unquoted `;`, `&`, `|`, `(`, `)` and newlines, each a list of words without quotes. */
-function shellCommands(command: string): string[][] {
-	const commands: string[][] = [];
-	let words: string[] = [];
+/**
+ * `command` split into simple commands at unquoted `;`, `&`, `|`, `(`, `)` and newlines, each a list of its words
+ * without quotes. `null` stands for a word the shell would expand: one with `$` or a backquote outside single quotes.
+ */
+function shellCommands(command: string): (string | null)[][] {
+	const commands: (string | null)[][] = [];
+	let words: (string | null)[] = [];
 	let word: string | undefined;
-	let quote: string | undefined;
+	let expands = false;
+	let quote: "'" | '"' | undefined;
+	const endWord = () => {
+		if (word !== undefined) words.push(expands ? null : word);
+		word = undefined;
+		expands = false;
+	};
 	for (let i = 0; i < command.length; i++) {
 		const char = command[i];
-		if (quote !== undefined) {
-			if (char === quote) quote = undefined;
-			else word = (word ?? "") + (char === "\\" && quote === '"' && i + 1 < command.length ? command[++i] : char);
+		if (quote === "'") {
+			if (char === "'") quote = undefined;
+			else word = (word ?? "") + char;
+		} else if (char === "\\") {
+			const next = command[i + 1];
+			// Inside double quotes a backslash escapes only these characters; before any other it stays.
+			if (quote === '"' && (next === undefined || !'$`"\\\n'.includes(next))) word = (word ?? "") + char;
+			else {
+				i++;
+				if (next !== undefined && next !== "\n") word = (word ?? "") + next;
+			}
+		} else if (char === "$" || char === "`") {
+			expands = true;
+			word = (word ?? "") + char;
+		} else if (quote === '"') {
+			if (char === '"') quote = undefined;
+			else word = (word ?? "") + char;
 		} else if (char === "'" || char === '"') {
 			quote = char;
 			word ??= "";
-		} else if (char === "\\") {
-			if (command[i + 1] !== "\n") word = (word ?? "") + (command[i + 1] ?? "");
-			i++;
 		} else if (" \t;&|()\n".includes(char)) {
-			if (word !== undefined) words.push(word);
-			word = undefined;
+			endWord();
 			if (char !== " " && char !== "\t" && words.length > 0) {
 				commands.push(words);
 				words = [];
@@ -368,7 +387,7 @@ function shellCommands(command: string): string[][] {
 			word = (word ?? "") + char;
 		}
 	}
-	if (word !== undefined) words.push(word);
+	endWord();
 	if (words.length > 0) commands.push(words);
 	return commands;
 }
@@ -376,7 +395,8 @@ function shellCommands(command: string): string[][] {
 /**
  * The title a tool call submits to OMP's `propose`: a direct `propose` call's `title`, or the argument of
  * `propose <slug>` (or `--title <slug>`) in a `bash` command. `null` when the call runs `propose` in a form this
- * cannot read (twice, other arguments, input from JSON, a file or stdin); `undefined` when it does not run `propose`.
+ * cannot read (twice, other arguments, a slug the shell would expand, input from JSON, a file or stdin);
+ * `undefined` when it does not run `propose`.
  */
 function proposedTitle(toolName: string, input: unknown): string | null | undefined {
 	const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
@@ -385,9 +405,10 @@ function proposedTitle(toolName: string, input: unknown): string | null | undefi
 	const proposals = shellCommands(fields.command).filter(words => words[0] === "propose");
 	if (proposals.length === 0) return undefined;
 	const args = proposals.length === 1 ? proposals[0].slice(1) : [];
-	if (args.length === 1 && !/^[-@]/.test(args[0])) return args[0];
-	if (args.length === 1 && args[0].startsWith("--title=")) return args[0].slice("--title=".length);
-	if (args.length === 2 && args[0] === "--title") return args[1];
+	const [first, second] = args;
+	if (args.length === 1 && first != null && !/^[-@]/.test(first)) return first;
+	if (args.length === 1 && first?.startsWith("--title=")) return first.slice("--title=".length);
+	if (args.length === 2 && first === "--title" && second != null) return second;
 	return null;
 }
 

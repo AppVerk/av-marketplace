@@ -91,7 +91,8 @@ test("propose blocks an unroutable plan, as a tool or as a bash command", async 
 
 test("a bash command that runs propose in a form the check cannot read is blocked; other commands pass", async () => {
 	writeFileSync(join(artifacts, "local", "feature-plan.md"), validPlan);
-	for (const command of ["propose feature; propose other", `propose -j '{"title": "feature"}'`, "propose @title.txt", "propose"]) {
+	const unreadable = ["propose feature; propose other", `propose -j '{"title": "feature"}'`, "propose @title.txt", "propose", "propose $SLUG", 'propose "$(cat title.txt)"', "propose `cat title.txt`", 'propose --title="$SLUG"'];
+	for (const command of unreadable) {
 		const result = await callHook("tool_call", { toolName: "bash", input: { command } }) as { block: boolean; reason: string };
 		expect(result.block).toBe(true);
 		expect(result.reason).toContain("run `propose <slug>` as a command of its own");

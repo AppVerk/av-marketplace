@@ -429,7 +429,8 @@ test("propose in a bash command passes the same gate, and a propose call it cann
 	answers.push({ text: '{"findings": []}' });
 	await review();
 	for (const command of commands) expect(await proposeCall({ toolName: "bash", input: { command } })).toBeUndefined();
-	for (const command of ["propose feature; propose other", `propose -j '{"title": "feature"}'`, "propose @title.txt", "propose"]) {
+	const unreadable = ["propose feature; propose other", `propose -j '{"title": "feature"}'`, "propose @title.txt", "propose", "propose $SLUG", 'propose "$(cat title.txt)"', "propose `cat title.txt`", 'propose --title="$SLUG"'];
+	for (const command of unreadable) {
 		const blocked = (await proposeCall({ toolName: "bash", input: { command } })) as Blocked;
 		expect(blocked.block).toBe(true);
 		expect(blocked.reason).toContain("run `propose <slug>` as a command of its own");
