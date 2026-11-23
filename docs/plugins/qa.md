@@ -2,7 +2,7 @@
 
 `/qa:run` tests a change and reports observed failures with `QA-NNN` issue IDs. It can fix eligible issues and retest within fixed limits. Frontend tests use the browser; backend tests use APIs and configured stores; DESKTOP tests drive desktop apps headless in the background through installable driver plugins.
 
-**Version:** 3.2.0
+**Version:** 3.2.1
 
 ## Quick start
 

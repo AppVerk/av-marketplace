@@ -16,7 +16,7 @@ omp plugin install <plugin>@av-marketplace
 
 QA and Code Review's auto-accept and `after_review` need Python 3.11 or newer as `python3`, Delivery needs Python 3.9 or newer, and Commit needs `jq`; see [Prerequisites](installation.md#prerequisites).
 
-Delivery's and Plan Review's extensions need OMP 19.1.0 or newer: they check a plan when it is submitted with the `propose` command, which replaced `xd://propose` in that release.
+Delivery's and Plan Review's extensions need OMP 19.1.0 or newer: they check a plan when it is submitted with the `propose` command, which replaced `xd://propose` in that release. QA's OMP edition needs it too: its browser steps read the `browser` guide at `help://eval/browser`, which 19.1.0 moved from `xd://eval/browser`.
 
 ## Updating
 
