@@ -1,6 +1,6 @@
 # Configuration
 
-Use `.av/config.toml` for shared environment settings and each plugin's settings. QA's first interactive run proposes the file from repository evidence. This page covers `[env]`; [QA configuration](plugins/qa/configuration.md) owns `[qa]` policy, users and cleanup, and [Code Review configuration](plugins/code-review.md#configuration) owns `[code-review]`.
+Use `.av/config.toml` for shared environment settings and each plugin's settings. QA's first interactive run proposes the file from repository evidence. This page covers `[env]`; [QA configuration](plugins/qa/configuration.md) owns `[qa]` policy, users and cleanup, [Code Review configuration](plugins/code-review.md#configuration) owns `[code-review]`, and [Plan Review](plugins/plan-review.md#review-records) owns `[plan-review]`.
 
 ## Minimal file
 
@@ -235,5 +235,6 @@ These 3 shell variables are example inputs, not configuration sources. The engin
 | `[env]` | Shared environment; [this page](#configuration). |
 | `[qa]` | [QA configuration](plugins/qa/configuration.md). |
 | `[code-review]` | [Code Review configuration](plugins/code-review.md#configuration): `auto_accept_min_confidence`, `auto_accept_gate` and `after_review`, all also allowed in the user file. |
+| `[plan-review]` | [Plan Review](plugins/plan-review.md#review-records): `records`, also allowed in the user file. |
 
 Register each new plugin's table here with its key reference. Keep plugin-specific policy and recipes out of `[env]`.

@@ -26,7 +26,7 @@
       "name": "delivery",
       "source": "./delivery",
       "description": "Delivers approved plan-mode plans: each task goes to the developer agent that owns its files, is reviewed and committed, then the plan's verification, QA when the change is testable, and the full code review run.",
-      "version": "0.8.1",
+      "version": "0.10.0",
       "category": "development"
     },
     {
@@ -46,8 +46,8 @@
     {
       "name": "plan-review",
       "source": "./plan-review",
-      "description": "Reviews every plan-mode plan with the advisor-role model before it reaches the approval dialog: xd://propose stays blocked until the review approves the plan, 3 review rounds are used, or you skip a running review with Esc or another interrupt of the turn. Oh My Pi only.",
-      "version": "0.2.0",
+      "description": "Reviews every plan-mode plan with the advisor-role model before it reaches the approval dialog: propose stays blocked until a review finds no blockers, 3 review rounds are used, or you skip a running review with Esc or another interrupt of the turn; open concerns go to approval in the plan file. Oh My Pi only.",
+      "version": "0.5.0",
       "category": "development"
     },
     {
@@ -61,7 +61,7 @@
       "name": "qa",
       "source": "./qa",
       "description": "Automated QA testing plugin — /qa:run bootstraps project config with stores and users, reuses or generates a reviewed plan, and runs a bounded FE/BE test→fix→retest loop with batch fix approval by default. Testers register accounts; a configured cleanup recipe removes them at teardown. /qa:create-plan supports plan review before execution. Reports compatible with code-review. DESKTOP scenarios test desktop apps headless in the background through separately installed desktop driver plugins.",
-      "version": "3.1.0",
+      "version": "3.2.1",
       "category": "testing"
     }
   ]

@@ -8,7 +8,7 @@
     },
     "be-tester": { "role": "tester" },
     "desktop-tester": { "role": "tester" },
-    "test-planner": { "role": "plan", "advisor": true },
+    "test-planner": { "role": "plan" },
     "test-plan-reviewer": { "role": "advisor" },
     "config-author": { "role": "plan" }
   }

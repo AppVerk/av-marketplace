@@ -16,7 +16,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from route_task import check, layout, parse_plan, route, route_text, scan_delivery_log, split_testable  # noqa: E402
+from route_task import check, layout, parse_plan, plan_findings, route, route_text, scan_delivery_log, split_testable  # noqa: E402
 
 ROUTER = SCRIPTS / "route_task.py"
 
@@ -306,6 +306,14 @@ class ParsePlanTest(unittest.TestCase):
         self.assertTrue(tasks[0]["block"].endswith("Append it after the intro."), tasks[0]["block"])
 
 
+class PlanFindingsTest(unittest.TestCase):
+    def test_items_of_the_section_without_its_intro_fences_or_later_sections(self) -> None:
+        self.assertEqual(plan_findings(FINDINGS_PLAN), FINDINGS)
+
+    def test_plan_without_the_section_has_no_findings(self) -> None:
+        self.assertEqual(plan_findings(PLAN), [])
+
+
 FENCED_PLAN = """# Plan
 
 ### Task 1: Usage docs
@@ -328,6 +336,47 @@ Append it after the intro.
 ## Verification
 - pytest
 """
+
+
+FINDINGS_PLAN = """# Plan
+
+### Task 1: Orders endpoint
+**Files:**
+- Modify: `backend/app/orders.py`
+
+````markdown
+## Open review findings
+
+- [concern] Fenced example, not a finding.
+````
+
+## Verification
+- pytest
+
+## Open review findings
+
+Plan Review (openai-codex/gpt-6-astra, round 1 of 3) found no blockers. These concerns remain open and do not block approval: decide on them when you approve the plan. The plan-review plugin wrote this section; any later review of the plan replaces it.
+
+- [concern] Task 1: No test covers the change. Fix: Add a test.
+- [blocker] Task 2: The script it runs does not exist.
+  Fix: Name the existing script.
+
+```text
+## Fenced line, not a heading
+```
+
+### Notes
+- [concern] Verification: The suite is not named. Fix: Run `pytest -q`.
+
+## Appendix
+- [concern] Outside the section.
+"""
+
+FINDINGS = [
+    "- [concern] Task 1: No test covers the change. Fix: Add a test.",
+    "- [blocker] Task 2: The script it runs does not exist.\n  Fix: Name the existing script.",
+    "- [concern] Verification: The suite is not named. Fix: Run `pytest -q`.",
+]
 
 
 SPLIT_PLAN = """# Plan
@@ -441,6 +490,12 @@ class LayoutTest(RoutingFixture):
 
 
 class CliTest(RoutingFixture):
+    def test_plan_findings_prints_the_items_of_the_section(self) -> None:
+        write(self.root, "findings-plan.md", FINDINGS_PLAN)
+        result = self.run_router("plan-findings", str(self.root), "findings-plan.md")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"findings": FINDINGS})
+
     def test_plan_without_tasks_exits_2(self) -> None:
         write(self.root, "empty-plan.md", "# Nothing here\n")
         result = self.run_router("plan", str(self.root), "empty-plan.md")

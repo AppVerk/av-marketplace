@@ -2,7 +2,7 @@
  * Delivery extension: plan mode → delivery.
  *
  * - Plan mode in a git repository: appends the delivery task format to the system prompt.
- * - `write xd://propose`: rejects a plan whose `### Task` blocks the router cannot route.
+ * - `propose` (the tool, or the command in `bash`): rejects a plan whose `### Task` blocks the router cannot route.
  * - Plan approval (the interactive "Plan approved." prompt): when the plan has `### Task`
  *   headings, adds a message that hands it to the Delivery run of skill://delivery:orchestration.
  * - Plan approval that cannot start delivery (missing plan file, failed check, no valid task) warns instead of staying silent.
@@ -12,7 +12,6 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { resolveLocalUrlToPath } from "@oh-my-pi/pi-coding-agent/internal-urls/local-protocol";
 import { normalizePlanTitle, planFileUrlForSlug } from "@oh-my-pi/pi-coding-agent/plan-mode/approved-plan";
-import { parseXdUrl } from "@oh-my-pi/pi-tui/tools/xd-url";
 
 const ROUTER = path.join(import.meta.dir, "..", "scripts", "route_task.py");
 type PlanCheck = { tasks: number; problems: string[]; no_files: string[] };
@@ -46,7 +45,7 @@ Rules:
 - List every file the task creates, modifies, tests or deletes: repository-relative, in backticks. The file list picks the implementing agent.
 - Each task stands alone: its agent implements only that task. Name the functions, types and signatures that later tasks rely on.
 - Inside a task use no \`##\` or \`###\` headings outside fenced code blocks; the next one ends the task.
-- Writing the slug to xd://propose checks these rules and lists every violation.
+- Submitting the slug to \`propose\` checks these rules and lists every violation.
 - A plan that changes no files (research, analysis, an answer) has no \`### Task\` headings and runs without delivery.`;
 
 async function gitRoot(pi: ExtensionAPI, cwd: string): Promise<string | undefined> {
@@ -102,6 +101,78 @@ function approvedPlanPath(prompt: string): string | undefined {
 	return tag.endsWith(PLAN_TAG_END) ? tag.slice(PLAN_TAG_START.length, -PLAN_TAG_END.length) : undefined;
 }
 
+/**
+ * `command` split into simple commands at unquoted `;`, `&`, `|`, `(`, `)` and newlines, each a list of its words
+ * without quotes. `null` stands for a word the shell would expand: one with `$` or a backquote outside single quotes.
+ */
+function shellCommands(command: string): (string | null)[][] {
+	const commands: (string | null)[][] = [];
+	let words: (string | null)[] = [];
+	let word: string | undefined;
+	let expands = false;
+	let quote: "'" | '"' | undefined;
+	const endWord = () => {
+		if (word !== undefined) words.push(expands ? null : word);
+		word = undefined;
+		expands = false;
+	};
+	for (let i = 0; i < command.length; i++) {
+		const char = command[i];
+		if (quote === "'") {
+			if (char === "'") quote = undefined;
+			else word = (word ?? "") + char;
+		} else if (char === "\\") {
+			const next = command[i + 1];
+			// Inside double quotes a backslash escapes only these characters; before any other it stays.
+			if (quote === '"' && (next === undefined || !'$`"\\\n'.includes(next))) word = (word ?? "") + char;
+			else {
+				i++;
+				if (next !== undefined && next !== "\n") word = (word ?? "") + next;
+			}
+		} else if (char === "$" || char === "`") {
+			expands = true;
+			word = (word ?? "") + char;
+		} else if (quote === '"') {
+			if (char === '"') quote = undefined;
+			else word = (word ?? "") + char;
+		} else if (char === "'" || char === '"') {
+			quote = char;
+			word ??= "";
+		} else if (" \t;&|()\n".includes(char)) {
+			endWord();
+			if (char !== " " && char !== "\t" && words.length > 0) {
+				commands.push(words);
+				words = [];
+			}
+		} else {
+			word = (word ?? "") + char;
+		}
+	}
+	endWord();
+	if (words.length > 0) commands.push(words);
+	return commands;
+}
+
+/**
+ * The title a tool call submits to OMP's `propose`: a direct `propose` call's `title`, or the argument of
+ * `propose <slug>` (or `--title <slug>`) in a `bash` command. `null` when the call runs `propose` in a form this
+ * cannot read (twice, other arguments, a slug the shell would expand, input from JSON, a file or stdin);
+ * `undefined` when it does not run `propose`.
+ */
+function proposedTitle(toolName: string, input: unknown): string | null | undefined {
+	const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
+	if (toolName === "propose") return typeof fields.title === "string" ? fields.title : null;
+	if (toolName !== "bash" || typeof fields.command !== "string") return undefined;
+	const proposals = shellCommands(fields.command).filter(words => words[0] === "propose");
+	if (proposals.length === 0) return undefined;
+	const args = proposals.length === 1 ? proposals[0].slice(1) : [];
+	const [first, second] = args;
+	if (args.length === 1 && first != null && !/^[-@]/.test(first)) return first;
+	if (args.length === 1 && first?.startsWith("--title=")) return first.slice("--title=".length);
+	if (args.length === 2 && first === "--title" && second != null) return second;
+	return null;
+}
+
 export default function deliveryExtension(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (inPlanMode(ctx)) {
@@ -153,11 +224,14 @@ export default function deliveryExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		if (event.toolName !== "write") return undefined;
-		const { path: target, content } = event.input as { path?: unknown; content?: unknown };
-		if (typeof target !== "string" || typeof content !== "string" || parseXdUrl(target)?.name !== "propose")
-			return undefined;
-		const url = proposedPlanUrl(content);
+		const title = proposedTitle(event.toolName, event.input);
+		if (title === undefined) return undefined;
+		if (title === null)
+			return {
+				block: true,
+				reason: "Delivery checks the plan before approval: run `propose <slug>` as a command of its own, with the slug as its only argument.",
+			};
+		const url = proposedPlanUrl(title);
 		const file = url ? localPath(url, ctx) : undefined;
 		if (!url) return undefined;
 		if (!file || !existsSync(file)) {
@@ -180,7 +254,7 @@ export default function deliveryExtension(pi: ExtensionAPI): void {
 			reason: [
 				`Delivery plan check failed for ${url}:`,
 				...violations.map(problem => `- ${problem}`),
-				"Fix these tasks in the plan file, then write the slug to xd://propose again.",
+				"Fix these tasks in the plan file, then submit the slug to `propose` again.",
 			].join("\n"),
 		};
 	});

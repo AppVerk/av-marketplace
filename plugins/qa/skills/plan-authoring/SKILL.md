@@ -48,7 +48,7 @@ Try: browser_navigate(url: "about:blank")
 ```
 If it works → Playwright available. If it fails → Playwright unavailable.
 
-In OMP, use the command preamble's built-in-browser mapping for this same probe: read `xd://eval/browser`, then open the QA tab at `about:blank` through `browser` in `eval`. A missing browser tool or an exception means unavailable; never install a browser to make the probe pass.
+In OMP, use the command preamble's built-in-browser mapping for this same probe: read `help://eval/browser`, then open the QA tab at `about:blank` through `browser` in `eval`. A missing browser tool or an exception means unavailable; never install a browser to make the probe pass.
 
 **CLI tools:**
 

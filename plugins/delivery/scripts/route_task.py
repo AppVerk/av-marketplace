@@ -11,6 +11,7 @@ implementer. Nothing here calls a model or asks anyone.
 
 Usage:
     route_task.py plan <root> <plan.md>   # JSON list, one entry per task
+    route_task.py plan-findings <root> <plan.md>  # JSON {"findings": [...]}: items of "## Open review findings"
     route_task.py check <root> <plan.md>  # JSON {"tasks": N, "problems": [...], "no_files": [...]}
     route_task.py message <root> <plan.md> <N> [--open-findings]  # task commit with trailers
     route_task.py done <root> <plan.md>  # JSON delivered tasks, conflicts, base
@@ -61,6 +62,9 @@ EMPTY_COMMIT = re.compile(r"^\*\*Commit:\*\*[ \t]*$", re.MULTILINE)
 BACKTICKED = re.compile(r"`([^`]+)`")
 INLINE_CODE = re.compile(r"(?<!`)(`+)(?!`)([^\n]*?)\1(?!`)")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$", re.MULTILINE)
+OPEN_FINDINGS_HEADING = "## Open review findings"
+FINDINGS_SECTION_END = re.compile(r"#{1,2}\s")
+LIST_ITEM = re.compile(r"[-*+][ \t]+\S")
 CODE_PATH = re.compile(r"(?<![\w./:~-])((?:[\w.-]+/)*[\w-][\w.-]*\.(?:py|php|tsx|ts|jsx|js|mjs|cjs|scss|css))\b", re.IGNORECASE)
 FENCE_STACKS = {
     "python": "python", "py": "python", "python3": "python", "php": "php",
@@ -273,6 +277,38 @@ def parse_plan(text: str) -> list[dict]:
     return tasks
 
 
+def plan_findings(text: str) -> list[str]:
+    """List items of the plan's `## Open review findings` sections, which Plan Review writes.
+
+    A section runs from its heading to the next `#` or `##` heading or the end of the plan, as Plan
+    Review reads it; fenced lines never start or end a section and never start an item. An item is a list line plus
+    the indented lines after it; the section's intro paragraph is not an item.
+    """
+    fences = fenced_spans(text)
+    items: list[list[str]] = []
+    current: list[str] | None = None
+    in_section = False
+    offset = 0
+    for line in text.split("\n"):
+        fenced = any(start <= offset < end for start, end in fences)
+        offset += len(line) + 1
+        content = line.rstrip()
+        if not fenced and content == OPEN_FINDINGS_HEADING:
+            in_section, current = True, None
+        elif not in_section:
+            continue
+        elif not fenced and FINDINGS_SECTION_END.match(line):
+            in_section, current = False, None
+        elif not fenced and LIST_ITEM.match(line):
+            current = [content]
+            items.append(current)
+        elif current is not None and content and line[:1] in (" ", "\t"):
+            current.append(content)
+        else:
+            current = None
+    return ["\n".join(item) for item in items]
+
+
 def duplicate_tasks(tasks: list[dict]) -> list[str]:
     counts = Counter(task["task"] for task in tasks)
     return [
@@ -467,7 +503,7 @@ def slug(plan_file: Path, in_repo: bool) -> str:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[0] not in {
-        "plan", "check", "files", "layout", "message", "done", "slug", "testable",
+        "plan", "plan-findings", "check", "files", "layout", "message", "done", "slug", "testable",
     }:
         print(__doc__, file=sys.stderr)
         return 2
@@ -517,6 +553,9 @@ def main(argv: list[str]) -> int:
     text = plan_path.read_text()
     if command == "check":
         print(json.dumps(check(root, text)))
+        return 0
+    if command == "plan-findings":
+        print(json.dumps({"findings": plan_findings(text)}))
         return 0
     tasks = parse_plan(text)
     if not tasks:

@@ -2,6 +2,14 @@
 
 This page lists user-visible changes per release.
 
+## 3.2.1: browser guide for OMP 19.1
+
+In OMP, the testers and the plan-authoring probe read the `browser` guide at `help://eval/browser`, where OMP 19.1.0 moved it from `xd://eval/browser`. QA's OMP edition therefore needs OMP 19.1.0 or newer. The Claude Code edition is unchanged.
+
+## 3.2.0: OMP test planner without OMP's Advisor
+
+In OMP, `qa:test-planner` no longer runs with OMP's Advisor, which 2.9.0 added, so a test plan no longer carries the Advisor's model cost; `qa:test-plan-reviewer` still reviews every plan on the `advisor` role. To run the planner with the Advisor, set `task.agentAdvisor` to `{"qa:test-planner": "on"}` (see [Advisor](../../oh-my-pi.md#advisor)). The Claude Code edition is unchanged.
+
 ## 3.1.0: background desktop testing through driver plugins
 
 The optional DESKTOP plan section tests desktop apps headless in the background through installable desktop driver plugins, alongside existing FE and BE tests. QA ships no driver: a driver is a separate plugin built on desktop driver contract 1, described in [Writing extensions](../../extensions.md#qa-desktop-drivers). Configure apps under `[qa.desktop.<name>]` with a driver name. `/qa:run` detects installed drivers and registers them for the run; `desktop run` and the run's `desktop.sh` build and run the app through its driver, inject tick-based input and return PNG shots plus a masked app log. An app whose driver is not installed reports `NEED_INFO kind=tool`, and `plan check` reports missing desktop configuration in `missing.apps`.

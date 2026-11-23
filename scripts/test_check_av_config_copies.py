@@ -169,6 +169,26 @@ class TestMain(unittest.TestCase):
         self.assertIn("av_config copies OK: 2", stdout)
         self.assertEqual(stderr, "")
 
+    def test_native_omp_plugin_copy_is_checked(self) -> None:
+        files = self._clean_files()
+        native_copy = "omp/native/plan-review/scripts/av_config"
+        files.update(
+            {
+                f"{native_copy}/{Path(relative).name}": content
+                for relative, content in self._clean_files().items()
+                if relative.startswith(f"{CANONICAL}/")
+            }
+        )
+        files[f"{native_copy}/trust.py"] = b"# trusT\n"
+
+        code, stdout, stderr = self._run(files)
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertEqual(
+            stderr,
+            f"{native_copy}: trust.py differs from {CANONICAL}/trust.py\n{REMEDIATION}\n",
+        )
+
     def test_no_copy_is_an_error(self) -> None:
         files = {
             relative: content

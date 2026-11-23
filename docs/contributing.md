@@ -257,6 +257,7 @@ The plugin-neutral implementation lives in QA, and every other configurable plug
 
 - [`plugins/qa/skills/engine/scripts/av_config/`](../plugins/qa/skills/engine/scripts/av_config/): `files.py` owns loading/merge, provenance and shared `[env]` validation; `sources.py` owns value sources, restrictions and masking; `origins.py` owns origins/loopback; `trust.py` owns per-plugin pins; `transaction.py` owns section-preserving guarded writes. The package has no QA imports. Consumers import from the owning module; its `__init__.py` does not re-export the old monolithic API.
 - [`plugins/code-review/skills/decision-gate/scripts/av_config/`](../plugins/code-review/skills/decision-gate/scripts/av_config/): the byte-identical package read by `auto_accept.py` for shared loading, validation, masking and trust; Code Review keeps its own policy validation in that call site.
+- [`omp/native/plan-review/scripts/av_config/`](../omp/native/plan-review/scripts/av_config/): the byte-identical package read by `records_setting.py` for `[plan-review] records`. Plan Review is a TypeScript OMP extension, so it runs that script on `python3`.
 - [`plugins/qa/skills/env-config/`](../plugins/qa/skills/env-config/SKILL.md): read-only repository detection and proposal rules for `[env]`, with no QA policy or recipe logic.
 
 Consumers pass their declared value-source key pattern to `av_config.sources.mask` and `av_config.transaction.ConfigTransaction`; the shared layer does not infer source positions from string contents. The same pattern applies to nested configuration tables, dotted trust-subset keys and persisted run metadata.
@@ -265,7 +266,7 @@ Schema validators register each value source with `Configuration.source(value, k
 
 The optional executor receives `(command, key)` and returns decoded stdout, raising a safe `ConfigError` on execution failure. Without it, `av_config` uses its bounded subprocess executor. The shared resolver strips trailing newlines and rejects empty command output in both cases. QA supplies an executor that runs the command with the engine's inherited environment and logs only exit/line-count summaries on success, never source stdout/stderr; failed source output is discarded. Its runtime keeps only trust checks and caching around the shared resolution entry point.
 
-Copies under `plugins/*/skills/*/scripts/av_config/` must equal QA's; `scripts/check_av_config_copies.py` (workflow `av-config-copies.yml`) fails the build otherwise. Change the package in QA, copy it over every copy in the same change and bump each changed plugin's version. Still no second loader or `[env]` detector — each plugin keeps only its call site and its own table's validation, recipes and policy choices.
+Copies under `plugins/*/skills/*/scripts/av_config/` and `omp/native/*/scripts/av_config/` must equal QA's; `scripts/check_av_config_copies.py` (workflow `av-config-copies.yml`) fails the build otherwise. Change the package in QA, copy it over every copy in the same change and bump each changed plugin's version. Still no second loader or `[env]` detector — each plugin keeps only its call site and its own table's validation, recipes and policy choices.
 
 ## Pull Request Requirements
 

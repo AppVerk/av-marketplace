@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Check that every shipped av_config copy is byte-identical to QA's package.
 
+Copies live in Claude Code plugins (`plugins/<name>/skills/<skill>/scripts/av_config`) and in
+OMP-only plugins (`omp/native/<name>/scripts/av_config`).
+
 Run: python3 scripts/check_av_config_copies.py
 """
 
@@ -56,9 +59,13 @@ def main(argv: list[str] | None = None, plugins_dir: Path = PLUGINS_DIR) -> int:
         print(f"error: {canonical_label}: canonical package is empty", file=sys.stderr)
         return 2
 
+    native_dir = plugins_dir.parent / "omp" / "native"
     copies = sorted(
         path
-        for path in plugins_dir.glob("*/skills/*/scripts/av_config")
+        for path in [
+            *plugins_dir.glob("*/skills/*/scripts/av_config"),
+            *native_dir.glob("*/scripts/av_config"),
+        ]
         if path != canonical and path.is_dir()
     )
 

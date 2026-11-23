@@ -52,7 +52,7 @@ Run the steps in order. Every `stop` prints its message and ends the run.
    `BRANCH` becomes `$B`.
 10. **Commit the plan** when `git status --porcelain -- "$PLAN_PATH"` prints anything. A plan that git ignores and does not track prints nothing, so it stays uncommitted. The subject is `docs: update delivery plan <SLUG>` when `git ls-files --error-unmatch -- "$PLAN_PATH"` succeeds, otherwise `docs: add delivery plan <SLUG>`. Run `git add -- "$PLAN_PATH"`, then `AV_COMMIT_SKILL=1 git commit -m "<subject>" -- "$PLAN_PATH"`. A failed commit → print git's output and stop. The AV_COMMIT_SKILL=1 prefix lets the Commit plugin's git commit guard pass delivery's commits; keep it on every commit delivery makes.
 11. If `git status --porcelain` prints anything → stop with `Commit or stash your other changes, then run /delivery:execute <PLAN_PATH>.`
-12. `TASKS` = JSON output of `python3 "$ROUTER" plan "$REPO" "$PLAN_PATH"`; a non-zero exit → stop with the router's error.
+12. `TASKS` = JSON output of `python3 "$ROUTER" plan "$REPO" "$PLAN_PATH"`, and `PLAN_FINDINGS` = the `findings` list of `python3 "$ROUTER" plan-findings "$REPO" "$PLAN_PATH"`; a non-zero exit of either → stop with the router's error.
 13. **Done tasks and base.** `DONE=$(python3 "$ROUTER" done "$REPO" "$PLAN_PATH")`; a non-zero exit → stop with the router's error. When its `conflicts` list is not empty → stop, printing one line per entry: `Task <task> is committed as "<committed_title, or missing>" in <commit>, but <PLAN_PATH> titles it "<plan_title>". Restore the title or drop the commit, then run /delivery:execute <PLAN_PATH>.` Mark no task done on this path. Otherwise the tasks listed in `done` are done and `BASE` is its `base`.
 14. Route every not-done task with **Routing**. For a task whose `source` is not `files`, `TASK_TEXT` is its `block`. Print the `Routing: task <N> → <agent> (source: <source>)` line for every task in your reply before starting step 2; it is the audit trail of each routing decision.
 15. Every routed agent must be listed among the `task` tool's available agents. A missing one → stop with `Install <plugin>: omp plugin install <plugin>@av-marketplace, then start a new session.` (`<plugin>` is the part before `:`).
@@ -64,7 +64,7 @@ If every task is already done, print `All tasks of <PLAN_PATH> are delivered.` a
 
 For each not-done task, in ascending order of `N`:
 
-1. Mark its todo item in progress. Run **Task loop** with `N`, `TASK_BLOCK` = the task's `block`, `AGENT` = its routed agent, `PLAN_PATH`, `BRANCH`.
+1. Mark its todo item in progress. Run **Task loop** with `N`, `TASK_BLOCK` = the task's `block`, `AGENT` = its routed agent, `PLAN_PATH`, `BRANCH`, `PLAN_FINDINGS`.
 2. Act on the result:
    - `stopped` → run step 5 and end the run;
    - `skipped` → mark the todo item done and note `skipped` in the summary;
@@ -73,13 +73,13 @@ For each not-done task, in ascending order of `N`:
 
 ### 3. Verification
 
-Mark `Plan verification` in progress. When `PLAN_PATH` has a `## Verification` section, carry out each check it lists, in order, with your own tools — commands, scripts, smoke runs — without editing project files. A check that needs a person, such as a manual UI step you cannot perform, is `manual`. Print one line per check:
+Mark `Plan verification` in progress. When `PLAN_PATH` has a `## Verification` section, carry out each check it lists, in order, with your own tools — commands, scripts, smoke runs — without editing project files. Write any file a check needs, such as a throwaway smoke script, in a private temporary directory outside `REPO`; a file left in the working tree makes step 4 report QA as `Not run`. When `PLAN_PATH` has that section and `PLAN_FINDINGS` is not empty, first apply each finding about the section to its checks: the finding's fix changes a check's commands, order, environment or expected result, or adds a check, unless the code shows that the finding does not hold. Carry out the checks as amended, and name the finding in the evidence of every check it changed or added. Name a finding that does not hold, with what the code shows, in the evidence of the check it concerns, or print it as one more `manual` check when it concerns none. A finding about the section whose fix needs a file in `REPO` created or changed, such as a new test, or a step outside this delivery, is not applied: print it as one more check, with the finding as `<check>` and `manual` as its result. Leave findings that concern only tasks to the task loop. A check that needs a person, such as a manual UI step you cannot perform, is `manual`. Print one line per check:
 
 ```
 Verification: <check> — pass | fail | manual (<evidence>)
 ```
 
-Without a `## Verification` section, print `Verification: none in plan`. Any `fail` → use the `ask` tool: `Verification failed: <checks>. What now?` with options `Continue to the final review` and `Stop delivery`. `Stop delivery` → run step 5 and end the run. Mark `Plan verification` done.
+Without a `## Verification` section, print `Verification: none in plan` and apply no finding. Any `fail` → use the `ask` tool: `Verification failed: <checks>. What now?` with options `Continue to the final review` and `Stop delivery`. `Stop delivery` → run step 5 and end the run. Mark `Plan verification` done.
 
 ### 4. QA
 
@@ -117,7 +117,7 @@ Mark `QA` in progress. This step ends with `QA_RESULT`, one of `Skipped`, `Nothi
 
 ### 5. Summary
 
-Print the table `Task | Agent | Routing | Fix rounds | Result`, one row per task handled in this run, then the `Verification:` lines and the `QA:` line; a run that stopped before step 4 prints `QA: Not run (delivery stopped before QA)` as that line. The `Routing` column holds the routing source.
+Print the table `Task | Agent | Routing | Fix rounds | Result`, one row per task handled in this run, then the `Verification:` lines and the `QA:` line; a run that stopped before step 4 prints `QA: Not run (delivery stopped before QA)` as that line. The `Routing` column holds the routing source. Then print one line `Task <N>: <issue>` for every finding of a task's last review whose `issue` starts with `Plan finding for another stack:`.
 
 ### 6. Final review
 
@@ -154,6 +154,7 @@ The router prints JSON:
 
 - `check "$REPO" <plan>` → `{"tasks": N, "problems": [...], "no_files": [...]}`. `problems` are plan errors that stop a run; `no_files` names tasks without a **Files:** block, which **Routing** handles.
 - `plan "$REPO" <plan>` → one entry per task with `task`, `title`, `commit`, `block`, `files`, `groups`, `stack`, `agent`, `source`, `evidence`. `source` is `files` when the task's file list decided `agent`; for a task without files the router decides from the task text: `text` when its code paths and fenced code languages favor one stack (`evidence` lists the votes), `default` when they favor none and `agent` is `delivery:implementer`.
+- `plan-findings "$REPO" <plan>` → `{"findings": [...]}`: the list items of the plan's `## Open review findings` sections, verbatim, without the section's intro. Plan Review writes that section when it approves a plan with open concerns, and after a last round that still found blockers; a plan without it gives an empty list.
 - `message "$REPO" <plan> <N> [--open-findings]` → the commit message of task N with its `Delivery-*` trailers.
 - `done "$REPO" <plan>` → `{"done": [...], "conflicts": [...], "base": "<sha>"}` from the branch's delivery commits.
 - `testable "$REPO" <base>` → `{"testable": bool, "files": [...], "excluded": [...]}`: the paths changed between `<base>` and `HEAD` that QA can exercise, and the docs, CI, test, tooling and `.av/` paths it ignores.
@@ -216,7 +217,7 @@ Routing: task <N> → <agent> (source: <source>)
 
 ## Task loop
 
-Inputs: `N`, `TASK_BLOCK`, `AGENT`, `PLAN_PATH`, `BRANCH`. `PLUGIN` is the part of `AGENT` before `:` when `AGENT` is a developer agent (`python-developer`, `frontend-developer`, `php-developer`), otherwise `none`.
+Inputs: `N`, `TASK_BLOCK`, `AGENT`, `PLAN_PATH`, `BRANCH`, `PLAN_FINDINGS`. `PLUGIN` is the part of `AGENT` before `:` when `AGENT` is a developer agent (`python-developer`, `frontend-developer`, `php-developer`), otherwise `none`.
 
 Every dispatch below is one `task` tool call with one item. Its result arrives on its own; if you have nothing else to do until then, call the `wait` tool. Use this `context` for every item:
 
@@ -256,6 +257,20 @@ Rules:
 - End with your report, including a **Status:** line (✅ Complete | ⚠️ Partial | ❌ Failed).
 ```
 
+When `PLAN_FINDINGS` is not empty, put this block between `<TASK_BLOCK>` and `Rules:`, with the findings one after another, each exactly as the router returned it:
+
+```
+Open review findings of the plan. The plan was approved with them open; each names the plan section or path it concerns:
+<PLAN_FINDINGS>
+
+```
+
+and add this rule after the others:
+
+```
+- Before you follow the task's steps, apply each open review finding about this task to the task: the finding's fix amends the task's steps, commands, files and signatures, unless the code shows that the finding does not hold. Do not apply a finding whose fix needs files of a stack that this task's files do not belong to (Delivery routes `.py` files to Python, `.php` files to PHP, and TypeScript, JavaScript and CSS files to the frontend when the nearest manifest above them is a `package.json` that depends on React; other files belong to no stack). Leave findings about other tasks alone. In your report, list each finding about this task as applied, or as not applied with the reason; for a finding you did not apply because of its stack, name that stack.
+```
+
 ### Reviewer template
 
 ```
@@ -273,6 +288,14 @@ Findings from the previous review — verify each is resolved:
 <previous findings as JSON>
 ```
 
+When `PLAN_FINDINGS` is not empty, add this block right after `<TASK_BLOCK>` in every round, with the findings one after another, each exactly as the router returned it:
+
+```
+
+Open review findings of the plan. Check the change against the task as amended by each one about this task that holds:
+<PLAN_FINDINGS>
+```
+
 ### Fix template
 
 ```
@@ -287,4 +310,10 @@ Rules:
 - Change only what the findings require; add a failing test first when a finding reports missing coverage.
 - Do not commit, stash, switch branches or rewrite history. Leave all changes in the working tree.
 - End with your report, including a **Status:** line (✅ Complete | ⚠️ Partial | ❌ Failed).
+```
+
+When `PLAN_FINDINGS` is not empty, put the open review findings block of the Implementer template between `<TASK_BLOCK>` and `Findings to fix`, and add this rule after the others:
+
+```
+- The task is amended by the open review findings about it that hold. Keep every such amendment the staged implementation makes while you fix the findings above.
 ```

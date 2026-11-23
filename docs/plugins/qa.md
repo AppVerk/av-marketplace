@@ -2,7 +2,7 @@
 
 `/qa:run` tests a change and reports observed failures with `QA-NNN` issue IDs. It can fix eligible issues and retest within fixed limits. Frontend tests use the browser; backend tests use APIs and configured stores; DESKTOP tests drive desktop apps headless in the background through installable driver plugins.
 
-**Version:** 3.1.0
+**Version:** 3.2.1
 
 ## Quick start
 
@@ -396,7 +396,7 @@ Before running QA, enable `browser.enabled`, disable `browser.relay` and `browse
 | `browser.enabled` | Enable. |
 | `browser.relay`, `browser.cmux` | Disable. |
 | `browser.cdpUrl` | Unset, avoiding an attached personal browser. |
-| `task.agentAdvisor` | Optional `{"qa:test-planner": "off"}` in `~/.omp/agent/config.yml` to disable the planner's Advisor. |
+| `task.agentAdvisor` | Optional `{"qa:test-planner": "on"}` in `~/.omp/agent/config.yml` to run the planner with OMP's Advisor. |
 
 QA uses managed Chromium through OMP's built-in browser, not Playwright MCP. Disabled browser support produces tool gaps. Backend clients and sanitization match Claude Code.
 
